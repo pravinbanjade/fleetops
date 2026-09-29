@@ -16,3 +16,18 @@ impl SetupGuard {
         now.duration_since(self.started) < self.window
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_only_within_window() {
+        let t0 = Instant::now();
+        let g = SetupGuard::new(t0, Duration::from_secs(600));
+        assert!(g.is_open(t0));
+        assert!(g.is_open(t0 + Duration::from_secs(599)));
+        assert!(!g.is_open(t0 + Duration::from_secs(600)));
+        assert!(!SetupGuard::new(t0, Duration::ZERO).is_open(t0));
+    }
+}
