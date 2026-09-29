@@ -1,0 +1,32 @@
+[package]
+name = "fleetops-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "fleetops"
+path = "src/main.rs"
+
+[dependencies]
+fleetops-core.workspace = true
+fleetops-store.workspace = true
+fleetops-api.workspace = true
+fleetops-docker.workspace = true
+anyhow.workspace = true
+axum.workspace = true
+axum-server.workspace = true
+clap.workspace = true
+mime_guess.workspace = true
+rcgen.workspace = true
+rust-embed.workspace = true
+rustls.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+http-body-util.workspace = true
+tempfile.workspace = true
+tower.workspace = true

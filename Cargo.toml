@@ -8,10 +8,10 @@ edition = "2021"
 rust-version = "1.86"
 
 [workspace.dependencies]
-dockerer-core = { path = "crates/dockerer-core" }
-dockerer-store = { path = "crates/dockerer-store" }
-dockerer-api = { path = "crates/dockerer-api" }
-dockerer-docker = { path = "crates/dockerer-docker" }
+fleetops-core = { path = "crates/fleetops-core" }
+fleetops-store = { path = "crates/fleetops-store" }
+fleetops-api = { path = "crates/fleetops-api" }
+fleetops-docker = { path = "crates/fleetops-docker" }
 
 anyhow = "1"
 argon2 = { version = "0.5", features = ["std"] }

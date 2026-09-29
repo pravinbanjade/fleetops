@@ -1,0 +1,22 @@
+[package]
+name = "fleetops-docker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# Integration tests against a real Docker daemon (see `make test-docker`).
+docker-it = []
+
+[dependencies]
+fleetops-core.workspace = true
+async-trait.workspace = true
+bollard.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tar.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

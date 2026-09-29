@@ -1,18 +1,18 @@
-# Dockerer P2a — Docker Environments & REST Resources Implementation Plan
+# FleetOps P2a — Docker Environments & REST Resources Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let an authenticated user manage a real Docker (or Podman) daemon through `/api/v1/envs/{env}/...`. That covers containers (create, lifecycle, recreate/duplicate, file browsing), images, volumes, networks and read-only Compose projects. Environments are stored in SQLite, "local" is auto-registered on first start, every mutation is authorized and audited, and Docker's own errors are passed through.
 
 **Architecture:**
-- `dockerer-core` gains Docker domain types and five small operation traits (`SystemOps`, `ContainerOps`, `ImageOps`, `VolumeOps`, `NetworkOps`, bundled as `DockerOps`), plus the `Environment`/`EnvFactory` traits and the recreate-with-rollback algorithm.
-- A new `dockerer-docker` crate implements them with bollard 0.21. Conversions go through Docker-API JSON, so the create form's "advanced" JSON override is deep-merged before deserialising into bollard's types.
-- `dockerer-api` gets an `EnvRegistry` (name → live `Environment`), a single `authorize()` decision point, and one handler module per resource. Handlers only ever see `Arc<dyn DockerOps>`.
-- API tests use an in-memory `FakeDocker`. `dockerer-docker` has integration tests against the real daemon behind a `docker-it` feature.
+- `fleetops-core` gains Docker domain types and five small operation traits (`SystemOps`, `ContainerOps`, `ImageOps`, `VolumeOps`, `NetworkOps`, bundled as `DockerOps`), plus the `Environment`/`EnvFactory` traits and the recreate-with-rollback algorithm.
+- A new `fleetops-docker` crate implements them with bollard 0.21. Conversions go through Docker-API JSON, so the create form's "advanced" JSON override is deep-merged before deserialising into bollard's types.
+- `fleetops-api` gets an `EnvRegistry` (name → live `Environment`), a single `authorize()` decision point, and one handler module per resource. Handlers only ever see `Arc<dyn DockerOps>`.
+- API tests use an in-memory `FakeDocker`. `fleetops-docker` has integration tests against the real daemon behind a `docker-it` feature.
 
 **Tech Stack:** Rust ≥1.86 (trait upcasting), bollard 0.21, async-trait 0.1, tar 0.4, futures-util 0.3, plus P1's axum 0.8 / sqlx 0.8 / tokio.
 
-**Spec:** `docs/superpowers/specs/2026-09-29-dockerer-core-docker-design.md`
+**Spec:** `docs/superpowers/specs/2026-09-29-fleetops-core-docker-design.md`
 
 **Plan series for sub-project 1:**
 - P1 (done): backend foundation.
@@ -22,13 +22,13 @@
 
 ## Global Constraints
 
-- Handlers never import bollard. They use `dockerer_core::docker` traits through `EnvCtx.ops: Arc<dyn DockerOps>` (spec §2.2).
+- Handlers never import bollard. They use `fleetops_core::docker` traits through `EnvCtx.ops: Arc<dyn DockerOps>` (spec §2.2).
 - Error mapping (spec §6):
   - Docker `DockerResponseServerError{status_code,message}` becomes `Error::Upstream{status,message}`, and the HTTP status and message are passed through verbatim.
   - bollard JSON errors become `Internal`.
   - Every other bollard error (transport, socket, timeout) becomes `EnvUnavailable`, which is 503 `env_unavailable`.
 - Every Docker mutation writes an `audit_log` row with `environment_id` set. Results are `success`, or `failure` with `detail = {"error": "<message>"}`.
-- `authorize(user, env_id, action)` in `dockerer-api::authz` is the only authorization decision.
+- `authorize(user, env_id, action)` in `fleetops-api::authz` is the only authorization decision.
   - Admins may do everything.
   - `user` may do everything except `EnvManage` (create/update/delete environments).
 - Environment names follow `[A-Za-z0-9_.-]{1,64}` and are the `{env}` path segment. Environment URLs must be `unix://`, `tcp://`, `http://` or `https://`.
@@ -61,18 +61,18 @@
 ```
 Cargo.toml                                        (modify) rust-version 1.86; async-trait, bollard, futures-util, tar
 Makefile                                          (modify) test-docker target; dev-server uses the docker context
-crates/dockerer-core/
+crates/fleetops-core/
   Cargo.toml                                      (modify) + async-trait, serde_json (normal); tokio (dev)
   src/lib.rs                                      (modify) + docker, env, recreate modules
   src/docker.rs                                   domain types + SystemOps/ContainerOps/ImageOps/VolumeOps/NetworkOps/DockerOps
   src/env.rs                                      EnvKind, EnvStatus, Environment, EnvFactory, name/url validation
   src/recreate.rs                                 recreate-with-rollback over &dyn ContainerOps
   tests/docker_types.rs  tests/recreate.rs
-crates/dockerer-store/
+crates/fleetops-store/
   src/environments.rs                             EnvironmentRecord + CRUD
   src/lib.rs                                      (modify) module + re-export
   tests/environments.rs
-crates/dockerer-docker/                           NEW
+crates/fleetops-docker/                           NEW
   Cargo.toml
   src/lib.rs                                      LocalDocker::connect
   src/convert.rs                                  spec⇄Docker JSON, bollard→domain summaries (pure)
@@ -82,7 +82,7 @@ crates/dockerer-docker/                           NEW
   src/resources.rs                                impl SystemOps/ImageOps/VolumeOps/NetworkOps
   src/env.rs                                      LocalDockerEnv (lazy reconnect), DockerEnvFactory
   tests/docker_it.rs                              real-daemon tests (feature docker-it)
-crates/dockerer-api/
+crates/fleetops-api/
   Cargo.toml                                      (modify) + async-trait (dev)
   src/lib.rs                                      (modify) + authz, envs, compose modules
   src/state.rs                                    (modify) AppState.envs; new(store, config, factory)
@@ -96,8 +96,8 @@ crates/dockerer-api/
   tests/common/mod.rs                             (modify) FakeFactory-backed TestApp, add_env, with_local
   tests/common/fake_docker.rs                     in-memory FakeDocker/FakeEnv/FakeFactory
   tests/envs.rs  tests/containers.rs  tests/resources.rs  tests/compose.rs
-crates/dockerer-server/
-  Cargo.toml                                      (modify) + dockerer-docker
+crates/fleetops-server/
+  Cargo.toml                                      (modify) + fleetops-docker
   src/lib.rs                                      (modify) DockerEnvFactory, load, bootstrap_local
   tests/static_files.rs                           (modify) AppState::new third argument
 ```
@@ -107,12 +107,12 @@ crates/dockerer-server/
 ### Task 1: Core Docker domain types, operation traits and environment traits
 
 **Files:**
-- Modify: `Cargo.toml`, `crates/dockerer-core/Cargo.toml`, `crates/dockerer-core/src/lib.rs`
-- Create: `crates/dockerer-core/src/docker.rs`, `crates/dockerer-core/src/env.rs`
-- Test: `crates/dockerer-core/tests/docker_types.rs`
+- Modify: `Cargo.toml`, `crates/fleetops-core/Cargo.toml`, `crates/fleetops-core/src/lib.rs`
+- Create: `crates/fleetops-core/src/docker.rs`, `crates/fleetops-core/src/env.rs`
+- Test: `crates/fleetops-core/tests/docker_types.rs`
 
 **Interfaces:**
-- Consumes: `dockerer_core::{Error, Result}` (P1).
+- Consumes: `fleetops_core::{Error, Result}` (P1).
 - Produces:
   - Types:
     - `EngineVersion{version, api_version, os, arch}`
@@ -126,7 +126,7 @@ crates/dockerer-server/
     - `EntryKind`, `DirEntry`, `DirListing{path, entries, truncated}`
   - Constants: `COMPOSE_PROJECT_LABEL`, `COMPOSE_SERVICE_LABEL`.
   - Traits: `SystemOps`, `ContainerOps`, `ImageOps`, `VolumeOps`, `NetworkOps`, and `DockerOps` (blanket-implemented).
-  - Environment types in `dockerer_core::env`:
+  - Environment types in `fleetops_core::env`:
     - `EnvKind{DockerLocal}` ("docker-local")
     - `EnvStatus{Up{version}, Down{reason}}`, serialized with tag `state`
     - `trait Environment{id, name, kind, status, docker() -> Option<Arc<dyn DockerOps>>}`
@@ -136,7 +136,7 @@ crates/dockerer-server/
 - [ ] **Step 1: Update manifests**
 
 In the root `Cargo.toml`:
-- Change `rust-version = "1.85"` to `rust-version = "1.86"`, because `dockerer-api` upcasts `&dyn DockerOps` to `&dyn ContainerOps`.
+- Change `rust-version = "1.85"` to `rust-version = "1.86"`, because `fleetops-api` upcasts `&dyn DockerOps` to `&dyn ContainerOps`.
 - Add to `[workspace.dependencies]`, keeping alphabetical order:
 
 ```toml
@@ -146,7 +146,7 @@ futures-util = "0.3"
 tar = "0.4"
 ```
 
-Replace the dependency sections of `crates/dockerer-core/Cargo.toml` with:
+Replace the dependency sections of `crates/fleetops-core/Cargo.toml` with:
 
 ```toml
 [dependencies]
@@ -162,9 +162,9 @@ tokio.workspace = true
 - [ ] **Step 2: Write the failing test**
 
 ```rust
-use dockerer_core::docker::{ContainerAction, ContainerSpec, EngineVersion, PortBinding};
-use dockerer_core::env::{validate_env_name, validate_env_url, EnvKind, EnvStatus};
-use dockerer_core::Error;
+use fleetops_core::docker::{ContainerAction, ContainerSpec, EngineVersion, PortBinding};
+use fleetops_core::env::{validate_env_name, validate_env_url, EnvKind, EnvStatus};
+use fleetops_core::Error;
 use serde_json::json;
 
 #[test]
@@ -316,23 +316,23 @@ fn env_name_and_url_rules() {
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `cargo test -p dockerer-core --test docker_types`
-Expected: FAIL to compile with `unresolved import dockerer_core::docker` / `dockerer_core::env`.
+Run: `cargo test -p fleetops-core --test docker_types`
+Expected: FAIL to compile with `unresolved import fleetops_core::docker` / `fleetops_core::env`.
 
 - [ ] **Step 4: Implement**
 
-Add to `crates/dockerer-core/src/lib.rs`, above `pub mod error;`:
+Add to `crates/fleetops-core/src/lib.rs`, above `pub mod error;`:
 
 ```rust
 pub mod docker;
 pub mod env;
 ```
 
-`crates/dockerer-core/src/docker.rs`:
+`crates/fleetops-core/src/docker.rs`:
 
 ```rust
 //! Docker domain types and operation traits. Implementations (bollard in
-//! `dockerer-docker`, fakes in tests) never leak their own types past here.
+//! `fleetops-docker`, fakes in tests) never leak their own types past here.
 //! Inspect-style payloads are passed through as raw JSON because the UI shows
 //! them verbatim.
 
@@ -659,10 +659,10 @@ pub trait DockerOps: SystemOps + ContainerOps + ImageOps + VolumeOps + NetworkOp
 impl<T: SystemOps + ContainerOps + ImageOps + VolumeOps + NetworkOps> DockerOps for T {}
 ```
 
-`crates/dockerer-core/src/env.rs`:
+`crates/fleetops-core/src/env.rs`:
 
 ```rust
-//! Environments are the things dockerer manages. Sub-project 1 has one kind
+//! Environments are the things fleetops manages. Sub-project 1 has one kind
 //! (a local Docker socket); agents and Kubernetes add kinds later.
 
 use crate::{docker::DockerOps, docker::EngineVersion, Error, Result};
@@ -752,13 +752,13 @@ pub fn validate_env_url(url: &str) -> Result<()> {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cargo fmt --all && cargo test -p dockerer-core && make lint`
+Run: `cargo fmt --all && cargo test -p fleetops-core && make lint`
 Expected: `docker_types` 5 PASS, P1 core tests still PASS, lint clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Cargo.toml Cargo.lock crates/dockerer-core
+git add Cargo.toml Cargo.lock crates/fleetops-core
 git commit -m "feat(core): Docker domain types, operation traits and environment traits"
 ```
 
@@ -767,26 +767,26 @@ git commit -m "feat(core): Docker domain types, operation traits and environment
 ### Task 2: Recreate-with-rollback
 
 **Files:**
-- Create: `crates/dockerer-core/src/recreate.rs`
-- Modify: `crates/dockerer-core/src/lib.rs` (add `pub mod recreate;`)
-- Test: `crates/dockerer-core/tests/recreate.rs`
+- Create: `crates/fleetops-core/src/recreate.rs`
+- Modify: `crates/fleetops-core/src/lib.rs` (add `pub mod recreate;`)
+- Test: `crates/fleetops-core/tests/recreate.rs`
 
 **Interfaces:**
 - Consumes: `ContainerOps`, `ContainerSpec`, `ContainerAction` (Task 1).
 - Produces:
   - `recreate(ops: &dyn ContainerOps, id: &str, spec: &ContainerSpec, now: i64) -> Result<RecreateOutcome>`
   - `RecreateOutcome{new_id, old_removed: bool, backup_name}`
-  - The backup name is `<old>-dockerer-old-<now>`.
+  - The backup name is `<old>-fleetops-old-<now>`.
 
 - [ ] **Step 1: Write the failing test**
 
 ```rust
 use async_trait::async_trait;
-use dockerer_core::docker::{
+use fleetops_core::docker::{
     ContainerAction, ContainerOps, ContainerSpec, ContainerSummary, DirListing, PruneReport,
 };
-use dockerer_core::recreate::recreate;
-use dockerer_core::{Error, Result};
+use fleetops_core::recreate::recreate;
+use fleetops_core::{Error, Result};
 use serde_json::{json, Value};
 use std::sync::Mutex;
 
@@ -873,12 +873,12 @@ async fn happy_path_keeps_name_and_removes_old() {
     let out = recreate(&f, "old", &spec(), 42).await.unwrap();
     assert_eq!(out.new_id, "new");
     assert!(out.old_removed);
-    assert_eq!(out.backup_name, "web-dockerer-old-42");
+    assert_eq!(out.backup_name, "web-fleetops-old-42");
     assert_eq!(
         f.calls(),
         vec![
             "stop old",
-            "rename old web-dockerer-old-42",
+            "rename old web-fleetops-old-42",
             "create web",
             "start new",
             "remove old"
@@ -893,7 +893,7 @@ async fn stopped_container_is_not_stopped_or_restarted() {
     assert_eq!(
         f.calls(),
         vec![
-            "rename old web-dockerer-old-1",
+            "rename old web-fleetops-old-1",
             "create web",
             "rename old web"
         ]
@@ -909,7 +909,7 @@ async fn start_failure_rolls_back_and_restarts_old() {
         f.calls(),
         vec![
             "stop old",
-            "rename old web-dockerer-old-7",
+            "rename old web-fleetops-old-7",
             "create web",
             "start new",
             "remove new",
@@ -957,21 +957,21 @@ async fn rename_failure_restarts_old() {
     assert!(recreate(&f, "old", &spec(), 5).await.is_err());
     assert_eq!(
         f.calls(),
-        vec!["stop old", "rename old web-dockerer-old-5", "start old"]
+        vec!["stop old", "rename old web-fleetops-old-5", "start old"]
     );
 }
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cargo test -p dockerer-core --test recreate`
-Expected: FAIL to compile with `unresolved import dockerer_core::recreate`.
+Run: `cargo test -p fleetops-core --test recreate`
+Expected: FAIL to compile with `unresolved import fleetops_core::recreate`.
 
 - [ ] **Step 3: Implement**
 
-Add `pub mod recreate;` to `crates/dockerer-core/src/lib.rs` (after `pub mod error;`).
+Add `pub mod recreate;` to `crates/fleetops-core/src/lib.rs` (after `pub mod error;`).
 
-`crates/dockerer-core/src/recreate.rs`:
+`crates/fleetops-core/src/recreate.rs`:
 
 ```rust
 //! "Recreate with changes": replace a container with one built from a new
@@ -993,7 +993,7 @@ pub struct RecreateOutcome {
 
 /// Steps:
 /// 1. stop the old container if it is running;
-/// 2. rename it to `<name>-dockerer-old-<now>`;
+/// 2. rename it to `<name>-fleetops-old-<now>`;
 /// 3. create and start the replacement under the target name;
 /// 4. remove the old container.
 ///
@@ -1014,7 +1014,7 @@ pub async fn recreate(
         .filter(|n| !n.is_empty())
         .ok_or_else(|| Error::Internal("container inspect has no Name".into()))?;
     let was_running = inspect["State"]["Running"].as_bool().unwrap_or(false);
-    let backup_name = format!("{old_name}-dockerer-old-{now}");
+    let backup_name = format!("{old_name}-fleetops-old-{now}");
 
     if was_running {
         ops.container_action(id, ContainerAction::Stop).await?;
@@ -1060,13 +1060,13 @@ async fn create_and_start(ops: &dyn ContainerOps, spec: &ContainerSpec) -> Resul
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo fmt --all && cargo test -p dockerer-core && make lint`
+Run: `cargo fmt --all && cargo test -p fleetops-core && make lint`
 Expected: `recreate` 7 PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-core
+git add crates/fleetops-core
 git commit -m "feat(core): recreate-with-changes with rollback on failure"
 ```
 
@@ -1075,9 +1075,9 @@ git commit -m "feat(core): recreate-with-changes with rollback on failure"
 ### Task 3: Store environments repository
 
 **Files:**
-- Create: `crates/dockerer-store/src/environments.rs`
-- Modify: `crates/dockerer-store/src/lib.rs`
-- Test: `crates/dockerer-store/tests/environments.rs`
+- Create: `crates/fleetops-store/src/environments.rs`
+- Modify: `crates/fleetops-store/src/lib.rs`
+- Test: `crates/fleetops-store/tests/environments.rs`
 
 **Interfaces:**
 - Consumes: `Store`, `db_err` (P1). The `environments` table already exists from P1's migration.
@@ -1094,8 +1094,8 @@ git commit -m "feat(core): recreate-with-changes with rollback on failure"
 - [ ] **Step 1: Write the failing test**
 
 ```rust
-use dockerer_core::Error;
-use dockerer_store::{NewAudit, Store};
+use fleetops_core::Error;
+use fleetops_store::{NewAudit, Store};
 
 #[tokio::test]
 async fn crud_roundtrip() {
@@ -1186,16 +1186,16 @@ async fn deleting_environment_keeps_audit_rows() {
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cargo test -p dockerer-store --test environments`
+Run: `cargo test -p fleetops-store --test environments`
 Expected: FAIL to compile with `no method named create_environment`.
 
 - [ ] **Step 3: Implement**
 
-`crates/dockerer-store/src/environments.rs`:
+`crates/fleetops-store/src/environments.rs`:
 
 ```rust
 use crate::{db_err, Store};
-use dockerer_core::{Error, Result};
+use fleetops_core::{Error, Result};
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
@@ -1290,31 +1290,31 @@ impl Store {
 }
 ```
 
-In `crates/dockerer-store/src/lib.rs`, add `mod environments;` after `mod audit;`, and `pub use environments::EnvironmentRecord;` after `pub use audit::{AuditEntry, NewAudit};`.
+In `crates/fleetops-store/src/lib.rs`, add `mod environments;` after `mod audit;`, and `pub use environments::EnvironmentRecord;` after `pub use audit::{AuditEntry, NewAudit};`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo fmt --all && cargo test -p dockerer-store && make lint`
+Run: `cargo fmt --all && cargo test -p fleetops-store && make lint`
 Expected: `environments` 4 PASS, all P1 store tests PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-store
+git add crates/fleetops-store
 git commit -m "feat(store): environments repository"
 ```
 
 ---
 
-### Task 4: `dockerer-docker` crate and pure conversions
+### Task 4: `fleetops-docker` crate and pure conversions
 
 **Files:**
-- Modify: `Cargo.toml` (workspace dependency `dockerer-docker`)
-- Create: `crates/dockerer-docker/Cargo.toml`, `crates/dockerer-docker/src/lib.rs`, `crates/dockerer-docker/src/convert.rs`
+- Modify: `Cargo.toml` (workspace dependency `fleetops-docker`)
+- Create: `crates/fleetops-docker/Cargo.toml`, `crates/fleetops-docker/src/lib.rs`, `crates/fleetops-docker/src/convert.rs`
 
 **Interfaces:**
 - Consumes: Task 1 domain types; `bollard::models::{ContainerSummary, Volume, Network, ContainerCreateBody}`.
-- Produces (all `pub` in `dockerer_docker::convert`):
+- Produces (all `pub` in `fleetops_docker::convert`):
   - `spec_to_body(&ContainerSpec) -> serde_json::Value`: a Docker `ContainerCreate` JSON with `advanced` deep-merged last.
   - `merge(&mut Value, &Value)`.
   - `inspect_to_spec(&Value) -> ContainerSpec`: normalises `NetworkMode "default"`, an empty restart policy and zero limits to `None`.
@@ -1327,14 +1327,14 @@ git commit -m "feat(store): environments repository"
 Add to `[workspace.dependencies]` in the root `Cargo.toml`, next to the other path dependencies:
 
 ```toml
-dockerer-docker = { path = "crates/dockerer-docker" }
+fleetops-docker = { path = "crates/fleetops-docker" }
 ```
 
-`crates/dockerer-docker/Cargo.toml` (all dependencies the crate will need across Tasks 4–6):
+`crates/fleetops-docker/Cargo.toml` (all dependencies the crate will need across Tasks 4–6):
 
 ```toml
 [package]
-name = "dockerer-docker"
+name = "fleetops-docker"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -1344,7 +1344,7 @@ rust-version.workspace = true
 docker-it = []
 
 [dependencies]
-dockerer-core.workspace = true
+fleetops-core.workspace = true
 async-trait.workspace = true
 bollard.workspace = true
 futures-util.workspace = true
@@ -1357,17 +1357,17 @@ tokio.workspace = true
 tempfile.workspace = true
 ```
 
-`crates/dockerer-docker/src/lib.rs` (temporary; Task 5 adds `files` and Task 6 replaces this file):
+`crates/fleetops-docker/src/lib.rs` (temporary; Task 5 adds `files` and Task 6 replaces this file):
 
 ```rust
-//! bollard-backed implementation of dockerer's Docker traits.
+//! bollard-backed implementation of fleetops's Docker traits.
 
 pub mod convert;
 ```
 
 - [ ] **Step 2: Write the failing tests**
 
-Create `crates/dockerer-docker/src/convert.rs` containing only its test module:
+Create `crates/fleetops-docker/src/convert.rs` containing only its test module:
 
 ```rust
 #[cfg(test)]
@@ -1501,18 +1501,18 @@ mod tests {
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `cargo test -p dockerer-docker --lib convert`
+Run: `cargo test -p fleetops-docker --lib convert`
 Expected: FAIL to compile with `cannot find function spec_to_body` / `inspect_to_spec`.
 
 - [ ] **Step 4: Implement**
 
-Prepend to `crates/dockerer-docker/src/convert.rs`:
+Prepend to `crates/fleetops-docker/src/convert.rs`:
 
 ```rust
-//! Pure conversions between dockerer's domain types and Docker API JSON.
+//! Pure conversions between fleetops's domain types and Docker API JSON.
 //! Kept free of I/O so they can be unit-tested without a daemon.
 
-use dockerer_core::docker::{
+use fleetops_core::docker::{
     ContainerSpec, ContainerSummary, NetworkSummary, PortBinding, PortMapping, VolumeSummary,
     COMPOSE_PROJECT_LABEL, COMPOSE_SERVICE_LABEL,
 };
@@ -1737,13 +1737,13 @@ pub fn network_summary(n: bollard::models::Network) -> NetworkSummary {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cargo fmt --all && cargo test -p dockerer-docker && make lint`
+Run: `cargo fmt --all && cargo test -p fleetops-docker && make lint`
 Expected: 5 convert tests PASS. `body_deserializes_into_bollard_create_body` proves the JSON shape matches bollard 0.21's serde, including `ExposedPorts` map → Vec.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Cargo.toml Cargo.lock crates/dockerer-docker
+git add Cargo.toml Cargo.lock crates/fleetops-docker
 git commit -m "feat(docker): crate scaffold and spec/inspect/summary conversions"
 ```
 
@@ -1752,8 +1752,8 @@ git commit -m "feat(docker): crate scaffold and spec/inspect/summary conversions
 ### Task 5: Container file browsing over the tar archive API
 
 **Files:**
-- Create: `crates/dockerer-docker/src/files.rs`
-- Modify: `crates/dockerer-docker/src/lib.rs` (add `pub mod files;`)
+- Create: `crates/fleetops-docker/src/files.rs`
+- Modify: `crates/fleetops-docker/src/lib.rs` (add `pub mod files;`)
 
 **Interfaces:**
 - Consumes: `DirEntry`, `DirListing`, `EntryKind` (Task 1).
@@ -1769,7 +1769,7 @@ git commit -m "feat(docker): crate scaffold and spec/inspect/summary conversions
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `crates/dockerer-docker/src/files.rs` containing only its test module:
+Create `crates/fleetops-docker/src/files.rs` containing only its test module:
 
 ```rust
 #[cfg(test)]
@@ -1909,22 +1909,22 @@ mod tests {
 }
 ```
 
-Add `pub mod files;` to `crates/dockerer-docker/src/lib.rs`.
+Add `pub mod files;` to `crates/fleetops-docker/src/lib.rs`.
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `cargo test -p dockerer-docker --lib files`
+Run: `cargo test -p fleetops-docker --lib files`
 Expected: FAIL to compile with `cannot find function parse_listing` / `extract_file` / `check_path`.
 
 - [ ] **Step 3: Implement**
 
-Prepend to `crates/dockerer-docker/src/files.rs`:
+Prepend to `crates/fleetops-docker/src/files.rs`:
 
 ```rust
 //! Read-only container file browsing via Docker's archive (tar) API.
 
-use dockerer_core::docker::{DirEntry, DirListing, EntryKind};
-use dockerer_core::{Error, Result};
+use fleetops_core::docker::{DirEntry, DirListing, EntryKind};
+use fleetops_core::{Error, Result};
 use std::io::Read;
 
 /// A directory listing downloads the whole subtree as a tar stream, so the
@@ -2055,13 +2055,13 @@ pub fn extract_file(tar_bytes: &[u8], path: &str) -> Result<Vec<u8>> {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo fmt --all && cargo test -p dockerer-docker && make lint`
+Run: `cargo fmt --all && cargo test -p fleetops-docker && make lint`
 Expected: 8 files tests + 5 convert tests PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-docker
+git add crates/fleetops-docker
 git commit -m "feat(docker): bounded tar-based container file listing and extraction"
 ```
 
@@ -2070,9 +2070,9 @@ git commit -m "feat(docker): bounded tar-based container file listing and extrac
 ### Task 6: `LocalDocker` operations, lazy-reconnecting environment, factory, daemon tests
 
 **Files:**
-- Modify: `crates/dockerer-docker/src/lib.rs` (replace)
-- Create: `crates/dockerer-docker/src/error.rs`, `src/containers.rs`, `src/resources.rs`, `src/env.rs`
-- Test: `crates/dockerer-docker/tests/docker_it.rs`
+- Modify: `crates/fleetops-docker/src/lib.rs` (replace)
+- Create: `crates/fleetops-docker/src/error.rs`, `src/containers.rs`, `src/resources.rs`, `src/env.rs`
+- Test: `crates/fleetops-docker/tests/docker_it.rs`
 - Modify: `Makefile` (add `test-docker`)
 
 **Interfaces:**
@@ -2095,7 +2095,7 @@ git commit -m "feat(docker): bounded tar-based container file listing and extrac
 
 - [ ] **Step 1: Write the failing tests**
 
-`crates/dockerer-docker/src/error.rs`, containing only its test module for now:
+`crates/fleetops-docker/src/error.rs`, containing only its test module for now:
 
 ```rust
 #[cfg(test)]
@@ -2127,7 +2127,7 @@ mod tests {
 }
 ```
 
-`crates/dockerer-docker/src/env.rs`, containing only its test module for now:
+`crates/fleetops-docker/src/env.rs`, containing only its test module for now:
 
 ```rust
 #[cfg(test)]
@@ -2162,7 +2162,7 @@ mod tests {
 }
 ```
 
-`crates/dockerer-docker/tests/docker_it.rs`:
+`crates/fleetops-docker/tests/docker_it.rs`:
 
 ```rust
 //! Runs against a real Docker daemon. Enable with `--features docker-it`;
@@ -2170,13 +2170,13 @@ mod tests {
 #![cfg(feature = "docker-it")]
 
 use bollard::query_parameters::CreateImageOptionsBuilder;
-use dockerer_core::docker::{
+use fleetops_core::docker::{
     ContainerAction, ContainerOps, ContainerSpec, EntryKind, ImageOps, NetworkOps, NetworkSpec,
     PortBinding, SystemOps, VolumeOps, VolumeSpec,
 };
-use dockerer_core::env::{EnvFactory, EnvKind, EnvStatus};
-use dockerer_core::Error;
-use dockerer_docker::{DockerEnvFactory, LocalDocker};
+use fleetops_core::env::{EnvFactory, EnvKind, EnvStatus};
+use fleetops_core::Error;
+use fleetops_docker::{DockerEnvFactory, LocalDocker};
 use futures_util::StreamExt;
 use std::collections::BTreeMap;
 
@@ -2213,14 +2213,14 @@ fn sleeper(name: &str) -> ContainerSpec {
         name: Some(name.to_string()),
         image: IMAGE.into(),
         cmd: Some(vec!["sleep".into(), "300".into()]),
-        env: vec!["DOCKERER_IT=1".into()],
+        env: vec!["FLEETOPS_IT=1".into()],
         ports: vec![PortBinding {
             container_port: 8080,
             protocol: "tcp".into(),
             host_ip: None,
             host_port: None,
         }],
-        labels: BTreeMap::from([("dockerer.it".into(), "1".into())]),
+        labels: BTreeMap::from([("fleetops.it".into(), "1".into())]),
         restart_policy: Some("no".into()),
         ..Default::default()
     }
@@ -2264,7 +2264,7 @@ async fn container_lifecycle() {
     assert_eq!(listed.name, name);
     assert_eq!(listed.state, "running");
     assert_eq!(
-        listed.labels.get("dockerer.it").map(String::as_str),
+        listed.labels.get("fleetops.it").map(String::as_str),
         Some("1")
     );
     assert!(listed
@@ -2275,7 +2275,7 @@ async fn container_lifecycle() {
     let spec = d.container_spec(&id).await.unwrap();
     assert_eq!(spec.image, IMAGE);
     assert_eq!(spec.cmd, Some(vec!["sleep".into(), "300".into()]));
-    assert!(spec.env.contains(&"DOCKERER_IT=1".to_string()));
+    assert!(spec.env.contains(&"FLEETOPS_IT=1".to_string()));
     assert_eq!(spec.ports[0].container_port, 8080);
 
     d.container_action(&id, ContainerAction::Pause)
@@ -2467,10 +2467,10 @@ async fn networks_create_connect_remove() {
 }
 ```
 
-Replace `crates/dockerer-docker/src/lib.rs` with:
+Replace `crates/fleetops-docker/src/lib.rs` with:
 
 ```rust
-//! bollard-backed implementation of dockerer's Docker traits.
+//! bollard-backed implementation of fleetops's Docker traits.
 
 mod containers;
 pub mod convert;
@@ -2482,7 +2482,7 @@ mod resources;
 pub use env::{DockerEnvFactory, LocalDockerEnv};
 
 use bollard::Docker;
-use dockerer_core::{Error, Result};
+use fleetops_core::{Error, Result};
 
 /// A connection to one Docker (or Podman) API endpoint.
 pub struct LocalDocker {
@@ -2506,20 +2506,20 @@ Add to `Makefile`: add `test-docker` to `.PHONY`, and add this target after `tes
 # Integration tests against the Docker daemon of the current docker context.
 test-docker:
 	DOCKER_HOST=$$(docker context inspect --format '{{.Endpoints.docker.Host}}') \
-		cargo test -p dockerer-docker --features docker-it --test docker_it
+		cargo test -p fleetops-docker --features docker-it --test docker_it
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `cargo test -p dockerer-docker`
+Run: `cargo test -p fleetops-docker`
 Expected: FAIL to compile with `file not found for module containers` / `resources`, and `cannot find function map_err` / `DockerEnvFactory`.
 
 - [ ] **Step 3: Implement**
 
-Prepend to `crates/dockerer-docker/src/error.rs`:
+Prepend to `crates/fleetops-docker/src/error.rs`:
 
 ```rust
-use dockerer_core::Error;
+use fleetops_core::Error;
 
 /// Docker's own error responses keep their status and message; JSON errors
 /// are bugs; everything else is a transport problem, i.e. the environment
@@ -2542,7 +2542,7 @@ pub(crate) fn map_err(e: bollard::errors::Error) -> Error {
 }
 ```
 
-`crates/dockerer-docker/src/containers.rs`:
+`crates/fleetops-docker/src/containers.rs`:
 
 ```rust
 use crate::{convert, error::map_err, files, LocalDocker};
@@ -2553,10 +2553,10 @@ use bollard::query_parameters::{
     RemoveContainerOptionsBuilder, RenameContainerOptionsBuilder, RestartContainerOptions,
     StartContainerOptions, StopContainerOptions,
 };
-use dockerer_core::docker::{
+use fleetops_core::docker::{
     ContainerAction, ContainerOps, ContainerSpec, ContainerSummary, DirListing, PruneReport,
 };
-use dockerer_core::{Error, Result};
+use fleetops_core::{Error, Result};
 use futures_util::StreamExt;
 use serde_json::Value;
 
@@ -2638,7 +2638,7 @@ impl ContainerOps for LocalDocker {
     }
 
     async fn rename_container(&self, id: &str, new_name: &str) -> Result<()> {
-        dockerer_core::docker::validate_container_name(new_name)?;
+        fleetops_core::docker::validate_container_name(new_name)?;
         let opts = RenameContainerOptionsBuilder::new().name(new_name).build();
         self.client
             .rename_container(id, opts)
@@ -2696,7 +2696,7 @@ impl ContainerOps for LocalDocker {
 }
 ```
 
-`crates/dockerer-docker/src/resources.rs`:
+`crates/fleetops-docker/src/resources.rs`:
 
 ```rust
 //! System, image, volume and network operations.
@@ -2712,11 +2712,11 @@ use bollard::query_parameters::{
     ListVolumesOptions, PruneImagesOptionsBuilder, PruneNetworksOptions, PruneVolumesOptions,
     RemoveImageOptionsBuilder, RemoveVolumeOptionsBuilder, TagImageOptionsBuilder,
 };
-use dockerer_core::docker::{
+use fleetops_core::docker::{
     ContainerOps, EngineVersion, ImageOps, ImageSummary, NetworkOps, NetworkSpec, NetworkSummary,
     PruneReport, SystemOps, VolumeOps, VolumeSpec, VolumeSummary,
 };
-use dockerer_core::{Error, Result};
+use fleetops_core::{Error, Result};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -2964,14 +2964,14 @@ impl NetworkOps for LocalDocker {
 }
 ```
 
-Prepend to `crates/dockerer-docker/src/env.rs`:
+Prepend to `crates/fleetops-docker/src/env.rs`:
 
 ```rust
 use crate::LocalDocker;
 use async_trait::async_trait;
-use dockerer_core::docker::{DockerOps, SystemOps};
-use dockerer_core::env::{EnvFactory, EnvKind, EnvStatus, Environment};
-use dockerer_core::Result;
+use fleetops_core::docker::{DockerOps, SystemOps};
+use fleetops_core::env::{EnvFactory, EnvKind, EnvStatus, Environment};
+use fleetops_core::Result;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -3062,12 +3062,12 @@ impl EnvFactory for DockerEnvFactory {
 
 - [ ] **Step 4: Run unit tests to verify they pass**
 
-Run: `cargo fmt --all && cargo test -p dockerer-docker && make lint`
+Run: `cargo fmt --all && cargo test -p fleetops-docker && make lint`
 Expected: 17 unit tests PASS. `docker_it` compiles to 0 tests without the feature.
 
 - [ ] **Step 5: Run the daemon integration tests**
 
-Run: `make test-docker && cargo clippy -p dockerer-docker --features docker-it --all-targets -- -D warnings`
+Run: `make test-docker && cargo clippy -p fleetops-docker --features docker-it --all-targets -- -D warnings`
 Expected:
 - 9 PASS: `environment_status_is_up`, `system_info_and_disk_usage`, `container_lifecycle`, `advanced_override_reaches_docker`, `duplicate_name_is_upstream_conflict`, `browse_and_read_files`, `images_list_tag_and_remove`, `volumes_create_list_remove`, `networks_create_connect_remove`.
 - Clippy clean.
@@ -3078,7 +3078,7 @@ The first run pulls `alpine:3.20`. If there is no Docker daemon, record that in 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add Makefile crates/dockerer-docker
+git add Makefile crates/fleetops-docker
 git commit -m "feat(docker): bollard-backed Docker operations and lazy-reconnecting environment"
 ```
 
@@ -3087,17 +3087,17 @@ git commit -m "feat(docker): bollard-backed Docker operations and lazy-reconnect
 ### Task 7: API environment registry, authorization, bootstrap and fake Docker
 
 **Files:**
-- Create: `crates/dockerer-api/src/envs.rs`, `crates/dockerer-api/src/authz.rs`, `crates/dockerer-api/tests/common/fake_docker.rs`
-- Modify: `crates/dockerer-api/Cargo.toml`, `crates/dockerer-api/src/lib.rs`, `crates/dockerer-api/src/state.rs`, `crates/dockerer-api/tests/common/mod.rs`
-- Modify: `crates/dockerer-server/Cargo.toml`, `crates/dockerer-server/src/lib.rs`, `crates/dockerer-server/tests/static_files.rs`
-- Test: `crates/dockerer-api/tests/envs.rs` (bootstrap part), plus the unit test in `authz.rs`
+- Create: `crates/fleetops-api/src/envs.rs`, `crates/fleetops-api/src/authz.rs`, `crates/fleetops-api/tests/common/fake_docker.rs`
+- Modify: `crates/fleetops-api/Cargo.toml`, `crates/fleetops-api/src/lib.rs`, `crates/fleetops-api/src/state.rs`, `crates/fleetops-api/tests/common/mod.rs`
+- Modify: `crates/fleetops-server/Cargo.toml`, `crates/fleetops-server/src/lib.rs`, `crates/fleetops-server/tests/static_files.rs`
+- Test: `crates/fleetops-api/tests/envs.rs` (bootstrap part), plus the unit test in `authz.rs`
 
 **Interfaces:**
 - Consumes: `EnvFactory`, `Environment`, `EnvStatus`, `EnvKind` (Task 1); `EnvironmentRecord` and the store environment CRUD (Task 3); `DockerEnvFactory` (Task 6).
 - Produces:
-  - `dockerer_api::envs::EnvRegistry` with `new(Arc<dyn EnvFactory>)`, `load(&Store)`, `insert(&EnvironmentRecord) -> Result<Arc<dyn Environment>>`, `remove(name)`, `get(name) -> Result<Arc<dyn Environment>>` (`NotFound("environment '<name>'")`).
+  - `fleetops_api::envs::EnvRegistry` with `new(Arc<dyn EnvFactory>)`, `load(&Store)`, `insert(&EnvironmentRecord) -> Result<Arc<dyn Environment>>`, `remove(name)`, `get(name) -> Result<Arc<dyn Environment>>` (`NotFound("environment '<name>'")`).
   - `envs::bootstrap_local(&Store, &EnvRegistry, url) -> Result<Option<EnvironmentRecord>>` and `envs::LOCAL_ENV_NAME = "local"`.
-  - `dockerer_api::authz::{Action{EnvRead,EnvManage,DockerRead,DockerWrite}, authorize(&User, Option<i64>, Action) -> Result<()>}`.
+  - `fleetops_api::authz::{Action{EnvRead,EnvManage,DockerRead,DockerWrite}, authorize(&User, Option<i64>, Action) -> Result<()>}`.
   - `AppState.envs: Arc<EnvRegistry>`. **Breaking:** `AppState::new(store, config, factory: Arc<dyn EnvFactory>)`.
   - Test support:
     - `TestApp{router, store, state, fake: Arc<FakeDocker>}`, with `add_env(&admin, name)` and `with_local() -> Session`.
@@ -3106,7 +3106,7 @@ git commit -m "feat(docker): bollard-backed Docker operations and lazy-reconnect
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `crates/dockerer-api/src/authz.rs` containing only its test module:
+Create `crates/fleetops-api/src/authz.rs` containing only its test module:
 
 ```rust
 #[cfg(test)]
@@ -3143,13 +3143,13 @@ mod tests {
 }
 ```
 
-`crates/dockerer-api/tests/envs.rs` (P2a Task 7 part; Task 8 extends it):
+`crates/fleetops-api/tests/envs.rs` (P2a Task 7 part; Task 8 extends it):
 
 ```rust
 mod common;
 
 use common::*;
-use dockerer_api::envs::bootstrap_local;
+use fleetops_api::envs::bootstrap_local;
 use std::sync::atomic::Ordering;
 ```
 
@@ -3181,15 +3181,15 @@ async fn bootstrap_skips_unreachable_endpoint() {
 }
 ```
 
-`crates/dockerer-api/tests/common/fake_docker.rs`:
+`crates/fleetops-api/tests/common/fake_docker.rs`:
 
 ```rust
 //! In-memory stand-in for a Docker daemon, used by the API tests.
 
 use async_trait::async_trait;
-use dockerer_core::docker::*;
-use dockerer_core::env::{EnvFactory, EnvKind, EnvStatus, Environment};
-use dockerer_core::{Error, Result};
+use fleetops_core::docker::*;
+use fleetops_core::env::{EnvFactory, EnvKind, EnvStatus, Environment};
+use fleetops_core::{Error, Result};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::sync::{
@@ -3595,7 +3595,7 @@ impl EnvFactory for FakeFactory {
 }
 ```
 
-Update `crates/dockerer-api/tests/common/mod.rs`:
+Update `crates/fleetops-api/tests/common/mod.rs`:
 - Add `pub mod fake_docker;` right after `#![allow(dead_code)]`.
 - Add `use fake_docker::{FakeDocker, FakeFactory};`.
 - Change `use std::net::SocketAddr;` to `use std::{net::SocketAddr, sync::Arc};`.
@@ -3615,7 +3615,7 @@ pub async fn app_with(config: ApiConfig) -> TestApp {
     let store = Store::in_memory().await.unwrap();
     let fake = FakeDocker::new();
     let state = AppState::new(store.clone(), config, Arc::new(FakeFactory(fake.clone())));
-    let router = dockerer_api::app(state.clone(), Router::new());
+    let router = fleetops_api::app(state.clone(), Router::new());
     TestApp {
         router,
         store,
@@ -3649,22 +3649,22 @@ Inside `impl TestApp`, before `create_user`:
     }
 ```
 
-Add `async-trait.workspace = true` under `[dev-dependencies]` in `crates/dockerer-api/Cargo.toml`.
+Add `async-trait.workspace = true` under `[dev-dependencies]` in `crates/fleetops-api/Cargo.toml`.
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `cargo test -p dockerer-api --lib authz && cargo test -p dockerer-api --test envs`
-Expected: FAIL to compile with `cannot find type Action`, `unresolved import dockerer_api::envs`, and `AppState::new takes 2 arguments`.
+Run: `cargo test -p fleetops-api --lib authz && cargo test -p fleetops-api --test envs`
+Expected: FAIL to compile with `cannot find type Action`, `unresolved import fleetops_api::envs`, and `AppState::new takes 2 arguments`.
 
 - [ ] **Step 3: Implement**
 
-Prepend to `crates/dockerer-api/src/authz.rs`:
+Prepend to `crates/fleetops-api/src/authz.rs`:
 
 ```rust
 //! The single authorization decision point. Sub-project 5 replaces the body
 //! with per-environment role bindings; handlers do not change.
 
-use dockerer_core::{Error, Result, Role, User};
+use fleetops_core::{Error, Result, Role, User};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -3687,14 +3687,14 @@ pub fn authorize(user: &User, _env_id: Option<i64>, action: Action) -> Result<()
 }
 ```
 
-`crates/dockerer-api/src/envs.rs`:
+`crates/fleetops-api/src/envs.rs`:
 
 ```rust
 //! Live environments, keyed by name, built from the `environments` table.
 
-use dockerer_core::env::{EnvFactory, EnvKind, EnvStatus, Environment};
-use dockerer_core::{now_unix, Error, Result};
-use dockerer_store::{EnvironmentRecord, Store};
+use fleetops_core::env::{EnvFactory, EnvKind, EnvStatus, Environment};
+use fleetops_core::{now_unix, Error, Result};
+use fleetops_store::{EnvironmentRecord, Store};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -3782,22 +3782,22 @@ pub async fn bootstrap_local(
 }
 ```
 
-In `crates/dockerer-api/src/lib.rs`, add after `pub mod auth;`:
+In `crates/fleetops-api/src/lib.rs`, add after `pub mod auth;`:
 
 ```rust
 pub mod authz;
 pub mod envs;
 ```
 
-Replace `crates/dockerer-api/src/state.rs` with:
+Replace `crates/fleetops-api/src/state.rs` with:
 
 ```rust
 use crate::{
     auth::{limiter::LoginLimiter, setup::SetupGuard},
     envs::EnvRegistry,
 };
-use dockerer_core::env::EnvFactory;
-use dockerer_store::Store;
+use fleetops_core::env::EnvFactory;
+use fleetops_store::Store;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -3848,13 +3848,13 @@ impl AppState {
 }
 ```
 
-Server wiring. Add `dockerer-docker.workspace = true` after `dockerer-api.workspace = true` in `crates/dockerer-server/Cargo.toml`. Then in `crates/dockerer-server/src/lib.rs`:
+Server wiring. Add `fleetops-docker.workspace = true` after `fleetops-api.workspace = true` in `crates/fleetops-server/Cargo.toml`. Then in `crates/fleetops-server/src/lib.rs`:
 - Change the imports to:
 
 ```rust
-use dockerer_api::{envs::bootstrap_local, ApiConfig, AppState, IsTls};
-use dockerer_docker::DockerEnvFactory;
-use dockerer_store::Store;
+use fleetops_api::{envs::bootstrap_local, ApiConfig, AppState, IsTls};
+use fleetops_docker::DockerEnvFactory;
+use fleetops_store::Store;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 ```
 
@@ -3863,7 +3863,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 ```rust
 pub async fn run(config: Config) -> anyhow::Result<()> {
     std::fs::create_dir_all(&config.data)?;
-    let store = Store::open(&config.data.join("dockerer.db")).await?;
+    let store = Store::open(&config.data.join("fleetops.db")).await?;
     let state = AppState::new(
         store.clone(),
         ApiConfig {
@@ -3876,19 +3876,19 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     if let Some(env) = bootstrap_local(&store, &state.envs, &config.docker_host).await? {
         tracing::info!(url = %env.url, "registered local Docker environment");
     }
-    let app = dockerer_api::app(state, static_files::router());
+    let app = fleetops_api::app(state, static_files::router());
     tokio::spawn(maintenance::run(store));
     serve(&config, app).await
 }
 ```
 
-In `crates/dockerer-server/tests/static_files.rs`, change `AppState::new(store, ApiConfig::default())` to:
+In `crates/fleetops-server/tests/static_files.rs`, change `AppState::new(store, ApiConfig::default())` to:
 
 ```rust
         AppState::new(
             store,
             ApiConfig::default(),
-            std::sync::Arc::new(dockerer_docker::DockerEnvFactory),
+            std::sync::Arc::new(fleetops_docker::DockerEnvFactory),
         ),
 ```
 
@@ -3900,7 +3900,7 @@ Expected: the `authz` unit test and 2 `envs` tests PASS, and every P1 test still
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-api crates/dockerer-server Cargo.lock
+git add crates/fleetops-api crates/fleetops-server Cargo.lock
 git commit -m "feat(api): environment registry, authorize() and local bootstrap"
 ```
 
@@ -3909,9 +3909,9 @@ git commit -m "feat(api): environment registry, authorize() and local bootstrap"
 ### Task 8: Environment routes
 
 **Files:**
-- Create: `crates/dockerer-api/src/routes/envs.rs`
-- Modify: `crates/dockerer-api/src/routes/mod.rs`
-- Test: `crates/dockerer-api/tests/envs.rs` (extend)
+- Create: `crates/fleetops-api/src/routes/envs.rs`
+- Modify: `crates/fleetops-api/src/routes/mod.rs`
+- Test: `crates/fleetops-api/tests/envs.rs` (extend)
 
 **Interfaces:**
 - Consumes: `EnvRegistry`, `authorize` (Task 7); store environment CRUD (Task 3); `ApiJson`/`ApiPath` (P1).
@@ -3925,14 +3925,14 @@ git commit -m "feat(api): environment registry, authorize() and local bootstrap"
 
 - [ ] **Step 1: Write the failing tests**
 
-Replace the header of `crates/dockerer-api/tests/envs.rs` (everything above the first test) with:
+Replace the header of `crates/fleetops-api/tests/envs.rs` (everything above the first test) with:
 
 ```rust
 mod common;
 
 use axum::http::StatusCode;
 use common::*;
-use dockerer_api::envs::bootstrap_local;
+use fleetops_api::envs::bootstrap_local;
 use serde_json::json;
 use std::sync::atomic::Ordering;
 ```
@@ -4095,9 +4095,9 @@ async fn environments_survive_restart() {
     let admin = app.with_local().await;
     drop(admin);
     // A fresh registry over the same store sees the stored environment.
-    let state = dockerer_api::AppState::new(
+    let state = fleetops_api::AppState::new(
         app.store.clone(),
-        dockerer_api::ApiConfig::default(),
+        fleetops_api::ApiConfig::default(),
         std::sync::Arc::new(common::fake_docker::FakeFactory(app.fake.clone())),
     );
     assert!(state.envs.get("local").is_err());
@@ -4108,14 +4108,14 @@ async fn environments_survive_restart() {
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `cargo test -p dockerer-api --test envs`
+Run: `cargo test -p fleetops-api --test envs`
 Expected: the 5 new tests FAIL because `add_env` asserts 201 but gets 404.
 
 Note: `status_reports_up_and_down` also calls `/envs/local/containers`, which arrives in Task 9. Mark it `#[ignore = "needs Task 9"]` now and remove the attribute in Task 9 Step 4.
 
 - [ ] **Step 3: Implement**
 
-`crates/dockerer-api/src/routes/envs.rs`:
+`crates/fleetops-api/src/routes/envs.rs`:
 
 ```rust
 use crate::{
@@ -4126,9 +4126,9 @@ use crate::{
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
-use dockerer_core::env::{validate_env_name, validate_env_url, EnvKind, EnvStatus};
-use dockerer_core::now_unix;
-use dockerer_store::EnvironmentRecord;
+use fleetops_core::env::{validate_env_name, validate_env_url, EnvKind, EnvStatus};
+use fleetops_core::now_unix;
+use fleetops_store::EnvironmentRecord;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -4244,7 +4244,7 @@ pub async fn status(
 }
 ```
 
-In `crates/dockerer-api/src/routes/mod.rs`:
+In `crates/fleetops-api/src/routes/mod.rs`:
 - Add `pub mod envs;` (keep the module list alphabetical).
 - Add `.merge(env_routes())` right after the `.route("/audit", …)` line in `api()`.
 - Add this function below `api()`:
@@ -4260,13 +4260,13 @@ fn env_routes() -> Router<AppState> {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo fmt --all && cargo test -p dockerer-api && make lint`
+Run: `cargo fmt --all && cargo test -p fleetops-api && make lint`
 Expected: `envs` 6 PASS, 1 ignored.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-api
+git add crates/fleetops-api
 git commit -m "feat(api): environment CRUD and status routes"
 ```
 
@@ -4275,9 +4275,9 @@ git commit -m "feat(api): environment CRUD and status routes"
 ### Task 9: Docker handler context, system info and container routes
 
 **Files:**
-- Create: `crates/dockerer-api/src/routes/docker/mod.rs`, `crates/dockerer-api/src/routes/docker/system.rs`, `crates/dockerer-api/src/routes/docker/containers.rs`
-- Modify: `crates/dockerer-api/src/routes/mod.rs`, `crates/dockerer-api/tests/envs.rs` (un-ignore)
-- Test: `crates/dockerer-api/tests/containers.rs`, `crates/dockerer-api/tests/resources.rs` (system part)
+- Create: `crates/fleetops-api/src/routes/docker/mod.rs`, `crates/fleetops-api/src/routes/docker/system.rs`, `crates/fleetops-api/src/routes/docker/containers.rs`
+- Modify: `crates/fleetops-api/src/routes/mod.rs`, `crates/fleetops-api/tests/envs.rs` (un-ignore)
+- Test: `crates/fleetops-api/tests/containers.rs`, `crates/fleetops-api/tests/resources.rs` (system part)
 
 **Interfaces:**
 - Consumes: `EnvRegistry`, `authorize` (Task 7); `DockerOps` (Task 1); `recreate` (Task 2).
@@ -4305,7 +4305,7 @@ POST   /envs/{env}/containers/{id}/{start|stop|restart|kill|pause|unpause} → 2
 
 - [ ] **Step 1: Write the failing tests**
 
-`crates/dockerer-api/tests/containers.rs`:
+`crates/fleetops-api/tests/containers.rs`:
 
 ```rust
 mod common;
@@ -4669,7 +4669,7 @@ async fn unknown_environment_is_404() {
 }
 ```
 
-`crates/dockerer-api/tests/resources.rs` (system part; Task 10 extends it):
+`crates/fleetops-api/tests/resources.rs` (system part; Task 10 extends it):
 
 ```rust
 mod common;
@@ -4698,12 +4698,12 @@ async fn system_info_and_df() {
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `cargo test -p dockerer-api --test containers --test resources`
+Run: `cargo test -p fleetops-api --test containers --test resources`
 Expected: all FAIL with 404s from the missing routes (e.g. `create_start_list_and_remove`: left 404, right 201).
 
 - [ ] **Step 3: Implement**
 
-`crates/dockerer-api/src/routes/docker/mod.rs`. In this task the module list holds only `containers` and `system`; Tasks 10 and 11 add the rest.
+`crates/fleetops-api/src/routes/docker/mod.rs`. In this task the module list holds only `containers` and `system`; Tasks 10 and 11 add the rest.
 
 ```rust
 //! Docker resource endpoints under `/envs/{env}/...`.
@@ -4716,10 +4716,10 @@ use crate::{
     authz::{authorize, Action},
     ApiResult, AppState,
 };
-use dockerer_core::docker::DockerOps;
-use dockerer_core::env::Environment;
-use dockerer_core::{now_unix, Error, Result};
-use dockerer_store::NewAudit;
+use fleetops_core::docker::DockerOps;
+use fleetops_core::env::Environment;
+use fleetops_core::{now_unix, Error, Result};
+use fleetops_store::NewAudit;
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
@@ -4786,7 +4786,7 @@ pub struct ForceQuery {
 }
 ```
 
-`crates/dockerer-api/src/routes/docker/system.rs`:
+`crates/fleetops-api/src/routes/docker/system.rs`:
 
 ```rust
 use super::ctx;
@@ -4813,7 +4813,7 @@ pub async fn disk_usage(
 }
 ```
 
-`crates/dockerer-api/src/routes/docker/containers.rs`:
+`crates/fleetops-api/src/routes/docker/containers.rs`:
 
 ```rust
 use super::{ctx, ForceQuery};
@@ -4829,11 +4829,11 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use dockerer_core::docker::{
+use fleetops_core::docker::{
     ContainerAction, ContainerSpec, ContainerSummary, DirListing, PruneReport,
 };
-use dockerer_core::recreate::recreate;
-use dockerer_core::{now_unix, Error};
+use fleetops_core::recreate::recreate;
+use fleetops_core::{now_unix, Error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -5075,7 +5075,7 @@ pub async fn download_file(
 }
 ```
 
-In `crates/dockerer-api/src/routes/mod.rs`, add `pub mod docker;` and replace `env_routes` with the version below. Static segments (`prune`, `spec`, `rename`, …) take priority over `{action}`/`{id}` in axum 0.8.
+In `crates/fleetops-api/src/routes/mod.rs`, add `pub mod docker;` and replace `env_routes` with the version below. Static segments (`prune`, `spec`, `rename`, …) take priority over `{action}`/`{id}` in axum 0.8.
 
 ```rust
 fn env_routes() -> Router<AppState> {
@@ -5101,17 +5101,17 @@ fn env_routes() -> Router<AppState> {
 
 - [ ] **Step 4: Un-ignore the Task 8 test**
 
-Remove `#[ignore = "needs Task 9"]` from `status_reports_up_and_down` in `crates/dockerer-api/tests/envs.rs`.
+Remove `#[ignore = "needs Task 9"]` from `status_reports_up_and_down` in `crates/fleetops-api/tests/envs.rs`.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cargo fmt --all && cargo test -p dockerer-api && make lint`
+Run: `cargo fmt --all && cargo test -p fleetops-api && make lint`
 Expected: `containers` 11 PASS, `resources` 1 PASS, `envs` 7 PASS with 0 ignored.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/dockerer-api
+git add crates/fleetops-api
 git commit -m "feat(api): container management, file browsing and system routes"
 ```
 
@@ -5120,9 +5120,9 @@ git commit -m "feat(api): container management, file browsing and system routes"
 ### Task 10: Image, volume and network routes
 
 **Files:**
-- Create: `crates/dockerer-api/src/routes/docker/images.rs`, `volumes.rs`, `networks.rs`
-- Modify: `crates/dockerer-api/src/routes/docker/mod.rs`, `crates/dockerer-api/src/routes/mod.rs`
-- Test: `crates/dockerer-api/tests/resources.rs` (extend)
+- Create: `crates/fleetops-api/src/routes/docker/images.rs`, `volumes.rs`, `networks.rs`
+- Modify: `crates/fleetops-api/src/routes/docker/mod.rs`, `crates/fleetops-api/src/routes/mod.rs`
+- Test: `crates/fleetops-api/tests/resources.rs` (extend)
 
 **Interfaces:**
 - Consumes: `ctx`, `EnvCtx::audit`, `ForceQuery` (Task 9).
@@ -5145,7 +5145,7 @@ POST /envs/{env}/networks/{id}/disconnect  {container, force=false} → 204
 
 - [ ] **Step 1: Write the failing tests**
 
-Replace the header of `crates/dockerer-api/tests/resources.rs` with:
+Replace the header of `crates/fleetops-api/tests/resources.rs` with:
 
 ```rust
 mod common;
@@ -5399,12 +5399,12 @@ async fn networks_routes() {
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `cargo test -p dockerer-api --test resources`
+Run: `cargo test -p fleetops-api --test resources`
 Expected: the 3 new tests FAIL with 404 statuses or empty lists.
 
 - [ ] **Step 3: Implement**
 
-`crates/dockerer-api/src/routes/docker/images.rs`:
+`crates/fleetops-api/src/routes/docker/images.rs`:
 
 ```rust
 use super::{ctx, ForceQuery};
@@ -5419,7 +5419,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use dockerer_core::docker::{ImageSummary, PruneReport};
+use fleetops_core::docker::{ImageSummary, PruneReport};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -5514,7 +5514,7 @@ pub async fn prune(
 }
 ```
 
-`crates/dockerer-api/src/routes/docker/volumes.rs`:
+`crates/fleetops-api/src/routes/docker/volumes.rs`:
 
 ```rust
 use super::{ctx, ForceQuery};
@@ -5529,7 +5529,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use dockerer_core::docker::{PruneReport, VolumeSpec, VolumeSummary};
+use fleetops_core::docker::{PruneReport, VolumeSpec, VolumeSummary};
 use serde_json::Value;
 
 pub async fn list(
@@ -5588,7 +5588,7 @@ pub async fn prune(
 }
 ```
 
-`crates/dockerer-api/src/routes/docker/networks.rs`:
+`crates/fleetops-api/src/routes/docker/networks.rs`:
 
 ```rust
 use super::ctx;
@@ -5599,7 +5599,7 @@ use crate::{
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
-use dockerer_core::docker::{NetworkSpec, NetworkSummary, PruneReport};
+use fleetops_core::docker::{NetworkSpec, NetworkSummary, PruneReport};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -5732,13 +5732,13 @@ In `routes/mod.rs` `env_routes`:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo fmt --all && cargo test -p dockerer-api && make lint`
+Run: `cargo fmt --all && cargo test -p fleetops-api && make lint`
 Expected: `resources` 4 PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-api
+git add crates/fleetops-api
 git commit -m "feat(api): image, volume and network routes"
 ```
 
@@ -5747,9 +5747,9 @@ git commit -m "feat(api): image, volume and network routes"
 ### Task 11: Read-only Compose projects
 
 **Files:**
-- Create: `crates/dockerer-api/src/compose.rs`, `crates/dockerer-api/src/routes/docker/compose.rs`
-- Modify: `crates/dockerer-api/src/lib.rs`, `crates/dockerer-api/src/routes/docker/mod.rs`, `crates/dockerer-api/src/routes/mod.rs`
-- Test: `crates/dockerer-api/tests/compose.rs`, plus the unit test in `compose.rs`
+- Create: `crates/fleetops-api/src/compose.rs`, `crates/fleetops-api/src/routes/docker/compose.rs`
+- Modify: `crates/fleetops-api/src/lib.rs`, `crates/fleetops-api/src/routes/docker/mod.rs`, `crates/fleetops-api/src/routes/mod.rs`
+- Test: `crates/fleetops-api/tests/compose.rs`, plus the unit test in `compose.rs`
 
 **Interfaces:**
 - Consumes: `ContainerSummary.compose_project/compose_service` (Task 1); `ctx` (Task 9).
@@ -5762,7 +5762,7 @@ git commit -m "feat(api): image, volume and network routes"
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `crates/dockerer-api/src/compose.rs` containing only its test module:
+Create `crates/fleetops-api/src/compose.rs` containing only its test module:
 
 ```rust
 #[cfg(test)]
@@ -5815,9 +5815,9 @@ mod tests {
 }
 ```
 
-Add `pub mod compose;` to `crates/dockerer-api/src/lib.rs` after `pub mod authz;`.
+Add `pub mod compose;` to `crates/fleetops-api/src/lib.rs` after `pub mod authz;`.
 
-`crates/dockerer-api/tests/compose.rs`:
+`crates/fleetops-api/tests/compose.rs`:
 
 ```rust
 mod common;
@@ -5922,18 +5922,18 @@ async fn unknown_project_or_action_is_404() {
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `cargo test -p dockerer-api --lib compose && cargo test -p dockerer-api --test compose`
+Run: `cargo test -p fleetops-api --lib compose && cargo test -p fleetops-api --test compose`
 Expected: the lib test FAILS to compile (`cannot find function group_projects`). After that is fixed, the integration tests FAIL with 404.
 
 - [ ] **Step 3: Implement**
 
-Prepend to `crates/dockerer-api/src/compose.rs`:
+Prepend to `crates/fleetops-api/src/compose.rs`:
 
 ```rust
 //! Read-only Compose project view: containers grouped by the
 //! `com.docker.compose.project` label.
 
-use dockerer_core::docker::ContainerSummary;
+use fleetops_core::docker::ContainerSummary;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -5992,7 +5992,7 @@ pub fn project_members<'a>(
 }
 ```
 
-`crates/dockerer-api/src/routes/docker/compose.rs`:
+`crates/fleetops-api/src/routes/docker/compose.rs`:
 
 ```rust
 use super::ctx;
@@ -6004,8 +6004,8 @@ use crate::{
     ApiResult, AppState,
 };
 use axum::{extract::State, Json};
-use dockerer_core::docker::ContainerAction;
-use dockerer_core::Error;
+use fleetops_core::docker::ContainerAction;
+use fleetops_core::Error;
 use serde_json::{json, Value};
 
 pub async fn list(
@@ -6090,7 +6090,7 @@ Expected: `compose` 1 unit + 3 integration PASS. Whole workspace green (151 test
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-api
+git add crates/fleetops-api
 git commit -m "feat(api): read-only compose projects with bulk actions"
 ```
 
@@ -6112,20 +6112,20 @@ Replace the `dev-server` recipe in `Makefile` (TAB-indented):
 ```make
 dev-server:
 	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null)} \
-		cargo run -p dockerer-server -- --data ./.dev-data --bind 127.0.0.1:9000
+		cargo run -p fleetops-server -- --data ./.dev-data --bind 127.0.0.1:9000
 ```
 
 - [ ] **Step 2: Live smoke test against the real daemon**
 
-Save as `/tmp/dockerer-smoke.sh` and run it with `bash` (zsh does not word-split the header array):
+Save as `/tmp/fleetops-smoke.sh` and run it with `bash` (zsh does not word-split the header array):
 
 ```bash
 #!/bin/bash
 set -u
 rm -rf ./.smoke-data
 DOCKER_HOST=$(docker context inspect --format '{{.Endpoints.docker.Host}}') \
-  ./target/debug/dockerer --data ./.smoke-data --bind 127.0.0.1:9100 > /tmp/dockerer-smoke.log 2>&1 & PID=$!
-sleep 2; J=/tmp/dockerer-smoke.cookies; U=localhost:9100/api/v1
+  ./target/debug/fleetops --data ./.smoke-data --bind 127.0.0.1:9100 > /tmp/fleetops-smoke.log 2>&1 & PID=$!
+sleep 2; J=/tmp/fleetops-smoke.cookies; U=localhost:9100/api/v1
 CSRF=$(curl -s -c $J -H 'content-type: application/json' -d '{"username":"admin","password":"correct-horse"}' $U/auth/setup | python3 -c 'import sys,json;print(json.load(sys.stdin)["csrf_token"])')
 H=(-b $J -H "x-csrf-token: $CSRF" -H 'content-type: application/json')
 echo "envs: $(curl -s "${H[@]}" $U/envs)"
@@ -6139,7 +6139,7 @@ curl -s "${H[@]}" "$U/audit?limit=5" | python3 -c 'import sys,json;print([(e["ac
 kill $PID; rm -rf ./.smoke-data; docker ps -a --filter name=dkr-smoke --format 'leftover {{.Names}}'
 ```
 
-Run: `cargo build -p dockerer-server && bash /tmp/dockerer-smoke.sh`
+Run: `cargo build -p fleetops-server && bash /tmp/fleetops-smoke.sh`
 Expected:
 - `envs` lists `local` with the docker-context socket URL.
 - `status` is `{"state":"up",…}`.

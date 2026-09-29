@@ -523,91 +523,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dockerer-api"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "async-trait",
- "axum",
- "dockerer-core",
- "dockerer-store",
- "hex",
- "http-body-util",
- "rand",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "subtle",
- "tokio",
- "tower",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "dockerer-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "dockerer-docker"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bollard",
- "dockerer-core",
- "futures-util",
- "serde",
- "serde_json",
- "tar",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "dockerer-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "axum-server",
- "clap",
- "dockerer-api",
- "dockerer-core",
- "dockerer-docker",
- "dockerer-store",
- "http-body-util",
- "mime_guess",
- "rcgen",
- "rust-embed",
- "rustls",
- "serde_json",
- "tempfile",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "dockerer-store"
-version = "0.1.0"
-dependencies = [
- "dockerer-core",
- "serde",
- "serde_json",
- "sqlx",
- "tempfile",
- "tokio",
-]
-
-[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -680,6 +595,91 @@ name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+
+[[package]]
+name = "fleetops-api"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "async-trait",
+ "axum",
+ "fleetops-core",
+ "fleetops-store",
+ "hex",
+ "http-body-util",
+ "rand",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "subtle",
+ "tokio",
+ "tower",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "fleetops-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "fleetops-docker"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bollard",
+ "fleetops-core",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "tar",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "fleetops-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "axum-server",
+ "clap",
+ "fleetops-api",
+ "fleetops-core",
+ "fleetops-docker",
+ "fleetops-store",
+ "http-body-util",
+ "mime_guess",
+ "rcgen",
+ "rust-embed",
+ "rustls",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "fleetops-store"
+version = "0.1.0"
+dependencies = [
+ "fleetops-core",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+]
 
 [[package]]
 name = "flume"

@@ -2,7 +2,7 @@
 
 dev-server:
 	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null)} \
-		cargo run -p dockerer-server -- --data ./.dev-data --bind 127.0.0.1:9000
+		cargo run -p fleetops-server -- --data ./.dev-data --bind 127.0.0.1:9000
 
 test:
 	cargo test --workspace
@@ -10,7 +10,7 @@ test:
 # Integration tests against the Docker daemon of the current docker context.
 test-docker:
 	DOCKER_HOST=$$(docker context inspect --format '{{.Endpoints.docker.Host}}') \
-		cargo test -p dockerer-docker --features docker-it --test docker_it
+		cargo test -p fleetops-docker --features docker-it --test docker_it
 
 lint:
 	cargo fmt --all --check
@@ -20,4 +20,4 @@ fmt:
 	cargo fmt --all
 
 build:
-	cargo build --release -p dockerer-server
+	cargo build --release -p fleetops-server

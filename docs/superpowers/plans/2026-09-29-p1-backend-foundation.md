@@ -1,20 +1,20 @@
-# Dockerer P1 — Backend Foundation Implementation Plan
+# FleetOps P1 — Backend Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a single `dockerer` Rust binary that serves `/api/v1` with first-run setup, login/logout, revocable cookie sessions with CSRF, admin user management, audit logging, security headers, request ids, an embedded SPA fallback, and optional TLS. All state lives in SQLite.
+**Goal:** Build a single `fleetops` Rust binary that serves `/api/v1` with first-run setup, login/logout, revocable cookie sessions with CSRF, admin user management, audit logging, security headers, request ids, an embedded SPA fallback, and optional TLS. All state lives in SQLite.
 
 **Architecture:** This is a Cargo workspace with four crates:
-- `dockerer-core`: domain types and `Error`; no I/O.
-- `dockerer-store`: sqlx/SQLite repositories and embedded migrations.
-- `dockerer-api`: axum router, auth extractors, handlers.
-- `dockerer-server`: CLI/config, static assets, TLS, and the process lifecycle; builds the `dockerer` bin.
+- `fleetops-core`: domain types and `Error`; no I/O.
+- `fleetops-store`: sqlx/SQLite repositories and embedded migrations.
+- `fleetops-api`: axum router, auth extractors, handlers.
+- `fleetops-server`: CLI/config, static assets, TLS, and the process lifecycle; builds the `fleetops` bin.
 
 Handlers talk to `Store` only. P2 adds the Docker environment layer behind the same `AppState`.
 
 **Tech Stack:** Rust stable (edition 2021), tokio 1, axum 0.8, sqlx 0.8 (SQLite), argon2 0.5, rand 0.8, sha2 0.10, subtle 2, rust-embed 8, axum-server 0.7 + rustls 0.23 (ring) + rcgen 0.13, clap 4, tracing.
 
-**Spec:** `docs/superpowers/specs/2026-09-29-dockerer-core-docker-design.md`
+**Spec:** `docs/superpowers/specs/2026-09-29-fleetops-core-docker-design.md`
 
 **Plan series for sub-project 1:**
 - **P1 (this plan):** backend foundation.
@@ -25,7 +25,7 @@ Handlers talk to `Store` only. P2 adds the Docker environment layer behind the s
 
 - API base path is `/api/v1`. All responses carry `X-Request-Id`. Error body is `{code, message, request_id}`.
 - Passwords are hashed with argon2id (argon2 crate defaults). Hashing and verification run in `spawn_blocking`.
-- Session cookie is `dockerer_session`, a random 256-bit hex token. Only its SHA-256 is stored.
+- Session cookie is `fleetops_session`, a random 256-bit hex token. Only its SHA-256 is stored.
   - Flags: `HttpOnly; SameSite=Strict; Path=/`, plus `Secure` only when the request arrived over TLS.
   - Sessions expire after 7 days idle (`SESSION_IDLE_SECS = 604800`) or 30 days absolute (`SESSION_ABSOLUTE_SECS = 2592000`).
 - Every authenticated non-GET/HEAD/OPTIONS request must send an `X-CSRF-Token` header equal to the session's CSRF token. Missing or wrong gives 403.
@@ -33,8 +33,8 @@ Handlers talk to `Store` only. P2 adds the Docker environment layer behind the s
 - First-run setup is only possible while no users exist and within 10 minutes of process start. After that it is locked until restart.
 - Roles are `admin` and `user`. Every user has a global `role_bindings` row mirroring `users.role`.
 - Audit rows are written for every mutating auth/admin action. Retention defaults to 90 days (`settings` key `audit.retention_days`) and pruning runs hourly.
-- SQLite runs in WAL mode with foreign keys on. The DB file is `<data>/dockerer.db`.
-- CLI flags and env vars exactly as in spec §2.3: `--data/DOCKERER_DATA=/data`, `--bind/DOCKERER_BIND=0.0.0.0:9000`, `--tls-bind/DOCKERER_TLS_BIND`, `--tls-cert/DOCKERER_TLS_CERT`, `--tls-key/DOCKERER_TLS_KEY`, `--docker-host/DOCKER_HOST=unix:///var/run/docker.sock`, `--log-level/DOCKERER_LOG=info`.
+- SQLite runs in WAL mode with foreign keys on. The DB file is `<data>/fleetops.db`.
+- CLI flags and env vars exactly as in spec §2.3: `--data/FLEETOPS_DATA=/data`, `--bind/FLEETOPS_BIND=0.0.0.0:9000`, `--tls-bind/FLEETOPS_TLS_BIND`, `--tls-cert/FLEETOPS_TLS_CERT`, `--tls-key/FLEETOPS_TLS_KEY`, `--docker-host/DOCKER_HOST=unix:///var/run/docker.sock`, `--log-level/FLEETOPS_LOG=info`.
 - No telemetry, no outbound network calls.
 - **Spec deltas (intentional, small):**
   - `Error::Unauthorized` and `Error::Forbidden` carry a message.
@@ -59,12 +59,12 @@ Cargo.toml                                   workspace + shared dependency versi
 rust-toolchain.toml                          stable + rustfmt + clippy
 Makefile                                     dev-server / test / lint / fmt / build
 .gitignore                                   (modify) add .dev-data/
-crates/dockerer-core/
+crates/fleetops-core/
   Cargo.toml
   src/lib.rs                                 re-exports, now_unix()
   src/error.rs                               Error enum, code(), Result
   src/user.rs                                Role, User, validate_username/password
-crates/dockerer-store/
+crates/fleetops-store/
   Cargo.toml
   migrations/0001_init.sql                   users, sessions, environments, role_bindings, settings, audit_log
   src/lib.rs                                 Store (open, in_memory), db_err
@@ -73,7 +73,7 @@ crates/dockerer-store/
   src/audit.rs                               NewAudit, AuditEntry, audit repository
   src/settings.rs                            settings repository, audit_retention_days
   tests/users.rs  tests/sessions.rs  tests/audit_settings.rs  tests/open.rs
-crates/dockerer-api/
+crates/fleetops-api/
   Cargo.toml
   src/lib.rs                                 app(), IsTls, re-exports
   src/state.rs                               ApiConfig, AppState
@@ -92,7 +92,7 @@ crates/dockerer-api/
   src/routes/users.rs                        admin user CRUD
   src/routes/audit_log.rs                    admin audit list
   tests/common/mod.rs  tests/basics.rs  tests/auth.rs  tests/sessions.rs  tests/users.rs
-crates/dockerer-server/
+crates/fleetops-server/
   Cargo.toml
   build.rs                                   ensures web/dist/index.html placeholder exists
   src/lib.rs                                 run(), serve(), shutdown
@@ -106,19 +106,19 @@ crates/dockerer-server/
 
 ---
 
-### Task 1: Toolchain, workspace, and `dockerer-core`
+### Task 1: Toolchain, workspace, and `fleetops-core`
 
 **Files:**
 - Create: `Cargo.toml`, `rust-toolchain.toml`, `Makefile`
 - Modify: `.gitignore`
-- Create: `crates/dockerer-core/Cargo.toml`, `crates/dockerer-core/src/lib.rs`, `crates/dockerer-core/src/error.rs`, `crates/dockerer-core/src/user.rs`
+- Create: `crates/fleetops-core/Cargo.toml`, `crates/fleetops-core/src/lib.rs`, `crates/fleetops-core/src/error.rs`, `crates/fleetops-core/src/user.rs`
 
 **Interfaces:**
 - Consumes: nothing.
 - Produces:
-  - `dockerer_core::Error` with variants `NotFound(String)`, `Conflict(String)`, `Invalid(String)`, `Unauthorized(String)`, `Forbidden(String)`, `RateLimited { retry_after_secs: u64 }`, `EnvUnavailable(String)`, `Upstream { status: u16, message: String }`, `Internal(String)`.
+  - `fleetops_core::Error` with variants `NotFound(String)`, `Conflict(String)`, `Invalid(String)`, `Unauthorized(String)`, `Forbidden(String)`, `RateLimited { retry_after_secs: u64 }`, `EnvUnavailable(String)`, `Upstream { status: u16, message: String }`, `Internal(String)`.
   - `Error::code(&self) -> &'static str`.
-  - `dockerer_core::Result<T>`.
+  - `fleetops_core::Result<T>`.
   - `Role { Admin, User }` with `as_str()`, `FromStr`, and serde lowercase.
   - `User { id: i64, username: String, role: Role, created_at: i64, updated_at: i64 }` (Serialize).
   - `validate_username(&str) -> Result<()>`, `validate_password(&str) -> Result<()>`, `now_unix() -> i64`.
@@ -148,9 +148,9 @@ edition = "2021"
 rust-version = "1.85"
 
 [workspace.dependencies]
-dockerer-core = { path = "crates/dockerer-core" }
-dockerer-store = { path = "crates/dockerer-store" }
-dockerer-api = { path = "crates/dockerer-api" }
+fleetops-core = { path = "crates/fleetops-core" }
+fleetops-store = { path = "crates/fleetops-store" }
+fleetops-api = { path = "crates/fleetops-api" }
 
 anyhow = "1"
 argon2 = { version = "0.5", features = ["std"] }
@@ -190,7 +190,7 @@ components = ["rustfmt", "clippy"]
 .PHONY: dev-server test lint fmt build
 
 dev-server:
-	cargo run -p dockerer-server -- --data ./.dev-data --bind 127.0.0.1:9000
+	cargo run -p fleetops-server -- --data ./.dev-data --bind 127.0.0.1:9000
 
 test:
 	cargo test --workspace
@@ -203,7 +203,7 @@ fmt:
 	cargo fmt --all
 
 build:
-	cargo build --release -p dockerer-server
+	cargo build --release -p fleetops-server
 ```
 
 Append to `.gitignore`:
@@ -211,12 +211,12 @@ Append to `.gitignore`:
 .dev-data/
 ```
 
-- [ ] **Step 3: Create `dockerer-core` with failing tests**
+- [ ] **Step 3: Create `fleetops-core` with failing tests**
 
-`crates/dockerer-core/Cargo.toml`:
+`crates/fleetops-core/Cargo.toml`:
 ```toml
 [package]
-name = "dockerer-core"
+name = "fleetops-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -229,9 +229,9 @@ thiserror.workspace = true
 serde_json.workspace = true
 ```
 
-`crates/dockerer-core/src/lib.rs`:
+`crates/fleetops-core/src/lib.rs`:
 ```rust
-//! Domain types shared by every dockerer crate. No I/O lives here.
+//! Domain types shared by every fleetops crate. No I/O lives here.
 
 pub mod error;
 pub mod user;
@@ -248,7 +248,7 @@ pub fn now_unix() -> i64 {
 }
 ```
 
-`crates/dockerer-core/src/error.rs` (tests first; the enum is added in Step 5):
+`crates/fleetops-core/src/error.rs` (tests first; the enum is added in Step 5):
 ```rust
 #[cfg(test)]
 mod tests {
@@ -280,7 +280,7 @@ mod tests {
 }
 ```
 
-`crates/dockerer-core/src/user.rs` (tests first; the code is added in Step 5):
+`crates/fleetops-core/src/user.rs` (tests first; the code is added in Step 5):
 ```rust
 #[cfg(test)]
 mod tests {
@@ -324,12 +324,12 @@ mod tests {
 
 - [ ] **Step 4: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-core`
+Run: `cargo test -p fleetops-core`
 Expected: FAIL to compile with `cannot find type Error` / `Role` / `validate_username`.
 
 - [ ] **Step 5: Implement**
 
-Prepend to `crates/dockerer-core/src/error.rs` (above the tests module):
+Prepend to `crates/fleetops-core/src/error.rs` (above the tests module):
 ```rust
 /// The single error type crossing crate boundaries. The API layer maps each
 /// variant to an HTTP status and a stable `code` string.
@@ -375,7 +375,7 @@ impl Error {
 }
 ```
 
-Prepend to `crates/dockerer-core/src/user.rs`:
+Prepend to `crates/fleetops-core/src/user.rs`:
 ```rust
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
@@ -448,27 +448,27 @@ pub fn validate_password(password: &str) -> Result<()> {
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `cargo test -p dockerer-core && make lint`
+Run: `cargo test -p fleetops-core && make lint`
 Expected: 6 tests PASS; fmt and clippy clean.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add Cargo.toml Cargo.lock rust-toolchain.toml Makefile .gitignore crates/dockerer-core
+git add Cargo.toml Cargo.lock rust-toolchain.toml Makefile .gitignore crates/fleetops-core
 git commit -m "feat(core): workspace scaffold, Error, Role, User and validation"
 ```
 
 ---
 
-### Task 2: `dockerer-store`: schema, open, and users
+### Task 2: `fleetops-store`: schema, open, and users
 
 **Files:**
-- Create: `crates/dockerer-store/Cargo.toml`, `crates/dockerer-store/migrations/0001_init.sql`, `crates/dockerer-store/src/lib.rs`, `crates/dockerer-store/src/users.rs`
-- Create (stubs, filled by Tasks 3–4): `crates/dockerer-store/src/sessions.rs`, `crates/dockerer-store/src/audit.rs`, `crates/dockerer-store/src/settings.rs`, each containing only `use crate::Store;` plus a comment `// implemented in a later task`, so `mod` declarations compile. Add `#[allow(unused_imports)]` on that `use` line.
-- Test: `crates/dockerer-store/tests/users.rs`, `crates/dockerer-store/tests/open.rs`
+- Create: `crates/fleetops-store/Cargo.toml`, `crates/fleetops-store/migrations/0001_init.sql`, `crates/fleetops-store/src/lib.rs`, `crates/fleetops-store/src/users.rs`
+- Create (stubs, filled by Tasks 3–4): `crates/fleetops-store/src/sessions.rs`, `crates/fleetops-store/src/audit.rs`, `crates/fleetops-store/src/settings.rs`, each containing only `use crate::Store;` plus a comment `// implemented in a later task`, so `mod` declarations compile. Add `#[allow(unused_imports)]` on that `use` line.
+- Test: `crates/fleetops-store/tests/users.rs`, `crates/fleetops-store/tests/open.rs`
 
 **Interfaces:**
-- Consumes: `dockerer_core::{Error, Result, Role, User}`.
+- Consumes: `fleetops_core::{Error, Result, Role, User}`.
 - Produces:
   - `Store` (Clone): `Store::open(&Path) -> Result<Store>`, `Store::in_memory() -> Result<Store>`.
   - `create_user(&self, username: &str, password_hash: &str, role: Role, now: i64) -> Result<User>` (Conflict on duplicate, case-insensitive).
@@ -484,16 +484,16 @@ git commit -m "feat(core): workspace scaffold, Error, Role, User and validation"
 
 - [ ] **Step 1: Create crate, migration and failing tests**
 
-`crates/dockerer-store/Cargo.toml`:
+`crates/fleetops-store/Cargo.toml`:
 ```toml
 [package]
-name = "dockerer-store"
+name = "fleetops-store"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-dockerer-core.workspace = true
+fleetops-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
@@ -503,7 +503,7 @@ tempfile.workspace = true
 tokio.workspace = true
 ```
 
-`crates/dockerer-store/migrations/0001_init.sql`:
+`crates/fleetops-store/migrations/0001_init.sql`:
 ```sql
 CREATE TABLE users (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -564,10 +564,10 @@ CREATE TABLE audit_log (
 CREATE INDEX audit_ts ON audit_log(ts);
 ```
 
-`crates/dockerer-store/tests/users.rs`:
+`crates/fleetops-store/tests/users.rs`:
 ```rust
-use dockerer_core::{Error, Role};
-use dockerer_store::Store;
+use fleetops_core::{Error, Role};
+use fleetops_store::Store;
 
 async fn store() -> Store {
     Store::in_memory().await.unwrap()
@@ -670,15 +670,15 @@ async fn global_role_binding_mirrors_role() {
 }
 ```
 
-`crates/dockerer-store/tests/open.rs`:
+`crates/fleetops-store/tests/open.rs`:
 ```rust
-use dockerer_core::Role;
-use dockerer_store::Store;
+use fleetops_core::Role;
+use fleetops_store::Store;
 
 #[tokio::test]
 async fn file_store_persists_across_reopen() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("dockerer.db");
+    let path = dir.path().join("fleetops.db");
     {
         let s = Store::open(&path).await.unwrap();
         s.create_user("alice", "h", Role::Admin, 0).await.unwrap();
@@ -690,14 +690,14 @@ async fn file_store_persists_across_reopen() {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-store`
+Run: `cargo test -p fleetops-store`
 Expected: FAIL to compile (`Store` not found).
 
 - [ ] **Step 3: Implement `lib.rs` and `users.rs`**
 
-`crates/dockerer-store/src/lib.rs`:
+`crates/fleetops-store/src/lib.rs`:
 ```rust
-//! SQLite persistence for dockerer. All timestamps are unix seconds passed
+//! SQLite persistence for fleetops. All timestamps are unix seconds passed
 //! in by the caller so that behaviour is deterministic under test.
 
 mod audit;
@@ -705,7 +705,7 @@ mod sessions;
 mod settings;
 mod users;
 
-use dockerer_core::{Error, Result};
+use fleetops_core::{Error, Result};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::{path::Path, str::FromStr, time::Duration};
@@ -770,10 +770,10 @@ pub(crate) fn db_err(e: sqlx::Error) -> Error {
 }
 ```
 
-`crates/dockerer-store/src/users.rs`:
+`crates/fleetops-store/src/users.rs`:
 ```rust
 use crate::{db_err, Store};
-use dockerer_core::{Error, Result, Role, User};
+use fleetops_core::{Error, Result, Role, User};
 use sqlx::SqliteConnection;
 
 const COLS: &str = "id, username, password_hash, role, created_at, updated_at";
@@ -971,13 +971,13 @@ impl Store {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p dockerer-store && make lint`
+Run: `cargo test -p fleetops-store && make lint`
 Expected: 10 tests PASS; lint clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-store Cargo.lock
+git add crates/fleetops-store Cargo.lock
 git commit -m "feat(store): sqlite schema, Store::open, user repository with last-admin guard"
 ```
 
@@ -986,9 +986,9 @@ git commit -m "feat(store): sqlite schema, Store::open, user repository with las
 ### Task 3: Store sessions
 
 **Files:**
-- Modify: `crates/dockerer-store/src/sessions.rs` (replace stub)
-- Modify: `crates/dockerer-store/src/lib.rs` (add `pub use sessions::{NewSession, SessionRecord};`)
-- Test: `crates/dockerer-store/tests/sessions.rs`
+- Modify: `crates/fleetops-store/src/sessions.rs` (replace stub)
+- Modify: `crates/fleetops-store/src/lib.rs` (add `pub use sessions::{NewSession, SessionRecord};`)
+- Test: `crates/fleetops-store/tests/sessions.rs`
 
 **Interfaces:**
 - Consumes: `Store`, `db_err`.
@@ -1007,10 +1007,10 @@ git commit -m "feat(store): sqlite schema, Store::open, user repository with las
 
 - [ ] **Step 1: Write failing tests**
 
-`crates/dockerer-store/tests/sessions.rs`:
+`crates/fleetops-store/tests/sessions.rs`:
 ```rust
-use dockerer_core::Role;
-use dockerer_store::{NewSession, SessionRecord, Store};
+use fleetops_core::Role;
+use fleetops_store::{NewSession, SessionRecord, Store};
 
 async fn setup() -> (Store, i64) {
     let s = Store::in_memory().await.unwrap();
@@ -1115,15 +1115,15 @@ async fn deleting_user_cascades_sessions() {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-store --test sessions`
-Expected: FAIL to compile (`NewSession` not found in `dockerer_store`).
+Run: `cargo test -p fleetops-store --test sessions`
+Expected: FAIL to compile (`NewSession` not found in `fleetops_store`).
 
 - [ ] **Step 3: Implement**
 
-`crates/dockerer-store/src/sessions.rs`:
+`crates/fleetops-store/src/sessions.rs`:
 ```rust
 use crate::{db_err, Store};
-use dockerer_core::Result;
+use fleetops_core::Result;
 
 pub struct NewSession<'a> {
     pub user_id: i64,
@@ -1245,20 +1245,20 @@ impl Store {
 }
 ```
 
-Add to `crates/dockerer-store/src/lib.rs` below the `mod` lines:
+Add to `crates/fleetops-store/src/lib.rs` below the `mod` lines:
 ```rust
 pub use sessions::{NewSession, SessionRecord};
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p dockerer-store && make lint`
+Run: `cargo test -p fleetops-store && make lint`
 Expected: all store tests PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-store
+git add crates/fleetops-store
 git commit -m "feat(store): session repository with idle/absolute expiry"
 ```
 
@@ -1267,9 +1267,9 @@ git commit -m "feat(store): session repository with idle/absolute expiry"
 ### Task 4: Store audit log and settings
 
 **Files:**
-- Modify: `crates/dockerer-store/src/audit.rs`, `crates/dockerer-store/src/settings.rs` (replace stubs)
-- Modify: `crates/dockerer-store/src/lib.rs` (add `pub use audit::{AuditEntry, NewAudit}; pub use settings::AUDIT_RETENTION_KEY;`)
-- Test: `crates/dockerer-store/tests/audit_settings.rs`
+- Modify: `crates/fleetops-store/src/audit.rs`, `crates/fleetops-store/src/settings.rs` (replace stubs)
+- Modify: `crates/fleetops-store/src/lib.rs` (add `pub use audit::{AuditEntry, NewAudit}; pub use settings::AUDIT_RETENTION_KEY;`)
+- Test: `crates/fleetops-store/tests/audit_settings.rs`
 
 **Interfaces:**
 - Consumes: `Store`, `db_err`.
@@ -1287,10 +1287,10 @@ git commit -m "feat(store): session repository with idle/absolute expiry"
 
 - [ ] **Step 1: Write failing tests**
 
-`crates/dockerer-store/tests/audit_settings.rs`:
+`crates/fleetops-store/tests/audit_settings.rs`:
 ```rust
-use dockerer_core::Role;
-use dockerer_store::{NewAudit, Store, AUDIT_RETENTION_KEY};
+use fleetops_core::Role;
+use fleetops_store::{NewAudit, Store, AUDIT_RETENTION_KEY};
 use serde_json::json;
 
 fn entry(ts: i64, user_id: Option<i64>, action: &str) -> NewAudit<'_> {
@@ -1369,15 +1369,15 @@ async fn settings_roundtrip_and_retention_default() {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-store --test audit_settings`
+Run: `cargo test -p fleetops-store --test audit_settings`
 Expected: FAIL to compile (`NewAudit` not found).
 
 - [ ] **Step 3: Implement**
 
-`crates/dockerer-store/src/audit.rs`:
+`crates/fleetops-store/src/audit.rs`:
 ```rust
 use crate::{db_err, Store};
-use dockerer_core::{Error, Result};
+use fleetops_core::{Error, Result};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -1491,10 +1491,10 @@ impl Store {
 }
 ```
 
-`crates/dockerer-store/src/settings.rs`:
+`crates/fleetops-store/src/settings.rs`:
 ```rust
 use crate::{db_err, Store};
-use dockerer_core::{Error, Result};
+use fleetops_core::{Error, Result};
 use serde_json::Value;
 
 pub const AUDIT_RETENTION_KEY: &str = "audit.retention_days";
@@ -1536,7 +1536,7 @@ impl Store {
 }
 ```
 
-Add to `crates/dockerer-store/src/lib.rs`:
+Add to `crates/fleetops-store/src/lib.rs`:
 ```rust
 pub use audit::{AuditEntry, NewAudit};
 pub use settings::AUDIT_RETENTION_KEY;
@@ -1544,29 +1544,29 @@ pub use settings::AUDIT_RETENTION_KEY;
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p dockerer-store && make lint`
+Run: `cargo test -p fleetops-store && make lint`
 Expected: all store tests PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-store
+git add crates/fleetops-store
 git commit -m "feat(store): audit log with cursor paging and settings"
 ```
 
 ---
 
-### Task 5: `dockerer-api` skeleton: error mapping, request ids, security headers, health
+### Task 5: `fleetops-api` skeleton: error mapping, request ids, security headers, health
 
 **Files:**
-- Create: `crates/dockerer-api/Cargo.toml`, `src/lib.rs`, `src/state.rs`, `src/error.rs`, `src/request_id.rs`, `src/headers.rs`, `src/routes/mod.rs`
+- Create: `crates/fleetops-api/Cargo.toml`, `src/lib.rs`, `src/state.rs`, `src/error.rs`, `src/request_id.rs`, `src/headers.rs`, `src/routes/mod.rs`
 - Create stub: `src/auth/mod.rs` containing `pub mod limiter; pub mod setup;`, with `limiter.rs`/`setup.rs` holding the minimal types from Task 6 Step 3. **Do Task 6 Step 3 for those two files now** so `AppState` compiles; their tests are added in Task 6.
-- Test: `crates/dockerer-api/tests/common/mod.rs`, `crates/dockerer-api/tests/basics.rs`
+- Test: `crates/fleetops-api/tests/common/mod.rs`, `crates/fleetops-api/tests/basics.rs`
 
 **Interfaces:**
-- Consumes: `Store`, `dockerer_core::Error`, `auth::limiter::LoginLimiter`, `auth::setup::SetupGuard`.
+- Consumes: `Store`, `fleetops_core::Error`, `auth::limiter::LoginLimiter`, `auth::setup::SetupGuard`.
 - Produces:
-  - `dockerer_api::app(state: AppState, static_files: axum::Router) -> axum::Router`.
+  - `fleetops_api::app(state: AppState, static_files: axum::Router) -> axum::Router`.
   - `AppState { store: Store, config: Arc<ApiConfig>, limiter: Arc<LoginLimiter>, setup: Arc<SetupGuard> }` with `AppState::new(Store, ApiConfig)`.
   - `ApiConfig { setup_window: Duration }` (Default: 600 s).
   - `IsTls(pub bool)`: a request extension set by the server per listener.
@@ -1576,17 +1576,17 @@ git commit -m "feat(store): audit log with cursor paging and settings"
 
 - [ ] **Step 1: Create crate manifest and test helpers**
 
-`crates/dockerer-api/Cargo.toml`:
+`crates/fleetops-api/Cargo.toml`:
 ```toml
 [package]
-name = "dockerer-api"
+name = "fleetops-api"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-dockerer-core.workspace = true
-dockerer-store.workspace = true
+fleetops-core.workspace = true
+fleetops-store.workspace = true
 argon2.workspace = true
 axum.workspace = true
 hex.workspace = true
@@ -1604,7 +1604,7 @@ http-body-util.workspace = true
 tower.workspace = true
 ```
 
-`crates/dockerer-api/tests/common/mod.rs`:
+`crates/fleetops-api/tests/common/mod.rs`:
 ```rust
 #![allow(dead_code)]
 
@@ -1614,8 +1614,8 @@ use axum::{
     http::{HeaderMap, Request, StatusCode},
     Router,
 };
-use dockerer_api::{ApiConfig, AppState};
-use dockerer_store::Store;
+use fleetops_api::{ApiConfig, AppState};
+use fleetops_store::Store;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::net::SocketAddr;
@@ -1647,7 +1647,7 @@ pub async fn app() -> TestApp {
 
 pub async fn app_with(config: ApiConfig) -> TestApp {
     let store = Store::in_memory().await.unwrap();
-    let router = dockerer_api::app(AppState::new(store.clone(), config), Router::new());
+    let router = fleetops_api::app(AppState::new(store.clone(), config), Router::new());
     TestApp { router, store }
 }
 
@@ -1738,13 +1738,13 @@ impl TestApp {
 
 - [ ] **Step 2: Write failing tests**
 
-`crates/dockerer-api/tests/basics.rs`:
+`crates/fleetops-api/tests/basics.rs`:
 ```rust
 mod common;
 
 use axum::http::StatusCode;
 use common::*;
-use dockerer_api::IsTls;
+use fleetops_api::IsTls;
 
 #[tokio::test]
 async fn health_ok_with_request_id_and_security_headers() {
@@ -1796,7 +1796,7 @@ async fn client_request_id_is_propagated_when_safe() {
 }
 ```
 
-Unit tests at the bottom of `crates/dockerer-api/src/error.rs` (the file body is added in Step 4):
+Unit tests at the bottom of `crates/fleetops-api/src/error.rs` (the file body is added in Step 4):
 ```rust
 #[cfg(test)]
 mod tests {
@@ -1841,14 +1841,14 @@ mod tests {
 
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-api`
-Expected: FAIL to compile (`dockerer_api::app` / `ApiError` missing).
+Run: `cargo test -p fleetops-api`
+Expected: FAIL to compile (`fleetops_api::app` / `ApiError` missing).
 
 - [ ] **Step 4: Implement**
 
-`crates/dockerer-api/src/lib.rs`:
+`crates/fleetops-api/src/lib.rs`:
 ```rust
-//! HTTP API for dockerer. `app()` builds the complete router; the server
+//! HTTP API for fleetops. `app()` builds the complete router; the server
 //! crate supplies the static-file router and sets `IsTls` per listener.
 
 pub mod auth;
@@ -1877,10 +1877,10 @@ pub fn app(state: AppState, static_files: Router) -> Router {
 }
 ```
 
-`crates/dockerer-api/src/state.rs`:
+`crates/fleetops-api/src/state.rs`:
 ```rust
 use crate::auth::{limiter::LoginLimiter, setup::SetupGuard};
-use dockerer_store::Store;
+use fleetops_store::Store;
 use std::{sync::Arc, time::{Duration, Instant}};
 
 pub const LOGIN_MAX_FAILURES: u32 = 5;
@@ -1919,14 +1919,14 @@ impl AppState {
 }
 ```
 
-Prepend to `crates/dockerer-api/src/error.rs`:
+Prepend to `crates/fleetops-api/src/error.rs`:
 ```rust
 use axum::{
     http::{header::RETRY_AFTER, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use dockerer_core::Error;
+use fleetops_core::Error;
 use serde_json::json;
 
 /// Wraps the domain error so it can be returned from handlers.
@@ -1980,7 +1980,7 @@ impl IntoResponse for ApiError {
 
 Add `http-body-util` and `tokio` test usage: `http-body-util` is already a dev-dependency, so the `#[tokio::test]` unit test compiles.
 
-`crates/dockerer-api/src/request_id.rs`:
+`crates/fleetops-api/src/request_id.rs`:
 ```rust
 use axum::{extract::Request, http::HeaderValue, middleware::Next, response::Response};
 use tracing::Instrument;
@@ -2015,7 +2015,7 @@ pub async fn middleware(req: Request, next: Next) -> Response {
 }
 ```
 
-`crates/dockerer-api/src/headers.rs`:
+`crates/fleetops-api/src/headers.rs`:
 ```rust
 use crate::IsTls;
 use axum::{
@@ -2048,12 +2048,12 @@ pub async fn security_headers(req: Request, next: Next) -> Response {
 }
 ```
 
-`crates/dockerer-api/src/routes/mod.rs` (Tasks 7–9 add more modules and routes here):
+`crates/fleetops-api/src/routes/mod.rs` (Tasks 7–9 add more modules and routes here):
 ```rust
 use crate::{error::ApiError, AppState};
 use axum::{routing::get, Json, Router};
-use dockerer_core::{now_unix, Error};
-use dockerer_store::NewAudit;
+use fleetops_core::{now_unix, Error};
+use fleetops_store::NewAudit;
 use serde_json::{json, Value};
 
 pub fn api() -> Router<AppState> {
@@ -2096,7 +2096,7 @@ pub(crate) async fn audit(
 }
 ```
 
-`crates/dockerer-api/src/auth/mod.rs` (Tasks 6–7 add more):
+`crates/fleetops-api/src/auth/mod.rs` (Tasks 6–7 add more):
 ```rust
 pub mod limiter;
 pub mod setup;
@@ -2106,13 +2106,13 @@ Now create `src/auth/limiter.rs` and `src/auth/setup.rs` exactly as in **Task 6 
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cargo test -p dockerer-api && make lint`
+Run: `cargo test -p fleetops-api && make lint`
 Expected: `basics` (4) and `error` unit tests (3) PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/dockerer-api Cargo.lock
+git add crates/fleetops-api Cargo.lock
 git commit -m "feat(api): router skeleton with error mapping, request ids and security headers"
 ```
 
@@ -2121,12 +2121,12 @@ git commit -m "feat(api): router skeleton with error mapping, request ids and se
 ### Task 6: Auth primitives: password, token, cookie, limiter, setup guard
 
 **Files:**
-- Create: `crates/dockerer-api/src/auth/password.rs`, `token.rs`, `cookie.rs`
-- Modify: `crates/dockerer-api/src/auth/limiter.rs`, `setup.rs` (created in Task 5; add tests here)
-- Modify: `crates/dockerer-api/src/auth/mod.rs`
+- Create: `crates/fleetops-api/src/auth/password.rs`, `token.rs`, `cookie.rs`
+- Modify: `crates/fleetops-api/src/auth/limiter.rs`, `setup.rs` (created in Task 5; add tests here)
+- Modify: `crates/fleetops-api/src/auth/mod.rs`
 
 **Interfaces:**
-- Consumes: `dockerer_core::{Error, Result}`.
+- Consumes: `fleetops_core::{Error, Result}`.
 - Produces:
   - `password::{hash_password(String) -> Result<String>, verify_password(String, String) -> bool, burn_verify(String)}` (all async).
   - `token::{generate_token() -> String, hash_token(&str) -> String, constant_time_eq(&str, &str) -> bool}`.
@@ -2137,7 +2137,7 @@ git commit -m "feat(api): router skeleton with error mapping, request ids and se
 
 - [ ] **Step 1: Write failing tests**
 
-Append to `crates/dockerer-api/src/auth/limiter.rs`:
+Append to `crates/fleetops-api/src/auth/limiter.rs`:
 ```rust
 #[cfg(test)]
 mod tests {
@@ -2201,7 +2201,7 @@ mod tests {
 }
 ```
 
-Append to `crates/dockerer-api/src/auth/setup.rs`:
+Append to `crates/fleetops-api/src/auth/setup.rs`:
 ```rust
 #[cfg(test)]
 mod tests {
@@ -2219,7 +2219,7 @@ mod tests {
 }
 ```
 
-`crates/dockerer-api/src/auth/token.rs` (tests first):
+`crates/fleetops-api/src/auth/token.rs` (tests first):
 ```rust
 #[cfg(test)]
 mod tests {
@@ -2253,7 +2253,7 @@ mod tests {
 }
 ```
 
-`crates/dockerer-api/src/auth/cookie.rs` (tests first):
+`crates/fleetops-api/src/auth/cookie.rs` (tests first):
 ```rust
 #[cfg(test)]
 mod tests {
@@ -2264,7 +2264,7 @@ mod tests {
     fn reads_named_cookie_across_headers() {
         let mut h = HeaderMap::new();
         h.append(COOKIE, "a=1; other=2".parse().unwrap());
-        h.append(COOKIE, "b=3; dockerer_session=abc".parse().unwrap());
+        h.append(COOKIE, "b=3; fleetops_session=abc".parse().unwrap());
         assert_eq!(read_cookie(&h, SESSION_COOKIE).as_deref(), Some("abc"));
         assert_eq!(read_cookie(&h, "missing"), None);
     }
@@ -2273,7 +2273,7 @@ mod tests {
     fn cookie_flags() {
         assert_eq!(
             session_cookie("tok", 60, false),
-            "dockerer_session=tok; Path=/; HttpOnly; SameSite=Strict; Max-Age=60"
+            "fleetops_session=tok; Path=/; HttpOnly; SameSite=Strict; Max-Age=60"
         );
         assert!(session_cookie("tok", 60, true).to_str().unwrap().ends_with("; Secure"));
         assert!(clear_cookie(false).to_str().unwrap().contains("Max-Age=0"));
@@ -2281,7 +2281,7 @@ mod tests {
 }
 ```
 
-`crates/dockerer-api/src/auth/password.rs` (tests first):
+`crates/fleetops-api/src/auth/password.rs` (tests first):
 ```rust
 #[cfg(test)]
 mod tests {
@@ -2298,7 +2298,7 @@ mod tests {
 }
 ```
 
-Update `crates/dockerer-api/src/auth/mod.rs`:
+Update `crates/fleetops-api/src/auth/mod.rs`:
 ```rust
 pub mod cookie;
 pub mod limiter;
@@ -2315,14 +2315,14 @@ pub const CSRF_HEADER: &str = "x-csrf-token";
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-api --lib`
+Run: `cargo test -p fleetops-api --lib`
 Expected: FAIL to compile (`generate_token`, `read_cookie`, `hash_password` not found). The limiter/setup tests would already pass because their code was written in Task 5, which is expected; they pin that behaviour.
 
 - [ ] **Step 3: Implement**
 
-Prepend to `crates/dockerer-api/src/auth/limiter.rs` (replacing any Task 5 body above the tests):
+Prepend to `crates/fleetops-api/src/auth/limiter.rs` (replacing any Task 5 body above the tests):
 ```rust
-use dockerer_core::{Error, Result};
+use fleetops_core::{Error, Result};
 use std::{
     collections::HashMap,
     sync::Mutex,
@@ -2389,7 +2389,7 @@ impl LoginLimiter {
 }
 ```
 
-Prepend to `crates/dockerer-api/src/auth/setup.rs`:
+Prepend to `crates/fleetops-api/src/auth/setup.rs`:
 ```rust
 use std::time::{Duration, Instant};
 
@@ -2411,7 +2411,7 @@ impl SetupGuard {
 }
 ```
 
-Prepend to `crates/dockerer-api/src/auth/token.rs`:
+Prepend to `crates/fleetops-api/src/auth/token.rs`:
 ```rust
 use rand::RngCore;
 use sha2::{Digest, Sha256};
@@ -2434,11 +2434,11 @@ pub fn constant_time_eq(a: &str, b: &str) -> bool {
 }
 ```
 
-Prepend to `crates/dockerer-api/src/auth/cookie.rs`:
+Prepend to `crates/fleetops-api/src/auth/cookie.rs`:
 ```rust
 use axum::http::{header::COOKIE, HeaderMap, HeaderValue};
 
-pub const SESSION_COOKIE: &str = "dockerer_session";
+pub const SESSION_COOKIE: &str = "fleetops_session";
 
 pub fn read_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
@@ -2465,13 +2465,13 @@ pub fn clear_cookie(secure: bool) -> HeaderValue {
 }
 ```
 
-Prepend to `crates/dockerer-api/src/auth/password.rs`:
+Prepend to `crates/fleetops-api/src/auth/password.rs`:
 ```rust
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
-use dockerer_core::{Error, Result};
+use fleetops_core::{Error, Result};
 use std::sync::OnceLock;
 
 /// argon2id with the crate's default (OWASP-recommended) parameters.
@@ -2507,7 +2507,7 @@ fn verify_blocking(password: &str, hash: &str) -> bool {
 pub async fn burn_verify(password: String) {
     static DUMMY: OnceLock<String> = OnceLock::new();
     let _ = tokio::task::spawn_blocking(move || {
-        let dummy = DUMMY.get_or_init(|| hash_blocking("dockerer-dummy-password").unwrap_or_default());
+        let dummy = DUMMY.get_or_init(|| hash_blocking("fleetops-dummy-password").unwrap_or_default());
         verify_blocking(&password, dummy)
     })
     .await;
@@ -2516,13 +2516,13 @@ pub async fn burn_verify(password: String) {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p dockerer-api && make lint`
+Run: `cargo test -p fleetops-api && make lint`
 Expected: all PASS.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-api
+git add crates/fleetops-api
 git commit -m "feat(api): auth primitives (argon2id, tokens, cookies, login limiter, setup guard)"
 ```
 
@@ -2531,9 +2531,9 @@ git commit -m "feat(api): auth primitives (argon2id, tokens, cookies, login limi
 ### Task 7: Auth routes: status, setup, login, logout, me, plus session/CSRF extractors
 
 **Files:**
-- Create: `crates/dockerer-api/src/auth/extract.rs`, `crates/dockerer-api/src/routes/auth.rs`
-- Modify: `crates/dockerer-api/src/auth/mod.rs` (add `pub mod extract;`), `crates/dockerer-api/src/routes/mod.rs` (add routes; remove `#[allow(dead_code)]` on `audit`)
-- Test: `crates/dockerer-api/tests/auth.rs`
+- Create: `crates/fleetops-api/src/auth/extract.rs`, `crates/fleetops-api/src/routes/auth.rs`
+- Modify: `crates/fleetops-api/src/auth/mod.rs` (add `pub mod extract;`), `crates/fleetops-api/src/routes/mod.rs` (add routes; remove `#[allow(dead_code)]` on `audit`)
+- Test: `crates/fleetops-api/tests/auth.rs`
 
 **Interfaces:**
 - Consumes: Task 6 primitives, `Store` sessions/users, `AppState`, `IsTls`, `routes::audit`.
@@ -2546,15 +2546,15 @@ git commit -m "feat(api): auth primitives (argon2id, tokens, cookies, login limi
 
 - [ ] **Step 1: Write failing tests**
 
-`crates/dockerer-api/tests/auth.rs`:
+`crates/fleetops-api/tests/auth.rs`:
 ```rust
 mod common;
 
 use axum::http::StatusCode;
 use common::*;
-use dockerer_api::{auth::token::hash_token, ApiConfig, IsTls};
-use dockerer_core::now_unix;
-use dockerer_store::NewSession;
+use fleetops_api::{auth::token::hash_token, ApiConfig, IsTls};
+use fleetops_core::now_unix;
+use fleetops_store::NewSession;
 use serde_json::json;
 use std::time::Duration;
 
@@ -2696,7 +2696,7 @@ async fn me_requires_session() {
     let app = app().await;
     let r = app.send(req("GET", "/api/v1/auth/me", None, None)).await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
-    let bogus = Session { cookie: "dockerer_session=deadbeef".into(), csrf: String::new() };
+    let bogus = Session { cookie: "fleetops_session=deadbeef".into(), csrf: String::new() };
     let r = app.send(req("GET", "/api/v1/auth/me", None, Some(&bogus))).await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
 }
@@ -2745,7 +2745,7 @@ async fn expired_and_idle_sessions_are_rejected_and_deleted() {
             })
             .await
             .unwrap();
-        let s = Session { cookie: format!("dockerer_session={token}"), csrf: "c".into() };
+        let s = Session { cookie: format!("fleetops_session={token}"), csrf: "c".into() };
         let r = app.send(req("GET", "/api/v1/auth/me", None, Some(&s))).await;
         assert_eq!(r.status, StatusCode::UNAUTHORIZED, "{token}");
         assert!(app.store.find_session(&hash).await.unwrap().is_none(), "{token} not deleted");
@@ -2789,12 +2789,12 @@ async fn login_and_setup_are_audited() {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-api --test auth`
+Run: `cargo test -p fleetops-api --test auth`
 Expected: FAIL. Most tests get 404 because the routes don't exist yet.
 
 - [ ] **Step 3: Implement extractors**
 
-`crates/dockerer-api/src/auth/extract.rs`:
+`crates/fleetops-api/src/auth/extract.rs`:
 ```rust
 use super::{
     cookie::{read_cookie, SESSION_COOKIE},
@@ -2806,8 +2806,8 @@ use axum::{
     extract::{ConnectInfo, FromRequestParts},
     http::{header::USER_AGENT, request::Parts, Method},
 };
-use dockerer_core::{now_unix, Error, Role, User};
-use dockerer_store::SessionRecord;
+use fleetops_core::{now_unix, Error, Role, User};
+use fleetops_store::SessionRecord;
 use std::{convert::Infallible, net::SocketAddr};
 
 /// Connection metadata recorded on sessions and used for rate limiting.
@@ -2903,11 +2903,11 @@ impl FromRequestParts<AppState> for AdminUser {
 }
 ```
 
-Add `pub mod extract;` to `crates/dockerer-api/src/auth/mod.rs`.
+Add `pub mod extract;` to `crates/fleetops-api/src/auth/mod.rs`.
 
 - [ ] **Step 4: Implement auth routes**
 
-`crates/dockerer-api/src/routes/auth.rs`:
+`crates/fleetops-api/src/routes/auth.rs`:
 ```rust
 use crate::{
     auth::{
@@ -2925,8 +2925,8 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use dockerer_core::{now_unix, validate_password, validate_username, Error, User};
-use dockerer_store::NewSession;
+use fleetops_core::{now_unix, validate_password, validate_username, Error, User};
+use fleetops_store::NewSession;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Instant;
@@ -2961,7 +2961,7 @@ pub async fn setup(
     }
     if !s.setup.is_open(Instant::now()) {
         return Err(Error::Forbidden(
-            "setup window expired; restart dockerer to create the admin account".into(),
+            "setup window expired; restart fleetops to create the admin account".into(),
         )
         .into());
     }
@@ -3032,7 +3032,7 @@ async fn start_session(s: &AppState, user: User, meta: &ClientMeta, status: Stat
 }
 ```
 
-Replace `api()` in `crates/dockerer-api/src/routes/mod.rs`, add `pub mod auth;` at the top, and remove the `#[allow(dead_code)]` line above `audit`:
+Replace `api()` in `crates/fleetops-api/src/routes/mod.rs`, add `pub mod auth;` at the top, and remove the `#[allow(dead_code)]` line above `audit`:
 ```rust
 pub mod auth;
 
@@ -3053,13 +3053,13 @@ pub fn api() -> Router<AppState> {
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cargo test -p dockerer-api && make lint`
+Run: `cargo test -p fleetops-api && make lint`
 Expected: all `auth` tests (15) PASS, earlier tests still PASS.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/dockerer-api
+git add crates/fleetops-api
 git commit -m "feat(api): setup/login/logout/me with cookie sessions, CSRF and rate limiting"
 ```
 
@@ -3068,8 +3068,8 @@ git commit -m "feat(api): setup/login/logout/me with cookie sessions, CSRF and r
 ### Task 8: Self-service sessions and password change
 
 **Files:**
-- Modify: `crates/dockerer-api/src/routes/auth.rs` (add handlers), `crates/dockerer-api/src/routes/mod.rs` (add routes)
-- Test: `crates/dockerer-api/tests/sessions.rs`
+- Modify: `crates/fleetops-api/src/routes/auth.rs` (add handlers), `crates/fleetops-api/src/routes/mod.rs` (add routes)
+- Test: `crates/fleetops-api/tests/sessions.rs`
 
 **Interfaces:**
 - Consumes: `CurrentUser`, the `Store` session methods, `password`.
@@ -3080,7 +3080,7 @@ git commit -m "feat(api): setup/login/logout/me with cookie sessions, CSRF and r
 
 - [ ] **Step 1: Write failing tests**
 
-`crates/dockerer-api/tests/sessions.rs`:
+`crates/fleetops-api/tests/sessions.rs`:
 ```rust
 mod common;
 
@@ -3173,12 +3173,12 @@ Note: `cannot_revoke_someone_elses_session` needs `POST /users` from Task 9. Mar
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-api --test sessions`
+Run: `cargo test -p fleetops-api --test sessions`
 Expected: FAIL with 404 status on `/auth/sessions` and `/auth/password`.
 
 - [ ] **Step 3: Implement**
 
-Append to `crates/dockerer-api/src/routes/auth.rs`:
+Append to `crates/fleetops-api/src/routes/auth.rs`:
 ```rust
 use crate::auth::SESSION_IDLE_SECS;
 use axum::extract::Path;
@@ -3265,13 +3265,13 @@ Add to `api()` in `routes/mod.rs` (import `delete` and `put` from `axum::routing
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cargo test -p dockerer-api && make lint`
+Run: `cargo test -p fleetops-api && make lint`
 Expected: PASS (1 ignored).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add crates/dockerer-api
+git add crates/fleetops-api
 git commit -m "feat(api): list/revoke own sessions and change password"
 ```
 
@@ -3280,9 +3280,9 @@ git commit -m "feat(api): list/revoke own sessions and change password"
 ### Task 9: Admin users CRUD and audit list
 
 **Files:**
-- Create: `crates/dockerer-api/src/routes/users.rs`, `crates/dockerer-api/src/routes/audit_log.rs`
-- Modify: `crates/dockerer-api/src/routes/mod.rs`, `crates/dockerer-api/tests/sessions.rs` (remove the `#[ignore]`)
-- Test: `crates/dockerer-api/tests/users.rs`
+- Create: `crates/fleetops-api/src/routes/users.rs`, `crates/fleetops-api/src/routes/audit_log.rs`
+- Modify: `crates/fleetops-api/src/routes/mod.rs`, `crates/fleetops-api/tests/sessions.rs` (remove the `#[ignore]`)
+- Test: `crates/fleetops-api/tests/users.rs`
 
 **Interfaces:**
 - Consumes: `AdminUser`, the `Store` user and audit methods.
@@ -3295,7 +3295,7 @@ git commit -m "feat(api): list/revoke own sessions and change password"
 
 - [ ] **Step 1: Write failing tests**
 
-`crates/dockerer-api/tests/users.rs`:
+`crates/fleetops-api/tests/users.rs`:
 ```rust
 mod common;
 
@@ -3436,12 +3436,12 @@ async fn audit_lists_admin_actions_with_paging() {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-api --test users`
+Run: `cargo test -p fleetops-api --test users`
 Expected: FAIL with 404 on `/users` and `/audit`.
 
 - [ ] **Step 3: Implement**
 
-`crates/dockerer-api/src/routes/users.rs`:
+`crates/fleetops-api/src/routes/users.rs`:
 ```rust
 use crate::{auth::{extract::AdminUser, password}, routes::audit, ApiResult, AppState};
 use axum::{
@@ -3449,7 +3449,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use dockerer_core::{now_unix, validate_password, validate_username, Error, Role, User};
+use fleetops_core::{now_unix, validate_password, validate_username, Error, Role, User};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -3527,14 +3527,14 @@ pub async fn remove(
 }
 ```
 
-`crates/dockerer-api/src/routes/audit_log.rs`:
+`crates/fleetops-api/src/routes/audit_log.rs`:
 ```rust
 use crate::{auth::extract::AdminUser, ApiResult, AppState};
 use axum::{
     extract::{Query, State},
     Json,
 };
-use dockerer_store::AuditEntry;
+use fleetops_store::AuditEntry;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -3562,55 +3562,55 @@ In `routes/mod.rs`, add `pub mod audit_log; pub mod users;` (import `patch` too)
 
 - [ ] **Step 4: Un-ignore the Task 8 test**
 
-Remove the `#[ignore = "needs Task 9"]` line from `cannot_revoke_someone_elses_session` in `crates/dockerer-api/tests/sessions.rs`.
+Remove the `#[ignore = "needs Task 9"]` line from `cannot_revoke_someone_elses_session` in `crates/fleetops-api/tests/sessions.rs`.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `cargo test -p dockerer-api && make lint`
+Run: `cargo test -p fleetops-api && make lint`
 Expected: all PASS, 0 ignored.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/dockerer-api
+git add crates/fleetops-api
 git commit -m "feat(api): admin user management and audit log listing"
 ```
 
 ---
 
-### Task 10: `dockerer-server`: config, embedded SPA, maintenance, `dockerer` binary
+### Task 10: `fleetops-server`: config, embedded SPA, maintenance, `fleetops` binary
 
 **Files:**
-- Create: `crates/dockerer-server/Cargo.toml`, `build.rs`, `src/lib.rs`, `src/main.rs`, `src/config.rs`, `src/static_files.rs`, `src/maintenance.rs`
-- Test: `crates/dockerer-server/tests/static_files.rs`, `crates/dockerer-server/tests/maintenance.rs`
+- Create: `crates/fleetops-server/Cargo.toml`, `build.rs`, `src/lib.rs`, `src/main.rs`, `src/config.rs`, `src/static_files.rs`, `src/maintenance.rs`
+- Test: `crates/fleetops-server/tests/static_files.rs`, `crates/fleetops-server/tests/maintenance.rs`
 
 **Interfaces:**
-- Consumes: `dockerer_api::{app, AppState, ApiConfig, IsTls, auth::SESSION_IDLE_SECS}`, `Store`.
+- Consumes: `fleetops_api::{app, AppState, ApiConfig, IsTls, auth::SESSION_IDLE_SECS}`, `Store`.
 - Produces:
-  - `dockerer_server::config::Config` (clap).
-  - `dockerer_server::static_files::router() -> Router`.
-  - `dockerer_server::maintenance::prune_once(&Store, now: i64) -> Result<(u64, u64)>`.
-  - `dockerer_server::run(Config) -> anyhow::Result<()>`.
-  - The `dockerer` binary.
+  - `fleetops_server::config::Config` (clap).
+  - `fleetops_server::static_files::router() -> Router`.
+  - `fleetops_server::maintenance::prune_once(&Store, now: i64) -> Result<(u64, u64)>`.
+  - `fleetops_server::run(Config) -> anyhow::Result<()>`.
+  - The `fleetops` binary.
 
 - [ ] **Step 1: Create manifest, build script, and failing tests**
 
-`crates/dockerer-server/Cargo.toml`:
+`crates/fleetops-server/Cargo.toml`:
 ```toml
 [package]
-name = "dockerer-server"
+name = "fleetops-server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [[bin]]
-name = "dockerer"
+name = "fleetops"
 path = "src/main.rs"
 
 [dependencies]
-dockerer-core.workspace = true
-dockerer-store.workspace = true
-dockerer-api.workspace = true
+fleetops-core.workspace = true
+fleetops-store.workspace = true
+fleetops-api.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 axum-server.workspace = true
@@ -3630,14 +3630,14 @@ tempfile.workspace = true
 tower.workspace = true
 ```
 
-`crates/dockerer-server/build.rs`:
+`crates/fleetops-server/build.rs`:
 ```rust
 //! rust-embed needs web/dist to exist at compile time. Until the web UI is
 //! built (plan P3), write a placeholder page so the server still compiles.
 use std::{fs, path::PathBuf};
 
-const PLACEHOLDER: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>Dockerer</title></head>\
-<body><h1>Dockerer</h1><p>The web UI has not been built yet. The API is available under <code>/api/v1</code>.</p></body></html>\n";
+const PLACEHOLDER: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>FleetOps</title></head>\
+<body><h1>FleetOps</h1><p>The web UI has not been built yet. The API is available under <code>/api/v1</code>.</p></body></html>\n";
 
 fn main() {
     let dist = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../web/dist");
@@ -3649,12 +3649,12 @@ fn main() {
 }
 ```
 
-`crates/dockerer-server/tests/static_files.rs`:
+`crates/fleetops-server/tests/static_files.rs`:
 ```rust
 use axum::{body::Body, http::{Request, StatusCode}};
-use dockerer_api::{ApiConfig, AppState};
-use dockerer_server::static_files;
-use dockerer_store::Store;
+use fleetops_api::{ApiConfig, AppState};
+use fleetops_server::static_files;
+use fleetops_store::Store;
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 
@@ -3672,7 +3672,7 @@ async fn root_and_client_routes_serve_index() {
         let (status, ct, body) = get(static_files::router(), uri).await;
         assert_eq!(status, StatusCode::OK, "{uri}");
         assert!(ct.starts_with("text/html"), "{uri}: {ct}");
-        assert!(body.contains("<title>Dockerer</title>") || body.contains("Dockerer"), "{uri}");
+        assert!(body.contains("<title>FleetOps</title>") || body.contains("FleetOps"), "{uri}");
     }
 }
 
@@ -3693,7 +3693,7 @@ async fn unknown_api_path_outside_v1_is_json_404() {
 #[tokio::test]
 async fn full_app_serves_api_and_spa_with_security_headers() {
     let store = Store::in_memory().await.unwrap();
-    let app = dockerer_api::app(AppState::new(store, ApiConfig::default()), static_files::router());
+    let app = fleetops_api::app(AppState::new(store, ApiConfig::default()), static_files::router());
     let res = app.clone().oneshot(Request::get("/").body(Body::empty()).unwrap()).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
     assert!(res.headers().get("content-security-policy").is_some());
@@ -3703,11 +3703,11 @@ async fn full_app_serves_api_and_spa_with_security_headers() {
 }
 ```
 
-`crates/dockerer-server/tests/maintenance.rs`:
+`crates/fleetops-server/tests/maintenance.rs`:
 ```rust
-use dockerer_core::Role;
-use dockerer_server::maintenance::prune_once;
-use dockerer_store::{NewAudit, NewSession, Store};
+use fleetops_core::Role;
+use fleetops_server::maintenance::prune_once;
+use fleetops_store::{NewAudit, NewSession, Store};
 
 #[tokio::test]
 async fn prunes_expired_sessions_and_old_audit() {
@@ -3746,44 +3746,44 @@ async fn prunes_expired_sessions_and_old_audit() {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-server`
-Expected: FAIL to compile (`dockerer_server::static_files` not found).
+Run: `cargo test -p fleetops-server`
+Expected: FAIL to compile (`fleetops_server::static_files` not found).
 
 - [ ] **Step 3: Implement**
 
-`crates/dockerer-server/src/config.rs`:
+`crates/fleetops-server/src/config.rs`:
 ```rust
 use clap::Parser;
 use std::{net::SocketAddr, path::PathBuf};
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "dockerer", version, about = "Lightweight container management")]
+#[command(name = "fleetops", version, about = "Lightweight container management")]
 pub struct Config {
     /// Directory for the SQLite database and TLS material.
-    #[arg(long, env = "DOCKERER_DATA", default_value = "/data")]
+    #[arg(long, env = "FLEETOPS_DATA", default_value = "/data")]
     pub data: PathBuf,
     /// Plain HTTP listen address.
-    #[arg(long, env = "DOCKERER_BIND", default_value = "0.0.0.0:9000")]
+    #[arg(long, env = "FLEETOPS_BIND", default_value = "0.0.0.0:9000")]
     pub bind: SocketAddr,
     /// HTTPS listen address; HTTPS is disabled when unset.
-    #[arg(long, env = "DOCKERER_TLS_BIND")]
+    #[arg(long, env = "FLEETOPS_TLS_BIND")]
     pub tls_bind: Option<SocketAddr>,
     /// PEM certificate; a self-signed one is generated when unset.
-    #[arg(long, env = "DOCKERER_TLS_CERT", requires = "tls_key")]
+    #[arg(long, env = "FLEETOPS_TLS_CERT", requires = "tls_key")]
     pub tls_cert: Option<PathBuf>,
     /// PEM private key matching --tls-cert.
-    #[arg(long, env = "DOCKERER_TLS_KEY", requires = "tls_cert")]
+    #[arg(long, env = "FLEETOPS_TLS_KEY", requires = "tls_cert")]
     pub tls_key: Option<PathBuf>,
     /// Docker endpoint for the local environment (used from plan P2).
     #[arg(long, env = "DOCKER_HOST", default_value = "unix:///var/run/docker.sock")]
     pub docker_host: String,
-    /// tracing filter, e.g. `info` or `dockerer_api=debug,info`.
-    #[arg(long, env = "DOCKERER_LOG", default_value = "info")]
+    /// tracing filter, e.g. `info` or `fleetops_api=debug,info`.
+    #[arg(long, env = "FLEETOPS_LOG", default_value = "info")]
     pub log_level: String,
 }
 ```
 
-`crates/dockerer-server/src/static_files.rs`:
+`crates/fleetops-server/src/static_files.rs`:
 ```rust
 use axum::{
     http::{header, HeaderValue, StatusCode, Uri},
@@ -3835,11 +3835,11 @@ fn asset(path: &str) -> Option<Response> {
 }
 ```
 
-`crates/dockerer-server/src/maintenance.rs`:
+`crates/fleetops-server/src/maintenance.rs`:
 ```rust
-use dockerer_api::auth::SESSION_IDLE_SECS;
-use dockerer_core::{now_unix, Result};
-use dockerer_store::Store;
+use fleetops_api::auth::SESSION_IDLE_SECS;
+use fleetops_core::{now_unix, Result};
+use fleetops_store::Store;
 use std::time::Duration;
 
 /// Deletes expired sessions and audit rows past retention.
@@ -3863,7 +3863,7 @@ pub async fn run(store: Store) {
 }
 ```
 
-`crates/dockerer-server/src/lib.rs`:
+`crates/fleetops-server/src/lib.rs`:
 ```rust
 pub mod config;
 pub mod maintenance;
@@ -3871,14 +3871,14 @@ pub mod static_files;
 
 use axum::{Extension, Router};
 use config::Config;
-use dockerer_api::{ApiConfig, AppState, IsTls};
-use dockerer_store::Store;
+use fleetops_api::{ApiConfig, AppState, IsTls};
+use fleetops_store::Store;
 use std::{net::SocketAddr, time::Duration};
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
     std::fs::create_dir_all(&config.data)?;
-    let store = Store::open(&config.data.join("dockerer.db")).await?;
-    let app = dockerer_api::app(AppState::new(store.clone(), ApiConfig::default()), static_files::router());
+    let store = Store::open(&config.data.join("fleetops.db")).await?;
+    let app = fleetops_api::app(AppState::new(store.clone(), ApiConfig::default()), static_files::router());
     tokio::spawn(maintenance::run(store));
     serve(&config, app).await
 }
@@ -3886,7 +3886,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 async fn serve(config: &Config, app: Router) -> anyhow::Result<()> {
     let handle = axum_server::Handle::new();
     tokio::spawn(shutdown_on_signal(handle.clone()));
-    tracing::info!(addr = %config.bind, "dockerer listening (http)");
+    tracing::info!(addr = %config.bind, "fleetops listening (http)");
     axum_server::bind(config.bind)
         .handle(handle)
         .serve(
@@ -3919,10 +3919,10 @@ async fn shutdown_on_signal(handle: axum_server::Handle) {
 }
 ```
 
-`crates/dockerer-server/src/main.rs`:
+`crates/fleetops-server/src/main.rs`:
 ```rust
 use clap::Parser;
-use dockerer_server::config::Config;
+use fleetops_server::config::Config;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -3930,7 +3930,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::parse();
     let filter = EnvFilter::try_new(&config.log_level).unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
-    dockerer_server::run(config).await
+    fleetops_server::run(config).await
 }
 ```
 
@@ -3943,7 +3943,7 @@ Expected: all PASS. `web/dist/index.html` placeholder now exists (git-ignored).
 
 Run:
 ```bash
-cargo run -p dockerer-server -- --data ./.dev-data --bind 127.0.0.1:9000 &
+cargo run -p fleetops-server -- --data ./.dev-data --bind 127.0.0.1:9000 &
 sleep 3
 curl -s localhost:9000/api/v1/auth/status
 curl -s -c /tmp/dk.cookies -H 'content-type: application/json' \
@@ -3964,8 +3964,8 @@ Then `rm -rf .dev-data`.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/dockerer-server Cargo.lock
-git commit -m "feat(server): dockerer binary with config, embedded SPA fallback and maintenance"
+git add crates/fleetops-server Cargo.lock
+git commit -m "feat(server): fleetops binary with config, embedded SPA fallback and maintenance"
 ```
 
 ---
@@ -3973,9 +3973,9 @@ git commit -m "feat(server): dockerer binary with config, embedded SPA fallback 
 ### Task 11: TLS listener with self-signed fallback
 
 **Files:**
-- Create: `crates/dockerer-server/src/tls.rs`
-- Modify: `crates/dockerer-server/src/lib.rs` (add `pub mod tls;`, dual listener in `serve`)
-- Test: `crates/dockerer-server/tests/tls.rs`
+- Create: `crates/fleetops-server/src/tls.rs`
+- Modify: `crates/fleetops-server/src/lib.rs` (add `pub mod tls;`, dual listener in `serve`)
+- Test: `crates/fleetops-server/tests/tls.rs`
 
 **Interfaces:**
 - Consumes: `Config`.
@@ -3986,10 +3986,10 @@ git commit -m "feat(server): dockerer binary with config, embedded SPA fallback 
 
 - [ ] **Step 1: Write failing tests**
 
-`crates/dockerer-server/tests/tls.rs`:
+`crates/fleetops-server/tests/tls.rs`:
 ```rust
 use clap::Parser;
-use dockerer_server::{config::Config, tls};
+use fleetops_server::{config::Config, tls};
 
 #[test]
 fn generates_cert_and_private_key() {
@@ -4011,7 +4011,7 @@ fn generates_cert_and_private_key() {
 async fn load_or_generate_reuses_existing_self_signed_cert() {
     tls::install_crypto_provider();
     let dir = tempfile::tempdir().unwrap();
-    let config = Config::parse_from(["dockerer", "--data", dir.path().to_str().unwrap()]);
+    let config = Config::parse_from(["fleetops", "--data", dir.path().to_str().unwrap()]);
     tls::load_or_generate(&config).await.unwrap();
     let first = std::fs::read_to_string(dir.path().join("tls/cert.pem")).unwrap();
     tls::load_or_generate(&config).await.unwrap();
@@ -4024,7 +4024,7 @@ async fn explicit_cert_paths_must_exist() {
     tls::install_crypto_provider();
     let dir = tempfile::tempdir().unwrap();
     let config = Config::parse_from([
-        "dockerer",
+        "fleetops",
         "--data",
         dir.path().to_str().unwrap(),
         "--tls-cert",
@@ -4037,18 +4037,18 @@ async fn explicit_cert_paths_must_exist() {
 
 #[test]
 fn cert_without_key_is_rejected_by_cli() {
-    assert!(Config::try_parse_from(["dockerer", "--tls-cert", "c.pem"]).is_err());
+    assert!(Config::try_parse_from(["fleetops", "--tls-cert", "c.pem"]).is_err());
 }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cargo test -p dockerer-server --test tls`
+Run: `cargo test -p fleetops-server --test tls`
 Expected: FAIL to compile (`tls` module missing).
 
 - [ ] **Step 3: Implement**
 
-`crates/dockerer-server/src/tls.rs`:
+`crates/fleetops-server/src/tls.rs`:
 ```rust
 use crate::config::Config;
 use anyhow::Context;
@@ -4084,7 +4084,7 @@ pub fn generate_self_signed(cert: &Path, key: &Path) -> anyhow::Result<()> {
     if let Some(dir) = cert.parent() {
         fs::create_dir_all(dir)?;
     }
-    let generated = rcgen::generate_simple_self_signed(vec!["localhost".to_string(), "dockerer".to_string()])?;
+    let generated = rcgen::generate_simple_self_signed(vec!["localhost".to_string(), "fleetops".to_string()])?;
     fs::write(cert, generated.cert.pem())?;
     write_private(key, generated.key_pair.serialize_pem().as_bytes())?;
     Ok(())
@@ -4103,7 +4103,7 @@ fn write_private(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
 }
 ```
 
-In `crates/dockerer-server/src/lib.rs`, add `pub mod tls;` and replace `serve` with:
+In `crates/fleetops-server/src/lib.rs`, add `pub mod tls;` and replace `serve` with:
 ```rust
 async fn serve(config: &Config, app: Router) -> anyhow::Result<()> {
     let handle = axum_server::Handle::new();
@@ -4114,7 +4114,7 @@ async fn serve(config: &Config, app: Router) -> anyhow::Result<()> {
             .layer(Extension(IsTls(false)))
             .into_make_service_with_connect_info::<SocketAddr>(),
     );
-    tracing::info!(addr = %config.bind, "dockerer listening (http)");
+    tracing::info!(addr = %config.bind, "fleetops listening (http)");
 
     match config.tls_bind {
         None => http.await?,
@@ -4125,7 +4125,7 @@ async fn serve(config: &Config, app: Router) -> anyhow::Result<()> {
                 app.layer(Extension(IsTls(true)))
                     .into_make_service_with_connect_info::<SocketAddr>(),
             );
-            tracing::info!(%addr, "dockerer listening (https)");
+            tracing::info!(%addr, "fleetops listening (https)");
             tokio::try_join!(http, https)?;
         }
     }
@@ -4142,7 +4142,7 @@ Expected: all PASS.
 
 Run:
 ```bash
-cargo run -p dockerer-server -- --data ./.dev-data --bind 127.0.0.1:9000 --tls-bind 127.0.0.1:9443 &
+cargo run -p fleetops-server -- --data ./.dev-data --bind 127.0.0.1:9000 --tls-bind 127.0.0.1:9443 &
 sleep 3
 curl -sk https://127.0.0.1:9443/api/v1/health -D - | grep -i strict-transport
 curl -s http://127.0.0.1:9000/api/v1/health -D - | grep -ci strict-transport
@@ -4158,7 +4158,7 @@ Expected:
 - [ ] **Step 6: Commit**
 
 ```bash
-git add crates/dockerer-server Cargo.lock
+git add crates/fleetops-server Cargo.lock
 git commit -m "feat(server): optional HTTPS listener with self-signed certificate fallback"
 ```
 
