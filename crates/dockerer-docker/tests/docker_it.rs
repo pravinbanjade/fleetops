@@ -368,3 +368,70 @@ async fn archive_downloads_wait_for_a_free_permit() {
     assert!(!d.list_dir(&id, "/etc").await.unwrap().entries.is_empty());
     d.remove_container(&id, true, false).await.unwrap();
 }
+
+/// A unix-socket proxy to the real daemon that can be killed, taking every
+/// open connection with it, to simulate the daemon disappearing.
+fn socket_proxy(path: std::path::PathBuf) -> tokio::task::JoinHandle<()> {
+    let upstream = host()
+        .strip_prefix("unix://")
+        .expect("docker-it proxy test needs a unix DOCKER_HOST")
+        .to_string();
+    let _ = std::fs::remove_file(&path);
+    let listener = tokio::net::UnixListener::bind(&path).unwrap();
+    tokio::spawn(async move {
+        let mut conns = tokio::task::JoinSet::new();
+        loop {
+            let (mut down, _) = listener.accept().await.unwrap();
+            let upstream = upstream.clone();
+            conns.spawn(async move {
+                if let Ok(mut up) = tokio::net::UnixStream::connect(&upstream).await {
+                    let _ = tokio::io::copy_bidirectional(&mut down, &mut up).await;
+                }
+            });
+        }
+    })
+}
+
+#[tokio::test]
+async fn daemon_loss_mid_session_is_unavailable_then_recovers() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("docker.sock");
+    let proxy = socket_proxy(sock.clone());
+    let env = DockerEnvFactory
+        .build(
+            1,
+            "flaky",
+            EnvKind::DockerLocal,
+            &format!("unix://{}", sock.display()),
+        )
+        .unwrap();
+    assert!(matches!(env.status().await, EnvStatus::Up { .. }));
+    let ops = env.docker().expect("reachable");
+    ops.list_containers().await.unwrap();
+
+    // The daemon goes away while a client handle is still held.
+    proxy.abort();
+    let _ = proxy.await;
+    std::fs::remove_file(&sock).unwrap();
+    assert!(matches!(env.status().await, EnvStatus::Down { .. }));
+    match ops.list_containers().await {
+        Err(Error::EnvUnavailable(_)) => {}
+        other => panic!("expected EnvUnavailable, got {other:?}"),
+    }
+    if let Some(fresh) = env.docker() {
+        assert!(matches!(
+            fresh.list_containers().await,
+            Err(Error::EnvUnavailable(_))
+        ));
+    }
+
+    // It comes back; the same environment recovers without a restart.
+    let proxy = socket_proxy(sock.clone());
+    assert!(matches!(env.status().await, EnvStatus::Up { .. }));
+    env.docker()
+        .expect("reachable again")
+        .list_containers()
+        .await
+        .unwrap();
+    proxy.abort();
+}
