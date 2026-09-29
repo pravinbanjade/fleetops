@@ -6,6 +6,8 @@ mod sessions;
 mod settings;
 mod users;
 
+pub use sessions::{NewSession, SessionRecord};
+
 use dockerer_core::{Error, Result};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
