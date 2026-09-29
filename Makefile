@@ -1,7 +1,8 @@
 .PHONY: dev-server test test-docker lint fmt build
 
 dev-server:
-	cargo run -p dockerer-server -- --data ./.dev-data --bind 127.0.0.1:9000
+	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null)} \
+		cargo run -p dockerer-server -- --data ./.dev-data --bind 127.0.0.1:9000
 
 test:
 	cargo test --workspace
