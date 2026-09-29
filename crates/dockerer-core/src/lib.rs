@@ -1,5 +1,7 @@
 //! Domain types shared by every dockerer crate. No I/O lives here.
 
+pub mod docker;
+pub mod env;
 pub mod error;
 pub mod user;
 
