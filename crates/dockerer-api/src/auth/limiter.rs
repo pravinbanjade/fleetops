@@ -67,4 +67,76 @@ impl LoginLimiter {
     pub fn reset(&self, key: &str) {
         self.entries.lock().unwrap().remove(key);
     }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.lock().unwrap().len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const W: Duration = Duration::from_secs(300);
+
+    #[test]
+    fn blocks_after_max_failures_until_window_passes() {
+        let l = LoginLimiter::new(5, W);
+        let t0 = Instant::now();
+        for _ in 0..5 {
+            assert!(l.check("k", t0).is_ok());
+            l.record_failure("k", t0);
+        }
+        match l.check("k", t0 + Duration::from_secs(10)) {
+            Err(Error::RateLimited { retry_after_secs }) => assert_eq!(retry_after_secs, 290),
+            other => panic!("expected rate limit, got {other:?}"),
+        }
+        assert!(l.check("other", t0).is_ok());
+        assert!(l.check("k", t0 + W).is_ok());
+    }
+
+    #[test]
+    fn reset_clears_failures() {
+        let l = LoginLimiter::new(1, W);
+        let t0 = Instant::now();
+        l.record_failure("k", t0);
+        assert!(l.check("k", t0).is_err());
+        l.reset("k");
+        assert!(l.check("k", t0).is_ok());
+    }
+
+    #[test]
+    fn failures_outside_window_restart_count() {
+        let l = LoginLimiter::new(5, W);
+        let t0 = Instant::now();
+        for _ in 0..4 {
+            l.record_failure("k", t0);
+        }
+        l.record_failure("k", t0 + W + Duration::from_secs(1));
+        assert!(l.check("k", t0 + W + Duration::from_secs(2)).is_ok());
+    }
+
+    #[test]
+    fn map_is_bounded() {
+        let l = LoginLimiter::new(5, W);
+        let t0 = Instant::now();
+        for i in 0..MAX_TRACKED_KEYS {
+            l.record_failure(&format!("k{i}"), t0);
+        }
+        l.record_failure("new", t0 + W + Duration::from_secs(1));
+        assert_eq!(l.len(), 1);
+    }
+
+    #[test]
+    fn key_is_case_insensitive_on_username() {
+        assert_eq!(
+            limiter_key("Admin", "1.2.3.4"),
+            limiter_key("admin", "1.2.3.4")
+        );
+        assert_ne!(
+            limiter_key("admin", "1.2.3.4"),
+            limiter_key("admin", "5.6.7.8")
+        );
+    }
 }
