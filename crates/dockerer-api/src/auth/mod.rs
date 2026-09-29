@@ -1,4 +1,5 @@
 pub mod cookie;
+pub mod extract;
 pub mod limiter;
 pub mod password;
 pub mod setup;

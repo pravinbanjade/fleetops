@@ -1,5 +1,10 @@
+pub mod auth;
+
 use crate::{error::ApiError, AppState};
-use axum::{routing::get, Json, Router};
+use axum::{
+    routing::{get, post},
+    Json, Router,
+};
 use dockerer_core::{now_unix, Error};
 use dockerer_store::NewAudit;
 use serde_json::{json, Value};
@@ -7,6 +12,11 @@ use serde_json::{json, Value};
 pub fn api() -> Router<AppState> {
     Router::new()
         .route("/health", get(health))
+        .route("/auth/status", get(auth::status))
+        .route("/auth/setup", post(auth::setup))
+        .route("/auth/login", post(auth::login))
+        .route("/auth/logout", post(auth::logout))
+        .route("/auth/me", get(auth::me))
         .fallback(not_found)
 }
 
@@ -19,7 +29,6 @@ async fn not_found() -> ApiError {
 }
 
 /// Records an audit row. Failures are logged, never surfaced to the caller.
-#[allow(dead_code)] // first used in Task 7
 pub(crate) async fn audit(
     s: &AppState,
     user_id: Option<i64>,
