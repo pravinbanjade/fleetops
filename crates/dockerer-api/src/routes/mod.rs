@@ -1,5 +1,6 @@
 pub mod audit_log;
 pub mod auth;
+pub mod docker;
 pub mod envs;
 pub mod users;
 
@@ -31,10 +32,32 @@ pub fn api() -> Router<AppState> {
 }
 
 fn env_routes() -> Router<AppState> {
+    use docker::{containers as c, system};
     Router::new()
         .route("/envs", get(envs::list).post(envs::create))
         .route("/envs/{env}", patch(envs::update).delete(envs::remove))
         .route("/envs/{env}/status", get(envs::status))
+        .route("/envs/{env}/info", get(system::info))
+        .route("/envs/{env}/df", get(system::disk_usage))
+        .route("/envs/{env}/containers", get(c::list).post(c::create))
+        .route("/envs/{env}/containers/prune", post(c::prune))
+        .route(
+            "/envs/{env}/containers/{id}",
+            get(c::inspect).delete(c::remove),
+        )
+        .route("/envs/{env}/containers/{id}/spec", get(c::spec))
+        .route("/envs/{env}/containers/{id}/rename", post(c::rename))
+        .route(
+            "/envs/{env}/containers/{id}/recreate",
+            post(c::recreate_container),
+        )
+        .route("/envs/{env}/containers/{id}/duplicate", post(c::duplicate))
+        .route("/envs/{env}/containers/{id}/files", get(c::list_files))
+        .route(
+            "/envs/{env}/containers/{id}/files/download",
+            get(c::download_file),
+        )
+        .route("/envs/{env}/containers/{id}/{action}", post(c::action))
 }
 
 async fn health() -> Json<Value> {

@@ -155,7 +155,6 @@ async fn users_can_read_but_not_manage_environments() {
 }
 
 #[tokio::test]
-#[ignore = "needs Task 9"]
 async fn status_reports_up_and_down() {
     let app = app().await;
     let admin = app.with_local().await;
