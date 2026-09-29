@@ -1,7 +1,10 @@
 //! Docker resource endpoints under `/envs/{env}/...`.
 
 pub mod containers;
+pub mod images;
+pub mod networks;
 pub mod system;
+pub mod volumes;
 
 use crate::{
     auth::extract::CurrentUser,
