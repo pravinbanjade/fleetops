@@ -1,6 +1,7 @@
 pub mod config;
 pub mod maintenance;
 pub mod static_files;
+pub mod tls;
 
 use axum::{Extension, Router};
 use config::Config;
@@ -22,14 +23,27 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 async fn serve(config: &Config, app: Router) -> anyhow::Result<()> {
     let handle = axum_server::Handle::new();
     tokio::spawn(shutdown_on_signal(handle.clone()));
+
+    let http = axum_server::bind(config.bind).handle(handle.clone()).serve(
+        app.clone()
+            .layer(Extension(IsTls(false)))
+            .into_make_service_with_connect_info::<SocketAddr>(),
+    );
     tracing::info!(addr = %config.bind, "dockerer listening (http)");
-    axum_server::bind(config.bind)
-        .handle(handle)
-        .serve(
-            app.layer(Extension(IsTls(false)))
-                .into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .await?;
+
+    match config.tls_bind {
+        None => http.await?,
+        Some(addr) => {
+            tls::install_crypto_provider();
+            let rustls = tls::load_or_generate(config).await?;
+            let https = axum_server::bind_rustls(addr, rustls).handle(handle).serve(
+                app.layer(Extension(IsTls(true)))
+                    .into_make_service_with_connect_info::<SocketAddr>(),
+            );
+            tracing::info!(%addr, "dockerer listening (https)");
+            tokio::try_join!(http, https)?;
+        }
+    }
     Ok(())
 }
 
