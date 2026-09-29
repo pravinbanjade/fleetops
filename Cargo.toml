@@ -11,6 +11,7 @@ rust-version = "1.86"
 dockerer-core = { path = "crates/dockerer-core" }
 dockerer-store = { path = "crates/dockerer-store" }
 dockerer-api = { path = "crates/dockerer-api" }
+dockerer-docker = { path = "crates/dockerer-docker" }
 
 anyhow = "1"
 argon2 = { version = "0.5", features = ["std"] }
