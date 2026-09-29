@@ -2,7 +2,7 @@ pub mod auth;
 
 use crate::{error::ApiError, AppState};
 use axum::{
-    routing::{get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use dockerer_core::{now_unix, Error};
@@ -17,6 +17,9 @@ pub fn api() -> Router<AppState> {
         .route("/auth/login", post(auth::login))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/me", get(auth::me))
+        .route("/auth/sessions", get(auth::list_sessions))
+        .route("/auth/sessions/{id}", delete(auth::revoke_session))
+        .route("/auth/password", put(auth::change_password))
         .fallback(not_found)
 }
 
