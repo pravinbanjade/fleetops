@@ -2,12 +2,21 @@
 
 use dockerer_core::docker::{DirEntry, DirListing, EntryKind};
 use dockerer_core::{Error, Result};
-use std::io::Read;
 
 /// A directory listing downloads the whole subtree as a tar stream, so the
 /// download is capped; beyond this the listing is marked truncated.
 pub const LIST_MAX_BYTES: usize = 64 * 1024 * 1024;
 pub const LIST_MAX_ENTRIES: usize = 5_000;
+
+/// How many archive downloads (listings or file reads) may be buffered at
+/// once across the whole process. Each holds up to ~100 MiB, so this bounds
+/// peak memory rather than leaving it to the number of open browser tabs.
+pub const ARCHIVE_CONCURRENCY: usize = 4;
+
+pub fn archive_permits() -> &'static tokio::sync::Semaphore {
+    static PERMITS: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    PERMITS.get_or_init(|| tokio::sync::Semaphore::new(ARCHIVE_CONCURRENCY))
+}
 
 pub fn check_path(path: &str) -> Result<()> {
     if !path.starts_with('/') || path.contains('\0') {
@@ -105,29 +114,37 @@ pub fn parse_listing(tar_bytes: &[u8], path: &str, stream_truncated: bool) -> Re
     })
 }
 
-/// Extracts the single file Docker returned for `path`.
-pub fn extract_file(tar_bytes: &[u8], path: &str) -> Result<Vec<u8>> {
-    let mut archive = tar::Archive::new(tar_bytes);
-    let mut entries = archive
-        .entries()
-        .map_err(|e| Error::Internal(format!("reading archive: {e}")))?;
-    let mut entry = entries
-        .next()
-        .ok_or_else(|| Error::NotFound(format!("'{path}' not found")))?
-        .map_err(|e| Error::Internal(format!("reading archive: {e}")))?;
-    match entry.header().entry_type() {
-        tar::EntryType::Regular | tar::EntryType::Continuous => {}
-        tar::EntryType::Directory => {
-            return Err(Error::Invalid(format!("'{path}' is a directory")))
+/// Extracts the single file Docker returned for `path`. The contents are
+/// moved to the front of `tar_bytes` and returned in that same buffer, so a
+/// large download is never held twice.
+pub fn extract_file(mut tar_bytes: Vec<u8>, path: &str) -> Result<Vec<u8>> {
+    let (start, len) = {
+        let mut archive = tar::Archive::new(tar_bytes.as_slice());
+        let mut entries = archive
+            .entries()
+            .map_err(|e| Error::Internal(format!("reading archive: {e}")))?;
+        let entry = entries
+            .next()
+            .ok_or_else(|| Error::NotFound(format!("'{path}' not found")))?
+            .map_err(|e| Error::Internal(format!("reading archive: {e}")))?;
+        match entry.header().entry_type() {
+            tar::EntryType::Regular | tar::EntryType::Continuous => {}
+            tar::EntryType::Directory => {
+                return Err(Error::Invalid(format!("'{path}' is a directory")))
+            }
+            _ => return Err(Error::Invalid(format!("'{path}' is not a regular file"))),
         }
-        _ => return Err(Error::Invalid(format!("'{path}' is not a regular file"))),
-    }
-    let mut out = Vec::new();
-    entry
-        .read_to_end(&mut out)
-        .map_err(|e| Error::Internal(format!("reading archive: {e}")))?;
-    Ok(out)
+        (entry.raw_file_position() as usize, entry.size() as usize)
+    };
+    let end = start
+        .checked_add(len)
+        .filter(|end| *end <= tar_bytes.len())
+        .ok_or_else(|| Error::Internal("reading archive: truncated file entry".into()))?;
+    tar_bytes.truncate(end);
+    tar_bytes.drain(..start);
+    Ok(tar_bytes)
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,17 +258,35 @@ mod tests {
     }
 
     #[test]
+    fn extract_file_reuses_the_download_buffer() {
+        // A 100 MiB download must not be copied a second time.
+        let t = tar_of(&[("big.log", F, &[7u8; 4096], None)]);
+        let ptr = t.as_ptr();
+        let out = extract_file(t, "/var/log/big.log").unwrap();
+        assert_eq!(out.len(), 4096);
+        assert!(out.iter().all(|b| *b == 7));
+        assert_eq!(out.as_ptr(), ptr, "contents are returned in place");
+    }
+
+    #[test]
+    fn extract_file_rejects_a_torn_archive() {
+        let mut t = tar_of(&[("f", F, &[1u8; 2048], None)]);
+        t.truncate(512 + 100);
+        assert!(extract_file(t, "/f").is_err());
+    }
+
+    #[test]
     fn extract_file_reads_contents_and_rejects_dirs() {
         assert_eq!(
-            extract_file(&tar_of(&[("hostname", F, b"box\n", None)]), "/etc/hostname").unwrap(),
+            extract_file(tar_of(&[("hostname", F, b"box\n", None)]), "/etc/hostname").unwrap(),
             b"box\n"
         );
         assert!(matches!(
-            extract_file(&tar_of(&[("etc/", D, b"", None)]), "/etc"),
+            extract_file(tar_of(&[("etc/", D, b"", None)]), "/etc"),
             Err(Error::Invalid(_))
         ));
         assert!(matches!(
-            extract_file(&tar_of(&[("l", L, b"", Some("/x"))]), "/l"),
+            extract_file(tar_of(&[("l", L, b"", Some("/x"))]), "/l"),
             Err(Error::Invalid(_))
         ));
     }

@@ -345,3 +345,26 @@ async fn recreate_by_name_keeps_mounted_volume() {
     d.remove_container(&out.new_id, true, false).await.unwrap();
     d.remove_volume(&vol, true).await.unwrap();
 }
+
+#[tokio::test]
+async fn archive_downloads_wait_for_a_free_permit() {
+    let d = docker().await;
+    let name = unique("permits");
+    let id = d.create_container(&sleeper(&name)).await.unwrap();
+    let all = dockerer_docker::files::archive_permits()
+        .acquire_many(dockerer_docker::files::ARCHIVE_CONCURRENCY as u32)
+        .await
+        .unwrap();
+    let blocked = tokio::time::timeout(
+        std::time::Duration::from_millis(300),
+        d.list_dir(&id, "/etc"),
+    )
+    .await;
+    assert!(
+        blocked.is_err(),
+        "listing must wait while every permit is held"
+    );
+    drop(all);
+    assert!(!d.list_dir(&id, "/etc").await.unwrap().entries.is_empty());
+    d.remove_container(&id, true, false).await.unwrap();
+}

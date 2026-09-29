@@ -20,6 +20,10 @@ impl LocalDocker {
         let opts = DownloadFromContainerOptionsBuilder::new()
             .path(path)
             .build();
+        let _permit = files::archive_permits()
+            .acquire()
+            .await
+            .map_err(|e| Error::Internal(e.to_string()))?;
         let mut stream = self.client.download_from_container(id, Some(opts));
         let mut buf = Vec::new();
         while let Some(chunk) = stream.next().await {
@@ -138,7 +142,7 @@ impl ContainerOps for LocalDocker {
                 "file is larger than {max_bytes} bytes"
             )));
         }
-        let data = files::extract_file(&bytes, path)?;
+        let data = files::extract_file(bytes, path)?;
         if data.len() as u64 > max_bytes {
             return Err(Error::Invalid(format!(
                 "file is larger than {max_bytes} bytes"
