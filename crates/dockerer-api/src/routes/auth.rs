@@ -3,18 +3,22 @@ use crate::{
         cookie::{clear_cookie, session_cookie},
         extract::{ClientMeta, CurrentUser},
         limiter::limiter_key,
-        password, token, SESSION_ABSOLUTE_SECS, SESSION_IDLE_SECS,
+        password, plausible_login, token, SESSION_ABSOLUTE_SECS, SESSION_IDLE_SECS,
     },
+    extract::{ApiJson, ApiPath},
     routes::audit,
     ApiResult, AppState,
 };
 use axum::{
-    extract::{Path, State},
+    extract::State,
     http::{header::SET_COOKIE, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
-use dockerer_core::{now_unix, validate_password, validate_username, Error, User};
+use dockerer_core::{
+    now_unix, user::PASSWORD_MAX, user::USERNAME_MAX, validate_password, validate_username, Error,
+    User,
+};
 use dockerer_store::NewSession;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -43,7 +47,7 @@ pub async fn status(State(s): State<AppState>) -> ApiResult<Json<Value>> {
 pub async fn setup(
     State(s): State<AppState>,
     meta: ClientMeta,
-    Json(body): Json<Credentials>,
+    ApiJson(body): ApiJson<Credentials>,
 ) -> ApiResult<Response> {
     if s.store.count_users().await? > 0 {
         return Err(Error::Conflict("setup already completed".into()).into());
@@ -76,11 +80,15 @@ pub async fn setup(
 pub async fn login(
     State(s): State<AppState>,
     meta: ClientMeta,
-    Json(body): Json<Credentials>,
+    ApiJson(body): ApiJson<Credentials>,
 ) -> ApiResult<Response> {
+    if !plausible_login(&body.username, &body.password) {
+        let shown: String = body.username.chars().take(USERNAME_MAX).collect();
+        audit(&s, None, "auth.login", "user", &shown, "failure").await;
+        return Err(Error::Unauthorized("invalid username or password".into()).into());
+    }
     let key = limiter_key(&body.username, &meta.ip);
-    let now = Instant::now();
-    s.limiter.check(&key, now)?;
+    s.limiter.try_acquire(&key, Instant::now())?;
 
     let verified = match s.store.find_credentials(&body.username).await? {
         Some((user, hash)) => password::verify_password(body.password, hash)
@@ -92,7 +100,6 @@ pub async fn login(
         }
     };
     let Some(user) = verified else {
-        s.limiter.record_failure(&key, now);
         audit(&s, None, "auth.login", "user", &body.username, "failure").await;
         return Err(Error::Unauthorized("invalid username or password".into()).into());
     };
@@ -193,7 +200,7 @@ pub async fn list_sessions(
 pub async fn revoke_session(
     State(s): State<AppState>,
     cu: CurrentUser,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> ApiResult<StatusCode> {
     if !s.store.delete_user_session(cu.user.id, id).await? {
         return Err(Error::NotFound(format!("session {id}")).into());
@@ -219,14 +226,16 @@ pub struct ChangePassword {
 pub async fn change_password(
     State(s): State<AppState>,
     cu: CurrentUser,
-    Json(body): Json<ChangePassword>,
+    ApiJson(body): ApiJson<ChangePassword>,
 ) -> ApiResult<StatusCode> {
     let (_, hash) = s
         .store
         .find_credentials(&cu.user.username)
         .await?
         .ok_or_else(|| Error::Unauthorized("authentication required".into()))?;
-    if !password::verify_password(body.current_password, hash).await {
+    if body.current_password.chars().count() > PASSWORD_MAX
+        || !password::verify_password(body.current_password, hash).await
+    {
         return Err(Error::Invalid("current password is incorrect".into()).into());
     }
     validate_password(&body.new_password)?;

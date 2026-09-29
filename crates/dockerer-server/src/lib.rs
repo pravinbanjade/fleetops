@@ -13,7 +13,13 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     std::fs::create_dir_all(&config.data)?;
     let store = Store::open(&config.data.join("dockerer.db")).await?;
     let app = dockerer_api::app(
-        AppState::new(store.clone(), ApiConfig::default()),
+        AppState::new(
+            store.clone(),
+            ApiConfig {
+                hsts: config.hsts,
+                ..ApiConfig::default()
+            },
+        ),
         static_files::router(),
     );
     tokio::spawn(maintenance::run(store));

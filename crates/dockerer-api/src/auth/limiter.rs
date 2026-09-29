@@ -6,7 +6,8 @@ use std::{
 };
 
 /// Beyond this many tracked keys, stale entries are pruned on insert so an
-/// attacker spraying usernames cannot grow memory without bound.
+/// attacker spraying usernames cannot grow memory without bound; if the map
+/// is still full, the oldest entry is evicted (hard cap).
 pub const MAX_TRACKED_KEYS: usize = 10_000;
 
 struct Entry {
@@ -14,7 +15,7 @@ struct Entry {
     first: Instant,
 }
 
-/// Fixed-window failure counter keyed by `limiter_key(username, ip)`.
+/// Fixed-window attempt counter keyed by `limiter_key(username, ip)`.
 pub struct LoginLimiter {
     max_failures: u32,
     window: Duration,
@@ -34,34 +35,45 @@ impl LoginLimiter {
         }
     }
 
-    pub fn check(&self, key: &str, now: Instant) -> Result<()> {
-        let map = self.entries.lock().unwrap();
-        if let Some(e) = map.get(key) {
+    /// Counts an attempt *before* the password is verified, so a burst of
+    /// concurrent requests cannot all pass the check while argon2 runs.
+    /// A successful login calls `reset`.
+    pub fn try_acquire(&self, key: &str, now: Instant) -> Result<()> {
+        let mut map = self.entries.lock().unwrap();
+        if let Some(e) = map.get_mut(key) {
             let elapsed = now.duration_since(e.first);
-            if elapsed < self.window && e.failures >= self.max_failures {
+            if elapsed >= self.window {
+                *e = Entry {
+                    failures: 0,
+                    first: now,
+                };
+            } else if e.failures >= self.max_failures {
                 let retry_after_secs = (self.window - elapsed).as_secs().max(1);
                 return Err(Error::RateLimited { retry_after_secs });
             }
+            e.failures += 1;
+            return Ok(());
         }
-        Ok(())
-    }
-
-    pub fn record_failure(&self, key: &str, now: Instant) {
-        let mut map = self.entries.lock().unwrap();
         if map.len() >= MAX_TRACKED_KEYS {
             map.retain(|_, e| now.duration_since(e.first) < self.window);
         }
-        let e = map.entry(key.to_string()).or_insert(Entry {
-            failures: 0,
-            first: now,
-        });
-        if now.duration_since(e.first) >= self.window {
-            *e = Entry {
-                failures: 0,
-                first: now,
-            };
+        if map.len() >= MAX_TRACKED_KEYS {
+            let oldest = map
+                .iter()
+                .min_by_key(|(_, e)| e.first)
+                .map(|(k, _)| k.clone());
+            if let Some(k) = oldest {
+                map.remove(&k);
+            }
         }
-        e.failures += 1;
+        map.insert(
+            key.to_string(),
+            Entry {
+                failures: 1,
+                first: now,
+            },
+        );
+        Ok(())
     }
 
     pub fn reset(&self, key: &str) {
@@ -81,40 +93,38 @@ mod tests {
     const W: Duration = Duration::from_secs(300);
 
     #[test]
-    fn blocks_after_max_failures_until_window_passes() {
+    fn blocks_after_max_attempts_until_window_passes() {
         let l = LoginLimiter::new(5, W);
         let t0 = Instant::now();
         for _ in 0..5 {
-            assert!(l.check("k", t0).is_ok());
-            l.record_failure("k", t0);
+            assert!(l.try_acquire("k", t0).is_ok());
         }
-        match l.check("k", t0 + Duration::from_secs(10)) {
+        match l.try_acquire("k", t0 + Duration::from_secs(10)) {
             Err(Error::RateLimited { retry_after_secs }) => assert_eq!(retry_after_secs, 290),
             other => panic!("expected rate limit, got {other:?}"),
         }
-        assert!(l.check("other", t0).is_ok());
-        assert!(l.check("k", t0 + W).is_ok());
+        assert!(l.try_acquire("other", t0).is_ok());
+        assert!(l.try_acquire("k", t0 + W).is_ok());
     }
 
     #[test]
-    fn reset_clears_failures() {
+    fn reset_clears_attempts() {
         let l = LoginLimiter::new(1, W);
         let t0 = Instant::now();
-        l.record_failure("k", t0);
-        assert!(l.check("k", t0).is_err());
+        assert!(l.try_acquire("k", t0).is_ok());
+        assert!(l.try_acquire("k", t0).is_err());
         l.reset("k");
-        assert!(l.check("k", t0).is_ok());
+        assert!(l.try_acquire("k", t0).is_ok());
     }
 
     #[test]
-    fn failures_outside_window_restart_count() {
+    fn attempts_outside_window_restart_count() {
         let l = LoginLimiter::new(5, W);
         let t0 = Instant::now();
-        for _ in 0..4 {
-            l.record_failure("k", t0);
+        for _ in 0..5 {
+            l.try_acquire("k", t0).unwrap();
         }
-        l.record_failure("k", t0 + W + Duration::from_secs(1));
-        assert!(l.check("k", t0 + W + Duration::from_secs(2)).is_ok());
+        assert!(l.try_acquire("k", t0 + W + Duration::from_secs(1)).is_ok());
     }
 
     #[test]
@@ -122,10 +132,22 @@ mod tests {
         let l = LoginLimiter::new(5, W);
         let t0 = Instant::now();
         for i in 0..MAX_TRACKED_KEYS {
-            l.record_failure(&format!("k{i}"), t0);
+            l.try_acquire(&format!("k{i}"), t0).unwrap();
         }
-        l.record_failure("new", t0 + W + Duration::from_secs(1));
+        l.try_acquire("new", t0 + W + Duration::from_secs(1))
+            .unwrap();
         assert_eq!(l.len(), 1);
+    }
+
+    #[test]
+    fn map_is_hard_capped_within_window() {
+        let l = LoginLimiter::new(5, W);
+        let t0 = Instant::now();
+        for i in 0..MAX_TRACKED_KEYS {
+            l.try_acquire(&format!("k{i}"), t0).unwrap();
+        }
+        l.try_acquire("new", t0 + Duration::from_secs(1)).unwrap();
+        assert_eq!(l.len(), MAX_TRACKED_KEYS);
     }
 
     #[test]

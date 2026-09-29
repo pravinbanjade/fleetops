@@ -53,3 +53,9 @@ async fn explicit_cert_paths_must_exist() {
 fn cert_without_key_is_rejected_by_cli() {
     assert!(Config::try_parse_from(["dockerer", "--tls-cert", "c.pem"]).is_err());
 }
+
+#[test]
+fn hsts_flag_defaults_off() {
+    assert!(!Config::parse_from(["dockerer"]).hsts);
+    assert!(Config::parse_from(["dockerer", "--hsts"]).hsts);
+}

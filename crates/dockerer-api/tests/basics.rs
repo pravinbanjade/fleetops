@@ -2,7 +2,7 @@ mod common;
 
 use axum::http::StatusCode;
 use common::*;
-use dockerer_api::IsTls;
+use dockerer_api::{ApiConfig, IsTls};
 
 #[tokio::test]
 async fn health_ok_with_request_id_and_security_headers() {
@@ -24,12 +24,33 @@ async fn health_ok_with_request_id_and_security_headers() {
 }
 
 #[tokio::test]
-async fn hsts_only_over_tls() {
-    let app = app().await;
-    let mut request = req("GET", "/api/v1/health", None, None);
-    request.extensions_mut().insert(IsTls(true));
-    let r = app.send(request).await;
-    assert!(r.headers.get("strict-transport-security").is_some());
+async fn hsts_is_opt_in_and_tls_only() {
+    let tls_req = || {
+        let mut request = req("GET", "/api/v1/health", None, None);
+        request.extensions_mut().insert(IsTls(true));
+        request
+    };
+    let default = app().await;
+    assert!(default
+        .send(tls_req())
+        .await
+        .headers
+        .get("strict-transport-security")
+        .is_none());
+
+    let hsts = app_with(ApiConfig {
+        hsts: true,
+        ..ApiConfig::default()
+    })
+    .await;
+    assert!(hsts
+        .send(tls_req())
+        .await
+        .headers
+        .get("strict-transport-security")
+        .is_some());
+    let plain = hsts.send(req("GET", "/api/v1/health", None, None)).await;
+    assert!(plain.headers.get("strict-transport-security").is_none());
 }
 
 #[tokio::test]

@@ -10,7 +10,10 @@ const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsa
 img-src 'self' data:; connect-src 'self'; font-src 'self' data:; frame-ancestors 'none'; \
 base-uri 'self'; form-action 'self'";
 
-pub async fn security_headers(req: Request, next: Next) -> Response {
+/// HSTS is only sent when `hsts` is enabled: it is host-scoped, not
+/// port-scoped, so sending it while the plain-HTTP listener is also in use
+/// would make browsers upgrade (and break) that listener.
+pub async fn security_headers(hsts: bool, req: Request, next: Next) -> Response {
     let tls = req.extensions().get::<IsTls>().is_some_and(|t| t.0);
     let is_api = req.uri().path().starts_with("/api/");
     let mut res = next.run(req).await;
@@ -31,7 +34,7 @@ pub async fn security_headers(req: Request, next: Next) -> Response {
     if is_api {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
-    if tls {
+    if hsts && tls {
         h.insert(
             header::STRICT_TRANSPORT_SECURITY,
             HeaderValue::from_static("max-age=31536000"),

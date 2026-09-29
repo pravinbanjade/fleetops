@@ -19,6 +19,10 @@ pub struct Config {
     /// PEM private key matching --tls-cert.
     #[arg(long, env = "DOCKERER_TLS_KEY", requires = "tls_cert")]
     pub tls_key: Option<PathBuf>,
+    /// Send HSTS on HTTPS responses. Only enable when clients never use the
+    /// plain-HTTP listener: browsers apply HSTS per host, not per port.
+    #[arg(long, env = "DOCKERER_HSTS")]
+    pub hsts: bool,
     /// Docker endpoint for the local environment (used from plan P2).
     #[arg(
         long,
