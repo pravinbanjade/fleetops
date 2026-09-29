@@ -94,6 +94,153 @@ fn positive(v: &Value) -> Option<i64> {
     v.as_i64().filter(|n| *n > 0)
 }
 
+/// `Config` fields the form does not model but a recreate must keep.
+const CARRIED_CONFIG: &[&str] = &[
+    "User",
+    "WorkingDir",
+    "Domainname",
+    "Tty",
+    "OpenStdin",
+    "StdinOnce",
+    "AttachStdin",
+    "StopSignal",
+    "StopTimeout",
+    "Healthcheck",
+    "Shell",
+];
+
+/// `HostConfig` fields the form does not model but a recreate must keep.
+/// `Mounts` is handled separately so anonymous volumes can be reattached.
+const CARRIED_HOST: &[&str] = &[
+    "ExtraHosts",
+    "Devices",
+    "DeviceRequests",
+    "LogConfig",
+    "Dns",
+    "DnsSearch",
+    "DnsOptions",
+    "CapDrop",
+    "SecurityOpt",
+    "Sysctls",
+    "Ulimits",
+    "Tmpfs",
+    "ShmSize",
+    "PidMode",
+    "IpcMode",
+    "UTSMode",
+    "UsernsMode",
+    "CgroupnsMode",
+    "Init",
+    "GroupAdd",
+    "VolumesFrom",
+    "Links",
+    "ReadonlyRootfs",
+    "OomKillDisable",
+    "MemoryReservation",
+    "MemorySwap",
+    "CpuShares",
+    "CpusetCpus",
+    "CpuQuota",
+    "CpuPeriod",
+    "PidsLimit",
+    "Runtime",
+    "AutoRemove",
+];
+
+/// Docker's zero values, which need not be carried.
+fn is_unset(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::Bool(b) => !b,
+        Value::Number(n) => n.as_f64() == Some(0.0),
+        Value::String(s) => s.is_empty(),
+        Value::Array(a) => a.is_empty(),
+        Value::Object(o) => o.is_empty(),
+    }
+}
+
+fn copy_set(from: &Value, keys: &[&str], to: &mut Map<String, Value>) {
+    for k in keys {
+        if !is_unset(&from[*k]) {
+            to.insert((*k).to_string(), from[*k].clone());
+        }
+    }
+}
+
+/// Everything in `inspect` that the create form does not model, as a
+/// `ContainerCreate` fragment for `ContainerSpec::advanced`. Without this a
+/// recreate would silently drop `--mount` volumes, anonymous volumes,
+/// network aliases and the like.
+fn unmodelled(v: &Value) -> Option<Value> {
+    let config = &v["Config"];
+    let host = &v["HostConfig"];
+    let mut adv = Map::new();
+    copy_set(config, CARRIED_CONFIG, &mut adv);
+    // Docker defaults the hostname to the short id; only carry a chosen one.
+    if let (Some(h), Some(id)) = (config["Hostname"].as_str(), v["Id"].as_str()) {
+        if !h.is_empty() && !id.starts_with(h) {
+            adv.insert("Hostname".into(), json!(h));
+        }
+    }
+
+    let mut hc = Map::new();
+    copy_set(host, CARRIED_HOST, &mut hc);
+    let mut mounts: Vec<Value> = host["Mounts"].as_array().cloned().unwrap_or_default();
+    let mut covered: HashSet<String> = strings(&host["Binds"])
+        .iter()
+        .filter_map(|b| b.split(':').nth(1).map(str::to_owned))
+        .collect();
+    covered.extend(
+        mounts
+            .iter()
+            .filter_map(|m| m["Target"].as_str().map(str::to_owned)),
+    );
+    // Anonymous volumes (image VOLUME or `-v /path`) appear only in the
+    // top-level Mounts; reattach them by name so their data survives.
+    for m in v["Mounts"].as_array().into_iter().flatten() {
+        let (Some("volume"), Some(name), Some(dest)) = (
+            m["Type"].as_str(),
+            m["Name"].as_str(),
+            m["Destination"].as_str(),
+        ) else {
+            continue;
+        };
+        if covered.insert(dest.to_string()) {
+            mounts.push(json!({"Type": "volume", "Source": name, "Target": dest}));
+        }
+    }
+    if !mounts.is_empty() {
+        hc.insert("Mounts".into(), Value::Array(mounts));
+    }
+    if !hc.is_empty() {
+        adv.insert("HostConfig".into(), Value::Object(hc));
+    }
+
+    let mut endpoints = Map::new();
+    for (net, ep) in v["NetworkSettings"]["Networks"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        let mut cfg = Map::new();
+        copy_set(
+            ep,
+            &["Aliases", "IPAMConfig", "Links", "DriverOpts"],
+            &mut cfg,
+        );
+        if !cfg.is_empty() {
+            endpoints.insert(net.clone(), Value::Object(cfg));
+        }
+    }
+    if !endpoints.is_empty() {
+        adv.insert(
+            "NetworkingConfig".into(),
+            json!({ "EndpointsConfig": endpoints }),
+        );
+    }
+    (!adv.is_empty()).then_some(Value::Object(adv))
+}
+
 /// The create-form view of a container, from its inspect JSON.
 pub fn inspect_to_spec(v: &Value) -> ContainerSpec {
     let config = &v["Config"];
@@ -150,7 +297,7 @@ pub fn inspect_to_spec(v: &Value) -> ContainerSpec {
         nano_cpus: positive(&host["NanoCpus"]),
         cap_add: strings(&host["CapAdd"]),
         privileged: host["Privileged"].as_bool().unwrap_or(false),
-        advanced: None,
+        advanced: unmodelled(v),
     }
 }
 
@@ -347,5 +494,76 @@ mod tests {
         assert_eq!(spec.memory_bytes, None);
         assert_eq!(spec.cmd, None);
         assert!(spec.ports.is_empty());
+    }
+
+    #[test]
+    fn unmodelled_settings_are_carried_in_advanced() {
+        // A compose-style container: --mount volume, anonymous image volume,
+        // a user network with a service alias, and settings the form lacks.
+        let inspect = json!({
+            "Name": "/db",
+            "Config": {"Image": "postgres:16", "User": "999", "WorkingDir": "/srv", "Tty": true, "OpenStdin": false, "Hostname": "abc123"},
+            "HostConfig": {
+                "NetworkMode": "app_default",
+                "Binds": ["/host/conf:/etc/pg:ro"],
+                "Mounts": [{"Type": "volume", "Source": "pgdata", "Target": "/var/lib/postgresql/data"}],
+                "ExtraHosts": ["gw:10.0.0.1"],
+                "LogConfig": {"Type": "json-file", "Config": {"max-size": "10m"}},
+                "Devices": [],
+                "Init": null,
+                "ShmSize": 67108864
+            },
+            "Mounts": [
+                {"Type": "bind", "Source": "/host/conf", "Destination": "/etc/pg"},
+                {"Type": "volume", "Name": "pgdata", "Destination": "/var/lib/postgresql/data"},
+                {"Type": "volume", "Name": "0f3e9a", "Destination": "/anon"}
+            ],
+            "NetworkSettings": {"Networks": {"app_default": {
+                "Aliases": ["db", "postgres"], "IPAMConfig": null,
+                "NetworkID": "n1", "EndpointID": "e1", "IPAddress": "172.18.0.2", "MacAddress": "02:42"
+            }}}
+        });
+        let spec = inspect_to_spec(&inspect);
+        let adv = spec
+            .advanced
+            .clone()
+            .expect("advanced carries unmodelled settings");
+        assert_eq!(adv["User"], "999");
+        assert_eq!(adv["WorkingDir"], "/srv");
+        assert_eq!(adv["Tty"], true);
+        assert!(adv.get("OpenStdin").is_none(), "defaults are not carried");
+        assert!(
+            adv.get("Hostname").is_none(),
+            "generated hostname is not carried"
+        );
+        let host = &adv["HostConfig"];
+        assert_eq!(host["ExtraHosts"], json!(["gw:10.0.0.1"]));
+        assert_eq!(host["LogConfig"]["Config"]["max-size"], "10m");
+        assert_eq!(host["ShmSize"], 67108864);
+        assert!(host.get("Devices").is_none() && host.get("Init").is_none());
+        assert_eq!(
+            host["Mounts"],
+            json!([
+                {"Type": "volume", "Source": "pgdata", "Target": "/var/lib/postgresql/data"},
+                {"Type": "volume", "Source": "0f3e9a", "Target": "/anon"}
+            ]),
+            "--mount volumes are kept and anonymous volumes are reattached"
+        );
+        assert_eq!(
+            adv["NetworkingConfig"],
+            json!({"EndpointsConfig": {"app_default": {"Aliases": ["db", "postgres"]}}})
+        );
+        // And it reaches the create body.
+        let body = spec_to_body(&spec);
+        assert_eq!(
+            body["HostConfig"]["Binds"],
+            json!(["/host/conf:/etc/pg:ro"])
+        );
+        assert_eq!(body["HostConfig"]["Mounts"][1]["Source"], "0f3e9a");
+        assert_eq!(
+            body["NetworkingConfig"]["EndpointsConfig"]["app_default"]["Aliases"][0],
+            "db"
+        );
+        serde_json::from_value::<bollard::models::ContainerCreateBody>(body).unwrap();
     }
 }
