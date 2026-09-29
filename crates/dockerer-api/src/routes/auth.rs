@@ -3,13 +3,13 @@ use crate::{
         cookie::{clear_cookie, session_cookie},
         extract::{ClientMeta, CurrentUser},
         limiter::limiter_key,
-        password, token, SESSION_ABSOLUTE_SECS,
+        password, token, SESSION_ABSOLUTE_SECS, SESSION_IDLE_SECS,
     },
     routes::audit,
     ApiResult, AppState,
 };
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{header::SET_COOKIE, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -153,4 +153,98 @@ async fn start_session(
         session_cookie(&session_token, SESSION_ABSOLUTE_SECS, meta.tls),
     );
     Ok(res)
+}
+
+#[derive(Serialize)]
+pub struct SessionView {
+    pub id: i64,
+    pub created_at: i64,
+    pub last_seen_at: i64,
+    pub expires_at: i64,
+    pub user_agent: Option<String>,
+    pub ip: Option<String>,
+    pub current: bool,
+}
+
+pub async fn list_sessions(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+) -> ApiResult<Json<Vec<SessionView>>> {
+    let now = now_unix();
+    let views = s
+        .store
+        .list_sessions(cu.user.id)
+        .await?
+        .into_iter()
+        .filter(|r| r.is_active(now, SESSION_IDLE_SECS))
+        .map(|r| SessionView {
+            current: r.id == cu.session.id,
+            id: r.id,
+            created_at: r.created_at,
+            last_seen_at: r.last_seen_at,
+            expires_at: r.expires_at,
+            user_agent: r.user_agent,
+            ip: r.ip,
+        })
+        .collect();
+    Ok(Json(views))
+}
+
+pub async fn revoke_session(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    Path(id): Path<i64>,
+) -> ApiResult<StatusCode> {
+    if !s.store.delete_user_session(cu.user.id, id).await? {
+        return Err(Error::NotFound(format!("session {id}")).into());
+    }
+    audit(
+        &s,
+        Some(cu.user.id),
+        "auth.session.revoke",
+        "session",
+        &id.to_string(),
+        "success",
+    )
+    .await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct ChangePassword {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+pub async fn change_password(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    Json(body): Json<ChangePassword>,
+) -> ApiResult<StatusCode> {
+    let (_, hash) = s
+        .store
+        .find_credentials(&cu.user.username)
+        .await?
+        .ok_or_else(|| Error::Unauthorized("authentication required".into()))?;
+    if !password::verify_password(body.current_password, hash).await {
+        return Err(Error::Invalid("current password is incorrect".into()).into());
+    }
+    validate_password(&body.new_password)?;
+    let new_hash = password::hash_password(body.new_password).await?;
+    s.store
+        .set_password_hash(cu.user.id, &new_hash, now_unix())
+        .await?;
+    s.store
+        .delete_user_sessions(cu.user.id, Some(cu.session.id))
+        .await?;
+    audit(
+        &s,
+        Some(cu.user.id),
+        "auth.password.change",
+        "user",
+        &cu.user.id.to_string(),
+        "success",
+    )
+    .await;
+    Ok(StatusCode::NO_CONTENT)
 }
