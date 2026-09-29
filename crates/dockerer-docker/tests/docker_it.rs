@@ -298,3 +298,50 @@ async fn networks_create_connect_remove() {
     d.remove_container(&cid, true, false).await.unwrap();
     d.remove_network(&id).await.unwrap();
 }
+
+#[tokio::test]
+async fn recreate_by_name_keeps_mounted_volume() {
+    let d = docker().await;
+    let name = unique("recreate");
+    let vol = unique("recreate-vol");
+    let mut spec = sleeper(&name);
+    spec.advanced = Some(serde_json::json!({
+        "HostConfig": {"Mounts": [{"Type": "volume", "Source": vol, "Target": "/data"}]}
+    }));
+    let old_id = d.create_container(&spec).await.unwrap();
+    d.container_action(&old_id, ContainerAction::Start)
+        .await
+        .unwrap();
+
+    // The form round-trip: prefill from the live container, change one thing,
+    // recreate addressing the container by name.
+    let mut edited = d.container_spec(&name).await.unwrap();
+    edited.env.push("CHANGED=1".into());
+    let out = dockerer_core::recreate::recreate(&d, &name, &edited, 1)
+        .await
+        .unwrap();
+    assert!(out.old_removed);
+
+    let new = d.inspect_container(&name).await.unwrap();
+    assert_eq!(
+        new["Id"],
+        out.new_id.as_str(),
+        "name points at the replacement"
+    );
+    assert_eq!(new["State"]["Running"], true);
+    assert!(new["Config"]["Env"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("CHANGED=1")));
+    let mounts = new["Mounts"].as_array().unwrap();
+    assert!(
+        mounts
+            .iter()
+            .any(|m| m["Name"] == vol.as_str() && m["Destination"] == "/data"),
+        "volume survived recreate: {mounts:?}"
+    );
+    assert!(d.inspect_container(&old_id).await.is_err(), "old removed");
+
+    d.remove_container(&out.new_id, true, false).await.unwrap();
+    d.remove_volume(&vol, true).await.unwrap();
+}
