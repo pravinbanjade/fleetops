@@ -3,6 +3,7 @@
 
 pub mod auth;
 pub mod authz;
+pub mod compose;
 pub mod envs;
 pub mod error;
 pub mod extract;
