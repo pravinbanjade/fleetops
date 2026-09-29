@@ -1,10 +1,15 @@
-.PHONY: dev-server test lint fmt build
+.PHONY: dev-server test test-docker lint fmt build
 
 dev-server:
 	cargo run -p dockerer-server -- --data ./.dev-data --bind 127.0.0.1:9000
 
 test:
 	cargo test --workspace
+
+# Integration tests against the Docker daemon of the current docker context.
+test-docker:
+	DOCKER_HOST=$$(docker context inspect --format '{{.Endpoints.docker.Host}}') \
+		cargo test -p dockerer-docker --features docker-it --test docker_it
 
 lint:
 	cargo fmt --all --check
