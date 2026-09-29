@@ -11,6 +11,7 @@ use std::sync::Mutex;
 #[derive(Default)]
 struct Fake {
     running: bool,
+    auto_remove: bool,
     calls: Mutex<Vec<String>>,
     fail_on: Option<&'static str>,
 }
@@ -48,7 +49,12 @@ impl ContainerOps for Fake {
         unimplemented!()
     }
     async fn inspect_container(&self, _id: &str) -> Result<Value> {
-        Ok(json!({"Name": "/web", "State": {"Running": self.running}}))
+        Ok(json!({
+            "Id": "old",
+            "Name": "/web",
+            "State": {"Running": self.running},
+            "HostConfig": {"AutoRemove": self.auto_remove}
+        }))
     }
     async fn container_spec(&self, _id: &str) -> Result<ContainerSpec> {
         unimplemented!()
@@ -176,4 +182,47 @@ async fn rename_failure_restarts_old() {
         f.calls(),
         vec!["stop old", "rename old web-dockerer-old-5", "start old"]
     );
+}
+
+#[tokio::test]
+async fn name_reference_is_resolved_to_the_canonical_id() {
+    // After the rename, "web" names the replacement; every step must target
+    // the original by id or the replacement gets deleted.
+    let f = Fake::new(true, None);
+    let out = recreate(&f, "web", &spec(), 9).await.unwrap();
+    assert!(out.old_removed);
+    assert_eq!(
+        f.calls(),
+        vec![
+            "stop old",
+            "rename old web-dockerer-old-9",
+            "create web",
+            "start new",
+            "remove old"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn name_reference_rollback_targets_the_original() {
+    let f = Fake::new(true, Some("start new"));
+    assert!(recreate(&f, "web", &spec(), 9).await.is_err());
+    assert_eq!(
+        f.calls()[4..],
+        ["remove new", "rename old web", "start old"]
+    );
+}
+
+#[tokio::test]
+async fn auto_remove_container_is_refused_untouched() {
+    let f = Fake {
+        running: true,
+        auto_remove: true,
+        ..Default::default()
+    };
+    assert!(matches!(
+        recreate(&f, "old", &spec(), 1).await,
+        Err(Error::Conflict(_))
+    ));
+    assert!(f.calls().is_empty());
 }
