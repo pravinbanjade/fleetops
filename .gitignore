@@ -3,3 +3,5 @@ target/
 node_modules/
 web/dist/
 .DS_Store
+.superpowers/
+.dev-data/
