@@ -61,7 +61,6 @@ async fn revoke_other_session() {
 }
 
 #[tokio::test]
-#[ignore = "needs Task 9"]
 async fn cannot_revoke_someone_elses_session() {
     let app = app().await;
     let admin = app.setup_admin().await;

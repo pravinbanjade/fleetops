@@ -1,8 +1,10 @@
+pub mod audit_log;
 pub mod auth;
+pub mod users;
 
 use crate::{error::ApiError, AppState};
 use axum::{
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use dockerer_core::{now_unix, Error};
@@ -20,6 +22,9 @@ pub fn api() -> Router<AppState> {
         .route("/auth/sessions", get(auth::list_sessions))
         .route("/auth/sessions/{id}", delete(auth::revoke_session))
         .route("/auth/password", put(auth::change_password))
+        .route("/users", get(users::list).post(users::create))
+        .route("/users/{id}", patch(users::update).delete(users::remove))
+        .route("/audit", get(audit_log::list))
         .fallback(not_found)
 }
 
