@@ -32,7 +32,7 @@ pub fn api() -> Router<AppState> {
 }
 
 fn env_routes() -> Router<AppState> {
-    use docker::{containers as c, images as i, networks as n, system, volumes as v};
+    use docker::{compose, containers as c, images as i, networks as n, system, volumes as v};
     Router::new()
         .route("/envs", get(envs::list).post(envs::create))
         .route("/envs/{env}", patch(envs::update).delete(envs::remove))
@@ -77,6 +77,11 @@ fn env_routes() -> Router<AppState> {
         )
         .route("/envs/{env}/networks/{id}/connect", post(n::connect))
         .route("/envs/{env}/networks/{id}/disconnect", post(n::disconnect))
+        .route("/envs/{env}/compose-projects", get(compose::list))
+        .route(
+            "/envs/{env}/compose-projects/{project}/{action}",
+            post(compose::action),
+        )
 }
 
 async fn health() -> Json<Value> {
