@@ -527,6 +527,7 @@ name = "dockerer-api"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "async-trait",
  "axum",
  "dockerer-core",
  "dockerer-store",
@@ -579,6 +580,7 @@ dependencies = [
  "clap",
  "dockerer-api",
  "dockerer-core",
+ "dockerer-docker",
  "dockerer-store",
  "http-body-util",
  "mime_guess",

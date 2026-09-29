@@ -1,4 +1,8 @@
-use crate::auth::{limiter::LoginLimiter, setup::SetupGuard};
+use crate::{
+    auth::{limiter::LoginLimiter, setup::SetupGuard},
+    envs::EnvRegistry,
+};
+use dockerer_core::env::EnvFactory;
 use dockerer_store::Store;
 use std::{
     sync::Arc,
@@ -32,16 +36,19 @@ pub struct AppState {
     pub config: Arc<ApiConfig>,
     pub limiter: Arc<LoginLimiter>,
     pub setup: Arc<SetupGuard>,
+    pub envs: Arc<EnvRegistry>,
 }
 
 impl AppState {
-    pub fn new(store: Store, config: ApiConfig) -> Self {
+    /// Call `envs.load(&store)` afterwards to build stored environments.
+    pub fn new(store: Store, config: ApiConfig, factory: Arc<dyn EnvFactory>) -> Self {
         let setup = SetupGuard::new(Instant::now(), config.setup_window);
         Self {
             store,
             config: Arc::new(config),
             limiter: Arc::new(LoginLimiter::new(LOGIN_MAX_FAILURES, LOGIN_WINDOW)),
             setup: Arc::new(setup),
+            envs: Arc::new(EnvRegistry::new(factory)),
         }
     }
 }

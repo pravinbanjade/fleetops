@@ -52,7 +52,11 @@ async fn unknown_api_path_outside_v1_is_json_404() {
 async fn full_app_serves_api_and_spa_with_security_headers() {
     let store = Store::in_memory().await.unwrap();
     let app = dockerer_api::app(
-        AppState::new(store, ApiConfig::default()),
+        AppState::new(
+            store,
+            ApiConfig::default(),
+            std::sync::Arc::new(dockerer_docker::DockerEnvFactory),
+        ),
         static_files::router(),
     );
     let res = app
