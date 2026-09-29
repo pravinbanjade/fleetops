@@ -40,6 +40,7 @@ pub async fn create(
     authorize(&cu.user, None, Action::EnvManage)?;
     validate_env_name(&body.name)?;
     validate_env_url(&body.url)?;
+    let _guard = s.envs.lock_mutations().await;
     let rec = s
         .store
         .create_environment(&body.name, body.kind.as_str(), &body.url, now_unix())
@@ -69,6 +70,7 @@ pub async fn update(
     ApiJson(body): ApiJson<UpdateEnv>,
 ) -> ApiResult<Json<EnvironmentRecord>> {
     authorize(&cu.user, None, Action::EnvManage)?;
+    let _guard = s.envs.lock_mutations().await;
     let current = find(&s, &name).await?;
     let new_name = body.name.unwrap_or(current.name.clone());
     let new_url = body.url.unwrap_or(current.url.clone());
@@ -78,8 +80,7 @@ pub async fn update(
         .store
         .update_environment(current.id, &new_name, &new_url, now_unix())
         .await?;
-    s.envs.remove(&current.name);
-    s.envs.insert(&rec)?;
+    s.envs.replace(&current.name, &rec)?;
     audit(
         &s,
         Some(cu.user.id),
@@ -98,6 +99,7 @@ pub async fn remove(
     ApiPath(name): ApiPath<String>,
 ) -> ApiResult<StatusCode> {
     authorize(&cu.user, None, Action::EnvManage)?;
+    let _guard = s.envs.lock_mutations().await;
     let current = find(&s, &name).await?;
     s.store.delete_environment(current.id).await?;
     s.envs.remove(&current.name);
