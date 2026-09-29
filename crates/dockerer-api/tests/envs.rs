@@ -196,3 +196,41 @@ async fn environments_survive_restart() {
     state.envs.load(&app.store).await.unwrap();
     assert_eq!(state.envs.get("local").unwrap().name(), "local");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_rename_and_delete_keep_registry_and_db_in_step() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    for i in 0..40 {
+        let (a, b) = (format!("a{i}"), format!("b{i}"));
+        t.add_env(&admin, &a).await;
+        let rename = t.send(req(
+            "PATCH",
+            &format!("/api/v1/envs/{a}"),
+            Some(json!({"name": b})),
+            Some(&admin),
+        ));
+        let delete = t.send(req(
+            "DELETE",
+            &format!("/api/v1/envs/{a}"),
+            None,
+            Some(&admin),
+        ));
+        tokio::join!(rename, delete);
+        let in_db: Vec<String> = t
+            .store
+            .list_environments()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.name)
+            .collect();
+        for name in [&a, &b] {
+            assert_eq!(
+                t.state.envs.get(name).is_ok(),
+                in_db.contains(name),
+                "iteration {i}: registry and database disagree about '{name}' (db: {in_db:?})"
+            );
+        }
+    }
+}

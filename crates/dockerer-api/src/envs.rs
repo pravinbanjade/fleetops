@@ -11,6 +11,9 @@ use std::{
 pub struct EnvRegistry {
     factory: Arc<dyn EnvFactory>,
     envs: RwLock<HashMap<String, Arc<dyn Environment>>>,
+    /// Serialises create/update/delete so the database write and the
+    /// registry change happen as one step.
+    mutations: tokio::sync::Mutex<()>,
 }
 
 impl EnvRegistry {
@@ -18,6 +21,7 @@ impl EnvRegistry {
         Self {
             factory,
             envs: RwLock::new(HashMap::new()),
+            mutations: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -37,6 +41,23 @@ impl EnvRegistry {
             .write()
             .unwrap()
             .insert(rec.name.clone(), env.clone());
+        Ok(env)
+    }
+
+    /// Held by every environment mutation, across its database write and
+    /// registry change.
+    pub async fn lock_mutations(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.mutations.lock().await
+    }
+
+    /// Swaps the entry `old_name` for `rec` in one step, so requests never
+    /// see a moment with neither entry.
+    pub fn replace(&self, old_name: &str, rec: &EnvironmentRecord) -> Result<Arc<dyn Environment>> {
+        let kind: EnvKind = rec.kind.parse()?;
+        let env = self.factory.build(rec.id, &rec.name, kind, &rec.url)?;
+        let mut envs = self.envs.write().unwrap();
+        envs.remove(old_name);
+        envs.insert(rec.name.clone(), env.clone());
         Ok(env)
     }
 
@@ -63,6 +84,7 @@ pub async fn bootstrap_local(
     registry: &EnvRegistry,
     url: &str,
 ) -> Result<Option<EnvironmentRecord>> {
+    let _guard = registry.lock_mutations().await;
     if !store.list_environments().await?.is_empty() {
         return Ok(None);
     }
