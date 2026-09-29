@@ -1,0 +1,25 @@
+[package]
+name = "fleetops-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fleetops-core.workspace = true
+fleetops-store.workspace = true
+argon2.workspace = true
+axum.workspace = true
+hex.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+http-body-util.workspace = true
+tower.workspace = true
