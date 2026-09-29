@@ -12,12 +12,16 @@ pub const LOGIN_WINDOW: Duration = Duration::from_secs(300);
 pub struct ApiConfig {
     /// How long after process start first-run setup stays open.
     pub setup_window: Duration,
+    /// Send HSTS on TLS responses. Off by default because the HTTP listener
+    /// is always on and HSTS would break it for browsers.
+    pub hsts: bool,
 }
 
 impl Default for ApiConfig {
     fn default() -> Self {
         Self {
             setup_window: Duration::from_secs(600),
+            hsts: false,
         }
     }
 }

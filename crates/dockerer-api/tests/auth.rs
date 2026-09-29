@@ -58,6 +58,7 @@ async fn second_setup_conflicts() {
 async fn setup_locked_after_window() {
     let app = app_with(ApiConfig {
         setup_window: Duration::ZERO,
+        ..ApiConfig::default()
     })
     .await;
     let r = app
@@ -342,4 +343,71 @@ async fn login_and_setup_are_audited() {
             ("auth.setup".into(), "success".into())
         ]
     );
+}
+
+#[tokio::test]
+async fn concurrent_wrong_logins_cannot_bypass_rate_limit() {
+    let app = app().await;
+    app.setup_admin().await;
+    let mut handles = Vec::new();
+    for _ in 0..20 {
+        let router = app.router.clone();
+        handles.push(tokio::spawn(async move {
+            let r = req(
+                "POST",
+                "/api/v1/auth/login",
+                Some(json!({"username": ADMIN, "password": "wrong-password"})),
+                None,
+            );
+            tower::ServiceExt::oneshot(router, r)
+                .await
+                .unwrap()
+                .status()
+        }));
+    }
+    let (mut unauthorized, mut limited) = (0, 0);
+    for h in handles {
+        match h.await.unwrap() {
+            StatusCode::UNAUTHORIZED => unauthorized += 1,
+            StatusCode::TOO_MANY_REQUESTS => limited += 1,
+            other => panic!("unexpected status {other}"),
+        }
+    }
+    assert!(unauthorized <= 5, "{unauthorized} attempts got through");
+    assert_eq!(limited, 20 - unauthorized);
+}
+
+#[tokio::test]
+async fn oversize_login_username_is_not_stored_verbatim() {
+    let app = app().await;
+    app.setup_admin().await;
+    let r = app.login(&"a".repeat(10_000), "whatever-pw").await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    for e in app.store.list_audit(10, None).await.unwrap() {
+        assert!(e.target_id.unwrap_or_default().len() <= 64);
+    }
+}
+
+#[tokio::test]
+async fn malformed_json_gets_json_error_body() {
+    let app = app().await;
+    let mut r = req("POST", "/api/v1/auth/login", None, None);
+    *r.body_mut() = axum::body::Body::from("{not json");
+    r.headers_mut()
+        .insert("content-type", "application/json".parse().unwrap());
+    let r = app.send(r).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(r.json["code"], "invalid");
+    assert!(r.json["request_id"].is_string());
+}
+
+#[tokio::test]
+async fn bad_path_param_gets_json_error_body() {
+    let app = app().await;
+    let s = app.setup_admin().await;
+    let r = app
+        .send(req("DELETE", "/api/v1/users/abc", None, Some(&s)))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(r.json["code"], "invalid");
 }

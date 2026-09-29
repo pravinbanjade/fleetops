@@ -1,13 +1,10 @@
 use crate::{
     auth::{extract::AdminUser, password},
+    extract::{ApiJson, ApiPath},
     routes::audit,
     ApiResult, AppState,
 };
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use dockerer_core::{now_unix, validate_password, validate_username, Error, Role, User};
 use serde::Deserialize;
 
@@ -31,7 +28,7 @@ pub async fn list(State(s): State<AppState>, _admin: AdminUser) -> ApiResult<Jso
 pub async fn create(
     State(s): State<AppState>,
     AdminUser(admin): AdminUser,
-    Json(body): Json<CreateUser>,
+    ApiJson(body): ApiJson<CreateUser>,
 ) -> ApiResult<(StatusCode, Json<User>)> {
     validate_username(&body.username)?;
     validate_password(&body.password)?;
@@ -61,8 +58,8 @@ pub async fn create(
 pub async fn update(
     State(s): State<AppState>,
     AdminUser(admin): AdminUser,
-    Path(id): Path<i64>,
-    Json(body): Json<UpdateUser>,
+    ApiPath(id): ApiPath<i64>,
+    ApiJson(body): ApiJson<UpdateUser>,
 ) -> ApiResult<Json<User>> {
     if body.role.is_none() && body.password.is_none() {
         return Err(Error::Invalid("nothing to update".into()).into());
@@ -96,7 +93,7 @@ pub async fn update(
 pub async fn remove(
     State(s): State<AppState>,
     AdminUser(admin): AdminUser,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> ApiResult<StatusCode> {
     s.store.delete_user(id).await?;
     audit(
