@@ -1,5 +1,6 @@
 pub mod audit_log;
 pub mod auth;
+pub mod envs;
 pub mod users;
 
 use crate::{error::ApiError, AppState};
@@ -25,7 +26,15 @@ pub fn api() -> Router<AppState> {
         .route("/users", get(users::list).post(users::create))
         .route("/users/{id}", patch(users::update).delete(users::remove))
         .route("/audit", get(audit_log::list))
+        .merge(env_routes())
         .fallback(not_found)
+}
+
+fn env_routes() -> Router<AppState> {
+    Router::new()
+        .route("/envs", get(envs::list).post(envs::create))
+        .route("/envs/{env}", patch(envs::update).delete(envs::remove))
+        .route("/envs/{env}/status", get(envs::status))
 }
 
 async fn health() -> Json<Value> {
