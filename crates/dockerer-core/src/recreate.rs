@@ -32,6 +32,24 @@ pub async fn recreate(
 ) -> Result<RecreateOutcome> {
     spec.validate()?;
     let inspect = ops.inspect_container(id).await?;
+    // `id` may be a name. After the rename that name belongs to the
+    // replacement, so every later step targets the canonical id.
+    let id = inspect["Id"]
+        .as_str()
+        .filter(|i| !i.is_empty())
+        .ok_or_else(|| Error::Internal("container inspect has no Id".into()))?
+        .to_string();
+    let id = id.as_str();
+    if inspect["HostConfig"]["AutoRemove"]
+        .as_bool()
+        .unwrap_or(false)
+    {
+        // Stopping it would make Docker delete it, leaving nothing to roll
+        // back to.
+        return Err(Error::Conflict(
+            "cannot recreate a container created with auto-remove (--rm)".into(),
+        ));
+    }
     let old_name = inspect["Name"]
         .as_str()
         .map(|n| n.trim_start_matches('/').to_string())
