@@ -32,7 +32,7 @@ pub fn api() -> Router<AppState> {
 }
 
 fn env_routes() -> Router<AppState> {
-    use docker::{containers as c, system};
+    use docker::{containers as c, images as i, networks as n, system, volumes as v};
     Router::new()
         .route("/envs", get(envs::list).post(envs::create))
         .route("/envs/{env}", patch(envs::update).delete(envs::remove))
@@ -58,6 +58,25 @@ fn env_routes() -> Router<AppState> {
             get(c::download_file),
         )
         .route("/envs/{env}/containers/{id}/{action}", post(c::action))
+        .route("/envs/{env}/images", get(i::list))
+        .route("/envs/{env}/images/prune", post(i::prune))
+        .route("/envs/{env}/images/{id}", get(i::inspect).delete(i::remove))
+        .route("/envs/{env}/images/{id}/history", get(i::history))
+        .route("/envs/{env}/images/{id}/tag", post(i::tag))
+        .route("/envs/{env}/volumes", get(v::list).post(v::create))
+        .route("/envs/{env}/volumes/prune", post(v::prune))
+        .route(
+            "/envs/{env}/volumes/{name}",
+            get(v::inspect).delete(v::remove),
+        )
+        .route("/envs/{env}/networks", get(n::list).post(n::create))
+        .route("/envs/{env}/networks/prune", post(n::prune))
+        .route(
+            "/envs/{env}/networks/{id}",
+            get(n::inspect).delete(n::remove),
+        )
+        .route("/envs/{env}/networks/{id}/connect", post(n::connect))
+        .route("/envs/{env}/networks/{id}/disconnect", post(n::disconnect))
 }
 
 async fn health() -> Json<Value> {
