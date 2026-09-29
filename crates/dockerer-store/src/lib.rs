@@ -2,11 +2,13 @@
 //! in by the caller so that behaviour is deterministic under test.
 
 mod audit;
+mod environments;
 mod sessions;
 mod settings;
 mod users;
 
 pub use audit::{AuditEntry, NewAudit};
+pub use environments::EnvironmentRecord;
 pub use sessions::{NewSession, SessionRecord};
 pub use settings::AUDIT_RETENTION_KEY;
 
