@@ -6,7 +6,9 @@ mod sessions;
 mod settings;
 mod users;
 
+pub use audit::{AuditEntry, NewAudit};
 pub use sessions::{NewSession, SessionRecord};
+pub use settings::AUDIT_RETENTION_KEY;
 
 use dockerer_core::{Error, Result};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
