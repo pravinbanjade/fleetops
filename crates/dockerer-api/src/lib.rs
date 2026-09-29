@@ -2,6 +2,8 @@
 //! crate supplies the static-file router and sets `IsTls` per listener.
 
 pub mod auth;
+pub mod authz;
+pub mod envs;
 pub mod error;
 pub mod extract;
 mod headers;

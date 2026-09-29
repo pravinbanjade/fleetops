@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod fake_docker;
+
 use axum::{
     body::Body,
     extract::ConnectInfo,
@@ -8,9 +10,10 @@ use axum::{
 };
 use dockerer_api::{ApiConfig, AppState};
 use dockerer_store::Store;
+use fake_docker::{FakeDocker, FakeFactory};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use tower::ServiceExt;
 
 pub const ADMIN: &str = "admin";
@@ -19,6 +22,8 @@ pub const ADMIN_PW: &str = "correct-horse";
 pub struct TestApp {
     pub router: Router,
     pub store: Store,
+    pub state: AppState,
+    pub fake: Arc<FakeDocker>,
 }
 
 pub struct Resp {
@@ -39,8 +44,15 @@ pub async fn app() -> TestApp {
 
 pub async fn app_with(config: ApiConfig) -> TestApp {
     let store = Store::in_memory().await.unwrap();
-    let router = dockerer_api::app(AppState::new(store.clone(), config), Router::new());
-    TestApp { router, store }
+    let fake = FakeDocker::new();
+    let state = AppState::new(store.clone(), config, Arc::new(FakeFactory(fake.clone())));
+    let router = dockerer_api::app(state.clone(), Router::new());
+    TestApp {
+        router,
+        store,
+        state,
+        fake,
+    }
 }
 
 pub fn req(
@@ -134,6 +146,26 @@ impl TestApp {
             None,
         ))
         .await
+    }
+
+    /// Registers environment `name` (backed by `self.fake`) as `admin`.
+    pub async fn add_env(&self, admin: &Session, name: &str) {
+        let r = self
+            .send(req(
+                "POST",
+                "/api/v1/envs",
+                Some(json!({"name": name, "kind": "docker-local", "url": "unix:///fake.sock"})),
+                Some(admin),
+            ))
+            .await;
+        assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.json);
+    }
+
+    /// An admin session with environment "local" registered.
+    pub async fn with_local(&self) -> Session {
+        let admin = self.setup_admin().await;
+        self.add_env(&admin, "local").await;
+        admin
     }
 
     pub async fn create_user(

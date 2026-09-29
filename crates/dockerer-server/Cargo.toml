@@ -12,6 +12,7 @@ path = "src/main.rs"
 dockerer-core.workspace = true
 dockerer-store.workspace = true
 dockerer-api.workspace = true
+dockerer-docker.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 axum-server.workspace = true

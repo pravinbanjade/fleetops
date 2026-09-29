@@ -5,23 +5,27 @@ pub mod tls;
 
 use axum::{Extension, Router};
 use config::Config;
-use dockerer_api::{ApiConfig, AppState, IsTls};
+use dockerer_api::{envs::bootstrap_local, ApiConfig, AppState, IsTls};
+use dockerer_docker::DockerEnvFactory;
 use dockerer_store::Store;
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
     std::fs::create_dir_all(&config.data)?;
     let store = Store::open(&config.data.join("dockerer.db")).await?;
-    let app = dockerer_api::app(
-        AppState::new(
-            store.clone(),
-            ApiConfig {
-                hsts: config.hsts,
-                ..ApiConfig::default()
-            },
-        ),
-        static_files::router(),
+    let state = AppState::new(
+        store.clone(),
+        ApiConfig {
+            hsts: config.hsts,
+            ..ApiConfig::default()
+        },
+        Arc::new(DockerEnvFactory),
     );
+    state.envs.load(&store).await?;
+    if let Some(env) = bootstrap_local(&store, &state.envs, &config.docker_host).await? {
+        tracing::info!(url = %env.url, "registered local Docker environment");
+    }
+    let app = dockerer_api::app(state, static_files::router());
     tokio::spawn(maintenance::run(store));
     serve(&config, app).await
 }
