@@ -79,3 +79,13 @@ export interface ImageLayer {
   Tags?: string[] | null;
   Comment?: string;
 }
+
+export interface VolumeInspect {
+  Name: string;
+  Driver: string;
+  Mountpoint: string;
+  CreatedAt?: string;
+  Scope?: string;
+  Labels?: Record<string, string> | null;
+  Options?: Record<string, string> | null;
+}
