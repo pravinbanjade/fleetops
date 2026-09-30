@@ -34,13 +34,21 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/ crates/
 COPY --from=web /src/web/dist web/dist
 ARG TARGETARCH
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
+# Each platform gets its own cache mounts. The two builds run at once, and
+# cargo's package lock lives outside the registry mount, so a shared
+# registry lets both unpack the same crate at the same time.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=fleetops-cargo-registry-${TARGETARCH} \
     --mount=type=cache,target=/src/target,id=fleetops-target-${TARGETARCH} \
     case "$TARGETARCH" in \
       amd64) target=x86_64-unknown-linux-musl ;; \
       arm64) target=aarch64-unknown-linux-musl ;; \
       *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac && \
+    # The target cache is shared by every checkout that builds on this
+    # builder, and cargo judges workspace crates fresh by mtime. Touching
+    # them makes cargo rebuild this checkout's crates (dependencies stay
+    # cached) instead of reusing another checkout's newer build.
+    find crates -type f -exec touch {} + && \
     cargo zigbuild --locked --release -p fleetops-server --target "$target" && \
     cp "target/$target/release/fleetops" /fleetops
 # The data directory, owned by distroless's nonroot user (65532).
