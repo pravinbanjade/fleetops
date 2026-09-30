@@ -8,7 +8,7 @@ colors:
   mist: "oklch(0.97 0 0)"
   slate-text: "oklch(0.556 0 0)"
   hairline: "oklch(0.922 0 0)"
-  focus-grey: "oklch(0.708 0 0)"
+  focus-grey: "oklch(0.556 0 0)"
   signal-red: "oklch(0.577 0.245 27.325)"
   night: "oklch(0.145 0 0)"
   night-panel: "oklch(0.205 0 0)"
@@ -18,10 +18,13 @@ colors:
   night-primary: "oklch(0.922 0 0)"
   night-hairline: "oklch(1 0 0 / 10%)"
   night-field: "oklch(1 0 0 / 15%)"
-  night-focus-grey: "oklch(0.556 0 0)"
+  night-focus-grey: "oklch(0.708 0 0)"
   night-signal-red: "oklch(0.704 0.191 22.216)"
-  state-running: "oklch(0.596 0.145 163.225)"
+  state-running: "oklch(0.508 0.118 165.612)"
   state-caution: "oklch(0.769 0.188 70.08)"
+  state-caution-text: "oklch(0.279 0.077 45.635)"
+  state-failed: "oklch(0.505 0.213 27.518)"
+  live-dot: "oklch(0.596 0.145 163.225)"
   terminal-black: "#0c0c0d"
   terminal-text: "#e5e5e5"
   chart-axis: "#8a8a8a"
@@ -111,12 +114,12 @@ components:
     padding: "2px 8px"
   badge-caution:
     backgroundColor: "{colors.state-caution}"
-    textColor: "{colors.paper}"
+    textColor: "{colors.state-caution-text}"
     typography: "{typography.label}"
     rounded: "{rounded.full}"
     padding: "2px 8px"
   badge-failed:
-    backgroundColor: "{colors.signal-red}"
+    backgroundColor: "{colors.state-failed}"
     textColor: "{colors.paper}"
     typography: "{typography.label}"
     rounded: "{rounded.full}"
@@ -204,13 +207,14 @@ A greyscale instrument body with a small set of signal colours that each mean on
 - **Mist** (`mist`) and **Night Raised** (`night-raised`): quiet fills for hover and active nav rows, the tab track, code blocks (at 40% opacity), and secondary buttons.
 - **Slate Text** (`slate-text`) and **Night Slate Text** (`night-slate-text`): secondary text such as descriptions, placeholders, empty states, "—" for missing values and section labels.
 - **Hairline** (`hairline`) and **Night Hairline** (`night-hairline`): every border, table row divider and field stroke. On night, fields use **Night Field** (`night-field`).
-- **Focus Grey** (`focus-grey`) and **Night Focus Grey** (`night-focus-grey`): focus rings, drawn at 50% opacity as a 3 px ring.
+- **Focus Grey** (`focus-grey`) and **Night Focus Grey** (`night-focus-grey`): focus rings, drawn solid. A control gets a 3 px ring, and a link a 2 px outline 2 px out. Both are at least 3:1 against every surface of their theme.
 - **Night Panel** (`night-panel`): cards, popovers and dialogs in the dark theme.
 
 ### Signals
-- **Running Green** (`state-running`): the `running` and `healthy` state badges.
-- **Caution Amber** (`state-caution`): the `paused`, `restarting` and `partial` badges.
-- **Signal Red** (`signal-red`, `night-signal-red`): destructive buttons, the `unhealthy` and `dead` badges, inline errors (`role="alert"`) and the lost-connection banner, which uses the red at 10% as its fill.
+- **Running Green** (`state-running`): the `running`, `healthy` and environment `up` badges, with white text (5.4:1). The brighter **Live Dot** (`live-dot`) marks the dashboard's live state, next to its words.
+- **Caution Amber** (`state-caution`): the `paused`, `restarting` and `partial` badges, with **Caution Ink** text (`state-caution-text`, 7.0:1), since white on amber fails.
+- **Failed Red** (`state-failed`): the `unhealthy`, `dead` and environment `down` badges, with white text (6.4:1) in both themes.
+- **Signal Red** (`signal-red`, `night-signal-red`): destructive buttons, bad event actions (`die`, `kill`, `oom`), inline errors (`role="alert"`) and the lost-connection banner, which uses the red at 10% as its fill.
 - **Chart series** (`series-*`): one fixed colour per metric, the same on both themes: CPU blue, memory violet, network in green and out amber, block read cyan and write red. Axes and grid are **Chart Axis** grey (`chart-axis`, and the same grey at 18% for grid lines).
 - **ANSI palette**: the 16 terminal colours are CSS variables `--ansi-0` to `--ansi-15`, darker in light mode so they read on paper and brighter in dark mode. The terminal uses the dark set on **Terminal Black** (`terminal-black`).
 
@@ -302,15 +306,15 @@ Precise and quiet. A solid button is the one thing on a toolbar that asks to be 
 - **Destructive:** a Signal Red fill with white text, used only for the confirm step of irreversible actions (Remove, Delete).
 - **Ghost and link:** ghost is for icon buttons and menu triggers (with a Mist hover), and link is for inline text actions.
 - **Sizes:** default 36 px, sm 32 px (row and bulk actions), xs 24 px, and square icon sizes 36, 32 and 24 px.
-- **Focus:** a Focus Grey border with a 3 px ring at 50% opacity, the same on every control. Disabled controls drop to 50% opacity and stop taking clicks.
+- **Focus:** a Focus Grey border with a solid 3 px Focus Grey ring, the same on every control. Disabled controls drop to 50% opacity and stop taking clicks.
 
 ### State Badges
 The system's main reading.
 - **Style:** a pill with 2 px × 8 px padding and 12 px medium text. It shows the state word in lowercase, exactly as Docker reports it.
 - **Tones:**
-  - Running Green for `running` and `healthy`;
-  - Caution Amber for `paused`, `restarting` and `partial`;
-  - Signal Red for `unhealthy` and `dead`;
+  - Running Green with white text for `running`, `healthy` and `up`;
+  - Caution Amber with Caution Ink text for `paused`, `restarting` and `partial`;
+  - Failed Red with white text for `unhealthy`, `dead` and `down`;
   - every other state (`exited`, `created`) is an outline pill in Ink with a Hairline border, so a stopped container is neutral rather than alarming.
 
 ### Cards / Containers
@@ -322,7 +326,7 @@ The system's main reading.
 
 ### Inputs / Fields
 - **Style:** 36 px tall, with a transparent fill, a Hairline stroke (Night Field on dark), 6 px corners, 12 px side padding and the Hairline-lift shadow. Placeholder text is Slate Text. Selected text inverts to Graphite.
-- **Focus:** the shared Focus Grey border with its 3 px ring at 50% opacity.
+- **Focus:** the shared Focus Grey border with its solid 3 px ring.
 - **Error / Disabled:** `aria-invalid` turns the stroke and ring Signal Red. Disabled fields are at 50% opacity with a not-allowed cursor.
 - **Toggles:** Radix checkboxes, each with a text label to its right.
 
@@ -336,6 +340,17 @@ The system's main reading.
 - Rows have Hairline dividers and a Mist hover at 50%. Selected rows are Mist.
 - Row checkboxes hug the left edge. Filtering, column visibility and bulk actions sit above the table.
 - Live cells, such as CPU and memory, pair a 60-point sparkline with a right-aligned tabular-figure value.
+
+### Status Readout (signature: the dashboard)
+The environment's home, read in urgency order.
+- **Liveness line:** under the headline, a small Live Dot and plain words: "Live", "Reconnecting. Showing data as of …" or "Unavailable. Showing the last known state, as of …". Data that isn't current is always stamped with its time, never dimmed below contrast.
+- **Headline sentence:** an h2 in 18 px semibold that answers the first question ("Nothing needs attention", "2 containers need attention").
+- **Attention list:** a hairline-bordered list, most urgent first. Each row has a State Badge, the container name (linking to its logs) and Docker's own status text.
+- **State strip:** outline chips of count and State Badge, each linking to the containers list filtered to that state.
+- **Host readouts:** CPU and memory now-values in headline type, each with a 160 × 32 sparkline whose scale follows the minute's peak.
+- **Below, in two columns:** Recent events (time-only stamps, bad actions in Signal Red) and Disk usage (hairline proportion bars in Slate Text on Mist).
+- **Footer:** the other inventory counts as plain links.
+- **Don't** rebuild it as a row of stat cards.
 
 ### Live Readouts (signature)
 The instrument part of the panel.
@@ -353,6 +368,7 @@ The instrument part of the panel.
 - **Do** use outline buttons for secondary and toolbar actions, and keep a solid Graphite button to the one primary action on a surface.
 - **Do** set machine output in the system monospace at 12 px, and interface text in the system sans at 14 px.
 - **Do** separate surfaces with 1 px Hairline borders and at most the Card-rest shadow.
+- **Do** check every badge fill against its text at 4.5:1 or better, and every focus indicator at 3:1, in both themes.
 - **Do** keep controls on the 36, 32 and 24 px heights, spaced on the 4 px scale (8 px everyday gap, 16 px between blocks, 24 px page padding).
 
 ### Don't:

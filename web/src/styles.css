@@ -22,7 +22,8 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* Focus rings are drawn solid: at least 3:1 against Paper and Mist. */
+  --ring: oklch(0.556 0 0);
   /* ANSI colours 0–15 for log lines: darker shades that read on a light background. */
   --ansi-0: #000000;
   --ansi-1: #c0262d;
@@ -60,7 +61,8 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  /* At least 3:1 against Night, Night Panel and Night Raised. */
+  --ring: oklch(0.708 0 0);
   --ansi-0: #3b3b3b;
   --ansi-1: #ff6b6b;
   --ansi-2: #69db7c;
@@ -105,9 +107,13 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   body {
     @apply bg-background text-foreground antialiased;
+  }
+  /* Links carry the same ring as controls, not the browser's default. */
+  a:focus-visible {
+    @apply rounded-xs outline-2 outline-offset-2 outline-ring;
   }
 }

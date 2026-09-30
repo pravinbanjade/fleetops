@@ -1,7 +1,15 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+
+/** Names the browser tab "<title> · FleetOps" while the page is shown. */
+export function useDocumentTitle(title: string | undefined) {
+  useEffect(() => {
+    document.title = title ? `${title} · FleetOps` : "FleetOps";
+  }, [title]);
+}
 
 /** A page's title row, with its actions on the right. */
 export function Page({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
+  useDocumentTitle(typeof title === "string" ? title : undefined);
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 p-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
