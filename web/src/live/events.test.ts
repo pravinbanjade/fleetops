@@ -104,6 +104,7 @@ describe("EventApplier", () => {
   });
 
   it("leaves exec noise out of the feed", () => {
+    qc.setQueryData(keys.recentEvents("local"), []);
     const applier = new EventApplier(qc, 100);
     applier.apply("local", ev("container", "exec_start: pg_isready"));
     applier.apply("local", ev("container", "start"));
@@ -112,11 +113,19 @@ describe("EventApplier", () => {
   });
 
   it("keeps the newest events first, capped", () => {
+    qc.setQueryData(keys.recentEvents("local"), []);
     const applier = new EventApplier(qc, 100);
     for (let i = 0; i < RECENT_EVENTS + 5; i++) applier.apply("local", { ...ev("container", "start"), time: i });
     const feed = qc.getQueryData<DockerEvent[]>(keys.recentEvents("local"))!;
     expect(feed).toHaveLength(RECENT_EVENTS);
     expect(feed[0].time).toBe(RECENT_EVENTS + 4);
+    applier.dispose();
+  });
+
+  it("leaves the feed alone until the dashboard has loaded it, since Docker's history covers those events", () => {
+    const applier = new EventApplier(qc, 100);
+    applier.apply("local", ev("container", "start"));
+    expect(qc.getQueryData(keys.recentEvents("local"))).toBeUndefined();
     applier.dispose();
   });
 });

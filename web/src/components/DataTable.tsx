@@ -70,6 +70,8 @@ interface DataTableProps<T extends RowData> {
   initialSorting?: SortingState;
   /** Columns hidden until the user shows them. */
   initialHidden?: string[];
+  /** The filter text the list starts with. */
+  initialFilter?: string;
 }
 
 const EMPTY: never[] = [];
@@ -80,7 +82,7 @@ const EMPTY: never[] = [];
  */
 export function DataTable<T extends RowData>(props: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>(props.initialSorting ?? []);
-  const [globalFilter, setGlobalFilter] = useState("");
+  const [globalFilter, setGlobalFilter] = useState(props.initialFilter ?? "");
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibilityState>(() =>
     Object.fromEntries((props.initialHidden ?? []).map((id) => [id, false])),
   );
