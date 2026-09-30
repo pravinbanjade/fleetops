@@ -1,10 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { App } from "./App";
 import "./styles.css";
 
-// The routed app replaces this page in Task 5.
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <p className="p-6">FleetOps</p>
+    <App />
   </StrictMode>,
 );

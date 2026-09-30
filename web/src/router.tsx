@@ -1,0 +1,120 @@
+import type { QueryClient } from "@tanstack/react-query";
+import {
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  Outlet,
+  redirect,
+  type RouterHistory,
+} from "@tanstack/react-router";
+import { ApiError } from "@/api/client";
+import { authStatusQuery, envsQuery, meQuery } from "@/api/queries";
+import { DashboardPage } from "@/pages/DashboardPage";
+import { LoginPage } from "@/pages/LoginPage";
+import { NoEnvironmentsPage, NotFoundPage } from "@/pages/misc";
+import { SetupPage } from "@/pages/SetupPage";
+
+export interface RouterContext {
+  queryClient: QueryClient;
+}
+
+/** A local path to return to after login; anything else is dropped. */
+export function safeRedirect(target: unknown): string | undefined {
+  return typeof target === "string" && target.startsWith("/") && !target.startsWith("//") ? target : undefined;
+}
+
+/** The session, or null when there is none (a 401 from `/auth/me`). */
+async function session(qc: QueryClient) {
+  try {
+    return await qc.ensureQueryData(meQuery);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) return null;
+    throw e;
+  }
+}
+
+const rootRoute = createRootRouteWithContext<RouterContext>()({
+  component: Outlet,
+  notFoundComponent: NotFoundPage,
+});
+
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/setup",
+  beforeLoad: async ({ context }) => {
+    const status = await context.queryClient.fetchQuery(authStatusQuery);
+    if (!status.setup_required) throw redirect({ to: "/login" });
+    return { setupOpen: status.setup_open };
+  },
+  component: SetupPage,
+});
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  validateSearch: (s: Record<string, unknown>): { redirect?: string } => ({ redirect: safeRedirect(s.redirect) }),
+  beforeLoad: async ({ context, search }) => {
+    const status = await context.queryClient.fetchQuery(authStatusQuery);
+    if (status.setup_required) throw redirect({ to: "/setup" });
+    if (await session(context.queryClient)) throw redirect({ to: search.redirect ?? "/" });
+  },
+  component: LoginPage,
+});
+
+/** Everything behind a session: sends visitors to setup or login first. */
+const authedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "authed",
+  beforeLoad: async ({ context, location }) => {
+    const status = await context.queryClient.fetchQuery(authStatusQuery);
+    if (status.setup_required) throw redirect({ to: "/setup" });
+    if (!(await session(context.queryClient))) {
+      throw redirect({ to: "/login", search: { redirect: location.href } });
+    }
+  },
+  component: Outlet,
+});
+
+const indexRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/",
+  beforeLoad: async ({ context }) => {
+    const envs = await context.queryClient.fetchQuery(envsQuery);
+    if (envs.length > 0) throw redirect({ to: "/envs/$env", params: { env: envs[0].name } });
+  },
+  component: NoEnvironmentsPage,
+});
+
+export const envRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: "/envs/$env",
+  component: Outlet,
+});
+
+const dashboardRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "/",
+  component: DashboardPage,
+});
+
+const routeTree = rootRoute.addChildren([
+  setupRoute,
+  loginRoute,
+  authedRoute.addChildren([indexRoute, envRoute.addChildren([dashboardRoute])]),
+]);
+
+export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {
+  return createRouter({
+    routeTree,
+    context: { queryClient },
+    history,
+    defaultPreload: "intent",
+    defaultPreloadStaleTime: 0,
+  });
+}
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: ReturnType<typeof createAppRouter>;
+  }
+}
