@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StatsSample } from "@/api/gen/types.gen";
 import { FakeWebSocket } from "@/test/fake-ws";
-import { StatsStore, STATS_HISTORY, toPoint } from "./stats";
+import { StatsStore, STATS_HISTORY, STATS_RETRY_MS, toPoint } from "./stats";
 import { WsClient } from "./ws";
 
 const sample = (time: number, over: Partial<StatsSample> = {}): StatsSample => ({
@@ -83,5 +83,25 @@ describe("StatsStore", () => {
     stop();
     store.subscribe("local", "c1", () => {});
     expect(subs().map((f) => f.sub)).toEqual([1, 2]);
+  });
+
+  it("reopens a stream that ended while it still has readers, as after a quick restart", () => {
+    const store = new StatsStore(ws);
+    store.subscribe("local", "c1", () => {});
+    sock.receive({ sub: 1, type: "end", reason: "ended" });
+    expect(subs()).toHaveLength(1);
+    vi.advanceTimersByTime(STATS_RETRY_MS);
+    expect(subs().map((f) => f.sub)).toEqual([1, 2]);
+  });
+
+  it("does not reopen for readers that left, or after a refusal", () => {
+    const store = new StatsStore(ws, 0);
+    const stop = store.subscribe("local", "c1", () => {});
+    sock.receive({ sub: 1, type: "end", reason: "ended" });
+    stop();
+    store.subscribe("local", "c2", () => {});
+    sock.receive({ sub: 2, type: "error", code: "not_found", message: "no such container" });
+    vi.advanceTimersByTime(STATS_RETRY_MS * 3);
+    expect(subs().map((f) => f.id)).toEqual(["c1", "c2"]);
   });
 });

@@ -194,6 +194,16 @@ describe("terminal tab", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("container is paused");
   });
 
+  it("stops the process when an error ends the session, so no shell is left running unseen", async () => {
+    const { screen, sock } = await openTerminal();
+    await userEvent.click(screen.getByRole("button", { name: "Connect" }));
+    const { sub } = await execSub(sock);
+    // The server reports input it could not keep up with; the exec itself is still running.
+    act(() => sock.receive({ sub, type: "error", code: "conflict", message: "terminal input is backed up" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("terminal input is backed up");
+    expect(sock.frames()).toContainEqual({ op: "unsub", sub });
+  });
+
   it("cannot connect to a stopped container", async () => {
     const { screen } = await openTerminal(STOPPED);
     expect(screen.getByRole("status")).toHaveTextContent("Start the container to open a terminal.");

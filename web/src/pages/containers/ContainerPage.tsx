@@ -88,7 +88,7 @@ export function ContainerPage() {
           </Suspense>
         </TabsContent>
         <TabsContent value="logs">
-          <LogsTab env={env} id={id} name={name} running={c.State.Running === true} />
+          <LogsTab env={env} id={id} name={name} running={c.State.Running === true} startedAt={c.State.StartedAt} />
         </TabsContent>
         <TabsContent value="terminal">
           <Suspense fallback={loading}>

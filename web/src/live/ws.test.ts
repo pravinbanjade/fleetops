@@ -77,6 +77,21 @@ describe("WsClient", () => {
     expect(sock.frames().filter((f) => f.op === "unsub")).toHaveLength(1);
   });
 
+  it("sends the spec onResubscribe returns in place of the original", () => {
+    const ws = client();
+    FakeWebSocket.latest().open();
+    ws.subscribe(
+      { topic: "logs", env: "local", id: "c1", opts: { tail: 1000 } },
+      { onData: () => {}, onResubscribe: () => ({ topic: "logs", env: "local", id: "c1", opts: { since: 5 } }) },
+    );
+    FakeWebSocket.latest().drop();
+    vi.advanceTimersByTime(100);
+    FakeWebSocket.latest().open();
+    expect(FakeWebSocket.latest().frames()).toEqual([
+      { op: "sub", sub: 1, topic: "logs", env: "local", id: "c1", opts: { since: 5 } },
+    ]);
+  });
+
   it("ends a subscription made without resubscribe when the connection drops", () => {
     const ws = client();
     const sock = FakeWebSocket.latest();

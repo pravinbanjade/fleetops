@@ -4,6 +4,14 @@ import type { WsClient } from "./ws";
 /** Samples kept per container: about two minutes at one a second. */
 export const STATS_HISTORY = 120;
 
+/**
+ * How long after a stream ends, with readers still waiting, it is opened
+ * again. A container that restarts quickly ends its stream at `die` while
+ * the page never sees it stopped; one that really stopped loses its
+ * readers first, as the page stops asking.
+ */
+export const STATS_RETRY_MS = 2000;
+
 /** A sample with byte counters turned into rates; null where there is no earlier sample to compare. */
 export interface StatsPoint extends StatsSample {
   /** Bytes per second. */
@@ -36,6 +44,7 @@ interface Entry {
   listeners: Set<() => void>;
   unsubscribe: (() => void) | null;
   teardown: ReturnType<typeof setTimeout> | null;
+  retry: ReturnType<typeof setTimeout> | null;
 }
 
 const EMPTY: StatsPoint[] = [];
@@ -66,7 +75,7 @@ export class StatsStore {
     const k = key(env, id);
     let e = this.entries.get(k);
     if (!e) {
-      e = { points: EMPTY, listeners: new Set(), unsubscribe: null, teardown: null };
+      e = { points: EMPTY, listeners: new Set(), unsubscribe: null, teardown: null, retry: null };
       this.entries.set(k, e);
     }
     const entry = e;
@@ -77,6 +86,7 @@ export class StatsStore {
     return () => {
       if (!entry.listeners.delete(listener) || entry.listeners.size) return;
       entry.teardown = setTimeout(() => {
+        if (entry.retry) clearTimeout(entry.retry);
         entry.unsubscribe?.();
         this.entries.delete(k);
       }, this.graceMs);
@@ -84,10 +94,16 @@ export class StatsStore {
   }
 
   private open(env: string, id: string, entry: Entry) {
-    const done = () => {
-      // The stream ended (the container stopped) or was refused; a later
-      // reader subscribes again.
+    // Refused (say, the container is gone): a later reader asks again.
+    const refused = () => {
       entry.unsubscribe = null;
+    };
+    const ended = () => {
+      entry.unsubscribe = null;
+      entry.retry = setTimeout(() => {
+        entry.retry = null;
+        if (entry.listeners.size && !entry.unsubscribe) entry.unsubscribe = this.open(env, id, entry);
+      }, STATS_RETRY_MS);
     };
     return this.ws.subscribe(
       { topic: "stats", env, id },
@@ -97,8 +113,8 @@ export class StatsStore {
           entry.points = [...entry.points.slice(-(STATS_HISTORY - 1)), toPoint(s, entry.points.at(-1))];
           for (const l of entry.listeners) l();
         },
-        onEnd: done,
-        onError: done,
+        onEnd: ended,
+        onError: refused,
       },
     ).unsubscribe;
   }

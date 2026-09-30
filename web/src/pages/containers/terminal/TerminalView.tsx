@@ -105,7 +105,13 @@ export function TerminalView({ env, id, opts, onStarted, onEnd }: Props) {
           term.write(bytes);
         },
         onEnd: (m) => end({ kind: "exited", code: m.exit_code ?? null }),
-        onError: (m) => end({ kind: "error", message: m.message }),
+        onError: (m) => {
+          // Some errors (input backed up, a failed resize) leave the exec
+          // running on the server while this client drops the
+          // subscription; ask the server to stop it. Unknown subs are ignored.
+          ws.send({ op: "unsub", sub });
+          end({ kind: "error", message: m.message });
+        },
         onLost: () => end({ kind: "lost" }),
       },
       { resubscribe: false },

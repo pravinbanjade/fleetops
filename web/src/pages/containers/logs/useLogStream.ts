@@ -17,47 +17,42 @@ export const DEFAULT_QUERY: LogQuery = { tail: 1000, since: null, stdout: true, 
 
 export type LogState = { state: "live" } | { state: "ended" } | { state: "error"; message: string };
 
-/** How many times `running` has gone from false to true. */
-function useStartCount(running: boolean) {
-  const [count, setCount] = useState(0);
-  const [was, setWas] = useState(running);
-  if (running !== was) {
-    setWas(running);
-    if (running) setCount(count + 1);
-  }
-  return count;
-}
-
 const LIVE: LogState = { state: "live" };
 
 /**
  * Follows a container's log into a `LogBuffer`. Timestamps are always
  * requested: they let the viewer show or hide them without asking again,
  * and let a subscription resume without repeating lines. Changing `query`
- * starts over with a new buffer; a websocket reconnect or the container
- * starting again resumes after the last line held.
+ * starts over with a new buffer. A websocket reconnect, or the container
+ * starting again (a new `startedAt`, which changes on every start even
+ * when a stop was never seen), resumes from the last line held: it asks
+ * for everything since then, so lines logged in between are not lost.
  */
-export function useLogStream(env: string, id: string, query: LogQuery, running: boolean) {
+export function useLogStream(env: string, id: string, query: LogQuery, startedAt: string | undefined) {
   const { ws } = useLive();
   const key = JSON.stringify([env, id, query]);
   const [held, setHeld] = useState(() => ({ key, buffer: new LogBuffer() }));
   if (held.key !== key) setHeld({ key, buffer: new LogBuffer() });
   const buffer = held.buffer;
   const [version, setVersion] = useState(0);
-  const starts = useStartCount(running);
   // The state of the current subscription; a new one starts out live.
-  const [status, setStatus] = useState<{ buffer: LogBuffer; starts: number; state: LogState } | null>(null);
-  const state = status && status.buffer === buffer && status.starts === starts ? status.state : LIVE;
+  const [status, setStatus] = useState<{ buffer: LogBuffer; startedAt?: string; state: LogState } | null>(null);
+  const state = status && status.buffer === buffer && status.startedAt === startedAt ? status.state : LIVE;
 
   useEffect(() => {
     if (!ws) return;
     const [env, id, query] = JSON.parse(key) as [string, string, LogQuery];
-    // A no-op on a new buffer; after a restart, skips what is already held.
-    buffer.resume();
-    const opts: LogOptions = { follow: true, timestamps: true, ...query };
-    const settle = (state: LogState) => setStatus({ buffer, starts, state });
+    const spec = () => {
+      // A no-op on a new buffer; otherwise skips what is already held.
+      buffer.resume();
+      const since = buffer.resumeSince;
+      const opts: LogOptions = { follow: true, timestamps: true, ...query };
+      if (since !== null) Object.assign(opts, { since, tail: null });
+      return { topic: "logs" as const, env, id, opts };
+    };
+    const settle = (state: LogState) => setStatus({ buffer, startedAt, state });
     const { unsubscribe } = ws.subscribe(
-      { topic: "logs", env, id, opts },
+      spec(),
       {
         onData: (d) => {
           buffer.append(d as LogLine[]);
@@ -69,11 +64,11 @@ export function useLogStream(env: string, id: string, query: LogQuery, running: 
         },
         onEnd: () => settle({ state: "ended" }),
         onError: (m) => settle({ state: "error", message: m.message }),
-        onResubscribe: () => buffer.resume(),
+        onResubscribe: spec,
       },
     );
     return unsubscribe;
-  }, [ws, key, starts, buffer]);
+  }, [ws, key, startedAt, buffer]);
 
   const clear = useCallback(() => {
     buffer.clear();
