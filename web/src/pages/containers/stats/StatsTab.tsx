@@ -41,18 +41,22 @@ const fmtRate = (v: number | null) => (v === null ? "—" : rate(v));
 
 function chartData(points: StatsPoint[]) {
   const col = (f: (p: StatsPoint) => number | null) => points.map(f);
-  const series = (label: string, color: string, values: (number | null)[]): ChartSeries => ({ label, color, values });
+  const series = (label: string, tone: ChartSeries["tone"], values: (number | null)[]): ChartSeries => ({
+    label,
+    tone,
+    values,
+  });
   return {
     times: points.map((p) => p.time / 1000),
-    cpu: [series("CPU", "#3b82f6", col((p) => p.cpu_percent))],
-    memory: [series("Used", "#8b5cf6", col((p) => p.memory_used))],
+    cpu: [series("CPU", "primary", col((p) => p.cpu_percent))],
+    memory: [series("Used", "primary", col((p) => p.memory_used))],
     network: [
-      series("In", "#10b981", col((p) => p.net_rx_rate)),
-      series("Out", "#f59e0b", col((p) => p.net_tx_rate)),
+      series("In", "primary", col((p) => p.net_rx_rate)),
+      series("Out", "secondary", col((p) => p.net_tx_rate)),
     ],
     block: [
-      series("Read", "#06b6d4", col((p) => p.block_read_rate)),
-      series("Written", "#ef4444", col((p) => p.block_write_rate)),
+      series("Read", "primary", col((p) => p.block_read_rate)),
+      series("Written", "secondary", col((p) => p.block_write_rate)),
     ],
   };
 }

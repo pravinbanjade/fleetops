@@ -184,6 +184,10 @@
   samp {
     font-family: var(--font-mono);
   }
+  /* One icon stroke across the app: Lucide at 1.75. */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
   a {
     text-underline-offset: 3px;
     text-decoration-thickness: 1px;

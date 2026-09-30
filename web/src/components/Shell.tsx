@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
-import { Check, ChevronsUpDown, LogOut, Menu, Monitor, Moon, Settings2, Sun, X } from "lucide-react";
+import { Check, ChevronsUpDown, LogOut, Menu, Monitor, Moon, RefreshCw, Settings2, Sun, X } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { envsQuery, envStatusQuery, meQuery } from "@/api/queries";
@@ -237,7 +237,8 @@ function ConnectionBanner() {
   const { state } = useLive();
   if (state !== "reconnecting") return null;
   return (
-    <div role="status" className="border-b border-destructive/30 bg-destructive/10 px-6 py-2 text-sm text-destructive">
+    <div role="status" className="flex items-center gap-2 border-b border-state-wait/40 bg-state-wait/12 px-4 py-2 text-sm md:px-6">
+      <RefreshCw aria-hidden className="size-4 shrink-0 text-state-wait motion-safe:animate-spin [animation-duration:2s]" />
       Lost the live connection to the server. Reconnecting…
     </div>
   );

@@ -22,6 +22,12 @@ const route = getRouteApi("/authed/shell/envs/$env/containers");
 const col = columns<ContainerSummary>();
 
 const RANK = { fail: 0, wait: 1, run: 2, idle: 3 } as const;
+const BAYS = [
+  { id: "attention", label: "Needs attention" },
+  { id: "transitional", label: "Changing" },
+  { id: "running", label: "Running" },
+  { id: "stopped", label: "Stopped" },
+];
 
 /** Where a container sits in the rack: the ones that need someone first. */
 function urgency(c: ContainerSummary): number {
@@ -156,6 +162,8 @@ export function ContainersPage() {
         initialSorting={[{ id: "state", desc: false }, { id: "name", desc: false }]}
         initialHidden={["compose"]}
         initialFilter={q}
+        bays={{ column: "state", of: (c) => BAYS[urgency(c)] }}
+        phoneColumns={["state", "name", "status"]}
         selectable
         actions={(selected, clear) => (
           <>

@@ -40,33 +40,52 @@ export function ContainerState({ container, className }: { container: ContainerS
   return (
     <StateBadge
       state={state}
+      track={container.id}
       tone={state === "exited" && needsAttention(container) ? "fail" : undefined}
       className={className}
     />
   );
 }
 
-const FLASH: Keyframe[] = [
-  { boxShadow: "0 0 0 0 oklch(0.82 0.15 78 / 0.75)" },
-  { boxShadow: "0 0 0 7px oklch(0.82 0.15 78 / 0)" },
-];
+/** The last state each tracked holder showed. */
+const LAST = new Map<string, string>();
+
+/** A ring of the cord colour, in the current theme, spreading out and fading. */
+function flash(el: HTMLElement): Keyframe[] {
+  const cord = getComputedStyle(el).getPropertyValue("--primary").trim() || "oklch(0.82 0.15 78)";
+  const fade = (a: number) => (cord.startsWith("oklch(") ? cord.replace(/\)$/, ` / ${a})`) : cord);
+  return [{ boxShadow: `0 0 0 0 ${fade(0.75)}` }, { boxShadow: `0 0 0 7px ${fade(0)}` }];
+}
 
 /**
  * A container's (or compose project's) state as a strip holder: a squared
  * tag in the state's colour, the word exactly as Docker reports it. When
  * Docker changes the state on screen, the holder flashes once.
  */
-export function StateBadge({ state, tone, className }: { state: string; tone?: Tone; className?: string }) {
+export function StateBadge({
+  state,
+  tone,
+  track,
+  className,
+}: {
+  state: string;
+  tone?: Tone;
+  /** An ID to remember the state under, so a strip that moves bays (and remounts) still flashes. */
+  track?: string;
+  className?: string;
+}) {
   const t = tone ?? stateTone(state);
   const ref = useRef<HTMLSpanElement>(null);
   const seen = useRef(state);
   useEffect(() => {
-    if (seen.current === state) return;
+    const before = track ? LAST.get(track) : seen.current;
     seen.current = state;
+    if (track) LAST.set(track, state);
+    if (before === undefined || before === state) return;
     const el = ref.current;
     if (!el?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    el.animate(FLASH, { duration: 900, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
-  }, [state]);
+    el.animate(flash(el), { duration: 900, easing: "cubic-bezier(0.16, 1, 0.3, 1)" });
+  }, [state, track]);
   return (
     <span
       ref={ref}

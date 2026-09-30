@@ -41,6 +41,17 @@ describe("containers list", () => {
     expect(rows(screen)[0]).toHaveTextContent("web");
   });
 
+  it("racks containers into bays by urgency", async () => {
+    const crashed = container({ id: "c3", name: "job", state: "exited", status: "Exited (1) 1 minute ago" });
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: [...LIST, crashed] } });
+    const { screen } = renderApp("/envs/local/containers");
+    await waitFor(() => expect(rows(screen)).toHaveLength(3));
+    const table = screen.getByRole("table", { name: "Containers" });
+    const bays = within(table).getAllByRole("rowgroup").map((g) => g.getAttribute("aria-label")).filter(Boolean);
+    expect(bays).toEqual(["Needs attention", "Running", "Stopped"]);
+    expect(within(within(table).getByRole("rowgroup", { name: "Needs attention" })).getByText("job")).toBeInTheDocument();
+  });
+
   it("stops the selected containers and reports a failure by name", async () => {
     const calls = mockFetch({
       ...loggedIn,
