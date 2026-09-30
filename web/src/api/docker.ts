@@ -89,3 +89,18 @@ export interface VolumeInspect {
   Labels?: Record<string, string> | null;
   Options?: Record<string, string> | null;
 }
+
+export interface NetworkInspect {
+  Id: string;
+  Name: string;
+  Driver: string;
+  Scope?: string;
+  Internal?: boolean;
+  Attachable?: boolean;
+  Created?: string;
+  IPAM?: { Config?: { Subnet?: string; Gateway?: string }[] | null } | null;
+  /** Attached containers by id. */
+  Containers?: Record<string, { Name: string; IPv4Address?: string; IPv6Address?: string; MacAddress?: string }> | null;
+  Labels?: Record<string, string> | null;
+  Options?: Record<string, string> | null;
+}
