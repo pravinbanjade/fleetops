@@ -48,3 +48,34 @@ export interface ContainerInspect {
     > | null;
   };
 }
+
+export interface ImageInspect {
+  Id: string;
+  RepoTags?: string[] | null;
+  RepoDigests?: string[] | null;
+  Created: string;
+  Size: number;
+  Architecture?: string;
+  Os?: string;
+  Config?: {
+    Env?: string[] | null;
+    Cmd?: string[] | null;
+    Entrypoint?: string[] | null;
+    ExposedPorts?: Record<string, object> | null;
+    Labels?: Record<string, string> | null;
+    WorkingDir?: string;
+    User?: string;
+  } | null;
+}
+
+/** One layer of `GET /images/{id}/history`, newest first. */
+export interface ImageLayer {
+  /** `<missing>` for layers built elsewhere. */
+  Id: string;
+  /** Unix seconds. */
+  Created: number;
+  CreatedBy: string;
+  Size: number;
+  Tags?: string[] | null;
+  Comment?: string;
+}

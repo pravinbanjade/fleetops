@@ -1,4 +1,4 @@
-import type { ContainerSummary } from "@/api/gen/types.gen";
+import type { ContainerSummary, ImageSummary } from "@/api/gen/types.gen";
 import type { ContainerInspect } from "@/api/docker";
 
 /** A container list entry: running nginx, created two hours ago, unless overridden. */
@@ -27,4 +27,8 @@ export function inspect(over: Partial<ContainerInspect> & { Id: string; Name: st
     NetworkSettings: { Ports: {}, Networks: {} },
     ...over,
   };
+}
+
+export function image(over: Partial<ImageSummary> & { id: string }): ImageSummary {
+  return { repo_tags: [], size: 50_000_000, created: Math.floor(Date.now() / 1000) - 86400, in_use: false, ...over };
 }

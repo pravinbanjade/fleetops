@@ -1,14 +1,16 @@
 import { queryOptions } from "@tanstack/react-query";
 import { ApiError, setCsrfToken } from "./client";
-import type { ContainerInspect } from "./docker";
+import type { ContainerInspect, ImageInspect, ImageLayer } from "./docker";
 import {
   getAuthStatus,
   getDiskUsage,
   getEngineInfo,
   getEnvStatus,
+  getImageHistory,
   getContainerSpec,
   getMe,
   inspectContainer,
+  inspectImage,
   listContainerFiles,
   listContainers,
   listEnvs,
@@ -127,6 +129,20 @@ export const containerFilesQuery = (env: string, id: string, dir: string) =>
 
 export const imagesQuery = (env: string) =>
   queryOptions({ queryKey: keys.images(env), queryFn: async () => (await listImages(path(env))).data });
+
+export const imageQuery = (env: string, id: string) =>
+  queryOptions({
+    queryKey: keys.image(env, id),
+    queryFn: async () => (await inspectImage({ path: { env, id } })).data as unknown as ImageInspect,
+    retry: retryUnlessGone,
+  });
+
+export const imageHistoryQuery = (env: string, id: string) =>
+  queryOptions({
+    queryKey: [...keys.image(env, id), "history"] as const,
+    queryFn: async () => (await getImageHistory({ path: { env, id } })).data as unknown as ImageLayer[],
+    retry: retryUnlessGone,
+  });
 
 export const volumesQuery = (env: string) =>
   queryOptions({ queryKey: keys.volumes(env), queryFn: async () => (await listVolumes(path(env))).data });
