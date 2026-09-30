@@ -8,30 +8,36 @@ pub mod users;
 use crate::{error::ApiError, AppState};
 use axum::{
     extract::DefaultBodyLimit,
-    routing::{delete, get, patch, post, put},
+    routing::{get, patch, post},
     Json, Router,
 };
 use fleetops_core::{now_unix, Error};
 use fleetops_store::NewAudit;
-use serde_json::{json, Value};
+use serde::Serialize;
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
-pub fn api() -> Router<AppState> {
-    Router::new()
-        .route("/health", get(health))
-        .route("/auth/status", get(auth::status))
-        .route("/auth/setup", post(auth::setup))
-        .route("/auth/login", post(auth::login))
-        .route("/auth/logout", post(auth::logout))
-        .route("/auth/me", get(auth::me))
-        .route("/auth/sessions", get(auth::list_sessions))
-        .route("/auth/sessions/{id}", delete(auth::revoke_session))
-        .route("/auth/password", put(auth::change_password))
-        .route("/users", get(users::list).post(users::create))
-        .route("/users/{id}", patch(users::update).delete(users::remove))
-        .route("/audit", get(audit_log::list))
+/// Every API route, with its documentation. Routes are registered only
+/// through `routes!`, which takes each path from the handler's
+/// `#[utoipa::path]`, so the served API and the OpenAPI document agree.
+pub fn api() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(health))
+        .routes(routes!(crate::openapi::serve))
+        .routes(routes!(auth::status))
+        .routes(routes!(auth::setup))
+        .routes(routes!(auth::login))
+        .routes(routes!(auth::logout))
+        .routes(routes!(auth::me))
+        .routes(routes!(auth::list_sessions))
+        .routes(routes!(auth::revoke_session))
+        .routes(routes!(auth::change_password))
+        .routes(routes!(users::list, users::create))
+        .routes(routes!(users::update, users::remove))
+        .routes(routes!(audit_log::list))
         .route("/ws", get(crate::ws::handler))
         .route("/tasks/{id}", get(tasks::get))
-        .merge(env_routes())
+        .merge(OpenApiRouter::from(env_routes()))
         .fallback(not_found)
 }
 
@@ -95,8 +101,23 @@ fn env_routes() -> Router<AppState> {
         )
 }
 
-async fn health() -> Json<Value> {
-    Json(json!({"status": "ok"}))
+#[derive(Serialize, ToSchema)]
+pub struct Health {
+    /// Always `ok`.
+    pub status: &'static str,
+}
+
+#[utoipa::path(
+    get,
+    path = "/health",
+    operation_id = "getHealth",
+    tag = "system",
+    summary = "Liveness check",
+    security(()),
+    responses((status = 200, description = "The server is up", body = Health))
+)]
+pub async fn health() -> Json<Health> {
+    Json(Health { status: "ok" })
 }
 
 async fn not_found() -> ApiError {

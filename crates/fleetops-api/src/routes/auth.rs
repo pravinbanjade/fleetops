@@ -21,29 +21,56 @@ use fleetops_core::{
 };
 use fleetops_store::NewSession;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
 use std::time::Instant;
+use utoipa::ToSchema;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct Credentials {
     pub username: String,
     pub password: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SessionInfo {
     pub user: User,
     pub csrf_token: String,
 }
 
-pub async fn status(State(s): State<AppState>) -> ApiResult<Json<Value>> {
-    let users = s.store.count_users().await?;
-    Ok(Json(json!({
-        "setup_required": users == 0,
-        "setup_open": users == 0 && s.setup.is_open(Instant::now()),
-    })))
+#[derive(Serialize, ToSchema)]
+pub struct AuthStatus {
+    /// No user exists yet.
+    pub setup_required: bool,
+    /// `POST /auth/setup` is still accepted (the setup window has not closed).
+    pub setup_open: bool,
 }
 
+#[utoipa::path(
+    get,
+    path = "/auth/status",
+    operation_id = "getAuthStatus",
+    tag = "auth",
+    summary = "Whether first-run setup is still needed",
+    security(()),
+    responses((status = 200, description = "Setup state", body = AuthStatus))
+)]
+pub async fn status(State(s): State<AppState>) -> ApiResult<Json<AuthStatus>> {
+    let users = s.store.count_users().await?;
+    Ok(Json(AuthStatus {
+        setup_required: users == 0,
+        setup_open: users == 0 && s.setup.is_open(Instant::now()),
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/auth/setup",
+    operation_id = "setup",
+    tag = "auth",
+    summary = "Create the first admin and log in",
+    request_body = Credentials,
+    security(()),
+    responses((status = 201, description = "Admin created; the session cookie is set", body = SessionInfo))
+)]
 pub async fn setup(
     State(s): State<AppState>,
     meta: ClientMeta,
@@ -77,6 +104,16 @@ pub async fn setup(
     start_session(&s, user, &meta, StatusCode::CREATED).await
 }
 
+#[utoipa::path(
+    post,
+    path = "/auth/login",
+    operation_id = "login",
+    tag = "auth",
+    summary = "Log in",
+    request_body = Credentials,
+    security(()),
+    responses((status = 200, description = "Logged in; the session cookie is set", body = SessionInfo))
+)]
 pub async fn login(
     State(s): State<AppState>,
     meta: ClientMeta,
@@ -116,6 +153,14 @@ pub async fn login(
     start_session(&s, user, &meta, StatusCode::OK).await
 }
 
+#[utoipa::path(
+    post,
+    path = "/auth/logout",
+    operation_id = "logout",
+    tag = "auth",
+    summary = "End this session",
+    responses((status = 204, description = "Logged out; the cookie is cleared"))
+)]
 pub async fn logout(
     State(s): State<AppState>,
     meta: ClientMeta,
@@ -127,6 +172,14 @@ pub async fn logout(
     Ok(res)
 }
 
+#[utoipa::path(
+    get,
+    path = "/auth/me",
+    operation_id = "getMe",
+    tag = "auth",
+    summary = "The current user and CSRF token",
+    responses((status = 200, description = "Current session", body = SessionInfo))
+)]
 pub async fn me(cu: CurrentUser) -> Json<SessionInfo> {
     Json(SessionInfo {
         user: cu.user,
@@ -162,7 +215,7 @@ async fn start_session(
     Ok(res)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct SessionView {
     pub id: i64,
     pub created_at: i64,
@@ -173,6 +226,14 @@ pub struct SessionView {
     pub current: bool,
 }
 
+#[utoipa::path(
+    get,
+    path = "/auth/sessions",
+    operation_id = "listSessions",
+    tag = "auth",
+    summary = "The current user's active sessions",
+    responses((status = 200, description = "Active sessions", body = Vec<SessionView>))
+)]
 pub async fn list_sessions(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -197,6 +258,15 @@ pub async fn list_sessions(
     Ok(Json(views))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/auth/sessions/{id}",
+    operation_id = "revokeSession",
+    tag = "auth",
+    summary = "Log out one of your sessions",
+    params(("id" = i64, Path, description = "Session id")),
+    responses((status = 204, description = "Revoked"))
+)]
 pub async fn revoke_session(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -217,12 +287,21 @@ pub async fn revoke_session(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct ChangePassword {
     pub current_password: String,
     pub new_password: String,
 }
 
+#[utoipa::path(
+    put,
+    path = "/auth/password",
+    operation_id = "changePassword",
+    tag = "auth",
+    summary = "Change your password and end your other sessions",
+    request_body = ChangePassword,
+    responses((status = 204, description = "Changed"))
+)]
 pub async fn change_password(
     State(s): State<AppState>,
     cu: CurrentUser,

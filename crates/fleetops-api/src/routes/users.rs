@@ -7,24 +7,42 @@ use crate::{
 use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::{now_unix, validate_password, validate_username, Error, Role, User};
 use serde::Deserialize;
+use utoipa::ToSchema;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateUser {
     pub username: String,
     pub password: String,
     pub role: Role,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct UpdateUser {
     pub role: Option<Role>,
     pub password: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/users",
+    operation_id = "listUsers",
+    tag = "users",
+    summary = "List users",
+    responses((status = 200, description = "All users", body = Vec<User>))
+)]
 pub async fn list(State(s): State<AppState>, _admin: AdminUser) -> ApiResult<Json<Vec<User>>> {
     Ok(Json(s.store.list_users().await?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/users",
+    operation_id = "createUser",
+    tag = "users",
+    summary = "Create a user",
+    request_body = CreateUser,
+    responses((status = 201, description = "Created", body = User))
+)]
 pub async fn create(
     State(s): State<AppState>,
     AdminUser(admin): AdminUser,
@@ -55,6 +73,16 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(user)))
 }
 
+#[utoipa::path(
+    patch,
+    path = "/users/{id}",
+    operation_id = "updateUser",
+    tag = "users",
+    summary = "Change a user's role or password",
+    params(("id" = i64, Path, description = "User id")),
+    request_body = UpdateUser,
+    responses((status = 200, description = "Updated", body = User))
+)]
 pub async fn update(
     State(s): State<AppState>,
     AdminUser(admin): AdminUser,
@@ -90,6 +118,15 @@ pub async fn update(
     Ok(Json(s.store.get_user(id).await?))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/users/{id}",
+    operation_id = "deleteUser",
+    tag = "users",
+    summary = "Delete a user",
+    params(("id" = i64, Path, description = "User id")),
+    responses((status = 204, description = "Deleted"))
+)]
 pub async fn remove(
     State(s): State<AppState>,
     AdminUser(admin): AdminUser,
