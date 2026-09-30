@@ -94,3 +94,35 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
         task: task.abort_handle(),
     })
 }
+
+/// Stats samples for container `id`, shared with every other subscriber.
+pub(super) async fn stats(c: &Ctx<'_>, env: Option<String>, id: Option<String>) -> Result<Sub> {
+    let (s, cu, sub) = (c.s, c.cu, c.sub);
+    let (env, ops) = docker_for(s, cu, &env, Action::DockerRead)?;
+    let id = required(&id, "id")?.to_string();
+    let (handle, mut rx) = s.hubs.stats(&env).subscribe(ops, &id);
+    let q = c.queue(Policy::DropOldest);
+    let qq = q.clone();
+    let task = tokio::spawn(async move {
+        let _keep_stream_alive = handle;
+        loop {
+            match rx.recv().await {
+                Ok(Some(sample)) => {
+                    let v = serde_json::to_value(&sample).unwrap_or(Value::Null);
+                    if !qq.push(protocol::data(sub, v), 1) {
+                        return;
+                    }
+                }
+                Err(RecvError::Lagged(_)) => continue,
+                Ok(None) | Err(RecvError::Closed) => {
+                    qq.finish(protocol::end(sub, "ended", Value::Null));
+                    return;
+                }
+            }
+        }
+    });
+    Ok(Sub {
+        queue: q,
+        task: task.abort_handle(),
+    })
+}

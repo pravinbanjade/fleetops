@@ -276,6 +276,7 @@ async fn start(
     };
     match topic {
         Topic::Events => topics::events(&c, env, id).await,
+        Topic::Stats => topics::stats(&c, env, id).await,
         other => Err(Error::Invalid(format!(
             "topic {other:?} is not available yet"
         ))),
