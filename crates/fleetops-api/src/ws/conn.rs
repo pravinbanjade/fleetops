@@ -267,7 +267,7 @@ async fn start(
     sub: u32,
     msg: (Topic, Option<String>, Option<String>, Value),
 ) -> Result<Sub> {
-    let (topic, env, id, _opts) = msg;
+    let (topic, env, id, opts) = msg;
     let c = topics::Ctx {
         s,
         cu,
@@ -277,6 +277,7 @@ async fn start(
     match topic {
         Topic::Events => topics::events(&c, env, id).await,
         Topic::Stats => topics::stats(&c, env, id).await,
+        Topic::Logs => topics::logs(&c, env, id, opts).await,
         other => Err(Error::Invalid(format!(
             "topic {other:?} is not available yet"
         ))),

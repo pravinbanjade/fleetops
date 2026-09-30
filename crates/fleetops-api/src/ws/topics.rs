@@ -12,10 +12,17 @@ use crate::{
 };
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
+use fleetops_core::streams::LogOptions;
 use fleetops_core::{Error, Result};
-use serde_json::Value;
-use std::sync::Arc;
+use futures_util::StreamExt;
+use serde_json::{json, Value};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{broadcast::error::RecvError, Notify};
+
+/// Logs are flushed to the client at most this often per subscription.
+pub const LOG_FLUSH: Duration = Duration::from_millis(50);
+/// Most lines in one logs `data` message.
+pub const LOG_BATCH_MAX: usize = 500;
 
 /// What every topic needs from the connection.
 pub(super) struct Ctx<'a> {
@@ -36,6 +43,13 @@ fn required<'a>(v: &'a Option<String>, what: &str) -> Result<&'a str> {
     v.as_deref()
         .filter(|s| !s.is_empty())
         .ok_or_else(|| Error::Invalid(format!("{what} is required")))
+}
+
+fn opts<T: serde::de::DeserializeOwned + Default>(v: Value) -> Result<T> {
+    if v.is_null() {
+        return Ok(T::default());
+    }
+    serde_json::from_value(v).map_err(|e| Error::Invalid(format!("bad opts: {e}")))
 }
 
 /// Resolves the environment, authorises, and returns its Docker ops.
@@ -118,6 +132,61 @@ pub(super) async fn stats(c: &Ctx<'_>, env: Option<String>, id: Option<String>) 
                     qq.finish(protocol::end(sub, "ended", Value::Null));
                     return;
                 }
+            }
+        }
+    });
+    Ok(Sub {
+        queue: q,
+        task: task.abort_handle(),
+    })
+}
+
+/// Container `id`'s logs as batches of lines, at most every `LOG_FLUSH`.
+pub(super) async fn logs(
+    c: &Ctx<'_>,
+    env: Option<String>,
+    id: Option<String>,
+    opts_v: Value,
+) -> Result<Sub> {
+    let (s, cu, sub) = (c.s, c.cu, c.sub);
+    let (_, ops) = docker_for(s, cu, &env, Action::DockerRead)?;
+    let id = required(&id, "id")?;
+    let o: LogOptions = opts(opts_v)?;
+    let mut lines = ops.logs(id, &o);
+    let q = c.queue(Policy::Gap);
+    let qq = q.clone();
+    let task = tokio::spawn(async move {
+        loop {
+            let first = match lines.next().await {
+                Some(Ok(l)) => l,
+                Some(Err(e)) => {
+                    return qq.finish(protocol::error(Some(sub), e.code(), &e.to_string()))
+                }
+                None => return qq.finish(protocol::end(sub, "eof", Value::Null)),
+            };
+            let mut batch = vec![first];
+            let deadline = tokio::time::Instant::now() + LOG_FLUSH;
+            let mut ended = None;
+            while batch.len() < LOG_BATCH_MAX {
+                match tokio::time::timeout_at(deadline, lines.next()).await {
+                    Ok(Some(Ok(l))) => batch.push(l),
+                    Ok(Some(Err(e))) => {
+                        ended = Some(protocol::error(Some(sub), e.code(), &e.to_string()));
+                        break;
+                    }
+                    Ok(None) => {
+                        ended = Some(protocol::end(sub, "eof", Value::Null));
+                        break;
+                    }
+                    Err(_) => break,
+                }
+            }
+            let n = batch.len() as u64;
+            if !qq.push(protocol::data(sub, json!(batch)), n) {
+                return;
+            }
+            if let Some(last) = ended {
+                return qq.finish(last);
             }
         }
     });
