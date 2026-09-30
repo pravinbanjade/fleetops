@@ -10,7 +10,7 @@ test:
 # Integration tests against the Docker daemon of the current docker context.
 test-docker:
 	DOCKER_HOST=$$(docker context inspect --format '{{.Endpoints.docker.Host}}') \
-		cargo test -p fleetops-docker --features docker-it --test docker_it
+		sh -c 'cargo test -p fleetops-docker --features docker-it --test docker_it && cargo test -p fleetops-server --features docker-it --test live'
 
 lint:
 	cargo fmt --all --check
