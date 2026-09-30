@@ -4,7 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { containerSpecQuery, keys, networksQuery } from "@/api/queries";
-import { createContainer, recreateContainer } from "@/api/gen/sdk.gen";
+import { containerAction, createContainer, recreateContainer } from "@/api/gen/sdk.gen";
 import { DetailError } from "@/components/Details";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { errorMessage } from "@/lib/errors";
-import { EMPTY_FORM, formToSpec, RESTART_POLICIES, specToForm, type SpecForm } from "@/lib/spec";
+import { EMPTY_FORM, forDuplicate, formToSpec, RESTART_POLICIES, specToForm, type SpecForm } from "@/lib/spec";
 import { FormError } from "@/pages/AuthLayout";
 
 type Mode = "create" | "duplicate" | "recreate";
@@ -43,9 +43,15 @@ function Prefilled({ env, id, mode }: { env: string; id: string; mode: Mode }) {
     return <DetailError error={q.error} what="container" back={back} />;
   }
   if (!q.data) return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
-  const initial = specToForm(q.data);
-  if (mode === "duplicate") initial.name = initial.name ? `${initial.name}-copy` : "";
-  return <ContainerForm env={env} mode={mode} id={id} initial={initial} original={q.data.name ?? id} />;
+  if (mode === "recreate") {
+    return <ContainerForm env={env} mode={mode} id={id} initial={specToForm(q.data)} original={q.data.name ?? id} />;
+  }
+  const initial = specToForm(forDuplicate(q.data));
+  initial.name = initial.name ? `${initial.name}-copy` : "";
+  const notice = q.data.ports?.some((p) => p.host_port != null)
+    ? "Host ports are cleared so the copy doesn't clash with the original; set new ones if you need them."
+    : undefined;
+  return <ContainerForm env={env} mode={mode} initial={initial} original={q.data.name ?? id} notice={notice} />;
 }
 
 const TITLES: Record<Mode, (name?: string) => string> = {
@@ -60,12 +66,15 @@ function ContainerForm({
   id,
   initial,
   original,
+  notice,
 }: {
   env: string;
   mode: Mode;
   id?: string;
   initial: SpecForm;
   original?: string;
+  /** A note shown above the ports. */
+  notice?: string;
 }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -87,8 +96,19 @@ function ContainerForm({
         }
         return data.id;
       }
-      const { data } = await createContainer({ path: { env }, body: { ...spec, start } });
-      toast.success("Container created");
+      // Created and started in two steps, so a container that fails to
+      // start is still opened rather than left behind unseen.
+      const { data } = await createContainer({ path: { env }, body: { ...spec, start: false } });
+      if (!start) {
+        toast.success("Container created");
+        return data.id;
+      }
+      try {
+        await containerAction({ path: { env, id: data.id, action: "start" } });
+        toast.success("Container created");
+      } catch (e) {
+        toast.error(`Created ${spec.name ?? data.id.slice(0, 12)}, but it could not start: ${errorMessage(e)}`);
+      }
       return data.id;
     },
     onSuccess: async (newId) => {
@@ -125,25 +145,27 @@ function ContainerForm({
             <Input id="name" value={f.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
           <Field id="cmd" label="Command" hint="Leave empty for the image's default. Quote arguments with spaces.">
-            <Input id="cmd" className="font-mono" value={f.cmd} onChange={(e) => set("cmd", e.target.value)} />
+            <ArgsInput id="cmd" value={f.cmd} multiline={initial.cmd.includes("\n")} onChange={(v) => set("cmd", v)} />
           </Field>
           <Field id="entrypoint" label="Entrypoint">
-            <Input
+            <ArgsInput
               id="entrypoint"
-              className="font-mono"
               value={f.entrypoint}
-              onChange={(e) => set("entrypoint", e.target.value)}
+              multiline={initial.entrypoint.includes("\n")}
+              onChange={(v) => set("entrypoint", v)}
             />
           </Field>
         </Section>
 
         <Section title="Ports">
+          {notice && <p className="text-sm text-muted-foreground">{notice}</p>}
           <Ports rows={f.ports} onChange={(rows) => set("ports", rows)} />
         </Section>
 
         <Section title="Environment and storage">
           <Field id="env" label="Environment variables" hint="One KEY=value per line.">
             <Textarea id="env" className="font-mono" rows={4} value={f.env} onChange={(e) => set("env", e.target.value)} />
+            <KeptNote names={f.kept.env.map((e) => e.split("=")[0])} />
           </Field>
           <Field id="binds" label="Volumes and bind mounts" hint="One source:target[:ro] per line, e.g. data:/var/lib/data.">
             <Textarea id="binds" className="font-mono" rows={3} value={f.binds} onChange={(e) => set("binds", e.target.value)} />
@@ -179,6 +201,7 @@ function ContainerForm({
           </Field>
           <Field id="labels" label="Labels" hint="One key=value per line.">
             <Textarea id="labels" className="font-mono" rows={3} value={f.labels} onChange={(e) => set("labels", e.target.value)} />
+            <KeptNote names={Object.keys(f.kept.labels)} />
           </Field>
         </Section>
 
@@ -236,6 +259,36 @@ function ContainerForm({
   );
 }
 
+/** Command-line input; a textarea when the value spans lines (e.g. an `sh -c` script). */
+function ArgsInput({
+  id,
+  value,
+  multiline,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  multiline: boolean;
+  onChange: (v: string) => void;
+}) {
+  return multiline ? (
+    <Textarea id={id} className="font-mono" rows={4} value={value} onChange={(e) => onChange(e.target.value)} />
+  ) : (
+    <Input id={id} className="font-mono" value={value} onChange={(e) => onChange(e.target.value)} />
+  );
+}
+
+/** Says which entries are carried unchanged because their values span lines. */
+function KeptNote({ names }: { names: string[] }) {
+  if (names.length === 0) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      {names.join(", ")} {names.length === 1 ? "has a multi-line value, which is" : "have multi-line values, which are"}{" "}
+      kept unchanged.
+    </p>
+  );
+}
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <fieldset className="grid gap-4">
@@ -262,6 +315,13 @@ function Ports({ rows, onChange }: { rows: SpecForm["ports"]; onChange: (rows: S
     <div className="grid gap-2">
       {rows.map((r, i) => (
         <div key={i} className="flex items-center gap-2" role="group" aria-label={`Port ${i + 1}`}>
+          <Input
+            aria-label="Bind address"
+            placeholder="all interfaces"
+            className="w-36 shrink-0"
+            value={r.hostIp}
+            onChange={(e) => update(i, { hostIp: e.target.value })}
+          />
           <Input
             aria-label="Host port"
             placeholder="host (random)"
@@ -302,7 +362,7 @@ function Ports({ rows, onChange }: { rows: SpecForm["ports"]; onChange: (rows: S
         variant="outline"
         size="sm"
         className="justify-self-start"
-        onClick={() => onChange([...rows, { host: "", container: "", protocol: "tcp" }])}
+        onClick={() => onChange([...rows, { host: "", hostIp: "", container: "", protocol: "tcp" }])}
       >
         <Plus />
         Add port

@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { joinArgs } from "@/lib/args";
 import { errorMessage } from "@/lib/errors";
 import { shortId } from "@/lib/format";
-import { isSecretKey, splitEnv } from "@/lib/secrets";
+import { isSecretKey, maskEnv, splitEnv } from "@/lib/secrets";
 import { FormError } from "@/pages/AuthLayout";
 import { ACTIONS, actionsFor, RemoveDialog } from "./actions";
 import { FilesTab } from "./FilesTab";
@@ -62,7 +62,7 @@ export function ContainerPage() {
           <Overview c={c} />
         </TabsContent>
         <TabsContent value="inspect">
-          <JsonView value={c} label="Container JSON" />
+          <JsonView value={c} masked={{ ...c, Config: { ...c.Config, Env: maskEnv(c.Config.Env ?? []) } }} label="Container JSON" />
         </TabsContent>
         <TabsContent value="env">
           <EnvTable env={c.Config.Env ?? []} />

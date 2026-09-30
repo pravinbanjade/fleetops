@@ -146,4 +146,14 @@ describe("container page", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("This container no longer exists.");
     expect(screen.getByRole("link", { name: "Back to containers" })).toBeInTheDocument();
   });
+
+  it("masks secrets in the Inspect JSON until shown", async () => {
+    mockFetch(routes);
+    const { screen } = renderApp("/envs/local/containers/c1?tab=inspect");
+    const pre = await screen.findByLabelText("Container JSON");
+    expect(pre).toHaveTextContent("DB_PASSWORD=••••••");
+    expect(pre).not.toHaveTextContent("hunter2");
+    await userEvent.click(screen.getByRole("button", { name: "Show secrets" }));
+    expect(screen.getByLabelText("Container JSON")).toHaveTextContent("DB_PASSWORD=hunter2");
+  });
 });

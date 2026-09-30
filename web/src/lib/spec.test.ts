@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ContainerSpec } from "@/api/gen/types.gen";
 import { joinArgs, splitArgs } from "./args";
-import { EMPTY_FORM, formToSpec, specToForm } from "./spec";
+import { EMPTY_FORM, formToSpec, forDuplicate, specToForm } from "./spec";
 
 describe("splitArgs", () => {
   it("splits on whitespace and groups quotes", () => {
@@ -28,8 +28,8 @@ const SPEC: ContainerSpec = {
   entrypoint: null,
   env: ["A=1", "B=x=y"],
   ports: [
-    { container_port: 80, host_port: 8080, protocol: "tcp" },
-    { container_port: 53, host_port: null, protocol: "udp" },
+    { container_port: 80, host_port: 8080, host_ip: "127.0.0.1", protocol: "tcp" },
+    { container_port: 53, host_port: null, host_ip: null, protocol: "udp" },
   ],
   binds: ["data:/data", "/srv:/srv:ro"],
   network: "shop",
@@ -70,10 +70,10 @@ describe("container spec form", () => {
   it("names the field that is wrong", () => {
     const base = { ...EMPTY_FORM, image: "redis" };
     expect(() => formToSpec({ ...base, image: "" })).toThrow("Image is required");
-    expect(() => formToSpec({ ...base, ports: [{ host: "80", container: "http", protocol: "tcp" }] })).toThrow(
+    expect(() => formToSpec({ ...base, ports: [{ host: "80", container: "http", hostIp: "", protocol: "tcp" }] })).toThrow(
       'Container port must be a number from 1 to 65535, not "http"',
     );
-    expect(() => formToSpec({ ...base, ports: [{ host: "70000", container: "80", protocol: "tcp" }] })).toThrow(
+    expect(() => formToSpec({ ...base, ports: [{ host: "70000", container: "80", hostIp: "", protocol: "tcp" }] })).toThrow(
       "Host port must be",
     );
     expect(() => formToSpec({ ...base, labels: "novalue" })).toThrow('Label "novalue" must look like key=value');
@@ -84,7 +84,49 @@ describe("container spec form", () => {
   });
 
   it("skips empty port rows", () => {
-    const f = { ...EMPTY_FORM, image: "redis", ports: [{ host: "", container: "", protocol: "tcp" as const }] };
+    const f = { ...EMPTY_FORM, image: "redis", ports: [{ host: "", hostIp: "", container: "", protocol: "tcp" as const }] };
     expect(formToSpec(f).ports).toEqual([]);
+  });
+
+  it("carries multi-line and padded values unchanged", () => {
+    const spec: ContainerSpec = {
+      ...SPEC,
+      cmd: ["sh", "-c", "echo a\necho b"],
+      env: ["A= padded ", "CERT=-----BEGIN\nabc\n-----END"],
+      labels: { tier: "front", note: "line 1\nline 2" },
+    };
+    const form = specToForm(spec);
+    expect(form.env).toBe("A= padded ");
+    expect(form.labels).toBe("tier=front");
+    expect(formToSpec(form)).toEqual(spec);
+  });
+});
+
+describe("forDuplicate", () => {
+  it("drops what would make the copy share the original's identity", () => {
+    const anon = "0f3e9a".padEnd(64, "0");
+    const copy = forDuplicate({
+      ...SPEC,
+      labels: { tier: "front", "com.docker.compose.project": "app", "com.docker.compose.service": "db" },
+      advanced: {
+        Hostname: "db",
+        User: "999",
+        HostConfig: {
+          ShmSize: 1024,
+          Mounts: [
+            { Type: "volume", Source: anon, Target: "/cache" },
+            { Type: "volume", Source: "pgdata", Target: "/var/lib/postgresql/data" },
+          ],
+        },
+        NetworkingConfig: { EndpointsConfig: { app_default: { Aliases: ["db"], IPAMConfig: { IPv4Address: "10.0.0.5" } } } },
+      },
+    });
+    expect(copy.labels).toEqual({ tier: "front" });
+    expect(copy.ports?.map((p) => p.host_port)).toEqual([null, null]);
+    expect(copy.ports?.[0].host_ip).toBe("127.0.0.1");
+    expect(copy.advanced).toEqual({
+      User: "999",
+      HostConfig: { ShmSize: 1024, Mounts: [{ Type: "volume", Source: "pgdata", Target: "/var/lib/postgresql/data" }] },
+    });
   });
 });

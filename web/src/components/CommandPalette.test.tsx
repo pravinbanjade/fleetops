@@ -80,6 +80,13 @@ describe("command palette", () => {
     expect(within(dialog).getByRole("option", { name: "Containers" })).toBeInTheDocument();
     expect(within(dialog).queryByRole("option", { name: "Users" })).not.toBeInTheDocument();
   });
+
+  it("leaves no palette heading on the page while closed", async () => {
+    mockFetch(routes);
+    const { screen } = renderApp("/envs/local");
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByRole("heading", { name: "Command palette" })).not.toBeInTheDocument();
+  });
 });
 
 describe("shortcuts", () => {

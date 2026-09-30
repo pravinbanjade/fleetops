@@ -29,7 +29,11 @@ const routes = {
 
 describe("container form", () => {
   it("creates a container from the form and opens it", async () => {
-    const calls = mockFetch({ ...routes, "POST /api/v1/envs/local/containers": { status: 201, json: { id: "new1" } } });
+    const calls = mockFetch({
+      ...routes,
+      "POST /api/v1/envs/local/containers": { status: 201, json: { id: "new1" } },
+      "POST /api/v1/envs/local/containers/new1/start": { status: 204 },
+    });
     const { screen, history } = renderApp("/envs/local/containers/new");
     await userEvent.type(await screen.findByLabelText("Image"), "redis:7");
     await userEvent.type(screen.getByLabelText("Name"), "api");
@@ -53,8 +57,9 @@ describe("container form", () => {
       network: "shop",
       restart_policy: "unless-stopped",
       memory_bytes: 256 * 1024 * 1024,
-      start: true,
+      start: false,
     });
+    expect(calls.some((c) => c.method === "POST" && c.path === "/api/v1/envs/local/containers/new1/start")).toBe(true);
   });
 
   it("says which field is wrong without sending anything", async () => {
@@ -131,5 +136,57 @@ describe("container form", () => {
     const { screen } = renderApp("/envs/local/containers/c1/edit");
     await userEvent.click(await screen.findByRole("button", { name: "Recreate" }));
     expect(await screen.findByText(/it is kept as web-fleetops-old-1/)).toBeInTheDocument();
+  });
+
+  it("keeps a localhost-only port and multi-line values on recreate", async () => {
+    const spec: ContainerSpec = {
+      ...SPEC,
+      cmd: ["sh", "-c", "echo a\necho b"],
+      env: ["A=1", "CERT=-----BEGIN\nabc\n-----END"],
+      ports: [{ container_port: 5432, host_port: 5432, host_ip: "127.0.0.1", protocol: "tcp" }],
+    };
+    const calls = mockFetch({
+      ...routes,
+      "GET /api/v1/envs/local/containers/c1/spec": { json: spec },
+      "POST /api/v1/envs/local/containers/c1/recreate": {
+        json: { id: "new1", old_removed: true, backup_name: "web-fleetops-old-1" },
+      },
+    });
+    const { screen, history } = renderApp("/envs/local/containers/c1/edit");
+    const port = await screen.findByRole("group", { name: "Port 1" });
+    expect(within(port).getByLabelText("Bind address")).toHaveValue("127.0.0.1");
+    expect(screen.getByText(/CERT has a multi-line value/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Command"), "x{backspace}");
+    await userEvent.click(screen.getByRole("button", { name: "Recreate" }));
+    await waitFor(() => expect(history.location.pathname).toBe("/envs/local/containers/new1"));
+    expect(calls.find((c) => c.path.endsWith("/recreate"))?.body).toMatchObject({
+      cmd: ["sh", "-c", "echo a\necho b"],
+      env: ["A=1", "CERT=-----BEGIN\nabc\n-----END"],
+      ports: [{ container_port: 5432, host_port: 5432, host_ip: "127.0.0.1", protocol: "tcp" }],
+    });
+  });
+
+  it("clears the host ports of a duplicate and says so", async () => {
+    mockFetch(routes);
+    const { screen } = renderApp("/envs/local/containers/new?from=c1");
+    const port = await screen.findByRole("group", { name: "Port 1" });
+    expect(within(port).getByLabelText("Host port")).toHaveValue("");
+    expect(screen.getByText(/host ports are cleared/i)).toBeInTheDocument();
+  });
+
+  it("opens a container that was created but could not start, and says why", async () => {
+    const calls = mockFetch({
+      ...routes,
+      "POST /api/v1/envs/local/containers": { status: 201, json: { id: "new1" } },
+      "POST /api/v1/envs/local/containers/new1/start": () =>
+        json(502, { code: "upstream", message: "port is already allocated" }),
+    });
+    const { screen, history } = renderApp("/envs/local/containers/new");
+    await userEvent.type(await screen.findByLabelText("Image"), "redis:7");
+    await userEvent.type(screen.getByLabelText("Name"), "api");
+    await userEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(history.location.pathname).toBe("/envs/local/containers/new1"));
+    expect(calls.find((c) => c.path === "/api/v1/envs/local/containers")?.body).toMatchObject({ start: false });
+    expect(await screen.findByText("Created api, but it could not start: port is already allocated")).toBeInTheDocument();
   });
 });
