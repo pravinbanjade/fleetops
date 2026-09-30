@@ -23,6 +23,23 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  /* ANSI colours 0–15 for log lines: darker shades that read on a light background. */
+  --ansi-0: #000000;
+  --ansi-1: #c0262d;
+  --ansi-2: #1d7a24;
+  --ansi-3: #8a6d00;
+  --ansi-4: #1f4fbf;
+  --ansi-5: #9b2a9e;
+  --ansi-6: #0b7285;
+  --ansi-7: #6b6b6b;
+  --ansi-8: #555555;
+  --ansi-9: #e03131;
+  --ansi-10: #2b8a3e;
+  --ansi-11: #a87d00;
+  --ansi-12: #3b5bdb;
+  --ansi-13: #ae3ec9;
+  --ansi-14: #1098ad;
+  --ansi-15: #333333;
 }
 
 .dark {
@@ -44,6 +61,22 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+  --ansi-0: #3b3b3b;
+  --ansi-1: #ff6b6b;
+  --ansi-2: #69db7c;
+  --ansi-3: #ffd43b;
+  --ansi-4: #74a7ff;
+  --ansi-5: #e599f7;
+  --ansi-6: #66d9e8;
+  --ansi-7: #d0d0d0;
+  --ansi-8: #808080;
+  --ansi-9: #ff8787;
+  --ansi-10: #8ce99a;
+  --ansi-11: #ffe066;
+  --ansi-12: #a5c4ff;
+  --ansi-13: #f3bcff;
+  --ansi-14: #99e9f2;
+  --ansi-15: #ffffff;
 }
 
 @theme inline {
