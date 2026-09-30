@@ -13,6 +13,12 @@ pub(crate) fn map_err(e: bollard::errors::Error) -> Error {
             status: status_code,
             message,
         },
+        // Mid-stream failures of an accepted request (a pull whose layer
+        // fails, a build step that exits non-zero) are Docker's own errors.
+        B::DockerStreamError { error } => Error::Upstream {
+            status: 500,
+            message: error,
+        },
         e @ (B::JsonDataError { .. } | B::JsonSerdeError { .. }) => {
             Error::Internal(format!("unexpected Docker response: {e}"))
         }
@@ -44,5 +50,15 @@ mod tests {
             map_err(bollard::errors::Error::RequestTimeoutError),
             Error::EnvUnavailable(_)
         ));
+    }
+
+    #[test]
+    fn mid_stream_errors_are_dockers_own() {
+        let e = map_err(bollard::errors::Error::DockerStreamError {
+            error: "manifest unknown".into(),
+        });
+        assert!(
+            matches!(e, Error::Upstream { status: 500, ref message } if message == "manifest unknown")
+        );
     }
 }
