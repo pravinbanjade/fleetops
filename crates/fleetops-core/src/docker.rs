@@ -8,11 +8,12 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, str::FromStr};
+use utoipa::ToSchema;
 
 pub const COMPOSE_PROJECT_LABEL: &str = "com.docker.compose.project";
 pub const COMPOSE_SERVICE_LABEL: &str = "com.docker.compose.service";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct EngineVersion {
     pub version: String,
     pub api_version: String,
@@ -20,7 +21,7 @@ pub struct EngineVersion {
     pub arch: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PortMapping {
     pub private_port: u16,
     pub public_port: Option<u16>,
@@ -28,7 +29,7 @@ pub struct PortMapping {
     pub protocol: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ContainerSummary {
     pub id: String,
     pub name: String,
@@ -50,7 +51,7 @@ fn tcp() -> String {
     "tcp".into()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PortBinding {
     pub container_port: u16,
     #[serde(default = "tcp")]
@@ -64,7 +65,7 @@ pub struct PortBinding {
 
 /// Everything the create/recreate form edits. `advanced` is a Docker API
 /// `ContainerCreate` JSON object merged over the generated body.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ContainerSpec {
     pub name: Option<String>,
@@ -83,6 +84,7 @@ pub struct ContainerSpec {
     pub nano_cpus: Option<i64>,
     pub cap_add: Vec<String>,
     pub privileged: bool,
+    #[schema(value_type = Option<Object>)]
     pub advanced: Option<Value>,
 }
 
@@ -204,7 +206,7 @@ impl FromStr for ContainerAction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ImageSummary {
     pub id: String,
     pub repo_tags: Vec<String>,
@@ -213,7 +215,7 @@ pub struct ImageSummary {
     pub in_use: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct VolumeSummary {
     pub name: String,
     pub driver: String,
@@ -223,7 +225,7 @@ pub struct VolumeSummary {
     pub in_use: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct VolumeSpec {
     pub name: String,
@@ -232,7 +234,7 @@ pub struct VolumeSpec {
     pub labels: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct NetworkSummary {
     pub id: String,
     pub name: String,
@@ -244,7 +246,7 @@ pub struct NetworkSummary {
     pub gateway: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct NetworkSpec {
     pub name: String,
@@ -256,13 +258,13 @@ pub struct NetworkSpec {
     pub labels: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PruneReport {
     pub deleted: Vec<String>,
     pub space_reclaimed: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum EntryKind {
     File,
@@ -271,7 +273,7 @@ pub enum EntryKind {
     Other,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DirEntry {
     pub name: String,
     pub kind: EntryKind,
@@ -281,7 +283,7 @@ pub struct DirEntry {
     pub link_target: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DirListing {
     pub path: String,
     pub entries: Vec<DirEntry>,

@@ -1,12 +1,13 @@
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
+use utoipa::ToSchema;
 
 pub const USERNAME_MAX: usize = 64;
 pub const PASSWORD_MIN: usize = 8;
 pub const PASSWORD_MAX: usize = 256;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Admin,
@@ -34,7 +35,7 @@ impl FromStr for Role {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct User {
     pub id: i64,
     pub username: String,

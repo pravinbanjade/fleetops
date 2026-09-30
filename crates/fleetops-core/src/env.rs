@@ -5,8 +5,9 @@ use crate::{docker::DockerOps, docker::EngineVersion, Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::{str::FromStr, sync::Arc};
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum EnvKind {
     DockerLocal,
@@ -33,7 +34,7 @@ impl FromStr for EnvKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum EnvStatus {
     Up { version: EngineVersion },
