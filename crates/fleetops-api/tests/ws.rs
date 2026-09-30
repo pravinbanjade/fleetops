@@ -114,3 +114,38 @@ async fn deleted_user_loses_the_websocket() {
     assert!(r.status.is_success(), "{:?}", r.json);
     assert_eq!(ws.json().await["code"], "unauthorized");
 }
+
+#[tokio::test]
+async fn unresponsive_client_is_dropped_and_releases_its_streams() {
+    // A laptop that slept on a network change leaves a half-open socket:
+    // it never answers pings, so the server must close it.
+    let t = app_with(fleetops_api::ApiConfig {
+        ws_ping_interval: std::time::Duration::from_millis(50),
+        ..ws_config()
+    })
+    .await;
+    let admin = t.with_local().await;
+    let mut ws = Ws::open(t.serve().await, &admin).await;
+    ws.send(ws_sub(1, "events", None, serde_json::Value::Null))
+        .await;
+    eventually("events stream", || t.fake.open_event_streams() == 1).await;
+    // Stop reading: no pongs go back.
+    eventually("zombie socket closed", || t.fake.open_event_streams() == 0).await;
+    drop(ws);
+}
+
+#[tokio::test]
+async fn a_client_that_answers_pings_stays_connected() {
+    let t = app_with(fleetops_api::ApiConfig {
+        ws_ping_interval: std::time::Duration::from_millis(50),
+        ..ws_config()
+    })
+    .await;
+    let admin = t.with_local().await;
+    let mut ws = Ws::open(t.serve().await, &admin).await;
+    ws.send(ws_sub(1, "events", None, serde_json::Value::Null))
+        .await;
+    // Reading lets the client library answer each ping.
+    ws.quiet(400).await;
+    assert_eq!(t.fake.open_event_streams(), 1);
+}

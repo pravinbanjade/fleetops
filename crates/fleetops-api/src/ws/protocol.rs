@@ -47,6 +47,8 @@ pub enum ClientMsg {
 pub enum Out {
     Text(String),
     Binary(Vec<u8>),
+    /// A websocket ping, for detecting half-open connections.
+    Ping,
 }
 
 pub fn data(sub: u32, data: Value) -> Out {
@@ -149,7 +151,7 @@ mod tests {
     fn server_messages_have_the_documented_shape() {
         let text = |o: Out| match o {
             Out::Text(t) => serde_json::from_str::<Value>(&t).unwrap(),
-            Out::Binary(_) => panic!("binary"),
+            Out::Binary(_) | Out::Ping => panic!("not text"),
         };
         assert_eq!(
             text(data(1, json!([1]))),

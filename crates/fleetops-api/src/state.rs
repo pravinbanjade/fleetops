@@ -26,6 +26,9 @@ pub struct ApiConfig {
     pub ws_backoff: Duration,
     /// How often an open websocket re-checks its session.
     pub ws_session_check: Duration,
+    /// How often the server pings each websocket. A client that sends
+    /// nothing (not even a pong) for two intervals is disconnected.
+    pub ws_ping_interval: Duration,
     /// Messages buffered per websocket subscription (spec default 1024).
     pub ws_queue_capacity: usize,
 }
@@ -37,6 +40,7 @@ impl Default for ApiConfig {
             hsts: false,
             ws_backoff: Duration::from_secs(1),
             ws_session_check: Duration::from_secs(30),
+            ws_ping_interval: Duration::from_secs(30),
             ws_queue_capacity: crate::ws::queue::QUEUE_CAPACITY,
         }
     }

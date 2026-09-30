@@ -39,6 +39,7 @@ fn size(m: &Out) -> usize {
     match m {
         Out::Text(t) => t.len(),
         Out::Binary(b) => b.len(),
+        Out::Ping => 0,
     }
 }
 
