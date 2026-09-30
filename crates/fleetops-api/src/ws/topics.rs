@@ -8,12 +8,13 @@ use super::queue::{Policy, SubQueue};
 use crate::{
     auth::extract::CurrentUser,
     authz::{authorize, Action},
+    tasks::{TaskEvent, TaskStatus},
     AppState,
 };
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
 use fleetops_core::streams::{ExecOptions, LogOptions};
-use fleetops_core::{now_unix, Error, Result};
+use fleetops_core::{now_unix, Error, Result, Role};
 use fleetops_store::NewAudit;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
@@ -249,6 +250,55 @@ pub(super) async fn exec(
             exec_id: session.exec_id,
             ops,
         }),
+    })
+}
+
+/// A background task's progress: everything so far, then live, then `end`.
+pub(super) async fn task(c: &Ctx<'_>, id: Option<String>) -> Result<Sub> {
+    let (s, cu, sub) = (c.s, c.cu, c.sub);
+    let id = required(&id, "id")?;
+    let task = s
+        .tasks
+        .get(id)
+        .filter(|t| t.owner == cu.user.id || cu.user.role == Role::Admin)
+        .ok_or_else(|| Error::NotFound(format!("task '{id}'")))?;
+    let feed = task.feed();
+    let q = c.queue(Policy::DropOldest);
+    let qq = q.clone();
+    let done = move |info: crate::tasks::TaskInfo| {
+        let reason = match info.status {
+            TaskStatus::Succeeded => "succeeded",
+            _ => "failed",
+        };
+        protocol::end(sub, reason, json!({ "task": info }))
+    };
+    let handle = tokio::spawn(async move {
+        let mut live = feed.live;
+        for v in feed.backlog {
+            qq.push(protocol::data(sub, v), 1);
+        }
+        if let Some(info) = feed.done {
+            return qq.finish(done(info));
+        }
+        loop {
+            match live.recv().await {
+                Ok(TaskEvent::Progress(v)) => {
+                    if !qq.push(protocol::data(sub, v), 1) {
+                        return;
+                    }
+                }
+                Ok(TaskEvent::Done(info)) => return qq.finish(done(info)),
+                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => {
+                    return qq.finish(protocol::end(sub, "closed", Value::Null))
+                }
+            }
+        }
+    });
+    Ok(Sub {
+        queue: q,
+        task: handle.abort_handle(),
+        exec: None,
     })
 }
 

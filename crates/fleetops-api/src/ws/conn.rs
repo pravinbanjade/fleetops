@@ -315,8 +315,6 @@ async fn start(
         Topic::Stats => topics::stats(&c, env, id).await,
         Topic::Logs => topics::logs(&c, env, id, opts).await,
         Topic::Exec => topics::exec(&c, env, id, opts).await,
-        other => Err(Error::Invalid(format!(
-            "topic {other:?} is not available yet"
-        ))),
+        Topic::Task => topics::task(&c, id).await,
     }
 }
