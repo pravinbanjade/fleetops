@@ -119,6 +119,10 @@ const dashboardRoute = createRoute({
 const containersRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "containers",
+  // `q` starts the list's filter, for links such as the dashboard's "2 exited".
+  validateSearch: (s: Record<string, unknown>): { q?: string } => ({
+    q: typeof s.q === "string" && s.q ? s.q : undefined,
+  }),
   component: lazyRouteComponent(() => import("@/pages/containers/ContainersPage"), "ContainersPage"),
 });
 

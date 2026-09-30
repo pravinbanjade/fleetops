@@ -22,9 +22,11 @@ import {
   listNetworks,
   listSessions,
   listUsers,
+  listRecentEvents,
   listVolumes,
 } from "./gen/sdk.gen";
 import type { DockerEvent } from "./gen/types.gen";
+import { mergeEvents } from "@/live/noise";
 
 /**
  * Query keys. Everything scoped to an environment starts with
@@ -193,10 +195,23 @@ export const composeProjectsQuery = (env: string) =>
     queryFn: async () => (await listComposeProjects(path(env))).data,
   });
 
+/** How far back the dashboard's event feed starts, in seconds. */
+export const RECENT_EVENTS_WINDOW = 15 * 60;
+
+/**
+ * The dashboard's event feed. It starts from the events Docker still holds
+ * from the last 15 minutes; after that the live stream adds to it (see
+ * EventApplier), so it is never refetched.
+ */
 export const recentEventsQuery = (env: string) =>
   queryOptions<DockerEvent[]>({
     queryKey: keys.recentEvents(env),
-    queryFn: () => [],
+    queryFn: async ({ client, queryKey }) => {
+      const since = Math.floor(Date.now() / 1000) - RECENT_EVENTS_WINDOW;
+      const past = (await listRecentEvents({ path: { env }, query: { since } })).data;
+      // Live events that arrived while this request was out are kept.
+      return mergeEvents(client.getQueryData<DockerEvent[]>(queryKey) ?? [], past);
+    },
     staleTime: Infinity,
     gcTime: Infinity,
   });

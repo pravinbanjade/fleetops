@@ -102,6 +102,54 @@ export function useContainerStats(env: string, id: string, enabled: boolean): St
   return useSyncExternalStore(subscribe, () => (stats && enabled ? stats.get(env, id) : NO_STATS));
 }
 
+/** CPU (percent of one core) and memory (bytes) summed over containers. */
+export interface CombinedStats {
+  cpu: number[];
+  memory: number[];
+}
+
+const NO_COMBINED: CombinedStats = { cpu: [], memory: [] };
+
+/**
+ * Live CPU and memory summed over `ids`, one point per sample, the last
+ * `points` of them. Samples arrive about once a second per container but
+ * not in step, so the i-th newest point adds each container's i-th newest
+ * sample; a container with a shorter history adds nothing to older points.
+ */
+export function useCombinedStats(env: string, ids: string[], points = 60): CombinedStats {
+  const { stats } = useLive();
+  const idList = ids.join(",");
+  const cache = useRef<{ inputs: StatsPoint[][]; out: CombinedStats } | null>(null);
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      if (!stats || !idList) return () => {};
+      const offs = idList.split(",").map((id) => stats.subscribe(env, id, onChange));
+      return () => offs.forEach((off) => off());
+    },
+    [stats, env, idList],
+  );
+  const snapshot = () => {
+    if (!stats || !idList) return NO_COMBINED;
+    const inputs = idList.split(",").map((id) => stats.get(env, id));
+    const prev = cache.current;
+    if (prev && prev.inputs.length === inputs.length && prev.inputs.every((h, i) => h === inputs[i])) return prev.out;
+    const n = Math.min(points, Math.max(0, ...inputs.map((h) => h.length)));
+    const cpu = new Array<number>(n).fill(0);
+    const memory = new Array<number>(n).fill(0);
+    for (const h of inputs) {
+      for (let k = 0; k < Math.min(n, h.length); k++) {
+        const p = h[h.length - 1 - k];
+        cpu[n - 1 - k] += p.cpu_percent;
+        memory[n - 1 - k] += p.memory_used;
+      }
+    }
+    const out = { cpu, memory };
+    cache.current = { inputs, out };
+    return out;
+  };
+  return useSyncExternalStore(subscribe, snapshot);
+}
+
 /** Sends the user to login when a failed reconnect was a lost session. */
 async function checkSession() {
   try {

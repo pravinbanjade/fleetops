@@ -20,6 +20,15 @@ const rows = (screen: typeof import("@testing-library/react").screen) =>
   within(screen.getByRole("table", { name: "Containers" })).getAllByRole("row").slice(1);
 
 describe("containers list", () => {
+  it("starts filtered when linked with ?q=", async () => {
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: LIST } });
+    const { screen } = renderApp("/envs/local/containers?q=exited");
+    const filter = await screen.findByRole("searchbox", { name: "Filter containers" });
+    expect(filter).toHaveValue("exited");
+    await waitFor(() => expect(rows(screen)).toHaveLength(1));
+    expect(rows(screen)[0]).toHaveTextContent("db");
+  });
+
   it("lists containers with state, ports and age", async () => {
     mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: LIST } });
     const { screen } = renderApp("/envs/local/containers");

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { getRouteApi, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { containersQuery, keys } from "@/api/queries";
@@ -18,6 +18,7 @@ import { portLinks } from "@/lib/ports";
 import { useContainerStats } from "@/live/LiveProvider";
 import { ACTIONS, RemoveDialog } from "./actions";
 
+const route = getRouteApi("/authed/shell/envs/$env/containers");
 const col = columns<ContainerSummary>();
 
 function containerColumns(env: string): Column<ContainerSummary>[] {
@@ -117,7 +118,8 @@ function Ports({ container }: { container: ContainerSummary }) {
 }
 
 export function ContainersPage() {
-  const { env } = useParams({ from: "/authed/shell/envs/$env/containers" });
+  const { env } = route.useParams();
+  const { q } = route.useSearch();
   const qc = useQueryClient();
   const list = useQuery(containersQuery(env));
   const [cols] = useState(() => containerColumns(env));
@@ -162,6 +164,7 @@ export function ContainersPage() {
         empty="No containers in this environment."
         initialSorting={[{ id: "name", desc: false }]}
         initialHidden={["compose"]}
+        initialFilter={q}
         selectable
         actions={(selected, clear) => (
           <>
