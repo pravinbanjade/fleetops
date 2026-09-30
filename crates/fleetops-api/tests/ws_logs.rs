@@ -120,3 +120,40 @@ async fn logs_subscription_is_validated() {
     let e = ws.json().await;
     assert!(is(&e, 4, "error") && e["code"] == "invalid", "{e}");
 }
+
+#[tokio::test]
+async fn stalled_log_reader_is_bounded_by_bytes_at_the_default_capacity() {
+    // 1024 messages x 500 lines would hold half a million lines per
+    // subscription; the queue must cap buffered bytes instead.
+    let t = app().await;
+    let admin = t.with_local().await;
+    const N: usize = 100_000;
+    let text = "x".repeat(200);
+    t.fake.set_logs(
+        "c1",
+        (0..N).map(|_| line(LogStream::Stdout, &text)).collect(),
+    );
+    let mut ws = Ws::open(t.serve().await, &admin).await;
+    ws.send(ws_sub(
+        1,
+        "logs",
+        Some("c1"),
+        json!({"follow": false, "tail": null}),
+    ))
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let (mut seen, mut dropped) = (0u64, 0u64);
+    loop {
+        let v = ws.json().await;
+        match v["type"].as_str() {
+            Some("data") => seen += v["data"].as_array().unwrap().len() as u64,
+            Some("gap") => dropped += v["dropped"].as_u64().unwrap(),
+            Some("end") => break,
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+    assert_eq!(seen + dropped, N as u64);
+    // ~20 MB of lines; only a few MiB may wait for a stalled reader.
+    assert!(dropped > 0, "a stalled reader must hit the byte bound");
+    assert!(seen * 230 < 16 << 20, "buffered {seen} lines");
+}

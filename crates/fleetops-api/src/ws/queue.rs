@@ -10,6 +10,9 @@ use std::{
 use tokio::sync::Notify;
 
 pub const QUEUE_CAPACITY: usize = 1024;
+/// Bytes a `Gap` (logs) queue may hold for a stalled reader. Message counts
+/// alone would allow 1024 batches of 500 long lines each.
+pub const GAP_MAX_BYTES: usize = 4 << 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Policy {
@@ -23,11 +26,33 @@ pub enum Policy {
 
 struct Inner {
     items: VecDeque<Out>,
+    /// Payload bytes currently queued.
+    bytes: usize,
     /// Log lines dropped since the last `gap` went out.
     dropped: u64,
     closed: bool,
     /// The producer is done; the queue goes away once drained.
     finished: bool,
+}
+
+fn size(m: &Out) -> usize {
+    match m {
+        Out::Text(t) => t.len(),
+        Out::Binary(b) => b.len(),
+    }
+}
+
+impl Inner {
+    fn push(&mut self, m: Out) {
+        self.bytes += size(&m);
+        self.items.push_back(m);
+    }
+
+    fn pop(&mut self) -> Option<Out> {
+        let m = self.items.pop_front()?;
+        self.bytes -= size(&m);
+        Some(m)
+    }
 }
 
 pub struct SubQueue {
@@ -49,6 +74,7 @@ impl SubQueue {
             capacity,
             inner: Mutex::new(Inner {
                 items: VecDeque::new(),
+                bytes: 0,
                 dropped: 0,
                 closed: false,
                 finished: false,
@@ -72,23 +98,25 @@ impl SubQueue {
         match self.policy {
             Policy::DropOldest | Policy::Block => {
                 if q.items.len() >= self.capacity {
-                    q.items.pop_front();
+                    q.pop();
                 }
-                q.items.push_back(msg);
+                q.push(msg);
             }
             Policy::Gap => {
                 // Room for this message, plus a `gap` ahead of it if lines
                 // were lost since the last one went out.
                 let need = if q.dropped > 0 { 2 } else { 1 };
-                if q.items.len() + need > self.capacity {
+                let full = q.items.len() + need > self.capacity
+                    || (!q.items.is_empty() && q.bytes + size(&msg) > GAP_MAX_BYTES);
+                if full {
                     q.dropped += weight;
                     return true;
                 }
                 if q.dropped > 0 {
                     let n = std::mem::take(&mut q.dropped);
-                    q.items.push_back(gap(self.sub, n));
+                    q.push(gap(self.sub, n));
                 }
-                q.items.push_back(msg);
+                q.push(msg);
             }
         }
         drop(q);
@@ -107,7 +135,7 @@ impl SubQueue {
                     return false;
                 }
                 if q.items.len() < self.capacity {
-                    q.items.push_back(msg);
+                    q.push(msg);
                     drop(q);
                     self.ready.notify_one();
                     return true;
@@ -126,9 +154,9 @@ impl SubQueue {
         }
         if q.dropped > 0 {
             let n = std::mem::take(&mut q.dropped);
-            q.items.push_back(gap(self.sub, n));
+            q.push(gap(self.sub, n));
         }
-        q.items.push_back(msg);
+        q.push(msg);
         q.finished = true;
         drop(q);
         self.ready.notify_one();
@@ -158,6 +186,7 @@ impl SubQueue {
         let mut q = self.inner.lock().unwrap();
         q.closed = true;
         q.items.clear();
+        q.bytes = 0;
         drop(q);
         self.space.notify_waiters();
     }
@@ -204,6 +233,22 @@ mod tests {
         // Room for gap + message now.
         q.push(n(5), 10);
         assert_eq!(drain(&q), [n(2), gap(1, 20), n(5)]);
+    }
+
+    #[test]
+    fn gap_queue_is_bounded_by_bytes() {
+        let q = q(Policy::Gap, 1024);
+        let big = || data(1, json!("x".repeat(GAP_MAX_BYTES / 4)));
+        for _ in 0..8 {
+            q.push(big(), 100);
+        }
+        let got = drain(&q);
+        let batches = got.iter().filter(|m| **m == big()).count();
+        assert!(batches <= 4, "{batches} batches of a quarter of the bound");
+        assert_eq!(got.last(), Some(&gap(1, (8 - batches as u64) * 100)));
+        // A single message larger than the bound still goes through.
+        q.push(data(1, json!("y".repeat(GAP_MAX_BYTES + 1))), 1);
+        assert_eq!(drain(&q).len(), 1);
     }
 
     #[test]
