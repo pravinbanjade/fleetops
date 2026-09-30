@@ -14,6 +14,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::broadcast;
+use utoipa::ToSchema;
 
 /// Progress messages kept per task for late subscribers.
 pub const TASK_LOG_MAX: usize = 2000;
@@ -22,7 +23,7 @@ pub const TASK_RETENTION: Duration = Duration::from_secs(600);
 /// Running tasks allowed at once across the server.
 pub const MAX_RUNNING_TASKS: usize = 8;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
     Running,
@@ -30,7 +31,7 @@ pub enum TaskStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
 pub struct TaskInfo {
     pub id: String,
     /// `image.pull` or `image.build`.

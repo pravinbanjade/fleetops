@@ -20,6 +20,7 @@ use fleetops_store::NewAudit;
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
+use utoipa::IntoParams;
 
 /// Everything a Docker handler needs: the authorised user, the environment
 /// and its Docker operations.
@@ -74,10 +75,13 @@ impl EnvCtx {
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ForceQuery {
+    /// Remove even if running or in use.
     #[serde(default)]
     pub force: bool,
+    /// Containers only: also remove anonymous volumes.
     #[serde(default)]
     pub volumes: bool,
 }

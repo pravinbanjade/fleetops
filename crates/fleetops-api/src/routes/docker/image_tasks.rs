@@ -2,6 +2,7 @@
 //! answer `202 {task_id}` at once (spec §5.1).
 
 use super::ctx;
+use crate::openapi::{BuildForm, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
     authz::Action,
@@ -18,19 +19,26 @@ use fleetops_core::docker::split_image_reference;
 use fleetops_core::streams::{BoxStream, BuildContext, BuildSpec};
 use fleetops_core::{now_unix, Error};
 use fleetops_store::NewAudit;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use utoipa::ToSchema;
 
 /// Largest accepted build upload.
 pub const BUILD_UPLOAD_MAX: usize = 100 * 1024 * 1024;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct PullBody {
     /// `nginx`, `nginx:1.27`, `ghcr.io/org/app:2` or `repo@sha256:...`.
     pub image: String,
     /// Overrides any tag in `image`.
     #[serde(default)]
     pub tag: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TaskStarted {
+    /// Subscribe to it with the websocket `task` topic or poll `GET /tasks/{id}`.
+    pub task_id: String,
 }
 
 /// Starts `stream` as a task and audits its outcome when it finishes.
@@ -41,7 +49,7 @@ fn start_task(
     kind: &'static str,
     target: String,
     stream: BoxStream<Value>,
-) -> ApiResult<(StatusCode, Json<Value>)> {
+) -> ApiResult<(StatusCode, Json<TaskStarted>)> {
     let store = s.store.clone();
     let (env_name, env_id) = env;
     let task = s.tasks.spawn(
@@ -77,16 +85,28 @@ fn start_task(
     )?;
     Ok((
         StatusCode::ACCEPTED,
-        Json(json!({ "task_id": task.info().id })),
+        Json(TaskStarted {
+            task_id: task.info().id,
+        }),
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/images/pull",
+    operation_id = "pullImage",
+    tag = "images",
+    summary = "Pull an image in the background",
+    params(EnvParam),
+    request_body = PullBody,
+    responses((status = 202, description = "Started; follow it on the websocket `task` topic", body = TaskStarted))
+)]
 pub async fn pull(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<PullBody>,
-) -> ApiResult<(StatusCode, Json<Value>)> {
+) -> ApiResult<(StatusCode, Json<TaskStarted>)> {
     let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
     let (image, parsed_tag) = split_image_reference(&body.image)?;
     let tag = body.tag.filter(|t| !t.is_empty()).unwrap_or(parsed_tag);
@@ -112,12 +132,22 @@ fn bad(e: impl std::fmt::Display) -> Error {
 
 /// Multipart fields: `context` (a tar of the build context) or `dockerfile`
 /// (a lone Dockerfile), plus optional `tag` and `dockerfile_path`.
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/images/build",
+    operation_id = "buildImage",
+    tag = "images",
+    summary = "Build an image in the background (upload up to 100 MiB)",
+    params(EnvParam),
+    request_body(content = BuildForm, content_type = "multipart/form-data"),
+    responses((status = 202, description = "Started; follow it on the websocket `task` topic", body = TaskStarted))
+)]
 pub async fn build(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
     mut form: Multipart,
-) -> ApiResult<(StatusCode, Json<Value>)> {
+) -> ApiResult<(StatusCode, Json<TaskStarted>)> {
     let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
     let (mut context, mut tag, mut dockerfile) = (None, None, None);
     while let Some(field) = form.next_field().await.map_err(bad)? {

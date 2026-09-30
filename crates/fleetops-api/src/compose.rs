@@ -4,8 +4,9 @@
 use fleetops_core::docker::ContainerSummary;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct ComposeProject {
     pub name: String,
     pub services: Vec<String>,

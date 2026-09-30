@@ -6,16 +6,12 @@ pub mod tasks;
 pub mod users;
 
 use crate::{error::ApiError, AppState};
-use axum::{
-    extract::DefaultBodyLimit,
-    routing::{get, patch, post},
-    Json, Router,
-};
+use axum::{extract::DefaultBodyLimit, routing::get, Json};
 use fleetops_core::{now_unix, Error};
 use fleetops_store::NewAudit;
 use serde::Serialize;
 use utoipa::ToSchema;
-use utoipa_axum::{router::OpenApiRouter, routes};
+use utoipa_axum::{router::OpenApiRouter, router::UtoipaMethodRouterExt, routes};
 
 /// Every API route, with its documentation. Routes are registered only
 /// through `routes!`, which takes each path from the handler's
@@ -36,69 +32,50 @@ pub fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(users::update, users::remove))
         .routes(routes!(audit_log::list))
         .route("/ws", get(crate::ws::handler))
-        .route("/tasks/{id}", get(tasks::get))
-        .merge(OpenApiRouter::from(env_routes()))
+        .routes(routes!(tasks::get))
+        .merge(env_routes())
         .fallback(not_found)
 }
 
-fn env_routes() -> Router<AppState> {
+fn env_routes() -> OpenApiRouter<AppState> {
     use docker::{
         compose, containers as c, image_tasks, images as i, networks as n, system, volumes as v,
     };
-    Router::new()
-        .route("/envs", get(envs::list).post(envs::create))
-        .route("/envs/{env}", patch(envs::update).delete(envs::remove))
-        .route("/envs/{env}/status", get(envs::status))
-        .route("/envs/{env}/info", get(system::info))
-        .route("/envs/{env}/df", get(system::disk_usage))
-        .route("/envs/{env}/containers", get(c::list).post(c::create))
-        .route("/envs/{env}/containers/prune", post(c::prune))
-        .route(
-            "/envs/{env}/containers/{id}",
-            get(c::inspect).delete(c::remove),
+    OpenApiRouter::new()
+        .routes(routes!(envs::list, envs::create))
+        .routes(routes!(envs::update, envs::remove))
+        .routes(routes!(envs::status))
+        .routes(routes!(system::info))
+        .routes(routes!(system::disk_usage))
+        .routes(routes!(c::list, c::create))
+        .routes(routes!(c::prune))
+        .routes(routes!(c::inspect, c::remove))
+        .routes(routes!(c::spec))
+        .routes(routes!(c::rename))
+        .routes(routes!(c::recreate_container))
+        .routes(routes!(c::duplicate))
+        .routes(routes!(c::list_files))
+        .routes(routes!(c::download_file))
+        .routes(routes!(c::action))
+        .routes(routes!(i::list))
+        .routes(routes!(i::prune))
+        .routes(routes!(image_tasks::pull))
+        .routes(
+            routes!(image_tasks::build).layer(DefaultBodyLimit::max(image_tasks::BUILD_UPLOAD_MAX)),
         )
-        .route("/envs/{env}/containers/{id}/spec", get(c::spec))
-        .route("/envs/{env}/containers/{id}/rename", post(c::rename))
-        .route(
-            "/envs/{env}/containers/{id}/recreate",
-            post(c::recreate_container),
-        )
-        .route("/envs/{env}/containers/{id}/duplicate", post(c::duplicate))
-        .route("/envs/{env}/containers/{id}/files", get(c::list_files))
-        .route(
-            "/envs/{env}/containers/{id}/files/download",
-            get(c::download_file),
-        )
-        .route("/envs/{env}/containers/{id}/{action}", post(c::action))
-        .route("/envs/{env}/images", get(i::list))
-        .route("/envs/{env}/images/prune", post(i::prune))
-        .route("/envs/{env}/images/pull", post(image_tasks::pull))
-        .route(
-            "/envs/{env}/images/build",
-            post(image_tasks::build).layer(DefaultBodyLimit::max(image_tasks::BUILD_UPLOAD_MAX)),
-        )
-        .route("/envs/{env}/images/{id}", get(i::inspect).delete(i::remove))
-        .route("/envs/{env}/images/{id}/history", get(i::history))
-        .route("/envs/{env}/images/{id}/tag", post(i::tag))
-        .route("/envs/{env}/volumes", get(v::list).post(v::create))
-        .route("/envs/{env}/volumes/prune", post(v::prune))
-        .route(
-            "/envs/{env}/volumes/{name}",
-            get(v::inspect).delete(v::remove),
-        )
-        .route("/envs/{env}/networks", get(n::list).post(n::create))
-        .route("/envs/{env}/networks/prune", post(n::prune))
-        .route(
-            "/envs/{env}/networks/{id}",
-            get(n::inspect).delete(n::remove),
-        )
-        .route("/envs/{env}/networks/{id}/connect", post(n::connect))
-        .route("/envs/{env}/networks/{id}/disconnect", post(n::disconnect))
-        .route("/envs/{env}/compose-projects", get(compose::list))
-        .route(
-            "/envs/{env}/compose-projects/{project}/{action}",
-            post(compose::action),
-        )
+        .routes(routes!(i::inspect, i::remove))
+        .routes(routes!(i::history))
+        .routes(routes!(i::tag))
+        .routes(routes!(v::list, v::create))
+        .routes(routes!(v::prune))
+        .routes(routes!(v::inspect, v::remove))
+        .routes(routes!(n::list, n::create))
+        .routes(routes!(n::prune))
+        .routes(routes!(n::inspect, n::remove))
+        .routes(routes!(n::connect))
+        .routes(routes!(n::disconnect))
+        .routes(routes!(compose::list))
+        .routes(routes!(compose::action))
 }
 
 #[derive(Serialize, ToSchema)]

@@ -13,7 +13,7 @@ use utoipa::openapi::{
     security::{ApiKey, ApiKeyValue, SecurityRequirement, SecurityScheme},
     OpenApi as Doc, RefOr, Response as DocResponse, ResponseBuilder,
 };
-use utoipa::OpenApi;
+use utoipa::{IntoParams, OpenApi, ToSchema};
 use utoipa_axum::router::OpenApiRouter;
 
 /// Where the API is mounted; documented paths include it.
@@ -31,6 +31,8 @@ pub const API_BASE: &str = "/api/v1";
     ),
     components(schemas(
         ErrorBody,
+        ContainerActionName,
+        ComposeActionName,
     )),
     tags(
         (name = "system", description = "Server health and this document"),
@@ -136,3 +138,83 @@ fn secure(doc: &mut Doc) {
         }
     }
 }
+
+// Path parameters, shared by the handlers that document them. Handlers
+// extract tuples; `tests/openapi.rs` checks every `{name}` in a documented
+// path has a parameter of that name.
+
+#[derive(IntoParams)]
+#[into_params(parameter_in = Path)]
+#[allow(dead_code)]
+pub struct EnvParam {
+    /// Environment name.
+    env: String,
+}
+
+#[derive(IntoParams)]
+#[into_params(parameter_in = Path)]
+#[allow(dead_code)]
+pub struct EnvIdParam {
+    /// Environment name.
+    env: String,
+    /// Resource id or name.
+    id: String,
+}
+
+#[derive(IntoParams)]
+#[into_params(parameter_in = Path)]
+#[allow(dead_code)]
+pub struct EnvNameParam {
+    /// Environment name.
+    env: String,
+    /// Volume name.
+    name: String,
+}
+
+/// Multipart body of `POST /envs/{env}/images/build`: send `context` or
+/// `dockerfile`, not both.
+#[derive(ToSchema)]
+#[allow(dead_code)]
+pub struct BuildForm {
+    /// A tar of the build context.
+    #[schema(value_type = Option<String>, format = Binary)]
+    context: Option<Vec<u8>>,
+    /// A lone Dockerfile, when there is no other context.
+    #[schema(value_type = Option<String>, format = Binary)]
+    dockerfile: Option<Vec<u8>>,
+    /// Tag for the built image, e.g. `app:1.2`.
+    tag: Option<String>,
+    /// Dockerfile path inside the context (default `Dockerfile`).
+    dockerfile_path: Option<String>,
+}
+
+/// `POST /envs/{env}/containers/{id}/{action}` actions.
+#[derive(ToSchema)]
+#[schema(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum ContainerActionName {
+    Start,
+    Stop,
+    Restart,
+    Kill,
+    Pause,
+    Unpause,
+}
+
+/// `POST /envs/{env}/compose-projects/{project}/{action}` actions; `down`
+/// removes the project's containers.
+#[derive(ToSchema)]
+#[schema(rename_all = "lowercase")]
+#[allow(dead_code)]
+pub enum ComposeActionName {
+    Start,
+    Stop,
+    Restart,
+    Down,
+}
+
+/// Raw bytes, e.g. a downloaded file.
+#[derive(ToSchema)]
+#[schema(value_type = String, format = Binary)]
+#[allow(dead_code)]
+pub struct Bytes(Vec<u8>);
