@@ -1,0 +1,204 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { Box, Database, Layers, Network, Play, RotateCw, Search, Server, Square } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { containersQuery, envsQuery, imagesQuery, keys, networksQuery, volumesQuery } from "@/api/queries";
+import { containerAction } from "@/api/gen/sdk.gen";
+import type { ContainerActionName, ContainerSummary } from "@/api/gen/types.gen";
+import { useSession } from "@/auth/session";
+import { Button } from "@/components/ui/button";
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from "@/components/ui/command";
+import { errorMessage } from "@/lib/errors";
+import { shortId } from "@/lib/format";
+import { ACTIONS, actionsFor } from "@/pages/containers/actions";
+import { ADMIN_NAV, NAV } from "./nav";
+
+const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+
+const ACTION_ICON: Partial<Record<ContainerActionName, typeof Play>> = { start: Play, stop: Square, restart: RotateCw };
+
+/** Whether a key press happened in a text field, where shortcuts must not fire. */
+export function typing(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null;
+  return !!t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+}
+
+/**
+ * The sidebar's search button; it and ⌘K / Ctrl-K open the palette: jump to a page, a container, image,
+ * volume or network of the current environment, or another environment,
+ * or start, stop or restart a container. `/` focuses the page's filter.
+ */
+export function CommandPalette({ env }: { env?: string }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setOpen((o) => !o);
+      } else if (e.key === "/" && !typing(e) && !e.metaKey && !e.ctrlKey) {
+        const filter = document.querySelector<HTMLInputElement>("[data-filter]");
+        if (filter) {
+          e.preventDefault();
+          filter.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return (
+    <>
+      <Button variant="outline" className="justify-between text-muted-foreground" onClick={() => setOpen(true)}>
+        <span className="flex items-center gap-2">
+          <Search className="size-4" />
+          Search
+        </span>
+        <kbd className="text-xs">{MAC ? "⌘K" : "Ctrl K"}</kbd>
+      </Button>
+      <CommandDialog open={open} onOpenChange={setOpen} title="Command palette" description="Jump to a page or resource">
+        {open && <PaletteBody env={env} close={() => setOpen(false)} />}
+      </CommandDialog>
+    </>
+  );
+}
+
+function PaletteBody({ env, close }: { env?: string; close: () => void }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { user } = useSession();
+  const envs = useQuery(envsQuery);
+  const on = !!env;
+  const e = env ?? "";
+  const containers = useQuery({ ...containersQuery(e), enabled: on });
+  const images = useQuery({ ...imagesQuery(e), enabled: on });
+  const volumes = useQuery({ ...volumesQuery(e), enabled: on });
+  const networks = useQuery({ ...networksQuery(e), enabled: on });
+
+  /** Closes the palette, then navigates. */
+  const go = (nav: () => Promise<void>) => {
+    close();
+    void nav();
+  };
+  const run = async (c: ContainerSummary, action: ContainerActionName) => {
+    close();
+    const a = ACTIONS.find((x) => x.action === action)!;
+    try {
+      await containerAction({ path: { env: e, id: c.id, action } });
+      toast.success(`${a.done} ${c.name}`);
+    } catch (err) {
+      toast.error(`${a.label} ${c.name}: ${errorMessage(err)}`);
+    } finally {
+      void qc.invalidateQueries({ queryKey: keys.containers(e) });
+    }
+  };
+
+  return (
+    <>
+      <CommandInput placeholder="Search pages, containers, images…" />
+      <CommandList>
+        <CommandEmpty>Nothing found.</CommandEmpty>
+        <CommandGroup heading="Pages">
+          {on &&
+            NAV.map((n) => (
+              <CommandItem key={n.to} value={`page ${n.label}`} onSelect={() => go(() => navigate({ to: n.to, params: { env: e } }))}>
+                <n.icon />
+                {n.label}
+              </CommandItem>
+            ))}
+          {user.role === "admin" &&
+            ADMIN_NAV.map((n) => (
+              <CommandItem key={n.to} value={`page ${n.label}`} onSelect={() => go(() => navigate({ to: n.to }))}>
+                <n.icon />
+                {n.label}
+              </CommandItem>
+            ))}
+          <CommandItem value="page Account" onSelect={() => go(() => navigate({ to: "/account" }))}>
+            Account
+          </CommandItem>
+        </CommandGroup>
+        {on && (
+          <CommandGroup heading="Containers">
+            {containers.data?.map((c) => (
+              <CommandItem key={c.id} value={`container ${c.name} ${c.image}`} onSelect={() => go(() => navigate({ to: "/envs/$env/containers/$id", params: { env: e, id: c.id } }))}>
+                <Box />
+                {c.name}
+                <CommandShortcut>{c.state}</CommandShortcut>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {on && (
+          <CommandGroup heading="Container actions">
+            {containers.data?.flatMap((c) =>
+              actionsFor(c.state)
+                .filter((a) => ACTION_ICON[a])
+                .map((a) => {
+                  const Icon = ACTION_ICON[a]!;
+                  const label = ACTIONS.find((x) => x.action === a)!.label;
+                  return (
+                    <CommandItem key={`${c.id}-${a}`} value={`${label} ${c.name}`} onSelect={() => void run(c, a)}>
+                      <Icon />
+                      {label} {c.name}
+                    </CommandItem>
+                  );
+                }),
+            )}
+          </CommandGroup>
+        )}
+        {on && (
+          <CommandGroup heading="Images">
+            {images.data?.map((i) => (
+              <CommandItem
+                key={i.id}
+                value={`image ${i.repo_tags.join(" ") || shortId(i.id)}`}
+                onSelect={() => go(() => navigate({ to: "/envs/$env/images/$id", params: { env: e, id: i.id } }))}
+              >
+                <Layers />
+                {i.repo_tags[0] ?? shortId(i.id)}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {on && (
+          <CommandGroup heading="Volumes">
+            {volumes.data?.map((v) => (
+              <CommandItem key={v.name} value={`volume ${v.name}`} onSelect={() => go(() => navigate({ to: "/envs/$env/volumes/$name", params: { env: e, name: v.name } }))}>
+                <Database />
+                {v.name}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {on && (
+          <CommandGroup heading="Networks">
+            {networks.data?.map((n) => (
+              <CommandItem key={n.id} value={`network ${n.name}`} onSelect={() => go(() => navigate({ to: "/envs/$env/networks/$id", params: { env: e, id: n.id } }))}>
+                <Network />
+                {n.name}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        <CommandGroup heading="Environments">
+          {envs.data
+            ?.filter((x) => x.name !== env)
+            .map((x) => (
+              <CommandItem key={x.id} value={`environment ${x.name}`} onSelect={() => go(() => navigate({ to: "/envs/$env", params: { env: x.name } }))}>
+                <Server />
+                Switch to {x.name}
+              </CommandItem>
+            ))}
+        </CommandGroup>
+      </CommandList>
+    </>
+  );
+}
