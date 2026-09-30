@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
-import { ChevronsUpDown, LayoutDashboard, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
+import { Boxes, ChevronsUpDown, LayoutDashboard, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
 import { envsQuery, envStatusQuery } from "@/api/queries";
 import { useLogout, useSession } from "@/auth/session";
 import { Badge } from "@/components/ui/badge";
@@ -18,8 +18,11 @@ import {
 import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { useTheme, type Theme } from "@/theme";
 
-/** The environment-scoped pages, in sidebar order. P3b adds the resource pages. */
-const NAV = [{ to: "/envs/$env", label: "Dashboard", icon: LayoutDashboard }] as const;
+/** The environment-scoped pages, in sidebar order. */
+const NAV = [
+  { to: "/envs/$env", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/envs/$env/containers", label: "Containers", icon: Boxes },
+] as const;
 
 export function Shell() {
   const { env } = useParams({ strict: false });
@@ -37,7 +40,7 @@ export function Shell() {
                 key={to}
                 to={to}
                 params={{ env }}
-                activeOptions={{ exact: true }}
+                activeOptions={{ exact: to === "/envs/$env" }}
                 className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent data-[status=active]:bg-accent data-[status=active]:font-medium"
               >
                 <Icon className="size-4" />
