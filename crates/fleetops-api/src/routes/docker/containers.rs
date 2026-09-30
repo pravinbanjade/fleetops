@@ -3,11 +3,11 @@ use crate::openapi::{Bytes, ContainerActionName, EnvIdParam, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
     authz::Action,
-    extract::{ApiJson, ApiPath},
+    extract::{ApiJson, ApiPath, ApiQuery},
     ApiResult, AppState,
 };
 use axum::{
-    extract::{Query, State},
+    extract::State,
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Json,
@@ -217,7 +217,7 @@ pub async fn remove(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
-    Query(q): Query<ForceQuery>,
+    ApiQuery(q): ApiQuery<ForceQuery>,
 ) -> ApiResult<StatusCode> {
     let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
     let res = c.ops.remove_container(&id, q.force, q.volumes).await;
@@ -321,7 +321,7 @@ pub async fn list_files(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
-    Query(q): Query<PathQuery>,
+    ApiQuery(q): ApiQuery<PathQuery>,
 ) -> ApiResult<Json<DirListing>> {
     let c = ctx(&s, cu, &env, Action::DockerRead).await?;
     Ok(Json(c.ops.list_dir(&id, &q.path).await?))
@@ -340,7 +340,7 @@ pub async fn download_file(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
-    Query(q): Query<PathQuery>,
+    ApiQuery(q): ApiQuery<PathQuery>,
 ) -> ApiResult<Response> {
     let c = ctx(&s, cu, &env, Action::DockerRead).await?;
     let data = c.ops.read_file(&id, &q.path, MAX_DOWNLOAD_BYTES).await?;

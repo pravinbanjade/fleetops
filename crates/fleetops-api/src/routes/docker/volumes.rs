@@ -3,14 +3,10 @@ use crate::openapi::{EnvNameParam, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
     authz::Action,
-    extract::{ApiJson, ApiPath},
+    extract::{ApiJson, ApiPath, ApiQuery},
     ApiResult, AppState,
 };
-use axum::{
-    extract::{Query, State},
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::docker::{PruneReport, VolumeSpec, VolumeSummary};
 use serde_json::Value;
 
@@ -86,7 +82,7 @@ pub async fn remove(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
-    Query(q): Query<ForceQuery>,
+    ApiQuery(q): ApiQuery<ForceQuery>,
 ) -> ApiResult<StatusCode> {
     let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
     let res = c.ops.remove_volume(&name, q.force).await;
