@@ -148,3 +148,25 @@ fn env_name_and_url_rules() {
         assert!(validate_env_url(bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn image_references_split_into_repo_and_tag() {
+    use fleetops_core::docker::split_image_reference as split;
+    let ok = |r: &str, repo: &str, tag: &str| {
+        assert_eq!(
+            split(r).unwrap(),
+            (repo.to_string(), tag.to_string()),
+            "{r}"
+        )
+    };
+    ok("nginx", "nginx", "latest");
+    ok("nginx:1.27", "nginx", "1.27");
+    ok(" alpine:3.20 ", "alpine", "3.20");
+    ok("ghcr.io/org/app:2", "ghcr.io/org/app", "2");
+    ok("registry:5000/team/app", "registry:5000/team/app", "latest");
+    ok("registry:5000/team/app:v1", "registry:5000/team/app", "v1");
+    ok("alpine@sha256:abc", "alpine@sha256:abc", "");
+    for bad in ["", "  ", "nginx:", ":1", "has space:1", "a\nb"] {
+        assert!(matches!(split(bad), Err(Error::Invalid(_))), "{bad:?}");
+    }
+}
