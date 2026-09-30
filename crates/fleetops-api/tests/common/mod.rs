@@ -296,10 +296,12 @@ impl Ws {
 
     /// Asserts nothing arrives for `ms` milliseconds.
     pub async fn quiet(&mut self, ms: u64) {
-        if let Ok(Some(Ok(m))) =
-            tokio::time::timeout(std::time::Duration::from_millis(ms), self.0.next()).await
-        {
-            panic!("expected silence, got {m:?}");
+        let until = tokio::time::Instant::now() + std::time::Duration::from_millis(ms);
+        while let Ok(Some(Ok(m))) = tokio::time::timeout_at(until, self.0.next()).await {
+            // Reading answers pings; they are not messages.
+            if !matches!(m, WsMessage::Ping(_) | WsMessage::Pong(_)) {
+                panic!("expected silence, got {m:?}");
+            }
         }
     }
 }

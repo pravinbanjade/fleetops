@@ -93,9 +93,17 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
     let mut status = s.hubs.status().subscribe();
     let mut check = tokio::time::interval(s.config.ws_session_check);
     check.tick().await;
+    let ping_every = s.config.ws_ping_interval;
+    let mut ping = tokio::time::interval(ping_every);
+    ping.tick().await;
+    let mut last_heard = tokio::time::Instant::now();
     loop {
         tokio::select! {
-            frame = incoming.next() => match frame {
+            frame = incoming.next() => {
+                if matches!(frame, Some(Ok(_))) {
+                    last_heard = tokio::time::Instant::now();
+                }
+                match frame {
                 Some(Ok(Message::Text(t))) => match serde_json::from_str::<ClientMsg>(&t) {
                     Ok(msg) => handle(&s, &cu, &shared, msg).await,
                     Err(e) => shared.fail(None, &Error::Invalid(format!("bad frame: {e}"))),
@@ -106,7 +114,7 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
                 },
                 Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
                 Some(Ok(_)) => {}
-            },
+            }},
             change = status.recv() => match change {
                 Ok(c) => {
                     if authorize(&cu.user, None, Action::EnvRead).is_ok() {
@@ -116,6 +124,14 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
                 Err(RecvError::Lagged(_)) => {}
                 Err(RecvError::Closed) => {}
             },
+            _ = ping.tick() => {
+                // Half-open sockets (a laptop that slept) never answer; drop
+                // them so they stop holding Docker streams and the session.
+                if last_heard.elapsed() > ping_every * 2 {
+                    break;
+                }
+                shared.say(Out::Ping);
+            }
             _ = check.tick() => {
                 if !session_still_valid(&s, &token_hash, cu.user.id).await {
                     shared.fail(None, &Error::Unauthorized("session ended".into()));
@@ -195,6 +211,7 @@ where
     sink.send(match m {
         Out::Text(t) => Message::Text(t.into()),
         Out::Binary(b) => Message::Binary(b.into()),
+        Out::Ping => Message::Ping(Vec::new().into()),
     })
     .await
 }
