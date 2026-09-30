@@ -4,6 +4,7 @@ pub mod docker;
 pub mod env;
 pub mod error;
 pub mod recreate;
+pub mod streams;
 pub mod user;
 
 pub use error::{Error, Result};

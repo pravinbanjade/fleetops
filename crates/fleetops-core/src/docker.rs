@@ -136,6 +136,31 @@ impl ContainerSpec {
     }
 }
 
+/// Splits `repo[:tag]` into repo and tag, defaulting the tag to `latest`.
+/// A colon before the last `/` is a registry port, not a tag. Digest
+/// references (`repo@sha256:...`) come back whole with an empty tag.
+pub fn split_image_reference(reference: &str) -> Result<(String, String)> {
+    let r = reference.trim();
+    if r.is_empty() || r.len() > 512 || r.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(Error::Invalid(format!(
+            "invalid image reference '{reference}'"
+        )));
+    }
+    if r.contains('@') {
+        return Ok((r.to_string(), String::new()));
+    }
+    let slash = r.rfind('/').map_or(0, |i| i + 1);
+    match r[slash..].rfind(':') {
+        Some(i) if i > 0 && slash + i + 1 < r.len() => {
+            Ok((r[..slash + i].to_string(), r[slash + i + 1..].to_string()))
+        }
+        Some(_) => Err(Error::Invalid(format!(
+            "invalid image reference '{reference}'"
+        ))),
+        None => Ok((r.to_string(), "latest".into())),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContainerAction {
     Start,
