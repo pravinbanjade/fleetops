@@ -1,4 +1,4 @@
-import { queryOptions } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { ApiError, setCsrfToken } from "./client";
 import type { ContainerInspect, ImageInspect, ImageLayer, NetworkInspect, VolumeInspect } from "./docker";
 import {
@@ -14,6 +14,7 @@ import {
   inspectNetwork,
   inspectVolume,
   listContainerFiles,
+  listAudit,
   listComposeProjects,
   listContainers,
   listEnvs,
@@ -89,6 +90,17 @@ export const envsQuery = queryOptions({
 export const usersQuery = queryOptions({
   queryKey: keys.users,
   queryFn: async () => (await listUsers()).data,
+});
+
+/** Audit entries a page asks for at once. */
+export const AUDIT_PAGE = 100;
+
+/** The audit log, newest first, a page at a time: each page asks for entries older than the last one seen. */
+export const auditQuery = infiniteQueryOptions({
+  queryKey: keys.audit,
+  queryFn: async ({ pageParam }) => (await listAudit({ query: { limit: AUDIT_PAGE, before: pageParam } })).data,
+  initialPageParam: undefined as number | undefined,
+  getNextPageParam: (last) => (last.length < AUDIT_PAGE ? undefined : last[last.length - 1].id),
 });
 
 const path = (env: string) => ({ path: { env } });
