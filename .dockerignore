@@ -1,0 +1,13 @@
+# Only the sources the image build reads.
+*
+!Cargo.toml
+!Cargo.lock
+!crates/
+!web/
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+# rust-toolchain.toml is left out on purpose: it names the `stable` channel,
+# and inside the build stage that would make rustup download a second
+# toolchain instead of using the image's pinned one.

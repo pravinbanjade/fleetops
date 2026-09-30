@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker test-web e2e lint fmt build openapi
+.PHONY: dev dev-server dev-web web test test-docker test-web e2e lint fmt build image image-smoke openapi
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -58,3 +58,19 @@ build: web
 openapi:
 	cargo run -q -p fleetops-server -- --openapi > crates/fleetops-api/openapi.json
 	pnpm -C web gen:api
+
+# The container image: a static musl binary on distroless/static, for
+# linux/amd64 and linux/arm64, built entirely inside BuildKit (no local zig
+# or cross toolchain). It is loaded into the local image store as $(IMAGE);
+# a multi-platform load needs Docker's containerd image store. Build one
+# platform with `make image PLATFORMS=linux/amd64`.
+IMAGE ?= fleetops:dev
+PLATFORMS ?= linux/amd64,linux/arm64
+
+image:
+	docker buildx build --platform $(PLATFORMS) --tag $(IMAGE) --load .
+
+# Runs $(IMAGE) against the local daemon's socket and checks that it
+# serves the UI and reaches Docker as its non-root user.
+image-smoke:
+	scripts/image-smoke.sh $(IMAGE)
