@@ -1428,6 +1428,42 @@ export type GetDiskUsageResponses = {
 
 export type GetDiskUsageResponse = GetDiskUsageResponses[keyof GetDiskUsageResponses];
 
+export type ListRecentEventsData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: {
+        /**
+         * Unix seconds. Defaults to 15 minutes ago; anything older than an hour
+         * is treated as an hour ago.
+         */
+        since?: number;
+    };
+    url: '/api/v1/envs/{env}/events';
+};
+
+export type ListRecentEventsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListRecentEventsError = ListRecentEventsErrors[keyof ListRecentEventsErrors];
+
+export type ListRecentEventsResponses = {
+    /**
+     * Recent events
+     */
+    200: Array<DockerEvent>;
+};
+
+export type ListRecentEventsResponse = ListRecentEventsResponses[keyof ListRecentEventsResponses];
+
 export type ListImagesData = {
     body?: never;
     path: {
