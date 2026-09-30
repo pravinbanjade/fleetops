@@ -6,6 +6,7 @@ mod env;
 mod error;
 pub mod files;
 mod resources;
+mod streams;
 
 pub use env::{DockerEnvFactory, LocalDockerEnv};
 

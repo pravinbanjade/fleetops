@@ -435,3 +435,225 @@ async fn daemon_loss_mid_session_is_unavailable_then_recovers() {
         .unwrap();
     proxy.abort();
 }
+
+mod streams {
+    use super::*;
+    use fleetops_core::streams::{
+        BuildContext, BuildSpec, ExecOptions, LogOptions, LogStream, StreamOps,
+    };
+    use std::time::Duration;
+
+    async fn run_to_exit(d: &LocalDocker, name: &str, spec: ContainerSpec) -> String {
+        let id = d.create_container(&spec).await.unwrap();
+        d.container_action(&id, ContainerAction::Start)
+            .await
+            .unwrap();
+        for _ in 0..50 {
+            let v = d.inspect_container(&id).await.unwrap();
+            if v["State"]["Running"] == false {
+                return id;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("{name} did not exit");
+    }
+
+    #[tokio::test]
+    async fn events_report_container_lifecycle() {
+        let d = docker().await;
+        let mut events = d.events();
+        let name = unique("events");
+        let id = d.create_container(&sleeper(&name)).await.unwrap();
+        d.container_action(&id, ContainerAction::Start)
+            .await
+            .unwrap();
+        d.remove_container(&id, true, false).await.unwrap();
+        let mut seen = Vec::new();
+        while !seen.contains(&"destroy".to_string()) {
+            let e = tokio::time::timeout(Duration::from_secs(10), events.next())
+                .await
+                .expect("event within 10s")
+                .unwrap()
+                .unwrap();
+            if e.id == id {
+                assert_eq!(e.kind, "container");
+                assert_eq!(e.name.as_deref(), Some(name.as_str()));
+                assert!(e.time > 0);
+                seen.push(e.action);
+            }
+        }
+        for a in ["create", "start", "destroy"] {
+            assert!(seen.iter().any(|s| s == a), "{a} missing from {seen:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn stats_stream_yields_samples() {
+        let d = docker().await;
+        let name = unique("stats");
+        let id = d.create_container(&sleeper(&name)).await.unwrap();
+        d.container_action(&id, ContainerAction::Start)
+            .await
+            .unwrap();
+        let samples: Vec<_> = d.stats(&id).take(2).collect().await;
+        assert_eq!(samples.len(), 2);
+        let s = samples[1].as_ref().unwrap();
+        assert!(
+            s.memory_limit > 0 && s.memory_used > 0 && s.pids >= 1,
+            "{s:?}"
+        );
+        assert!(s.time > 1_600_000_000_000);
+        d.remove_container(&id, true, false).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn logs_come_back_as_lines_per_stream() {
+        let d = docker().await;
+        let name = unique("logs");
+        let mut spec = sleeper(&name);
+        spec.cmd = Some(vec![
+            "sh".into(),
+            "-c".into(),
+            "echo one; echo two >&2; printf 'no-newline'".into(),
+        ]);
+        let id = run_to_exit(&d, &name, spec).await;
+        let opts = LogOptions {
+            follow: false,
+            ..Default::default()
+        };
+        let lines: Vec<_> = d.logs(&id, &opts).map(|l| l.unwrap()).collect().await;
+        let got: Vec<_> = lines.iter().map(|l| (l.stream, l.text.as_str())).collect();
+        assert!(got.contains(&(LogStream::Stdout, "one")), "{got:?}");
+        assert!(got.contains(&(LogStream::Stderr, "two")), "{got:?}");
+        assert!(got.contains(&(LogStream::Stdout, "no-newline")), "{got:?}");
+        let tail = LogOptions {
+            follow: false,
+            tail: Some(1),
+            stderr: false,
+            ..Default::default()
+        };
+        let last: Vec<_> = d.logs(&id, &tail).map(|l| l.unwrap().text).collect().await;
+        assert_eq!(last, ["no-newline"]);
+        d.remove_container(&id, true, false).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn tty_container_logs_are_split_into_lines() {
+        let d = docker().await;
+        let name = unique("ttylogs");
+        let mut spec = sleeper(&name);
+        spec.cmd = Some(vec!["sh".into(), "-c".into(), "printf 'a\\nb\\n'".into()]);
+        spec.advanced = Some(serde_json::json!({"Tty": true}));
+        let id = run_to_exit(&d, &name, spec).await;
+        let opts = LogOptions {
+            follow: false,
+            ..Default::default()
+        };
+        let texts: Vec<_> = d.logs(&id, &opts).map(|l| l.unwrap().text).collect().await;
+        assert_eq!(texts, ["a", "b"]);
+        d.remove_container(&id, true, false).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn exec_runs_a_shell_with_input_resize_and_exit_code() {
+        let d = docker().await;
+        let name = unique("exec");
+        let id = d.create_container(&sleeper(&name)).await.unwrap();
+        d.container_action(&id, ContainerAction::Start)
+            .await
+            .unwrap();
+        let mut s = d.exec_start(&id, &ExecOptions::default()).await.unwrap();
+        d.exec_resize(&s.exec_id, 120, 40).await.unwrap();
+        s.input
+            .send(b"stty size; echo hi-$((40+2)); exit 3\n".to_vec())
+            .await
+            .unwrap();
+        let mut out = Vec::new();
+        while let Ok(Some(chunk)) =
+            tokio::time::timeout(Duration::from_secs(10), s.output.next()).await
+        {
+            out.extend(chunk.unwrap());
+        }
+        let text = String::from_utf8_lossy(&out);
+        assert!(text.contains("hi-42"), "{text}");
+        assert!(text.contains("40 120"), "resize reached the tty: {text}");
+        let mut code = None;
+        for _ in 0..20 {
+            code = d.exec_exit_code(&s.exec_id).await.unwrap();
+            if code.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!(code, Some(3));
+        d.remove_container(&id, true, false).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn exec_in_missing_container_is_upstream_404() {
+        let d = docker().await;
+        match d
+            .exec_start("fleetops-it-nope", &ExecOptions::default())
+            .await
+        {
+            Err(Error::Upstream { status: 404, .. }) => {}
+            Err(e) => panic!("expected 404, got {e:?}"),
+            Ok(_) => panic!("expected 404, got a session"),
+        }
+    }
+
+    #[tokio::test]
+    async fn pull_streams_progress_and_missing_image_fails() {
+        let d = docker().await;
+        let items: Vec<_> = d.pull_image("alpine", "3.20").collect().await;
+        assert!(!items.is_empty());
+        let last = items.last().unwrap().as_ref().unwrap();
+        assert!(
+            last["status"].as_str().unwrap().contains("alpine:3.20"),
+            "{last}"
+        );
+        let missing: Vec<_> = d
+            .pull_image("fleetops-it/does-not-exist", "latest")
+            .collect()
+            .await;
+        assert!(
+            matches!(missing.last(), Some(Err(Error::Upstream { .. }))),
+            "{missing:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_from_a_dockerfile_streams_output_and_tags() {
+        let d = docker().await;
+        let tag = format!("fleetops-it-build:{}", std::process::id());
+        let spec = BuildSpec {
+            context: BuildContext::Dockerfile(
+                b"FROM alpine:3.20\nRUN echo built-ok-$((6*7))\n".to_vec(),
+            ),
+            tag: Some(tag.clone()),
+            dockerfile: None,
+        };
+        let items: Vec<_> = d.build_image(spec).map(|r| r.unwrap()).collect().await;
+        let text: String = items.iter().filter_map(|v| v["stream"].as_str()).collect();
+        assert!(text.contains("built-ok-42"), "{text}");
+        let img = d.inspect_image(&tag).await.unwrap();
+        d.remove_image(img["Id"].as_str().unwrap(), true)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn failing_build_step_is_an_error() {
+        let d = docker().await;
+        let spec = BuildSpec {
+            context: BuildContext::Dockerfile(b"FROM alpine:3.20\nRUN exit 7\n".to_vec()),
+            tag: None,
+            dockerfile: None,
+        };
+        let items: Vec<_> = d.build_image(spec).collect().await;
+        assert!(
+            matches!(items.last(), Some(Err(Error::Upstream { .. }))),
+            "{items:?}"
+        );
+    }
+}
