@@ -19,6 +19,20 @@ export const ACTIONS: { action: ContainerActionName; label: string; done: string
   { action: "unpause", label: "Unpause", done: "Unpaused" },
 ];
 
+/** The actions that make sense in the container's current state. */
+export function actionsFor(state: string): ContainerActionName[] {
+  switch (state) {
+    case "running":
+      return ["stop", "restart", "kill", "pause"];
+    case "paused":
+      return ["unpause", "kill"];
+    case "restarting":
+      return ["stop", "kill"];
+    default:
+      return ["start"];
+  }
+}
+
 /** Removes the chosen containers, with Docker's `force` and `volumes` options. */
 export function RemoveDialog({
   env,
