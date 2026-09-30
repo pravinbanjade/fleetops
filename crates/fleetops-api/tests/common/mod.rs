@@ -184,3 +184,150 @@ impl TestApp {
         .await
     }
 }
+
+// ---- websocket ---------------------------------------------------------------
+
+use futures_util::{SinkExt, StreamExt};
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+pub use tokio_tungstenite::tungstenite::Message as WsMessage;
+
+pub type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// How long a websocket test waits for any one frame.
+pub const WS_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+impl TestApp {
+    /// Serves the app on an ephemeral port; websockets need a real socket.
+    pub async fn serve(&self) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = self.router.clone();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        addr
+    }
+}
+
+/// Opens `/api/v1/ws` as `session`, with an optional Origin header.
+pub async fn ws_connect(
+    addr: SocketAddr,
+    session: Option<&Session>,
+    origin: Option<&str>,
+) -> Result<WsStream, tokio_tungstenite::tungstenite::Error> {
+    let mut r = format!("ws://{addr}/api/v1/ws")
+        .into_client_request()
+        .unwrap();
+    if let Some(s) = session {
+        r.headers_mut().insert("cookie", s.cookie.parse().unwrap());
+    }
+    if let Some(o) = origin {
+        r.headers_mut().insert("origin", o.parse().unwrap());
+    }
+    tokio_tungstenite::connect_async(r).await.map(|(ws, _)| ws)
+}
+
+pub struct Ws(pub WsStream);
+
+impl Ws {
+    pub async fn open(addr: SocketAddr, session: &Session) -> Ws {
+        Ws(ws_connect(addr, Some(session), None)
+            .await
+            .expect("ws connect"))
+    }
+
+    pub async fn send(&mut self, v: Value) {
+        self.0
+            .send(WsMessage::Text(v.to_string().into()))
+            .await
+            .unwrap();
+    }
+
+    pub async fn send_text(&mut self, t: &str) {
+        self.0
+            .send(WsMessage::Text(t.to_string().into()))
+            .await
+            .unwrap();
+    }
+
+    pub async fn send_binary(&mut self, b: Vec<u8>) {
+        self.0.send(WsMessage::Binary(b.into())).await.unwrap();
+    }
+
+    /// The next frame, failing the test after `WS_WAIT`. None once closed.
+    pub async fn frame(&mut self) -> Option<WsMessage> {
+        loop {
+            match tokio::time::timeout(WS_WAIT, self.0.next())
+                .await
+                .expect("websocket frame within WS_WAIT")
+            {
+                Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_))) => continue,
+                Some(Ok(WsMessage::Close(_))) | None | Some(Err(_)) => return None,
+                Some(Ok(m)) => return Some(m),
+            }
+        }
+    }
+
+    /// The next JSON frame, skipping binary frames.
+    pub async fn json(&mut self) -> Value {
+        loop {
+            match self.frame().await.expect("socket closed") {
+                WsMessage::Text(t) => return serde_json::from_str(&t).unwrap(),
+                _ => continue,
+            }
+        }
+    }
+
+    /// JSON frames until one matches `pred`, which is returned.
+    pub async fn until(&mut self, pred: impl Fn(&Value) -> bool) -> Value {
+        loop {
+            let v = self.json().await;
+            if pred(&v) {
+                return v;
+            }
+        }
+    }
+
+    /// Asserts nothing arrives for `ms` milliseconds.
+    pub async fn quiet(&mut self, ms: u64) {
+        if let Ok(Some(Ok(m))) =
+            tokio::time::timeout(std::time::Duration::from_millis(ms), self.0.next()).await
+        {
+            panic!("expected silence, got {m:?}");
+        }
+    }
+}
+
+/// A `sub` frame for environment `local`.
+pub fn ws_sub(n: u32, topic: &str, id: Option<&str>, opts: Value) -> Value {
+    json!({"op": "sub", "sub": n, "topic": topic, "env": "local", "id": id, "opts": opts})
+}
+
+/// `{"sub": n, "type": t}`?
+pub fn is(v: &Value, sub: u32, t: &str) -> bool {
+    v["sub"] == sub && v["type"] == t
+}
+
+/// Polls `cond` for up to WS_WAIT.
+pub async fn eventually(what: &str, cond: impl Fn() -> bool) {
+    let start = std::time::Instant::now();
+    while !cond() {
+        assert!(start.elapsed() < WS_WAIT, "timed out waiting for {what}");
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
+/// Websocket-friendly config: fast reconnects and session checks.
+pub fn ws_config() -> ApiConfig {
+    ApiConfig {
+        ws_backoff: std::time::Duration::from_millis(10),
+        ws_session_check: std::time::Duration::from_millis(50),
+        ..ApiConfig::default()
+    }
+}

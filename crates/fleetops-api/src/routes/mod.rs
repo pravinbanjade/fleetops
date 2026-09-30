@@ -27,6 +27,7 @@ pub fn api() -> Router<AppState> {
         .route("/users", get(users::list).post(users::create))
         .route("/users/{id}", patch(users::update).delete(users::remove))
         .route("/audit", get(audit_log::list))
+        .route("/ws", get(crate::ws::handler))
         .merge(env_routes())
         .fallback(not_found)
 }

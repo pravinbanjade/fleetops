@@ -1,6 +1,8 @@
 use crate::{
     auth::{limiter::LoginLimiter, setup::SetupGuard},
     envs::EnvRegistry,
+    tasks::TaskManager,
+    ws::hub::Hubs,
 };
 use fleetops_core::env::EnvFactory;
 use fleetops_store::Store;
@@ -19,6 +21,13 @@ pub struct ApiConfig {
     /// Send HSTS on TLS responses. Off by default because the HTTP listener
     /// is always on and HSTS would break it for browsers.
     pub hsts: bool,
+    /// First reconnect delay for dropped Docker event streams; doubles up
+    /// to 30 s.
+    pub ws_backoff: Duration,
+    /// How often an open websocket re-checks its session.
+    pub ws_session_check: Duration,
+    /// Messages buffered per websocket subscription (spec default 1024).
+    pub ws_queue_capacity: usize,
 }
 
 impl Default for ApiConfig {
@@ -26,6 +35,9 @@ impl Default for ApiConfig {
         Self {
             setup_window: Duration::from_secs(600),
             hsts: false,
+            ws_backoff: Duration::from_secs(1),
+            ws_session_check: Duration::from_secs(30),
+            ws_queue_capacity: crate::ws::queue::QUEUE_CAPACITY,
         }
     }
 }
@@ -37,6 +49,8 @@ pub struct AppState {
     pub limiter: Arc<LoginLimiter>,
     pub setup: Arc<SetupGuard>,
     pub envs: Arc<EnvRegistry>,
+    pub hubs: Arc<Hubs>,
+    pub tasks: Arc<TaskManager>,
 }
 
 impl AppState {
@@ -49,6 +63,8 @@ impl AppState {
             limiter: Arc::new(LoginLimiter::new(LOGIN_MAX_FAILURES, LOGIN_WINDOW)),
             setup: Arc::new(setup),
             envs: Arc::new(EnvRegistry::new(factory)),
+            hubs: Arc::new(Hubs::default()),
+            tasks: Arc::new(TaskManager::default()),
         }
     }
 }
