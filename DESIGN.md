@@ -322,7 +322,7 @@ The board is flat. Bays, strips and panels separate by tone (bay, strip) and by 
 
 ## Shapes
 
-Corners are tight and squared. They step from 2px (holders, EnvTags, badges, checkboxes, skeleton bars and link focus rings) to 4px (buttons, inputs, nav rows), 6px (panels, tables, readouts) and 8px (dialogs, the auth card). The holder and the EnvTag stay nearly square on purpose, because they are printed tags on a strip, not pills. Fully round shapes are kept for dots (live, up and down), progress tracks (state bar, disk and readout shares) and the user's initial.
+Corners are tight and squared. They step from 2px (holders, EnvTags, badges, checkboxes, skeleton bars and link focus rings) to 4px (buttons, inputs, nav rows), 6px (panels, tables, readouts) and 8px (dialogs, the auth card). The holder and the EnvTag stay nearly square on purpose, because they are printed tags on a strip, not pills. Fully round shapes are kept for dots (live, up and down), progress tracks (state bar, disk and readout shares).
 
 A strip is a box of cells. Table cells carry left rules (the rule at 50–70%) so each field reads as a boxed column, and rows are divided by full rules. Strip lists inside a panel run edge to edge, with the panel's own border as the frame.
 
@@ -389,6 +389,12 @@ A 15.5rem strip cell in the page title row, one each for CPU and memory. It hold
 ### Environment Tag and Band
 - **EnvTag:** a square with 2px corners (20px or 28px) in the environment's hue, holding up to two white initials in the strip cut at 700 weight. It is used in the breadcrumb, the switcher and the switcher menu.
 - **Band:** a flat 3px strip of the hue across the top edge of the rail and the top bar. It is never shown without an environment.
+
+### User Avatar
+- **Blobatar:** every user is shown by a deterministic blobatar (`blobatar` + `@blobatar/react`) drawn from their username, so the same person is the same creature in the user menu, the Users list, the audit log and Account. It renders as a static `<img>` from a data URI (allowed by the CSP's `img-src data:`), with no network request and nothing stored.
+- **Tile:** the face sits on a squared tile (20px with 2px corners, 28px with 4px, 40px with 6px) in a hairline border over the raised grey at 60%, like every identity mark on the board. The name always appears beside it, so the tile is `aria-hidden`.
+- **System actor:** audit entries with no user show a Lucide `Bot` in the same tile, in the secondary text colour.
+- Avatar hues are identity, like the EnvTag. They are not readings, and they never stand in for state.
 
 ### Live State
 An 8px dot with a label in muted 12px text, at the right of the top bar. When the connection is live, the dot pulses in the live colour (a 2.4s ping, or none with reduced motion). Reconnecting shows a wait dot, and connecting a muted dot. While the connection is lost, a banner runs under the top bar with a wait fill at 12%, a wait edge at 40% and a spinning 16px refresh icon (2s turn, motion-safe), so it reads in the same tone as the dot. The dashboard's liveness line uses the same dots and says in words what is on screen and how old it is.

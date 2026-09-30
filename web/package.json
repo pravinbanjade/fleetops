@@ -16,6 +16,7 @@
     "check:api": "openapi-ts && git diff --exit-code -- src/api/gen && test -z \"$(git status --porcelain -- src/api/gen)\""
   },
   "dependencies": {
+    "@blobatar/react": "^2.7.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource-variable/mona-sans": "^5.3.0",
     "@tanstack/react-query": "^5.104.0",
@@ -24,6 +25,7 @@
     "@tanstack/react-virtual": "^3.14.13",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "blobatar": "^2.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

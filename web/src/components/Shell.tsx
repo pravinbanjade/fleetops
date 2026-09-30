@@ -22,6 +22,7 @@ import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { CommandPalette, typing } from "./CommandPalette";
 import { ADMIN_NAV, NAV } from "./nav";
 import { useTheme, type Theme } from "@/theme";
+import { UserAvatar } from "./UserAvatar";
 
 const LINK =
   "group/link relative flex h-8 items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-cord-soft data-[status=active]:font-medium data-[status=active]:text-foreground [&[data-status=active]_svg]:text-primary";
@@ -342,18 +343,14 @@ function UserMenuFor({ user }: { user: { username: string; role: string } }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="h-10 w-full justify-start gap-2.5 px-1.5 text-foreground">
-          <span
-            aria-hidden
-            className="flex size-7 shrink-0 items-center justify-center rounded-full border bg-card text-xs font-semibold"
-          >
-            {user.username.slice(0, 1).toUpperCase()}
-          </span>
+          <UserAvatar name={user.username} />
           <span className="truncate">{user.username}</span>
           <Settings2 aria-hidden className="ml-auto text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="w-56">
-        <DropdownMenuLabel>
+        <DropdownMenuLabel className="flex items-center gap-2">
+          <UserAvatar name={user.username} size="sm" />
           {user.username} <span className="font-normal text-muted-foreground">({user.role})</span>
         </DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => void navigate({ to: "/account" })}>Account</DropdownMenuItem>
