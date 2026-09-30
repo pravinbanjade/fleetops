@@ -102,4 +102,19 @@ describe("volumes", () => {
     expect(within(d).getByText("app=shop")).toBeInTheDocument();
     expect(await within(d).findByRole("link", { name: "db" })).toBeInTheDocument();
   });
+
+  it("masks a password in the volume's driver options until clicked", async () => {
+    mockFetch({
+      ...routes,
+      "GET /api/v1/envs/local/volumes/share": {
+        json: { Name: "share", Driver: "local", Mountpoint: "/m", Scope: "local", Options: { type: "cifs", o: "username=u,password=s3cret" } },
+      },
+    });
+    const { screen } = renderApp("/envs/local/volumes/share");
+    const d = await screen.findByLabelText("Volume details");
+    expect(within(d).getByText(/type=cifs/)).toBeInTheDocument();
+    expect(screen.queryByText(/s3cret/)).not.toBeInTheDocument();
+    await userEvent.click(within(d).getByRole("button", { name: "Show o" }));
+    expect(within(d).getByText(/s3cret/)).toBeInTheDocument();
+  });
 });

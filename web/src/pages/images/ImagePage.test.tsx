@@ -78,4 +78,14 @@ describe("image page", () => {
     const { screen } = renderApp(PATH);
     expect(await screen.findByRole("alert")).toHaveTextContent("This image no longer exists.");
   });
+
+  it("masks secret-looking image env values until clicked", async () => {
+    mockFetch({ ...routes, [`GET /api/v1/envs/local/images/sha256%3Aaaa111222333444`]: { json: { ...IMG, Config: { Env: ["API_TOKEN=abc123"] } } } });
+    const { screen } = renderApp(PATH);
+    const d = await screen.findByLabelText("Image details");
+    expect(within(d).getByText(/API_TOKEN=/)).toBeInTheDocument();
+    expect(screen.queryByText(/abc123/)).not.toBeInTheDocument();
+    await userEvent.click(within(d).getByRole("button", { name: "Show API_TOKEN" }));
+    expect(within(d).getByText(/abc123/)).toBeInTheDocument();
+  });
 });

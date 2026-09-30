@@ -5,6 +5,7 @@ import { imageHistoryQuery, imageQuery } from "@/api/queries";
 import type { ImageInspect } from "@/api/docker";
 import { Details, DetailError } from "@/components/Details";
 import { JsonView } from "@/components/JsonView";
+import { Masked } from "@/components/Masked";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { joinArgs } from "@/lib/args";
 import { errorMessage } from "@/lib/errors";
 import { formatAgo, formatBytes, shortId } from "@/lib/format";
+import { isSecretKey, maskEnv, splitEnv } from "@/lib/secrets";
 import { imageName, RemoveImagesDialog, TagDialog } from "./dialogs";
 
 export function ImagePage() {
@@ -56,7 +58,11 @@ export function ImagePage() {
           <History env={env} id={id} />
         </TabsContent>
         <TabsContent value="inspect">
-          <JsonView value={img} label="Image JSON" />
+          <JsonView
+            value={img}
+            masked={img.Config?.Env ? { ...img, Config: { ...img.Config, Env: maskEnv(img.Config.Env) } } : undefined}
+            label="Image JSON"
+          />
         </TabsContent>
       </Tabs>
       {tagging && <TagDialog env={env} id={img.Id} onClose={() => setTagging(false)} />}
@@ -106,11 +112,20 @@ function Overview({ img }: { img: ImageInspect }) {
 function EnvList({ env }: { env: string[] }) {
   return (
     <ul className="grid gap-0.5 font-mono text-xs">
-      {env.map((e) => (
-        <li key={e} className="break-all">
-          {e}
-        </li>
-      ))}
+      {env.map((e) => {
+        const [k, v] = splitEnv(e);
+        return (
+          <li key={e} className="break-all">
+            {isSecretKey(k) ? (
+              <>
+                {k}=<Masked name={k} value={v} />
+              </>
+            ) : (
+              e
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

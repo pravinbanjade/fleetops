@@ -6,7 +6,9 @@ import { Details, DetailError } from "@/components/Details";
 import { JsonView } from "@/components/JsonView";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
+import { Masked } from "@/components/Masked";
 import { formatKeyValues } from "@/lib/kv";
+import { isSecretOption, maskOptions } from "@/lib/secrets";
 import { volumeUsers } from "@/lib/usage";
 import { RemoveVolumesDialog } from "./dialogs";
 
@@ -55,13 +57,16 @@ export function VolumePage() {
               "no container"
             ),
           ],
-          ["Options", formatKeyValues(v.Options) || undefined],
+          [
+            "Options",
+            Object.keys(v.Options ?? {}).length ? <OptionList key="options" options={v.Options!} /> : undefined,
+          ],
           ["Labels", formatKeyValues(v.Labels) || undefined],
         ]}
       />
       <section className="grid gap-2">
         <h2 className="font-medium">Inspect</h2>
-        <JsonView value={v} label="Volume JSON" />
+        <JsonView value={v} masked={v.Options ? { ...v, Options: maskOptions(v.Options) } : undefined} label="Volume JSON" />
       </section>
       {removing && (
         <RemoveVolumesDialog
@@ -74,5 +79,17 @@ export function VolumePage() {
         />
       )}
     </Page>
+  );
+}
+
+function OptionList({ options }: { options: Record<string, string> }) {
+  return (
+    <ul className="grid gap-0.5 font-mono text-xs">
+      {Object.entries(options).map(([k, v]) => (
+        <li key={k} className="break-all">
+          {k}={isSecretOption(k, v) ? <Masked name={k} value={v} /> : v}
+        </li>
+      ))}
+    </ul>
   );
 }
