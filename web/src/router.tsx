@@ -112,6 +112,12 @@ const dashboardRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/DashboardPage"), "DashboardPage"),
 });
 
+const containersRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "containers",
+  component: lazyRouteComponent(() => import("@/pages/containers/ContainersPage"), "ContainersPage"),
+});
+
 const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
@@ -121,7 +127,7 @@ const accountRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
-  authedRoute.addChildren([indexRoute, shellRoute.addChildren([envRoute.addChildren([dashboardRoute]), accountRoute])]),
+  authedRoute.addChildren([indexRoute, shellRoute.addChildren([envRoute.addChildren([dashboardRoute, containersRoute]), accountRoute])]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {

@@ -15,3 +15,19 @@ export function formatBytes(n: number | null | undefined): string {
 export function formatTime(unix: number): string {
   return new Date(unix * 1000).toLocaleString();
 }
+
+/** How long ago a Unix-seconds time was: "just now", "5 minutes ago", "3 days ago"; older than a month, the date. */
+export function formatAgo(unix: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round(now / 1000 - unix));
+  const ago = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+  if (s < 60) return "just now";
+  if (s < 3600) return ago(Math.floor(s / 60), "minute");
+  if (s < 86400) return ago(Math.floor(s / 3600), "hour");
+  if (s < 30 * 86400) return ago(Math.floor(s / 86400), "day");
+  return new Date(unix * 1000).toLocaleDateString();
+}
+
+/** A Docker id as the CLI shows it: 12 hex characters, without the `sha256:` prefix. */
+export function shortId(id: string): string {
+  return id.replace(/^sha256:/, "").slice(0, 12);
+}
