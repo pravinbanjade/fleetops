@@ -8,6 +8,10 @@ rust-version.workspace = true
 name = "fleetops"
 path = "src/main.rs"
 
+[features]
+# End-to-end tests against a real Docker daemon (see `make test-docker`).
+docker-it = []
+
 [dependencies]
 fleetops-core.workspace = true
 fleetops-store.workspace = true
@@ -27,6 +31,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+futures-util.workspace = true
 http-body-util.workspace = true
 tempfile.workspace = true
+tokio-tungstenite.workspace = true
 tower.workspace = true
