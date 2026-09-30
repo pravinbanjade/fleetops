@@ -9,7 +9,7 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 3).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is in progress. The backend and the web UI are complete: every resource page, the admin pages, the log viewer, the terminal and live stats. Still to come: end-to-end tests, the container image and CI (P3d).
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete: the backend, the web UI, end-to-end tests, the container image and CI. Next is sub-project 2, the agent for managing more than one host.
 
 ## Contents
 
@@ -90,7 +90,22 @@ On first start, FleetOps registers a `local` environment when it can reach the s
 
 > Access to the Docker socket is equivalent to root access on the host. Don't expose FleetOps to untrusted networks without TLS, and create the admin account right away.
 
-A container image (`make image`, a multi-arch distroless image) is planned for P3d.
+### Run the container image
+
+`make image` builds `fleetops:dev` for linux/amd64 and linux/arm64: a static binary of about 17 MB on `distroless/static`, running as the non-root user `nonroot` (uid 65532). The build runs entirely inside Docker BuildKit, so it needs no Rust or Node toolchain on the host. Loading both platforms needs Docker's containerd image store; otherwise build one with `make image PLATFORMS=linux/amd64`.
+
+```sh
+make image
+docker run -d --name fleetops -p 9000:9000 \
+  -v fleetops-data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add "$(stat -c %g /var/run/docker.sock)" \
+  fleetops:dev
+```
+
+The container reaches the socket through the group that owns it, which `--group-add` grants. That group is root-equivalent on the host, like the socket itself. On Docker Desktop and Colima the socket is inside a VM, so read the group from a container instead: `docker run --rm -v /var/run/docker.sock:/s busybox stat -c %g /s`.
+
+`make image-smoke` starts the image against the local daemon and checks that it serves the UI and can reach Docker.
 
 ## Configuration
 
@@ -123,10 +138,13 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 | `make test` | `cargo test --workspace`, which uses mocks and needs no Docker |
 | `make test-docker` | Integration tests against the current docker context's daemon (`docker-it` feature) |
 | `make test-web` | Web typecheck, lint, vitest, and a check that the generated API client matches the OpenAPI document |
+| `make e2e` | `make build`, then the Playwright end-to-end test in Chromium against the current docker context's daemon |
 | `make lint` | `cargo fmt --check` and `clippy -D warnings` |
 | `make fmt` | `cargo fmt --all` |
 | `make web` | Builds the UI into `web/dist` |
 | `make build` | `make web`, then a release build of the `fleetops` binary |
+| `make image` | Builds the `fleetops:dev` container image for linux/amd64 and linux/arm64 (`IMAGE` and `PLATFORMS` override) |
+| `make image-smoke` | Runs `$(IMAGE)` against the local daemon and checks the UI, the non-root user and Docker access |
 | `make openapi` | Regenerates `crates/fleetops-api/openapi.json` and the TypeScript client after an API change |
 
 ### Notes
@@ -134,6 +152,8 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 - **Building without the UI.** `cargo build` works without `web/dist`. The server's `build.rs` writes a placeholder page, and the API still works under `/api/v1`.
 - **After changing the API,** run `make openapi` and commit both generated files. `cargo test` and `make test-web` fail until the committed document and client match the code.
 - **The integration tests** (`make test-docker`) create and remove their own labelled resources. Run them against a daemon where that's acceptable.
+- **The end-to-end test** (`make e2e`) starts the server on `127.0.0.1:9123` with an empty data directory (`web/e2e-data`). It pulls `busybox:1.37`, and creates and then removes one container named `fleetops-e2e-*`. It leaves the image in place. On failure, `pnpm -C web exec playwright show-trace` opens the trace saved under `web/test-results`.
+- **CI** (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull requests: `make lint test`, `make test-docker`, `make test-web`, `make e2e`, and the image build for both platforms followed by `make image-smoke`.
 - **TDD.** New behaviour starts with a failing test.
 
 ### Design documents
@@ -141,7 +161,7 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 Design documents live in `docs/superpowers/`:
 
 - `specs/2026-09-29-fleetops-core-docker-design.md` is the sub-project 1 design and the authority for behaviour.
-- `plans/` holds the implementation plans, one per phase (P1, P2a–c, P3a–c so far).
+- `plans/` holds the implementation plans, one per phase (P1, P2a–c, P3a–d).
 
 ## Architecture
 
@@ -196,12 +216,13 @@ The full protocol is in section 5.2 of the spec.
 - **Headers.** Responses send a strict CSP, `frame-ancestors 'none'`, `X-Content-Type-Options` and `Referrer-Policy`. They also send HSTS when you enable it.
 - **Secret masking is display-only.** The API returns values unredacted, and anyone with access can reveal them.
 - **No telemetry.** FleetOps does not phone home.
+- **Container image.** It runs as a non-root user on `distroless/static`, with no shell. Docker access comes only from the socket group you grant with `--group-add`.
 
 ## Roadmap
 
 | # | Sub-project | Summary |
 |---|---|---|
-| **1** | **Core + local Docker** (in progress) | Server, embedded UI, auth, environments, full Docker resource management, real-time channel |
+| **1** | **Core + local Docker** (done) | Server, embedded UI, auth, environments, full Docker resource management, real-time channel |
 | 2 | Agent + multi-host | Rust agent that dials out to the server over a multiplexed websocket tunnel |
 | 3 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
 | 4 | Kubernetes | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec, Helm |
@@ -217,5 +238,4 @@ Progress on sub-project 1:
   - P3a, web foundation
   - P3b, resource and admin pages
   - P3c, logs, terminal and stats
-- **Remaining:**
   - P3d, Playwright e2e, container image and CI
