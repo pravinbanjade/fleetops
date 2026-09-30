@@ -1,8 +1,8 @@
-/// <reference types="vitest/config" />
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
+import { configDefaults } from "vitest/config";
 
 // The dev server proxies the API (and its websocket) to `make dev-server`.
 // The Host header is left as the browser sent it, so the server's websocket
@@ -21,6 +21,8 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["src/test/setup.ts"],
+    // e2e/ holds the Playwright tests (`make e2e`).
+    exclude: [...configDefaults.exclude, "e2e/**"],
     restoreMocks: true,
   },
 });
