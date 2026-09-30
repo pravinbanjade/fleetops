@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Box, Database, Layers, Network, Play, RotateCw, Search, Server, Square } from "lucide-react";
+import { Container, HardDrive, Layers, Play, RotateCw, Search, Server, Square, UserRound, Waypoints } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { containersQuery, envsQuery, imagesQuery, keys, networksQuery, volumesQuery } from "@/api/queries";
@@ -57,12 +57,19 @@ export function CommandPalette({ env }: { env?: string }) {
   }, []);
   return (
     <>
-      <Button variant="outline" className="justify-between text-muted-foreground" onClick={() => setOpen(true)}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-9 justify-center gap-2 px-0 text-muted-foreground sm:w-56 sm:justify-between sm:px-2.5"
+        onClick={() => setOpen(true)}
+      >
         <span className="flex items-center gap-2">
           <Search className="size-4" />
-          Search
+          <span className="sr-only sm:not-sr-only">Search</span>
         </span>
-        <kbd className="text-xs">{MAC ? "⌘K" : "Ctrl K"}</kbd>
+        <kbd className="hidden rounded-xs border bg-muted px-1 font-mono text-[10px] text-muted-foreground sm:inline">
+          {MAC ? "⌘K" : "Ctrl K"}
+        </kbd>
       </Button>
       <CommandDialog open={open} onOpenChange={setOpen} title="Command palette" description="Jump to a page or resource">
         {open && <PaletteBody env={env} close={() => setOpen(false)} />}
@@ -122,6 +129,7 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
               </CommandItem>
             ))}
           <CommandItem value="page Account" onSelect={() => go(() => navigate({ to: "/account" }))}>
+            <UserRound />
             Account
           </CommandItem>
         </CommandGroup>
@@ -129,7 +137,7 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
           <CommandGroup heading="Containers">
             {containers.data?.map((c) => (
               <CommandItem key={c.id} value={`container ${c.name} ${c.image}`} onSelect={() => go(() => navigate({ to: "/envs/$env/containers/$id", params: { env: e, id: c.id } }))}>
-                <Box />
+                <Container />
                 {c.name}
                 <CommandShortcut>{c.state}</CommandShortcut>
               </CommandItem>
@@ -172,7 +180,7 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
           <CommandGroup heading="Volumes">
             {volumes.data?.map((v) => (
               <CommandItem key={v.name} value={`volume ${v.name}`} onSelect={() => go(() => navigate({ to: "/envs/$env/volumes/$name", params: { env: e, name: v.name } }))}>
-                <Database />
+                <HardDrive />
                 {v.name}
               </CommandItem>
             ))}
@@ -182,7 +190,7 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
           <CommandGroup heading="Networks">
             {networks.data?.map((n) => (
               <CommandItem key={n.id} value={`network ${n.name}`} onSelect={() => go(() => navigate({ to: "/envs/$env/networks/$id", params: { env: e, id: n.id } }))}>
-                <Network />
+                <Waypoints />
                 {n.name}
               </CommandItem>
             ))}

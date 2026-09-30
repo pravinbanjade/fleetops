@@ -1,3 +1,4 @@
+import { ArrowDownToLine, Play, RotateCw, Square } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
@@ -7,7 +8,7 @@ import { composeAction } from "@/api/gen/sdk.gen";
 import type { ComposeActionName, ComposeProject } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Page } from "@/components/Page";
-import { StateBadge } from "@/components/StateBadge";
+import { ContainerState, StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { errorMessage } from "@/lib/errors";
@@ -48,6 +49,8 @@ export function ComposePage() {
   );
 }
 
+const ICON = { start: Play, stop: Square, restart: RotateCw } as const;
+
 function ProjectCard({ env, project }: { env: string; project: ComposeProject }) {
   const qc = useQueryClient();
   const containers = useQuery(containersQuery(env));
@@ -74,26 +77,39 @@ function ProjectCard({ env, project }: { env: string; project: ComposeProject })
           </span>
         </CardTitle>
         <div className="flex flex-wrap gap-2">
-          {(["start", "stop", "restart"] as const).map((a) => (
-            <Button key={a} variant="outline" size="sm" disabled={act.isPending} onClick={() => act.mutate(a)}>
-              {a[0].toUpperCase() + a.slice(1)}
-            </Button>
-          ))}
-          <Button variant="destructive" size="sm" onClick={() => setDowning(true)}>
+          {(["start", "stop", "restart"] as const).map((a) => {
+            const Icon = ICON[a];
+            return (
+              <Button key={a} variant="outline" size="sm" disabled={act.isPending} onClick={() => act.mutate(a)}>
+                <Icon />
+                {a[0].toUpperCase() + a.slice(1)}
+              </Button>
+            );
+          })}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => setDowning(true)}
+          >
+            <ArrowDownToLine />
             Down
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-2 text-sm">
+      <CardContent className="grid gap-3 text-sm">
         <div className="text-muted-foreground">Services: {project.services.join(", ")}</div>
-        <ul className="grid gap-1" aria-label={`Containers of ${project.name}`}>
+        <ul className="font-strip overflow-hidden rounded-md border" aria-label={`Containers of ${project.name}`}>
           {members.map((c) => (
-            <li key={c.id} className="flex items-center gap-2">
-              <Link to="/envs/$env/containers/$id" params={{ env, id: c.id }} className="font-medium hover:underline">
+            <li
+              key={c.id}
+              className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 border-b px-3 py-2 last:border-b-0 sm:grid-cols-[auto_minmax(0,18rem)_minmax(0,1fr)]"
+            >
+              <ContainerState container={c} />
+              <Link to="/envs/$env/containers/$id" params={{ env, id: c.id }} className="truncate font-semibold hover:underline">
                 {c.name}
               </Link>
-              <StateBadge state={c.state} />
-              <span className="text-muted-foreground">{c.status}</span>
+              <span className="col-start-2 truncate text-muted-foreground sm:col-start-auto">{c.status}</span>
             </li>
           ))}
         </ul>

@@ -13,6 +13,7 @@ const HEIGHT = 160;
 // Neutral enough to read on the light and the dark background.
 const AXIS = "#8a8a8a";
 const GRID = "rgba(138, 138, 138, 0.18)";
+const FONT = "11px 'JetBrains Mono Variable', ui-monospace, monospace";
 
 /**
  * A live time-series chart (uPlot). `times` are Unix seconds. The chart is
@@ -45,13 +46,14 @@ export function Chart({
       {
         width: el.clientWidth || 600,
         height: HEIGHT,
-        legend: { show: true },
+        legend: { show: true, live: true },
         cursor: { drag: { x: false, y: false } },
         scales: { x: { time: true }, y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] } },
         axes: [
-          { stroke: AXIS, grid: { stroke: GRID }, ticks: { stroke: GRID } },
+          { stroke: AXIS, font: FONT, grid: { stroke: GRID }, ticks: { stroke: GRID } },
           {
             stroke: AXIS,
+            font: FONT,
             grid: { stroke: GRID },
             ticks: { stroke: GRID },
             size: 72,
@@ -87,8 +89,8 @@ export function Chart({
   }, [times, series]);
 
   return (
-    <figure className="grid gap-1">
-      <figcaption className="text-sm font-medium">{title}</figcaption>
+    <figure className="grid gap-2 rounded-lg border bg-card p-4">
+      <figcaption className="text-sm font-semibold">{title}</figcaption>
       <div ref={box} role="img" aria-label={`${title} chart`} className="min-w-0" />
     </figure>
   );
