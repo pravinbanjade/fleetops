@@ -33,6 +33,13 @@ pub const API_BASE: &str = "/api/v1";
         ErrorBody,
         ContainerActionName,
         ComposeActionName,
+        crate::ws::protocol::ClientMsg,
+        crate::ws::protocol::ServerMsg,
+        fleetops_core::streams::DockerEvent,
+        fleetops_core::streams::StatsSample,
+        fleetops_core::streams::LogLine,
+        fleetops_core::streams::LogOptions,
+        fleetops_core::streams::ExecOptions,
     )),
     tags(
         (name = "system", description = "Server health and this document"),

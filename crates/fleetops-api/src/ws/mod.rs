@@ -31,6 +31,14 @@ pub fn origin_allowed(headers: &HeaderMap) -> bool {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/ws",
+    operation_id = "openWebsocket",
+    tag = "websocket",
+    summary = "Open the real-time websocket",
+    responses((status = 101, description = "Switching protocols. Text frames are `ClientMsg` from the client and `ServerMsg` from the server; exec I/O uses binary frames `[u32 sub id, big-endian][bytes]`."))
+)]
 pub async fn handler(
     State(s): State<AppState>,
     cu: CurrentUser,

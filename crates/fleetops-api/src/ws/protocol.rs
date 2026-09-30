@@ -1,10 +1,13 @@
 //! Wire format of `/api/v1/ws` (spec §5.2). Text frames carry JSON; exec
 //! I/O uses binary frames of `[u32 sub id, big-endian][payload]`.
 
-use serde::Deserialize;
+use crate::tasks::TaskInfo;
+use fleetops_core::env::EnvStatus;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Topic {
     Events,
@@ -14,7 +17,9 @@ pub enum Topic {
     Task,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+/// A text frame from the client. Exec stdin may also arrive as a binary
+/// frame of `[u32 sub id, big-endian][bytes]`.
+#[derive(Debug, Clone, PartialEq, Deserialize, ToSchema)]
 #[serde(tag = "op", rename_all = "lowercase")]
 pub enum ClientMsg {
     Sub {
@@ -24,6 +29,8 @@ pub enum ClientMsg {
         env: Option<String>,
         #[serde(default)]
         id: Option<String>,
+        /// `logs`: [`LogOptions`](fleetops_core::streams::LogOptions);
+        /// `exec`: [`ExecOptions`](fleetops_core::streams::ExecOptions).
         #[serde(default)]
         opts: Value,
     },
@@ -40,6 +47,37 @@ pub enum ClientMsg {
         cols: u16,
         rows: u16,
     },
+}
+
+/// A text frame from the server, as the builders below write it. Exec
+/// output arrives as binary frames of `[u32 sub id, big-endian][bytes]`.
+/// Documentation only: `tests/openapi.rs` checks each builder against it.
+#[derive(Serialize, ToSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+#[allow(dead_code)]
+pub enum ServerMsg {
+    /// A payload for subscription `sub`: a `DockerEvent`, a `StatsSample`,
+    /// an array of `LogLine`s, or a task progress message.
+    Data { sub: u32, data: Value },
+    /// The logs queue overflowed and `dropped` lines were skipped.
+    Gap { sub: u32, dropped: u64 },
+    /// The subscription is over. `reason` is `closed`, `ended`, `eof`,
+    /// `exited` (with `exit_code`), `succeeded` or `failed` (with `task`).
+    End {
+        sub: u32,
+        reason: String,
+        exit_code: Option<i64>,
+        task: Option<TaskInfo>,
+    },
+    /// A request failed; `sub` is null when the frame named no valid
+    /// subscription. `code` is an error code as in `ErrorBody`.
+    Error {
+        sub: Option<u32>,
+        code: String,
+        message: String,
+    },
+    /// An environment went up or down.
+    EnvStatus { env: String, status: EnvStatus },
 }
 
 /// A frame ready to go out on the socket.

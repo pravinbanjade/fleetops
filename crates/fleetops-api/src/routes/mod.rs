@@ -6,7 +6,7 @@ pub mod tasks;
 pub mod users;
 
 use crate::{error::ApiError, AppState};
-use axum::{extract::DefaultBodyLimit, routing::get, Json};
+use axum::{extract::DefaultBodyLimit, Json};
 use fleetops_core::{now_unix, Error};
 use fleetops_store::NewAudit;
 use serde::Serialize;
@@ -31,7 +31,7 @@ pub fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(users::list, users::create))
         .routes(routes!(users::update, users::remove))
         .routes(routes!(audit_log::list))
-        .route("/ws", get(crate::ws::handler))
+        .routes(routes!(crate::ws::handler))
         .routes(routes!(tasks::get))
         .merge(env_routes())
         .fallback(not_found)
