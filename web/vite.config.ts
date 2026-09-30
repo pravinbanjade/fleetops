@@ -16,8 +16,7 @@ export default defineConfig({
     port: 5173,
     proxy: { "/api": { target: api, ws: true } },
   },
-  // One bundle until the resource pages land (P3b splits them by route).
-  build: { outDir: "dist", emptyOutDir: true, chunkSizeWarningLimit: 1024 },
+  build: { outDir: "dist", emptyOutDir: true },
   test: {
     environment: "jsdom",
     globals: true,

@@ -3,6 +3,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
   redirect,
   type RouterHistory,
@@ -11,8 +12,6 @@ import { ApiError } from "@/api/client";
 import { authStatusQuery, envsQuery, meQuery } from "@/api/queries";
 import { Shell } from "@/components/Shell";
 import { LiveProvider } from "@/live/LiveProvider";
-import { AccountPage } from "@/pages/AccountPage";
-import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NoEnvironmentsPage, NotFoundPage } from "@/pages/misc";
 import { SetupPage } from "@/pages/SetupPage";
@@ -35,6 +34,9 @@ async function session(qc: QueryClient) {
     throw e;
   }
 }
+
+// Pages below the shell load on first visit (`lazyRouteComponent`), so
+// each is its own chunk of the bundle.
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: Outlet,
@@ -107,13 +109,13 @@ export const envRoute = createRoute({
 const dashboardRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "/",
-  component: DashboardPage,
+  component: lazyRouteComponent(() => import("@/pages/DashboardPage"), "DashboardPage"),
 });
 
 const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
-  component: AccountPage,
+  component: lazyRouteComponent(() => import("@/pages/AccountPage"), "AccountPage"),
 });
 
 const routeTree = rootRoute.addChildren([
