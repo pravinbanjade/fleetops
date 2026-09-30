@@ -1,8 +1,9 @@
 import { waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { safeRedirect } from "./router";
-import { mockFetch } from "@/test/fetch";
-import { loggedIn, renderApp } from "@/test/app";
+import { json, mockFetch } from "@/test/fetch";
+import { ADMIN, loggedIn, renderApp } from "@/test/app";
 
 const unauthorized = { status: 401, json: { code: "unauthorized", message: "not logged in" } };
 
@@ -45,6 +46,22 @@ describe("routing", () => {
     mockFetch(loggedIn);
     const { screen } = renderApp("/nope/nothing");
     expect(await screen.findByText("Page not found")).toBeInTheDocument();
+  });
+
+  it("sends the user to login when the session is lost mid-use", async () => {
+    let lost = false;
+    mockFetch({
+      ...loggedIn,
+      "GET /api/v1/auth/me": () => (lost ? json(401, unauthorized.json) : json(200, ADMIN)),
+      "GET /api/v1/auth/sessions": () => (lost ? json(401, unauthorized.json) : json(200, [])),
+    });
+    const { history, screen } = renderApp("/envs/local");
+    await screen.findByRole("heading", { name: "local" });
+    lost = true;
+    await userEvent.click(screen.getByRole("button", { name: "admin" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Account" }));
+    await waitFor(() => expect(history.location.pathname).toBe("/login"));
+    expect(history.location.search).toContain("redirect=%2Faccount");
   });
 });
 

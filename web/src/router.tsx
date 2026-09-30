@@ -9,6 +9,9 @@ import {
 } from "@tanstack/react-router";
 import { ApiError } from "@/api/client";
 import { authStatusQuery, envsQuery, meQuery } from "@/api/queries";
+import { Shell } from "@/components/Shell";
+import { LiveProvider } from "@/live/LiveProvider";
+import { AccountPage } from "@/pages/AccountPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NoEnvironmentsPage, NotFoundPage } from "@/pages/misc";
@@ -72,7 +75,11 @@ const authedRoute = createRoute({
       throw redirect({ to: "/login", search: { redirect: location.href } });
     }
   },
-  component: Outlet,
+  component: () => (
+    <LiveProvider>
+      <Outlet />
+    </LiveProvider>
+  ),
 });
 
 const indexRoute = createRoute({
@@ -85,8 +92,14 @@ const indexRoute = createRoute({
   component: NoEnvironmentsPage,
 });
 
-export const envRoute = createRoute({
+const shellRoute = createRoute({
   getParentRoute: () => authedRoute,
+  id: "shell",
+  component: Shell,
+});
+
+export const envRoute = createRoute({
+  getParentRoute: () => shellRoute,
   path: "/envs/$env",
   component: Outlet,
 });
@@ -97,10 +110,16 @@ const dashboardRoute = createRoute({
   component: DashboardPage,
 });
 
+const accountRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/account",
+  component: AccountPage,
+});
+
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
-  authedRoute.addChildren([indexRoute, envRoute.addChildren([dashboardRoute])]),
+  authedRoute.addChildren([indexRoute, shellRoute.addChildren([envRoute.addChildren([dashboardRoute]), accountRoute])]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {
