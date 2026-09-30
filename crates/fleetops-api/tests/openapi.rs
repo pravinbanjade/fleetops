@@ -6,12 +6,13 @@ mod common;
 
 use common::contract::{self, doc, route_of, Exchange};
 use common::*;
+use fleetops_api::ws::protocol;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
 const METHODS: [&str; 5] = ["get", "post", "put", "patch", "delete"];
 /// Documented operations; update when adding or removing a route.
-const OPERATIONS: usize = 57;
+const OPERATIONS: usize = 58;
 
 fn operations() -> Vec<(&'static str, &'static str, &'static Value)> {
     let mut out = Vec::new();
@@ -135,6 +136,66 @@ fn mutations_need_a_session_and_a_csrf_token_and_reads_a_session() {
     );
 }
 
+fn schema_check(name: &str, v: &Value) -> Result<(), String> {
+    let mut root = json!({ "$ref": format!("#/components/schemas/{name}") });
+    root["components"] = doc()["components"].clone();
+    let validator = jsonschema::validator_for(&root).unwrap();
+    let errors: Vec<String> = validator.iter_errors(v).map(|e| e.to_string()).collect();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+fn text(out: protocol::Out) -> Value {
+    match out {
+        protocol::Out::Text(t) => serde_json::from_str(&t).unwrap(),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn websocket_messages_match_their_schemas() {
+    let task = json!({"id": "t1", "kind": "image.pull", "env": "local", "target": "nginx:latest",
+        "status": "succeeded", "error": null, "created_at": 1, "finished_at": 2});
+    let up = json!({"state": "up", "version": {"version": "27", "api_version": "1.47", "os": "linux", "arch": "arm64"}});
+    let server = [
+        protocol::data(1, json!({"kind": "container"})),
+        protocol::gap(1, 12),
+        protocol::end(1, "eof", Value::Null),
+        protocol::end(1, "exited", json!({ "exit_code": 0 })),
+        protocol::end(1, "exited", json!({ "exit_code": null })),
+        protocol::end(1, "succeeded", json!({ "task": task })),
+        protocol::error(Some(1), "not_found", "no such container"),
+        protocol::error(None, "invalid", "bad frame"),
+        protocol::env_status("local", &up),
+        protocol::env_status("local", &json!({"state": "down", "reason": "refused"})),
+    ];
+    for out in server {
+        let v = text(out);
+        schema_check("ServerMsg", &v).unwrap_or_else(|e| panic!("{v}: {e}"));
+    }
+    assert!(schema_check("ServerMsg", &json!({"type": "gap", "sub": 1})).is_err());
+
+    let client = [
+        json!({"op": "sub", "sub": 1, "topic": "events", "env": "local"}),
+        json!({"op": "sub", "sub": 2, "topic": "logs", "env": "local", "id": "web", "opts": {"tail": 10}}),
+        json!({"op": "unsub", "sub": 1}),
+        json!({"op": "input", "sub": 3, "data": "ls\n"}),
+        json!({"op": "resize", "sub": 3, "cols": 120, "rows": 40}),
+    ];
+    for v in client {
+        schema_check("ClientMsg", &v).unwrap_or_else(|e| panic!("{v}: {e}"));
+        serde_json::from_value::<protocol::ClientMsg>(v).unwrap();
+    }
+    assert!(schema_check(
+        "ClientMsg",
+        &json!({"op": "sub", "sub": 1, "topic": "nope"})
+    )
+    .is_err());
+}
+
 // The contract checker itself.
 
 fn exchange<'a>(method: &'a str, path: &'a str, status: u16, body: &'a Value) -> Exchange<'a> {
@@ -219,4 +280,11 @@ fn checker_rejects_mismatched_traffic() {
     let mut x = exchange("POST", "/api/v1/users", 201, &user);
     x.request = Some(&request);
     assert!(contract::check(&x).unwrap_err().contains("request"));
+}
+
+#[test]
+fn checker_rejects_undocumented_routes() {
+    let ok = json!({"status": "ok"});
+    let e = contract::check(&exchange("GET", "/api/v1/nope", 200, &ok)).unwrap_err();
+    assert!(e.contains("the route is not documented"), "{e}");
 }

@@ -3,6 +3,7 @@
 //! `TestApp::send` passes every exchange of the API test suite through
 //! [`check`], so the whole suite doubles as a contract test. A test fails
 //! when the server answers:
+//! - on a route the document does not have,
 //! - with a status the operation does not document (`default` covers
 //!   errors only, never a success),
 //! - with a JSON body that does not match the documented schema,
@@ -104,8 +105,12 @@ pub fn check(x: &Exchange) -> Result<(), String> {
     }
     let what = format!("{} {} -> {}", x.method, x.path, x.status);
     let Some(tpl) = route_of(x.path) else {
-        // Routes documented in later tasks are not checked yet.
-        return Ok(());
+        let fallback = x.status == 404 && x.body["code"] == "not_found";
+        return if fallback {
+            Ok(())
+        } else {
+            Err(format!("{what}: the route is not documented"))
+        };
     };
     let method = x.method.to_ascii_lowercase();
     let Some(op) = doc()["paths"][tpl].get(&method) else {
