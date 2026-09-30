@@ -22,6 +22,7 @@ import { isSecretKey, maskEnv, splitEnv } from "@/lib/secrets";
 import { FormError } from "@/pages/AuthLayout";
 import { ACTIONS, actionsFor, RemoveDialog } from "./actions";
 import { FilesTab } from "./FilesTab";
+import { LogsTab } from "./logs/LogsTab";
 import type { ContainerTab } from "./tabs";
 
 const FROM = "/authed/shell/envs/$env/containers/$id";
@@ -56,6 +57,7 @@ export function ContainerPage() {
           <TabsTrigger value="env">Env</TabsTrigger>
           <TabsTrigger value="mounts">Mounts</TabsTrigger>
           <TabsTrigger value="networks">Networks</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
@@ -72,6 +74,9 @@ export function ContainerPage() {
         </TabsContent>
         <TabsContent value="networks">
           <Networks c={c} />
+        </TabsContent>
+        <TabsContent value="logs">
+          <LogsTab env={env} id={id} running={c.State.Running === true} />
         </TabsContent>
         <TabsContent value="files">
           <FilesTab env={env} id={id} path={path} />
