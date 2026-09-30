@@ -415,7 +415,11 @@ function EventsSection({ env, q }: { env: string; q: UseQueryResult<DockerEvent[
       ) : q.data.length === 0 ? (
         <p className="p-4 text-sm text-muted-foreground">Nothing has happened in the last 15 minutes.</p>
       ) : (
-        <ul aria-label="Recent events" className="font-strip max-h-96 overflow-auto text-sm">
+        <ul
+          aria-label="Recent events"
+          tabIndex={0}
+          className="font-strip max-h-96 overflow-auto pb-8 text-sm [mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+        >
           {q.data.map((e) => (
             <li
               key={`${e.time}-${e.kind}-${e.id}-${e.action}`}

@@ -72,6 +72,14 @@ interface DataTableProps<T extends RowData> {
   initialHidden?: string[];
   /** The filter text the list starts with. */
   initialFilter?: string;
+  /**
+   * Racks rows into labelled bays while the table is sorted by `column`
+   * (first, ascending): each run of rows with the same bay gets its own
+   * row group, headed by the bay's label.
+   */
+  bays?: { column: string; of: (row: T) => { id: string; label: string } };
+  /** The columns kept on a phone; the rest hide below 640px. */
+  phoneColumns?: string[];
 }
 
 const EMPTY: never[] = [];
@@ -107,6 +115,17 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
   const clear = () => setRowSelection({});
   const hideable = table.getAllLeafColumns().filter((c) => c.getCanHide());
   const width = table.getVisibleLeafColumns().length + (props.selectable ? 1 : 0);
+  const phone = (id: string) =>
+    !props.phoneColumns ? undefined : props.phoneColumns.includes(id) ? "max-sm:whitespace-normal max-sm:break-words" : "max-sm:hidden";
+  const bays = props.bays;
+  const racked = !!bays && sorting[0]?.id === bays.column && !sorting[0]?.desc;
+  const groups: { id: string; label: string; rows: typeof rows }[] = [];
+  for (const row of rows) {
+    const bay = racked ? bays.of(row.original) : { id: "all", label: "" };
+    const last = groups.at(-1);
+    if (last?.id === bay.id) last.rows.push(row);
+    else groups.push({ ...bay, rows: [row] });
+  }
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
@@ -191,6 +210,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                   return (
                     <TableHead
                       key={header.id}
+                      className={phone(header.column.id)}
                       aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
                     >
                       {header.isPlaceholder ? null : header.column.getCanSort() ? (
@@ -217,51 +237,65 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
               </TableRow>
             ))}
           </TableHeader>
-          <TableBody>
-            {props.error ? (
-              <TableRow>
-                <TableCell colSpan={width} role="alert" className="h-16 whitespace-normal text-destructive">
-                  {errorMessage(props.error)}
-                </TableCell>
-              </TableRow>
-            ) : !props.data ? (
-              <TableRow>
-                <TableCell colSpan={width} className="text-muted-foreground">
-                  <span className="sr-only">Loading…</span>
-                  <span aria-hidden className="grid gap-2 py-1">
-                    {[72, 54, 64].map((w) => (
-                      <span key={w} className="h-3 rounded-xs bg-muted motion-safe:animate-pulse" style={{ width: `${w}%` }} />
-                    ))}
-                  </span>
-                </TableCell>
-              </TableRow>
-            ) : rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={width} className="h-24 text-center whitespace-normal text-muted-foreground">
-                  {data.length === 0 ? props.empty : "Nothing matches the filter."}
-                </TableCell>
-              </TableRow>
-            ) : (
-              rows.map((row) => (
-                <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
-                  {props.selectable && (
-                    <TableCell>
-                      <Checkbox
-                        aria-label={`Select ${row.id}`}
-                        checked={row.getIsSelected()}
-                        onCheckedChange={(v) => row.toggleSelected(!!v)}
-                      />
-                    </TableCell>
-                  )}
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      <table.FlexRender cell={cell} />
-                    </TableCell>
-                  ))}
+          {props.error || !props.data || rows.length === 0 ? (
+            <TableBody>
+              {props.error ? (
+                <TableRow>
+                  <TableCell colSpan={width} role="alert" className="h-16 whitespace-normal text-destructive">
+                    {errorMessage(props.error)}
+                  </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
+              ) : !props.data ? (
+                <TableRow>
+                  <TableCell colSpan={width} className="text-muted-foreground">
+                    <span className="sr-only">Loading…</span>
+                    <span aria-hidden className="grid gap-2 py-1">
+                      {[72, 54, 64].map((w) => (
+                        <span key={w} className="h-3 rounded-xs bg-muted motion-safe:animate-pulse" style={{ width: `${w}%` }} />
+                      ))}
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={width} className="h-24 text-center whitespace-normal text-muted-foreground">
+                    {data.length === 0 ? props.empty : "Nothing matches the filter."}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          ) : (
+            groups.map((g) => (
+              <TableBody key={g.id} aria-label={racked ? g.label : undefined} className="[&_tr:last-child]:border-b [&:last-child_tr:last-child]:border-0">
+                {racked && (
+                  // The bay's label is the row group's name; drawn here for sighted readers.
+                  <tr aria-hidden data-bay={g.id} className="border-b bg-muted/30">
+                    <td colSpan={width} className="h-7 px-3 text-xs font-medium text-muted-foreground">
+                      {g.label} <span className="ml-1 tabular-nums opacity-70">{g.rows.length}</span>
+                    </td>
+                  </tr>
+                )}
+                {g.rows.map((row) => (
+                  <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
+                    {props.selectable && (
+                      <TableCell>
+                        <Checkbox
+                          aria-label={`Select ${row.id}`}
+                          checked={row.getIsSelected()}
+                          onCheckedChange={(v) => row.toggleSelected(!!v)}
+                        />
+                      </TableCell>
+                    )}
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className={phone(cell.column.id)}>
+                        <table.FlexRender cell={cell} />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            ))
+          )}
         </Table>
       </div>
     </div>

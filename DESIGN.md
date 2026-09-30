@@ -250,10 +250,10 @@ The palette is a cool slate board in three greys, with one amber cord and a fixe
 
 ### State readings
 - **Run** (`state-run` on `state-run-ink`): a holder for running, healthy or up.
-- **Wait** (`state-wait` on `state-wait-ink`): a holder for paused, restarting or partial, and the reconnecting live dot.
+- **Wait** (`state-wait` on `state-wait-ink`): a holder for paused, restarting or partial, and the reconnecting live dot and the connection-lost banner.
 - **Fail** (`state-fail` on `state-fail-ink`): a holder for unhealthy, dead or down, and for an exited container with a non-zero exit code.
 - **Live** (`live`): the pulsing connection dot and an environment's "up" dot.
-- **Destructive** (`destructive`): destructive buttons, inline errors, the unavailable-environment alert, the connection-lost banner and bad event actions (die, kill, oom).
+- **Destructive** (`destructive`): destructive buttons, inline errors, the unavailable-environment alert and bad event actions (die, kill, oom).
 
 Every fill and ink pair holds at least 4.5:1 in both themes.
 
@@ -269,6 +269,8 @@ Logs use a 16-colour ANSI palette, defined per theme as `--ansi-0` to `--ansi-15
 **The One Cord Rule.** Amber means "the operator's hand is here": the primary action, the selection, focus or the current page. It never labels a state, a metric or a category.
 
 **The Readings Rule.** Green, orange and red appear only when they report Docker's state. An environment's hue identifies the environment and reports nothing.
+
+**The Ink Chart Rule.** A metric is not a reading of health, so charts draw in ink only. The first series is the ink and the second is the muted ink, dashed. Axes and grid use the muted ink and the rule. State hues and the cord stay off charts.
 
 ## Typography
 
@@ -342,13 +344,15 @@ A squared tag at the left of every strip.
 - It is 20px high, at least 4.75rem wide and 2px rounded, and holds the state word in uppercase, exactly as Docker reports it.
 - Run, wait and fail are filled with their state colour and state ink. Idle (created, exited cleanly) is a field-rule outline with muted ink.
 - A container that exited with a non-zero code reads as fail. One that exited cleanly reads as idle.
-- **Flash:** when Docker changes the state while it is on screen, the holder's ring expands from 0 to 7px as the amber cord fades out, over 900ms `cubic-bezier(0.16, 1, 0.3, 1)`. With reduced motion there is no flash.
+- **Flash:** when Docker changes the state while it is on screen, the holder's ring expands from 0 to 7px as the cord fades out, over 900ms `cubic-bezier(0.16, 1, 0.3, 1)`. The cord colour is read from the current theme when the flash runs. The last state is remembered for each container ID, so a strip that moves to another bay still flashes. With reduced motion there is no flash.
 
 ### Strips and Bays
 - **Attention bay:** a strip list in a panel, sorted most urgent first. Each strip has a holder, the container name in strip weight 600 (linked to its logs), the Docker status line in muted ink, and a muted "Logs" affordance. A strip whose link has focus fills with cord-soft.
 - **Walk:** j/k or the arrow keys move focus from strip to strip, and Enter opens the focused strip's logs. A key legend in 10px mono sits beside the bay's headline.
 - **State bar:** a 6px rounded track split into run, wait, fail and idle segments with 1px gaps. Below it, state tabs show a count (in the callsign cut) next to a holder, and each links to the filtered list.
 - **Running bay:** strips with a holder, name, image, then CPU and memory cells. Each cell is a live 80×20 sparkline in ink at 75%, with a tabular value.
+- **Sparklines:** a 1.25px line over a dim full-width track (the ink at 18%) that spans the 60-sample window, so a short history reads as recent rather than as a stub. The newest value is on the right, and values above the scale are clipped rather than rescaled. Memory sparklines are scaled to the container's memory limit, or to the host's MemTotal in the host readout.
+- **Events tape:** a time-ordered strip list with mono timestamps, capped at 24rem. Its bottom edge fades out through a 2.5rem mask. The list is focusable for keyboard scrolling and shows a 2px cord outline inset on focus.
 
 ### Cards / Panels
 - **Corner Style:** 6px.
@@ -364,6 +368,8 @@ A 15.5rem strip cell in the page title row, one each for CPU and memory. It hold
 - The table sits in a strip panel with the strip width cut throughout. The head is the muted fill at 50%, with 12px/500 muted column labels.
 - Cells are 44px high, divided by left rules. Row hover uses the wash at 60%. A selected row uses cord-soft, and the sort arrow is cord.
 - The filter field is 32px with a search icon and a mono "/" key hint. The bulk-selection bar uses cord-soft with a cord edge at 40%.
+- **Urgency bays:** when a list sorted ascending by state is racked into bays, each bay is its own row group labelled for assistive technology. On the containers list the bays are Needs attention, Changing, Running and Stopped. A sighted-only label row (28px, muted fill at 30%, 12px/500 muted label, tabular count at 70%) heads each bay.
+- **Phone columns:** below 640px a table can keep only its phone columns. On the containers list these are the holder, name and status, and those cells wrap instead of truncating.
 - Loading shows 2px-rounded pulsing skeleton bars. Errors appear as inline destructive text in the table body.
 
 ### Inputs / Fields
@@ -385,13 +391,13 @@ A 15.5rem strip cell in the page title row, one each for CPU and memory. It hold
 - **Band:** a flat 3px strip of the hue across the top edge of the rail and the top bar. It is never shown without an environment.
 
 ### Live State
-An 8px dot with a label in muted 12px text, at the right of the top bar. When the connection is live, the dot pulses in the live colour (a 2.4s ping, or none with reduced motion). Reconnecting shows a wait dot, and connecting a muted dot. The dashboard's liveness line uses the same dots and says in words what is on screen and how old it is.
+An 8px dot with a label in muted 12px text, at the right of the top bar. When the connection is live, the dot pulses in the live colour (a 2.4s ping, or none with reduced motion). Reconnecting shows a wait dot, and connecting a muted dot. While the connection is lost, a banner runs under the top bar with a wait fill at 12%, a wait edge at 40% and a spinning 16px refresh icon (2s turn, motion-safe), so it reads in the same tone as the dot. The dashboard's liveness line uses the same dots and says in words what is on screen and how old it is.
 
-### Charts (known drift, under review)
-The container stats charts (uPlot on canvas) sit in a strip panel with a 14px/600 title, a 160px plot, and axes in 11px JetBrains Mono. The legend uses the sans at 12px/500 in muted ink, with values in mono. A canvas cannot read CSS variables, so the axis and grid use a fixed grey (`#8a8a8a`, at 18% for the grid). Each metric also has its own fixed hex series colour: CPU `#3b82f6`, memory `#8b5cf6`, network in `#10b981` and out `#f59e0b`, and block read `#06b6d4` and write `#ef4444`, each filled at 13% under the line. These values are not tokens of this system. The amber, green and red series break the One Cord and Readings rules, and the fixed grey sits outside the three greys. Do not reuse them on new surfaces; the chart colours need their own resolved vocabulary.
+### Charts
+The container stats charts (uPlot on canvas) sit in a strip panel with a 14px/600 title, a 160px plot, and axes in 11px JetBrains Mono. The legend uses the sans at 12px/500 in muted ink, with values in mono. They follow the Ink Chart Rule. A primary series is drawn in the ink over an 8% ink fill, and a secondary series (network out, block written) in the muted ink, dashed 4/3 with no fill. The axis uses the muted ink and the grid the rule. A canvas cannot read CSS variables, so each ink is read from the theme when the chart draws, and the chart redraws when the theme changes.
 
 ### Icons
-Icons are Lucide, 16px in chrome (14px in breadcrumbs and readout labels, 20px for the bay headline's status icon). Navigation, panel-header and inventory icons are drawn at stroke 1.75. Icons inside kit primitives (buttons, menus, the dialog close, the search field) still render at Lucide's default stroke of 2.
+Icons are Lucide, 16px in chrome (14px in breadcrumbs and readout labels, 20px for the bay headline's status icon). Every Lucide icon is drawn at stroke 1.75, set once for the whole app.
 
 ## Do's and Don'ts
 
@@ -402,11 +408,13 @@ Icons are Lucide, 16px in chrome (14px in breadcrumbs and readout labels, 20px f
 - **Do** set strip fields at width 88% and names that must be recognised at width 112%. Keep numerals tabular.
 - **Do** give every environment-scoped view the environment's band and EnvTag, taking the hue from `envHue`.
 - **Do** make any new strip list walkable with j/k and Enter when it is a list of things to act on.
+- **Do** rack long lists that are sorted by state into labelled urgency bays, and name the phone columns that survive below 640px.
 - **Do** say in words when the screen is not live, and how old the data is.
 
 ### Don't:
 - **Don't** use amber to mean a state, a metric or a category. Transitional state is the orange wait reading, not the cord.
 - **Don't** use green, orange or red for anything except Docker state, or add an environment hue inside the cord or state ranges.
+- **Don't** colour a chart series with a state hue, the cord or a fixed hex. Use the ink and the muted ink.
 - **Don't** put shadows on racked content (panels, strips, tables, readouts).
 - **Don't** round holders or EnvTags into pills.
 - **Don't** set human-facing labels in mono, or show Docker's error text in anything but mono.
