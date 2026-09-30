@@ -29,7 +29,9 @@ export function Sparkline({
     .filter((p) => p !== null)
     .join(" ");
   return (
-    <svg role="img" aria-label={label} width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="text-primary/70">
+    <svg role="img" aria-label={label} width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="text-foreground/75">
+      {/* The minute's full window, so a short history reads as recent, not as a stub. */}
+      <line x1={0} x2={width} y1={height - 1} y2={height - 1} stroke="currentColor" strokeOpacity={0.18} strokeWidth={1} />
       {points && <polyline points={points} fill="none" stroke="currentColor" strokeWidth={1.25} strokeLinejoin="round" />}
     </svg>
   );

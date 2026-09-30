@@ -1,380 +1,413 @@
 ---
 name: FleetOps
-description: Open-source container management; a quiet instrument panel for live Docker hosts.
+description: Open-source container management, racked as a controller's strip board for live Docker hosts.
 colors:
-  graphite: "oklch(0.205 0 0)"
-  paper: "oklch(1 0 0)"
-  ink: "oklch(0.145 0 0)"
-  mist: "oklch(0.97 0 0)"
-  slate-text: "oklch(0.556 0 0)"
-  hairline: "oklch(0.922 0 0)"
-  focus-grey: "oklch(0.556 0 0)"
-  signal-red: "oklch(0.577 0.245 27.325)"
-  night: "oklch(0.145 0 0)"
-  night-panel: "oklch(0.205 0 0)"
-  night-raised: "oklch(0.269 0 0)"
-  night-text: "oklch(0.985 0 0)"
-  night-slate-text: "oklch(0.708 0 0)"
-  night-primary: "oklch(0.922 0 0)"
-  night-hairline: "oklch(1 0 0 / 10%)"
-  night-field: "oklch(1 0 0 / 15%)"
-  night-focus-grey: "oklch(0.708 0 0)"
-  night-signal-red: "oklch(0.704 0.191 22.216)"
-  state-running: "oklch(0.508 0.118 165.612)"
-  state-caution: "oklch(0.769 0.188 70.08)"
-  state-caution-text: "oklch(0.279 0.077 45.635)"
-  state-failed: "oklch(0.505 0.213 27.518)"
-  live-dot: "oklch(0.596 0.145 163.225)"
+  bay: "oklch(0.158 0.008 255)"
+  strip: "oklch(0.198 0.01 255)"
+  rule: "oklch(0.285 0.012 255)"
+  float-strip: "oklch(0.215 0.011 255)"
+  wash: "oklch(0.25 0.012 255)"
+  field-rule: "oklch(0.33 0.013 255)"
+  ink: "oklch(0.945 0.006 90)"
+  ink-muted: "oklch(0.72 0.014 255)"
+  cord: "oklch(0.82 0.15 78)"
+  cord-ink: "oklch(0.21 0.045 60)"
+  cord-soft: "oklch(0.82 0.15 78 / 0.1)"
+  destructive: "oklch(0.7 0.18 25)"
+  state-run: "oklch(0.76 0.15 158)"
+  state-run-ink: "oklch(0.2 0.05 158)"
+  state-wait: "oklch(0.78 0.15 60)"
+  state-wait-ink: "oklch(0.22 0.06 50)"
+  state-fail: "oklch(0.68 0.19 25)"
+  state-fail-ink: "oklch(0.15 0.04 25)"
+  live: "oklch(0.76 0.15 158)"
+  light-bay: "oklch(0.967 0.004 255)"
+  light-strip: "oklch(1 0 0)"
+  light-rule: "oklch(0.885 0.006 255)"
+  light-wash: "oklch(0.935 0.006 255)"
+  light-field-rule: "oklch(0.84 0.008 255)"
+  light-ink: "oklch(0.205 0.015 255)"
+  light-ink-muted: "oklch(0.47 0.016 255)"
+  light-cord: "oklch(0.53 0.125 62)"
+  light-cord-ink: "oklch(1 0 0)"
+  light-cord-soft: "oklch(0.53 0.125 62 / 0.1)"
+  light-destructive: "oklch(0.54 0.2 27)"
+  light-state-run: "oklch(0.5 0.115 158)"
+  light-state-run-ink: "oklch(1 0 0)"
+  light-state-wait: "oklch(0.75 0.155 62)"
+  light-state-wait-ink: "oklch(0.25 0.07 50)"
+  light-state-fail: "oklch(0.52 0.19 27)"
+  light-state-fail-ink: "oklch(1 0 0)"
+  light-live: "oklch(0.6 0.14 158)"
   terminal-black: "#0c0c0d"
   terminal-text: "#e5e5e5"
-  chart-axis: "#8a8a8a"
-  series-cpu: "#3b82f6"
-  series-memory: "#8b5cf6"
-  series-in: "#10b981"
-  series-out: "#f59e0b"
-  series-read: "#06b6d4"
-  series-write: "#ef4444"
 typography:
   headline:
-    fontFamily: "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji'"
-    fontSize: "1.5rem"
+    fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.375rem"
     fontWeight: 600
-    lineHeight: "2rem"
+    lineHeight: 1.25
+    letterSpacing: "-0.012em"
+    fontVariation: "\"wdth\" 112"
   title:
-    fontFamily: "ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1rem"
+    fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.125rem"
     fontWeight: 600
-    lineHeight: 1
+    lineHeight: "1.75rem"
+    letterSpacing: "-0.012em"
+    fontVariation: "\"wdth\" 112"
+  panel-title:
+    fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 600
+    lineHeight: "1.25rem"
   body:
-    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: "1.25rem"
+  strip:
+    fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 400
+    lineHeight: "1.25rem"
+    fontFeature: "\"tnum\""
+    fontVariation: "\"wdth\" 88"
+  readout:
+    fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.125rem"
+    fontWeight: 600
+    lineHeight: "1.75rem"
+    fontFeature: "\"tnum\""
+    fontVariation: "\"wdth\" 88"
   label:
-    fontFamily: "ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 500
     lineHeight: "1rem"
+  holder:
+    fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "11px"
+    fontWeight: 600
+    lineHeight: 1
+    letterSpacing: "0.04em"
+    fontVariation: "\"wdth\" 88"
   mono:
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
+    fontFamily: "JetBrains Mono Variable, ui-monospace, SFMono-Regular, Menlo, monospace"
     fontSize: "0.75rem"
     fontWeight: 400
     lineHeight: "1rem"
 rounded:
   xs: "2px"
-  sm: "4px"
-  md: "6px"
-  lg: "8px"
-  xl: "12px"
+  sm: "3px"
+  md: "4px"
+  lg: "6px"
+  xl: "8px"
   full: "9999px"
 spacing:
-  "1": "4px"
-  "1.5": "6px"
-  "2": "8px"
-  "3": "12px"
-  "4": "16px"
-  "6": "24px"
+  hair: "2px"
+  xs: "6px"
+  sm: "8px"
+  strip-y: "10px"
+  md: "12px"
+  lg: "16px"
+  bay-gap: "20px"
+  xl: "24px"
 components:
   button-primary:
-    backgroundColor: "{colors.graphite}"
-    textColor: "{colors.paper}"
+    backgroundColor: "{colors.cord}"
+    textColor: "{colors.cord-ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: "8px 16px"
     height: "36px"
   button-outline:
-    backgroundColor: "{colors.paper}"
+    backgroundColor: "{colors.strip}"
     textColor: "{colors.ink}"
     rounded: "{rounded.md}"
     padding: "8px 16px"
     height: "36px"
   button-outline-hover:
-    backgroundColor: "{colors.mist}"
-  button-destructive:
-    backgroundColor: "{colors.signal-red}"
-    textColor: "{colors.paper}"
+    backgroundColor: "{colors.wash}"
+  button-ghost:
+    textColor: "{colors.ink-muted}"
     rounded: "{rounded.md}"
     padding: "8px 16px"
     height: "36px"
-  button-sm:
-    rounded: "{rounded.md}"
-    padding: "0 12px"
-    height: "32px"
+  button-ghost-hover:
+    backgroundColor: "{colors.wash}"
+    textColor: "{colors.ink}"
   input:
-    backgroundColor: "transparent"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    padding: "4px 12px"
-    height: "36px"
-  badge-running:
-    backgroundColor: "{colors.state-running}"
-    textColor: "{colors.paper}"
-    typography: "{typography.label}"
-    rounded: "{rounded.full}"
-    padding: "2px 8px"
-  badge-caution:
-    backgroundColor: "{colors.state-caution}"
-    textColor: "{colors.state-caution-text}"
-    typography: "{typography.label}"
-    rounded: "{rounded.full}"
-    padding: "2px 8px"
-  badge-failed:
-    backgroundColor: "{colors.state-failed}"
-    textColor: "{colors.paper}"
-    typography: "{typography.label}"
-    rounded: "{rounded.full}"
-    padding: "2px 8px"
-  badge-neutral:
-    backgroundColor: "transparent"
-    textColor: "{colors.ink}"
-    typography: "{typography.label}"
-    rounded: "{rounded.full}"
-    padding: "2px 8px"
-  tabs-list:
-    backgroundColor: "{colors.mist}"
-    textColor: "{colors.slate-text}"
-    rounded: "{rounded.lg}"
-    padding: "3px"
-    height: "36px"
-  tabs-trigger-active:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-  nav-link:
+    backgroundColor: "{colors.bay}"
     textColor: "{colors.ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
-    padding: "6px 8px"
-  nav-link-active:
-    backgroundColor: "{colors.mist}"
-  card:
-    backgroundColor: "{colors.paper}"
+    padding: "4px 12px"
+    height: "36px"
+  holder-run:
+    backgroundColor: "{colors.state-run}"
+    textColor: "{colors.state-run-ink}"
+    typography: "{typography.holder}"
+    rounded: "{rounded.xs}"
+    padding: "0 6px"
+    height: "20px"
+    width: "4.75rem"
+  holder-wait:
+    backgroundColor: "{colors.state-wait}"
+    textColor: "{colors.state-wait-ink}"
+    typography: "{typography.holder}"
+    rounded: "{rounded.xs}"
+    padding: "0 6px"
+    height: "20px"
+    width: "4.75rem"
+  holder-fail:
+    backgroundColor: "{colors.state-fail}"
+    textColor: "{colors.state-fail-ink}"
+    typography: "{typography.holder}"
+    rounded: "{rounded.xs}"
+    padding: "0 6px"
+    height: "20px"
+    width: "4.75rem"
+  holder-idle:
+    textColor: "{colors.ink-muted}"
+    typography: "{typography.holder}"
+    rounded: "{rounded.xs}"
+    padding: "0 6px"
+    height: "20px"
+    width: "4.75rem"
+  panel:
+    backgroundColor: "{colors.strip}"
     textColor: "{colors.ink}"
-    rounded: "{rounded.xl}"
-    padding: "24px"
-  code-block:
-    backgroundColor: "{colors.mist}"
-    textColor: "{colors.ink}"
-    typography: "{typography.mono}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "16px"
-  terminal:
-    backgroundColor: "{colors.terminal-black}"
-    textColor: "{colors.terminal-text}"
-    typography: "{typography.mono}"
+  strip-row:
+    typography: "{typography.strip}"
+    padding: "10px 12px"
+  strip-row-focused:
+    backgroundColor: "{colors.cord-soft}"
+  nav-link:
+    textColor: "{colors.ink-muted}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: "0 8px"
+    height: "32px"
+  nav-link-active:
+    backgroundColor: "{colors.cord-soft}"
+    textColor: "{colors.ink}"
+  top-bar:
+    backgroundColor: "{colors.bay}"
+    height: "48px"
+    padding: "0 24px"
+  rail:
+    backgroundColor: "{colors.bay}"
+    width: "15rem"
+    padding: "16px 12px 12px"
+  table-row:
+    typography: "{typography.strip}"
+    height: "44px"
+    padding: "6px 12px"
+  table-row-selected:
+    backgroundColor: "{colors.cord-soft}"
 ---
 
 # Design System: FleetOps
 
 ## Overview
 
-**Creative North Star: "The Instrument Panel"**
+**Creative North Star: "The Strip Bay"**
 
-FleetOps looks like a well-made gauge cluster. The chrome is achromatic grey: navigation, controls, tables and cards are drawn in graphite on paper, or pale grey on night, with hairline borders. Colour is spent only on readings. A container's state, a failed pull, a CPU line and an ANSI-coloured log line are the only chromatic things on screen, so the eye goes straight to them. The screen's job is to report what the hosts are doing, not to decorate it.
+FleetOps is a controller's strip board. Every container, image, volume and event is a fielded strip: a row of boxed cells divided by hairline rules, with a squared state holder at its left edge, racked in bays by urgency. The board is cool near-black by default, and the chrome uses three greys only: the bay (page and rail), the strip (rows and panels) and the rule (every divider). Nothing on the board is decorative. The rest of the colour is either the operator's cord (amber) or a reading (state, environment identity, machine output).
 
-The panel is compact and orderly for long working sessions and for incidents:
+The density is that of an operations tool used beside a terminal. Rows are 40 to 44px, controls are 32 to 36px, and numerals are tabular so columns line up like a readout. One variable face, Mona Sans, carries every role through its width axis. Strip fields are cut narrow at 88% so more fits in a cell. Headlines are set wide at 112% so a page or an environment name reads like a painted callsign. JetBrains Mono is used only for machine output: timestamps, IDs, error text from Docker, key legends and logs.
 
-- controls are 36 px tall, with 32 px in toolbars;
-- body text is 14 px;
-- page gutters are 24 px;
-- a fixed 224 px sidebar holds navigation.
-
-Surfaces are nearly flat, and depth is a hairline or at most a one-pixel shadow. Machine output (logs, JSON, digests, the terminal) is set in monospace, and the terminal is always dark whatever the theme. Light, dark and system themes are equal citizens: every token has a night counterpart.
-
-Components are **precise and restrained**. Two looks are ruled out:
-
-- **Portainer's look.** FleetOps is an alternative, not a reskin: no blue-heavy card-grid dashboards.
-- **Marketing gloss.** No gradients, glassmorphism, hero illustrations or decorative motion inside the app.
+The board is flat. Depth appears only when something floats above it (menus, dialogs, the mobile drawer). The world's one piece of motion is the holder flash. When Docker changes a container's state on screen, its holder rings once in the cord's amber and then settles. With reduced motion, the flash is dropped.
 
 **Key Characteristics:**
-- Achromatic chrome; colour only for state, alerts and live data.
-- Compact controls: 36 px default, 32 px small, 24 px extra small.
-- Hairline borders and near-flat surfaces.
-- System sans for interface text, system monospace for machine output.
-- Equal light and dark themes; the terminal is always dark.
-- 8 px base radius, with a pill only for state badges.
+- The chrome uses three greys per theme (bay, strip and rule), and the rail sits on the bay grey, separated by a rule.
+- Amber is the only accent (the cord), and it marks the primary action, selection, focus and the active nav row.
+- State hues are readings only: green means running, orange means transitional, red means failed, and an outline means idle.
+- Each environment has an identity hue, shown as a 3px band and a squared tag, and that hue is never a state hue or the cord.
+- Mona Sans is set on its width axis (88% for strip fields, 112% for callsigns), and mono is used only for machine output.
+- The attention bay can be walked with j/k, and Enter opens logs. A g-chord jumps between pages.
+- The interface is dark first, and light is fully supported.
 
 ## Colors
 
-A greyscale instrument body with a small set of signal colours that each mean one thing.
+The palette is a cool slate board in three greys, with one amber cord and a fixed set of state readings. Dark is the default theme, and the `light-*` tokens are its paired values.
 
 ### Primary
-- **Graphite** (`graphite`): the primary action colour, used for solid buttons, the brand mark's field and selected text. On night it inverts to **Night Primary**, a pale grey solid with graphite text.
+- **The Cord** (`cord`; light: `light-cord`): the only accent. It is used for the primary button fill, checked checkboxes, the active tab underline, the sort arrow, the active nav icon, the focus ring, the text caret and the selection wash. In light mode it darkens to a burnt amber so white text and the ring hold AA on white strips. **Cord Ink** (`cord-ink`) is the text colour on a cord fill.
+- **Cord Soft** (`cord-soft`): the cord at 10% opacity. It is the one tint for "this is where you are": the active nav row, a selected table row, the focused strip in a bay and the bulk-selection bar.
 
 ### Neutral
-- **Paper** (`paper`) and **Night** (`night`): page backgrounds for the light and dark themes.
-- **Ink** (`ink`) and **Night Text** (`night-text`): body text and headings.
-- **Mist** (`mist`) and **Night Raised** (`night-raised`): quiet fills for hover and active nav rows, the tab track, code blocks (at 40% opacity), and secondary buttons.
-- **Slate Text** (`slate-text`) and **Night Slate Text** (`night-slate-text`): secondary text such as descriptions, placeholders, empty states, "—" for missing values and section labels.
-- **Hairline** (`hairline`) and **Night Hairline** (`night-hairline`): every border, table row divider and field stroke. On night, fields use **Night Field** (`night-field`).
-- **Focus Grey** (`focus-grey`) and **Night Focus Grey** (`night-focus-grey`): focus rings, drawn solid. A control gets a 3 px ring, and a link a 2 px outline 2 px out. Both are at least 3:1 against every surface of their theme.
-- **Night Panel** (`night-panel`): cards, popovers and dialogs in the dark theme.
+- **Bay** (`bay`): the page ground and the rail. It is also the input fill in dark mode, where fields sit at 60% of the bay so they read as recessed into the strip.
+- **Strip** (`strip`): every panel, strip list, table, readout, details grid and card. In light mode it is pure white on a pale slate bay.
+- **Rule** (`rule`): every hairline, including panel borders, row dividers, cell dividers, the rail edge and the top bar's bottom edge.
+- **Float Strip** (`float-strip`): menus, dialogs and the command palette. It is one step up from the strip, so floating layers separate by tone as well as by shadow.
+- **Wash** (`wash`): the hover fill for ghost and outline controls, nav links and inventory rows. It is never a resting surface.
+- **Field Rule** (`field-rule`): the stronger edge on inputs, outline buttons, checkboxes and the idle holder, and the scrollbar thumb.
+- **Ink** / **Ink Muted** (`ink`, `ink-muted`): primary text, and secondary text (labels, meta lines, column heads, inactive nav). Dark ink is warm (hue 90) against the cool board.
 
-### Signals
-- **Running Green** (`state-running`): the `running`, `healthy` and environment `up` badges, with white text (5.4:1). The brighter **Live Dot** (`live-dot`) marks the dashboard's live state, next to its words.
-- **Caution Amber** (`state-caution`): the `paused`, `restarting` and `partial` badges, with **Caution Ink** text (`state-caution-text`, 7.0:1), since white on amber fails.
-- **Failed Red** (`state-failed`): the `unhealthy`, `dead` and environment `down` badges, with white text (6.4:1) in both themes.
-- **Signal Red** (`signal-red`, `night-signal-red`): destructive buttons, bad event actions (`die`, `kill`, `oom`), inline errors (`role="alert"`) and the lost-connection banner, which uses the red at 10% as its fill.
-- **Chart series** (`series-*`): one fixed colour per metric, the same on both themes: CPU blue, memory violet, network in green and out amber, block read cyan and write red. Axes and grid are **Chart Axis** grey (`chart-axis`, and the same grey at 18% for grid lines).
-- **ANSI palette**: the 16 terminal colours are CSS variables `--ansi-0` to `--ansi-15`, darker in light mode so they read on paper and brighter in dark mode. The terminal uses the dark set on **Terminal Black** (`terminal-black`).
+### State readings
+- **Run** (`state-run` on `state-run-ink`): a holder for running, healthy or up.
+- **Wait** (`state-wait` on `state-wait-ink`): a holder for paused, restarting or partial, and the reconnecting live dot.
+- **Fail** (`state-fail` on `state-fail-ink`): a holder for unhealthy, dead or down, and for an exited container with a non-zero exit code.
+- **Live** (`live`): the pulsing connection dot and an environment's "up" dot.
+- **Destructive** (`destructive`): destructive buttons, inline errors, the unavailable-environment alert, the connection-lost banner and bad event actions (die, kill, oom).
+
+Every fill and ink pair holds at least 4.5:1 in both themes.
+
+### Environment identity
+An environment's hue comes from a stable hash of its name, picked from six hues: 255, 292, 328, 205, 232 and 270. The same hue appears as a flat 3px band at the top of the rail and the top bar (`oklch(0.58 0.15 h)`), and as the EnvTag square (`oklch(0.5 0.14 h)` with white initials). The environment switcher is tinted with the same hue at 10% (16% on hover). None of the six hues falls in the cord's range (60–78) or in a state hue's range (25, 158).
+
+### Machine output
+Logs use a 16-colour ANSI palette, defined per theme as `--ansi-0` to `--ansi-15`. The light palette is a set of darker shades. The terminal is always dark (`terminal-black` ground, `terminal-text` foreground) and uses the dark ANSI set, whatever the theme.
 
 ### Named Rules
-**The Readings-Only Rule.** Colour marks state, alerts and live data, and nothing else. A coloured button, icon, border or background that isn't a reading or a destructive action breaks the panel.
+**The Three Greys Rule.** The structural chrome is bay, strip and rule, and nothing else. The float strip is used only for layers above the board, and the wash only under a pointer. A new surface picks one of the three greys; it does not introduce a fourth.
 
-**The One-Meaning Rule.** Each signal colour means one thing. Green is healthy or running, amber is transitional, red is failed or destructive. Don't reuse them for decoration or for categories.
+**The One Cord Rule.** Amber means "the operator's hand is here": the primary action, the selection, focus or the current page. It never labels a state, a metric or a category.
 
-**The Canvas Hex Rule.** Anything drawn on a canvas (uPlot charts, xterm.js) uses a concrete hex value, because a canvas can't read CSS variables. Anything in the DOM uses the theme variables.
+**The Readings Rule.** Green, orange and red appear only when they report Docker's state. An environment's hue identifies the environment and reports nothing.
 
 ## Typography
 
-**Interface Font:** the system UI sans stack (`ui-sans-serif, system-ui, sans-serif`)
-**Machine-Output Font:** the system monospace stack (`ui-monospace, SFMono-Regular, Menlo, …`)
+**Display / Interface Font:** Mona Sans Variable (with ui-sans-serif, system-ui)
+**Mono Font:** JetBrains Mono Variable (with ui-monospace, SFMono-Regular, Menlo)
 
-**Character:** Native, zero-download type that looks like the operator's own OS. It is legible at small sizes, with a monospace companion for anything a machine wrote.
+**Character:** One grotesque cut three ways. It is narrow for the fielded strip, normal width for prose and controls, and wide for callsigns. JetBrains Mono is kept for anything a machine wrote.
 
 ### Hierarchy
-- **Headline** (600, 1.5rem/2rem): one page title per page, truncated on one line. For a resource page it is the resource's name, and on the dashboard it is the environment's name.
-- **Title** (600, 1rem, line-height 1): card and dialog titles.
-- **Body** (400, 0.875rem/1.25rem): table cells, form fields, nav links, buttons and descriptions. This is almost all the text in the app.
-- **Label** (500, 0.75rem/1rem): state badges, nav section headings ("Administration") and captions.
-- **Mono** (400, 0.75rem/1rem): logs, inspect JSON, image history, audit details, IDs and digests. Wrapping is opt-in.
+- **Headline** (600, 1.375rem, 1.25, width 112%, -0.012em): the page title, which is often the environment's name.
+- **Title** (600, 1.125rem, width 112%): the attention bay's headline ("3 containers need attention"). The same callsign cut at 1rem is used for dialog titles, and at 15px for the FleetOps wordmark.
+- **Panel title** (600, 0.875rem, normal width): the header of each board panel, next to a 16px muted icon.
+- **Body** (400, 0.875rem, 1.25rem): controls, meta lines and prose.
+- **Strip** (400/600, 0.875rem, width 88%, tabular): the fields of a strip list, table cells, detail labels and readouts. A strip's name is set in 600.
+- **Readout** (600, 1.125rem, width 88%, tabular): live CPU and memory values, and the counts in the state tabs (these use the callsign cut).
+- **Label** (500, 0.75rem): column heads, readout labels, group headings and asides, in muted ink and sentence case.
+- **Holder** (600, 11px, width 88%, +0.04em, uppercase): the state word inside a holder, exactly as Docker reports it.
+- **Mono** (0.75rem, or 10px for key legends): timestamps, IDs, Docker error strings, kbd legends and logs.
 
 ### Named Rules
-**The Machine-Speaks-Mono Rule.** Text a machine produced (log lines, JSON, commands, digests, shell output) is set in monospace. Text written for the operator is set in the sans.
+**The Two Widths Rule.** Width is the hierarchy tool. Use 88% for fields that must fit a cell and 112% for names that must be recognised at a glance. Weight stays at 400, 500 or 600.
 
-**The Fourteen-Pixel Floor.** Body text in the interface is 14 px (0.875rem). Only labels, badges and mono output go down to 12 px.
+**The Machine Voice Rule.** Mono means a machine wrote it. Human-facing labels never use mono, and Docker's own error text always does.
+
+**The Readout Rule.** Tables, `<time>` and `[data-numeric]` elements are tabular-figured by default, so numbers line up like a readout.
 
 ## Layout
 
-- **App shell:**
-  - A fixed-width 224 px sidebar sits on the left, with a hairline right border and 12 px padding. It holds the wordmark, environment switcher, command palette trigger, environment navigation, admin navigation, and the user menu at the bottom.
-  - The main column takes the rest of the width (`min-w-0`, so wide tables scroll inside their box rather than widening the page).
-- **Pages:** a single column with 24 px padding and 16 px between blocks. The title row has the headline on the left and the actions on the right, and both wrap when narrow.
-- **Rhythm:** a 4 px base scale, used as 4, 6, 8, 12, 16 and 24 px.
-  - 8 px is the everyday gap: between controls in a toolbar, and between icon and label.
-  - 16 px separates page blocks, and 24 px frames the page.
-- **Density:**
-  - Table cells have 8 px padding and 40 px header rows.
-  - Rows have hover and selected fills in Mist.
-  - Lists are virtualised where they can grow large (logs).
-- **Responsive:**
-  - Desktop-first, and used mainly on desktop browsers.
-  - Breakpoints are used sparingly (Tailwind's `sm`, `md` and `lg` at 640, 768 and 1024 px), mostly to switch form grids and dialogs from one column to two.
-  - Tables scroll horizontally inside their container rather than reflowing.
+The shell is a two-column grid on medium screens and up: a sticky 15rem rail on the bay grey and a fluid main column. Below `md` (768px), the rail becomes a left drawer at `min(18rem, 85vw)`, opened from a menu button in the top bar. The top bar is sticky, 48px high, and uses the bay at 85% with a backdrop blur. It holds the environment band, the breadcrumb (EnvTag, environment name, "/", section icon and label), the live state and the ⌘K palette trigger.
+
+Pages have 16px side padding (24px from `md`), 20px at the top, 40px at the bottom, and a 20px gap between blocks. A page title row places the headline and a muted meta line on the left and actions on the right, aligned to the bottom edge. The dashboard is laid out as bays. The main column holds the attention bay, the state bar and tabs, and the running bay. From `xl` (1280px), a 24rem right column holds the events tape, disk usage and inventory. That column splits into two at `md` and stacks on small screens.
+
+Spacing follows a 4px base. Rows use 10px or 12px vertical padding, cells 12px or 16px horizontal. Groups have 6–8px gaps, and bays 20px. Control heights are 36px (default), 32px (small and nav rows), 24px (extra small), a 44px table row and a 36px table head.
 
 ## Elevation & Depth
 
-The system is flat. Hairline borders do almost all the separation. Shadows are the smallest available:
-
-- a 1 px shadow on outline buttons and fields;
-- a small ambient shadow on cards;
-- the default overlay shadow on menus and dialogs, which sit above a dimmed page.
-
-Tone carries hierarchy instead:
-
-- Paper, then Mist fills for active and hovered rows.
-- On night: Night, then Night Panel for cards and popovers, then Night Raised for hover.
+The board is flat. Bays, strips and panels separate by tone (bay, strip) and by 1px rules, never by shadow. Shadows are used only for layers that float above the board, plus two small touches that give controls a physical edge.
 
 ### Shadow Vocabulary
-- **Hairline lift** (`box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05)`): outline buttons and inputs, to separate them from the page without a visible edge.
-- **Card rest** (`box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)`): cards on the dashboard and detail pages.
+- **Cord lip** (`box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.18), 0 1px 2px oklch(0 0 0 / 0.2)`): the primary button only, giving it a lit top edge.
+- **Seat** (`box-shadow: 0 1px 1px oklch(0 0 0 / 0.04)`): outline buttons.
+- **Recess** (`box-shadow: inset 0 1px 1px oklch(0 0 0 / 0.05)`): inputs and textareas.
+- **Menu float** (`box-shadow: 0 12px 32px -8px oklch(0 0 0 / 0.35), 0 1px 3px oklch(0 0 0 / 0.12)`): dropdown menus.
+- **Dialog float** (`box-shadow: 0 24px 60px -12px oklch(0 0 0 / 0.45), 0 2px 6px oklch(0 0 0 / 0.15)`): dialogs and the command palette, over a `oklch(0.1 0.01 255 / 0.6)` scrim.
+- **Auth card** (`box-shadow: 0 12px 40px -16px oklch(0 0 0 / 0.35)`): the single card on the login and setup screens.
 
 ### Named Rules
-**The Hairline-First Rule.** Separate with a 1 px Hairline border before reaching for a shadow. A shadow bigger than Card rest belongs only to floating layers: menus, dialogs and the command palette.
+**The Flat Bay Rule.** Anything racked on the board has no shadow. A shadow means the layer can be dismissed.
 
 ## Shapes
 
-Gently rounded and consistent:
+Corners are tight and squared. They step from 2px (holders, EnvTags, badges, checkboxes, skeleton bars and link focus rings) to 4px (buttons, inputs, nav rows), 6px (panels, tables, readouts) and 8px (dialogs, the auth card). The holder and the EnvTag stay nearly square on purpose, because they are printed tags on a strip, not pills. Fully round shapes are kept for dots (live, up and down), progress tracks (state bar, disk and readout shares) and the user's initial.
 
-| Radius | Value | Used for |
-|---|---|---|
-| Base | 8 px (`--radius`) | tab tracks |
-| md | 6 px | buttons, inputs, nav rows, code blocks, tab triggers |
-| sm | 4 px | small inner elements |
-| xl | 12 px | cards |
-| xs | 2 px | the dialog close button |
-
-Pills (full radius) are used only for badges, so a rounded capsule always reads as a status. Borders are 1 px Hairline everywhere. Icons are Lucide line icons at 16 px (12 px in extra-small buttons), inheriting the text colour.
+A strip is a box of cells. Table cells carry left rules (the rule at 50–70%) so each field reads as a boxed column, and rows are divided by full rules. Strip lists inside a panel run edge to edge, with the panel's own border as the frame.
 
 ## Components
 
 ### Buttons
-Precise and quiet. A solid button is the one thing on a toolbar that asks to be pressed.
-- **Shape:** 6 px corners, a 16 px icon with an 8 px gap, 14 px medium text and no wrapping.
-- **Primary:** a Graphite fill with Paper text, 36 px tall with 16 px side padding. Hover darkens to 90% opacity.
-- **Outline:** the default for secondary actions (Prune, Build, Start or Stop in toolbars). It has a Hairline border, a Paper fill and the Hairline-lift shadow. Hover fills with Mist. On night the fill is the Night Field grey at 30%, rising to 50% on hover.
-- **Destructive:** a Signal Red fill with white text, used only for the confirm step of irreversible actions (Remove, Delete).
-- **Ghost and link:** ghost is for icon buttons and menu triggers (with a Mist hover), and link is for inline text actions.
-- **Sizes:** default 36 px, sm 32 px (row and bulk actions), xs 24 px, and square icon sizes 36, 32 and 24 px.
-- **Focus:** a Focus Grey border with a solid 3 px Focus Grey ring, the same on every control. Disabled controls drop to 50% opacity and stop taking clicks.
+Compact, with a physical edge, and they press 1px down.
+- **Shape:** squared (4px).
+- **Primary:** a cord fill with cord ink, the cord lip shadow, and 36px height with 16px padding. Hover drops the fill to 88%.
+- **Outline:** a strip fill with a field rule edge and the seat shadow. Hover fills with the wash.
+- **Ghost:** muted ink with no fill. Hover fills with the wash and brings the ink to full. Used for icon buttons in the top bar and the drawer.
+- **Destructive:** a destructive fill. The ink is white in light mode and fail ink in dark mode.
+- **Link:** ink text with a rule-coloured underline that turns cord on hover.
+- **Focus:** a 3px cord ring. **Active:** a 1px downward press. **Transitions:** 150ms ease-out on colour, border, shadow and transform.
+- **Sizes:** 24px, 32px, 36px and 40px, plus square icon sizes. Icons are 16px, or 12px at the smallest size.
 
-### State Badges
-The system's main reading.
-- **Style:** a pill with 2 px × 8 px padding and 12 px medium text. It shows the state word in lowercase, exactly as Docker reports it.
-- **Tones:**
-  - Running Green with white text for `running`, `healthy` and `up`;
-  - Caution Amber with Caution Ink text for `paused`, `restarting` and `partial`;
-  - Failed Red with white text for `unhealthy`, `dead` and `down`;
-  - every other state (`exited`, `created`) is an outline pill in Ink with a Hairline border, so a stopped container is neutral rather than alarming.
+### State Holder (signature)
+A squared tag at the left of every strip.
+- It is 20px high, at least 4.75rem wide and 2px rounded, and holds the state word in uppercase, exactly as Docker reports it.
+- Run, wait and fail are filled with their state colour and state ink. Idle (created, exited cleanly) is a field-rule outline with muted ink.
+- A container that exited with a non-zero code reads as fail. One that exited cleanly reads as idle.
+- **Flash:** when Docker changes the state while it is on screen, the holder's ring expands from 0 to 7px as the amber cord fades out, over 900ms `cubic-bezier(0.16, 1, 0.3, 1)`. With reduced motion there is no flash.
 
-### Cards / Containers
-- **Corner Style:** 12 px.
-- **Background:** Paper, or Night Panel on dark.
-- **Shadow Strategy:** Card rest (see Elevation).
-- **Border:** 1 px Hairline.
-- **Internal Padding:** 24 px, with 24 px between the header, content and footer.
+### Strips and Bays
+- **Attention bay:** a strip list in a panel, sorted most urgent first. Each strip has a holder, the container name in strip weight 600 (linked to its logs), the Docker status line in muted ink, and a muted "Logs" affordance. A strip whose link has focus fills with cord-soft.
+- **Walk:** j/k or the arrow keys move focus from strip to strip, and Enter opens the focused strip's logs. A key legend in 10px mono sits beside the bay's headline.
+- **State bar:** a 6px rounded track split into run, wait, fail and idle segments with 1px gaps. Below it, state tabs show a count (in the callsign cut) next to a holder, and each links to the filtered list.
+- **Running bay:** strips with a holder, name, image, then CPU and memory cells. Each cell is a live 80×20 sparkline in ink at 75%, with a tabular value.
 
-### Inputs / Fields
-- **Style:** 36 px tall, with a transparent fill, a Hairline stroke (Night Field on dark), 6 px corners, 12 px side padding and the Hairline-lift shadow. Placeholder text is Slate Text. Selected text inverts to Graphite.
-- **Focus:** the shared Focus Grey border with its solid 3 px ring.
-- **Error / Disabled:** `aria-invalid` turns the stroke and ring Signal Red. Disabled fields are at 50% opacity with a not-allowed cursor.
-- **Toggles:** Radix checkboxes, each with a text label to its right.
+### Cards / Panels
+- **Corner Style:** 6px.
+- **Background:** strip, with a 1px rule border.
+- **Shadow Strategy:** none (see the Flat Bay Rule).
+- **Header:** a panel title with a 16px muted icon on the left and a muted label aside on the right, over a rule. The padding is 10px by 16px.
+- **Internal Padding:** 16px, or flush for strip lists.
 
-### Navigation
-- **Sidebar links:** 14 px body text with a 16 px Lucide icon and an 8 px gap, 6 px × 8 px padding and 6 px corners. Hover fills with Mist. The active link is Mist-filled and medium weight, and there is no accent colour.
-- **Section labels:** 12 px medium in Slate Text ("Administration").
-- **Tabs:** a Mist track with 8 px corners, 3 px padding and 36 px height, holding 14 px medium triggers. The active trigger is Paper with a hairline lift. Container pages use tabs for Overview through Files.
+### Readouts
+A 15.5rem strip cell in the page title row, one each for CPU and memory. It holds a muted label and icon, a 96×20 sparkline, a tabular value with a muted "of N" detail, and a 2px share track filled in ink at 60%. The track's width changes over 700ms.
 
 ### Tables
-- Full-width and 14 px, with 40 px header rows in medium weight.
-- Rows have Hairline dividers and a Mist hover at 50%. Selected rows are Mist.
-- Row checkboxes hug the left edge. Filtering, column visibility and bulk actions sit above the table.
-- Live cells, such as CPU and memory, pair a 60-point sparkline with a right-aligned tabular-figure value.
+- The table sits in a strip panel with the strip width cut throughout. The head is the muted fill at 50%, with 12px/500 muted column labels.
+- Cells are 44px high, divided by left rules. Row hover uses the wash at 60%. A selected row uses cord-soft, and the sort arrow is cord.
+- The filter field is 32px with a search icon and a mono "/" key hint. The bulk-selection bar uses cord-soft with a cord edge at 40%.
+- Loading shows 2px-rounded pulsing skeleton bars. Errors appear as inline destructive text in the table body.
 
-### Status Readout (signature: the dashboard)
-The environment's home, read in urgency order.
-- **Liveness line:** under the headline, a small Live Dot and plain words: "Live", "Reconnecting. Showing data as of …" or "Unavailable. Showing the last known state, as of …". Data that isn't current is always stamped with its time, never dimmed below contrast.
-- **Headline sentence:** an h2 in 18 px semibold that answers the first question ("Nothing needs attention", "2 containers need attention").
-- **Attention list:** a hairline-bordered list, most urgent first. Each row has a State Badge, the container name (linking to its logs) and Docker's own status text.
-- **State strip:** outline chips of count and State Badge, each linking to the containers list filtered to that state.
-- **Host readouts:** CPU and memory now-values in headline type, each with a 160 × 32 sparkline whose scale follows the minute's peak.
-- **Below, in two columns:** Recent events (time-only stamps, bad actions in Signal Red) and Disk usage (hairline proportion bars in Slate Text on Mist).
-- **Footer:** the other inventory counts as plain links.
-- **Don't** rebuild it as a row of stat cards.
+### Inputs / Fields
+- **Style:** a field rule edge with the recess shadow and 4px corners, at 36px. The fill is strip in light mode and the bay at 60% in dark mode.
+- **Focus:** the edge turns cord, with a 3px cord ring at 35%.
+- **Error:** a destructive edge and ring. **Disabled:** 50% opacity.
+- **Checkbox:** a 16px square with 2px corners that fills with the cord when checked.
 
-### Live Readouts (signature)
-The instrument part of the panel.
-- **Sparklines:** inline SVG polylines, 1.25 px stroke in the text colour, drawn in table cells.
-- **Charts:** uPlot at 160 px tall, with the y axis from zero, Chart Axis grey axes and fixed per-metric series colours.
-- **Logs:** a virtualised monospace view with ANSI colour, search hits as `<mark>` (the current hit in Mist), and a stderr marker.
-- **Terminal:** xterm.js, always dark, on Terminal Black with the bright ANSI set.
+### Navigation
+- **Rail:** the bay grey with a rule on its right edge. From the top down, it holds the environment band, the FleetOps mark and wordmark (callsign cut), the environment switcher, the environment nav, the administration nav (admins only) and the user menu above a rule.
+- **Nav row:** 32px high with 4px corners, a 16px Lucide icon at stroke 1.75, and a label in muted ink. Hover fills with the wash. The active row is cord-soft with ink text at 500 weight and a cord icon. Hovering a row reveals its chord legend ("G C") in 10px mono.
+- **g-chord:** pressing g, then a page key within 1.2s, jumps to that page (d, c, i, v, n or p). The chord is ignored while typing or with a modifier held.
+- **Environment switcher:** a 48px strip button tinted with the environment's hue, holding an EnvTag, a small muted "Environment" field label, the environment name, an up/down dot and a chevron.
+- **Tabs:** a rule underline across the full width. The active tab has a 2px cord underline and ink text.
+- **Mobile:** the rail moves into a left drawer with a scrim, and any navigation closes it.
+
+### Environment Tag and Band
+- **EnvTag:** a square with 2px corners (20px or 28px) in the environment's hue, holding up to two white initials in the strip cut at 700 weight. It is used in the breadcrumb, the switcher and the switcher menu.
+- **Band:** a flat 3px strip of the hue across the top edge of the rail and the top bar. It is never shown without an environment.
+
+### Live State
+An 8px dot with a label in muted 12px text, at the right of the top bar. When the connection is live, the dot pulses in the live colour (a 2.4s ping, or none with reduced motion). Reconnecting shows a wait dot, and connecting a muted dot. The dashboard's liveness line uses the same dots and says in words what is on screen and how old it is.
+
+### Charts (known drift, under review)
+The container stats charts (uPlot on canvas) sit in a strip panel with a 14px/600 title, a 160px plot, and axes in 11px JetBrains Mono. The legend uses the sans at 12px/500 in muted ink, with values in mono. A canvas cannot read CSS variables, so the axis and grid use a fixed grey (`#8a8a8a`, at 18% for the grid). Each metric also has its own fixed hex series colour: CPU `#3b82f6`, memory `#8b5cf6`, network in `#10b981` and out `#f59e0b`, and block read `#06b6d4` and write `#ef4444`, each filled at 13% under the line. These values are not tokens of this system. The amber, green and red series break the One Cord and Readings rules, and the fixed grey sits outside the three greys. Do not reuse them on new surfaces; the chart colours need their own resolved vocabulary.
+
+### Icons
+Icons are Lucide, 16px in chrome (14px in breadcrumbs and readout labels, 20px for the bay headline's status icon). Navigation, panel-header and inventory icons are drawn at stroke 1.75. Icons inside kit primitives (buttons, menus, the dialog close, the search field) still render at Lucide's default stroke of 2.
 
 ## Do's and Don'ts
 
 ### Do:
-- **Do** keep chrome achromatic. Graphite, Paper, Mist, Slate Text and Hairline, with their night counterparts, draw every non-reading surface.
-- **Do** use a State Badge (pill, lowercase Docker state) whenever a resource's state is shown. Green means running, amber transitional, red failed, and the outline pill is for everything else.
-- **Do** define every new colour as a theme variable with a night counterpart. Use a concrete hex only for canvas drawing (charts, terminal).
-- **Do** use outline buttons for secondary and toolbar actions, and keep a solid Graphite button to the one primary action on a surface.
-- **Do** set machine output in the system monospace at 12 px, and interface text in the system sans at 14 px.
-- **Do** separate surfaces with 1 px Hairline borders and at most the Card-rest shadow.
-- **Do** check every badge fill against its text at 4.5:1 or better, and every focus indicator at 3:1, in both themes.
-- **Do** keep controls on the 36, 32 and 24 px heights, spaced on the 4 px scale (8 px everyday gap, 16 px between blocks, 24 px page padding).
+- **Do** build every new surface from the three greys (bay, strip, rule), with the float strip used only for layers that can be dismissed.
+- **Do** mark the operator's place (primary action, selection, focus, current page) with the cord, and only with the cord.
+- **Do** show a resource's state as a squared holder with Docker's exact word in uppercase, and read a non-zero exit as fail.
+- **Do** set strip fields at width 88% and names that must be recognised at width 112%. Keep numerals tabular.
+- **Do** give every environment-scoped view the environment's band and EnvTag, taking the hue from `envHue`.
+- **Do** make any new strip list walkable with j/k and Enter when it is a list of things to act on.
+- **Do** say in words when the screen is not live, and how old the data is.
 
 ### Don't:
-- **Don't** make it look like Portainer: no blue-heavy chrome and no dashboard built from a grid of coloured stat cards.
-- **Don't** add marketing gloss inside the app: gradients, glassmorphism, hero illustrations or decorative motion.
-- **Don't** colour icons, borders, nav items or backgrounds for emphasis. If it isn't a reading or a destructive action, it stays grey.
-- **Don't** use pills for anything but status, or signal colours for anything but their one meaning.
-- **Don't** show `exited` or `created` in red or amber. A stopped container is neutral, not an alarm.
-- **Don't** give the terminal a light theme. It stays on Terminal Black in both themes.
+- **Don't** use amber to mean a state, a metric or a category. Transitional state is the orange wait reading, not the cord.
+- **Don't** use green, orange or red for anything except Docker state, or add an environment hue inside the cord or state ranges.
+- **Don't** put shadows on racked content (panels, strips, tables, readouts).
+- **Don't** round holders or EnvTags into pills.
+- **Don't** set human-facing labels in mono, or show Docker's error text in anything but mono.
+- **Don't** set labels, headings or nav text in uppercase. Uppercase is kept for the holder's state word, EnvTag initials and key legends.

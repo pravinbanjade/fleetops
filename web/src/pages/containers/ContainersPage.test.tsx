@@ -37,8 +37,8 @@ describe("containers list", () => {
     expect(within(web).getByText("running")).toBeInTheDocument();
     expect(within(web).getByRole("link", { name: "8080→80" })).toHaveAttribute("href", "http://localhost:8080");
     expect(within(web).getByText("2 hours ago")).toBeInTheDocument();
-    // Sorted by name: db first.
-    expect(rows(screen)[0]).toHaveTextContent("db");
+    // Racked by urgency, then name: the running web before the cleanly exited db.
+    expect(rows(screen)[0]).toHaveTextContent("web");
   });
 
   it("stops the selected containers and reports a failure by name", async () => {

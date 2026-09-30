@@ -19,7 +19,7 @@ import {
   type SortingState,
   type ColumnVisibilityState,
 } from "@tanstack/react-table";
-import { ArrowDown, ArrowUp, Columns3 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Search } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -111,18 +111,36 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="search"
-          placeholder="Filter…"
-          aria-label={`Filter ${props.label.toLowerCase()}`}
-          data-filter
-          className="max-w-xs"
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-        />
+        <div className="relative w-full max-w-xs">
+          <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Filter…"
+            aria-label={`Filter ${props.label.toLowerCase()}`}
+            data-filter
+            className="h-8 pr-8 pl-8"
+            value={globalFilter}
+            onChange={(e) => setGlobalFilter(e.target.value)}
+          />
+          <kbd
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-xs border bg-muted px-1 font-mono text-[10px] text-muted-foreground"
+          >
+            /
+          </kbd>
+        </div>
+        {props.data && (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {rows.length === data.length ? data.length : `${rows.length} of ${data.length}`}
+          </span>
+        )}
         {props.selectable && selected.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Selected">
-            <span className="text-sm text-muted-foreground">{selected.length} selected</span>
+          <div
+            className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-cord-soft py-1 pr-1 pl-2.5"
+            role="group"
+            aria-label="Selected"
+          >
+            <span className="text-sm font-medium tabular-nums">{selected.length} selected</span>
             {props.actions?.(selected, clear)}
           </div>
         )}
@@ -131,7 +149,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
           {hideable.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" aria-label="Columns">
+                <Button variant="outline" size="icon-sm" aria-label="Columns">
                   <Columns3 />
                 </Button>
               </DropdownMenuTrigger>
@@ -152,7 +170,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
           )}
         </div>
       </div>
-      <div className="rounded-md border">
+      <div>
         <Table aria-label={props.label}>
           <TableHeader>
             {table.getHeaderGroups().map((group) => (
@@ -178,12 +196,17 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                       {header.isPlaceholder ? null : header.column.getCanSort() ? (
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 hover:underline"
+                          className="group/sort -mx-1 inline-flex items-center gap-1 rounded-xs px-1 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           <table.FlexRender header={header} />
-                          {sorted === "asc" && <ArrowUp className="size-3" />}
-                          {sorted === "desc" && <ArrowDown className="size-3" />}
+                          {sorted === "asc" ? (
+                            <ArrowUp className="size-3 text-primary" />
+                          ) : sorted === "desc" ? (
+                            <ArrowDown className="size-3 text-primary" />
+                          ) : (
+                            <ArrowUpDown aria-hidden className="size-3 opacity-0 group-hover/sort:opacity-60" />
+                          )}
                         </button>
                       ) : (
                         <table.FlexRender header={header} />
@@ -197,19 +220,24 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
           <TableBody>
             {props.error ? (
               <TableRow>
-                <TableCell colSpan={width} role="alert" className="text-destructive">
+                <TableCell colSpan={width} role="alert" className="h-16 whitespace-normal text-destructive">
                   {errorMessage(props.error)}
                 </TableCell>
               </TableRow>
             ) : !props.data ? (
               <TableRow>
                 <TableCell colSpan={width} className="text-muted-foreground">
-                  Loading…
+                  <span className="sr-only">Loading…</span>
+                  <span aria-hidden className="grid gap-2 py-1">
+                    {[72, 54, 64].map((w) => (
+                      <span key={w} className="h-3 rounded-xs bg-muted motion-safe:animate-pulse" style={{ width: `${w}%` }} />
+                    ))}
+                  </span>
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={width} className="text-muted-foreground">
+                <TableCell colSpan={width} className="h-24 text-center whitespace-normal text-muted-foreground">
                   {data.length === 0 ? props.empty : "Nothing matches the filter."}
                 </TableCell>
               </TableRow>

@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { Pause, Play, RotateCw, Square, Zap, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { keys } from "@/api/queries";
@@ -10,13 +11,13 @@ import { Label } from "@/components/ui/label";
 import { bulkMessage, runBulk } from "@/lib/bulk";
 
 /** What each bulk action is called before and after it runs. */
-export const ACTIONS: { action: ContainerActionName; label: string; done: string }[] = [
-  { action: "start", label: "Start", done: "Started" },
-  { action: "stop", label: "Stop", done: "Stopped" },
-  { action: "restart", label: "Restart", done: "Restarted" },
-  { action: "kill", label: "Kill", done: "Killed" },
-  { action: "pause", label: "Pause", done: "Paused" },
-  { action: "unpause", label: "Unpause", done: "Unpaused" },
+export const ACTIONS: { action: ContainerActionName; label: string; done: string; icon: LucideIcon }[] = [
+  { action: "start", label: "Start", done: "Started", icon: Play },
+  { action: "stop", label: "Stop", done: "Stopped", icon: Square },
+  { action: "restart", label: "Restart", done: "Restarted", icon: RotateCw },
+  { action: "kill", label: "Kill", done: "Killed", icon: Zap },
+  { action: "pause", label: "Pause", done: "Paused", icon: Pause },
+  { action: "unpause", label: "Unpause", done: "Unpaused", icon: Play },
 ];
 
 /** The actions that make sense in the container's current state. */

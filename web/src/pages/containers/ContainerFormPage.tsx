@@ -291,8 +291,8 @@ function KeptNote({ names }: { names: string[] }) {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <fieldset className="grid gap-4">
-      <legend className="mb-2 font-medium">{title}</legend>
+    <fieldset className="grid gap-4 rounded-lg border bg-card p-4">
+      <legend className="float-left w-full border-b pb-3 text-sm font-semibold">{title}</legend>
       {children}
     </fieldset>
   );
