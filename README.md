@@ -1,0 +1,225 @@
+# FleetOps
+
+FleetOps is a lightweight, open-source container management platform, built as an alternative to Portainer. It is a single Rust binary with the web UI and a SQLite database built in. Point it at a Docker or Podman socket and you can manage containers, images, volumes, networks and Compose projects from the browser.
+
+What sets it apart:
+
+- **One small binary.** It starts fast and uses little memory. The target is under 50 MB of RSS when idle, on a host with about 50 containers.
+- **No paid tiers.** Features such as RBAC, SSO, GitOps and audit are free. They arrive across the roadmap below.
+- **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
+- **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 3).
+
+> **Status: early development.** Sub-project 1 (core and local Docker) is in progress. The backend is complete. The web UI covers every resource page and the admin pages. Still to come: the log viewer, the terminal, live stats (P3c), end-to-end tests, the container image and CI (P3d).
+
+## Contents
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Architecture](#architecture)
+- [API](#api)
+- [Security](#security)
+- [Roadmap](#roadmap)
+
+## Features
+
+### Available now
+
+**Access and administration**
+- **First-run setup.** Setup creates the admin account. If no admin is created within 10 minutes of starting, setup locks until the server restarts.
+- **Sign-in.** Passwords are hashed with argon2id. Sessions use a cookie, and only the token's hash is stored. Mutating requests need a CSRF token. Failed logins are rate-limited.
+- **Account page.** Users can change their password and revoke their own sessions.
+- **Admin pages.** Admins manage users (create, reset password, change role, delete), environments, and the audit log.
+- **Audit log.** Every mutating Docker action and admin action is recorded. Rows are pruned after 90 days by default.
+
+**Docker, per environment**
+- **Dashboard.** Container counts by state, disk usage, and host information.
+- **Containers.**
+  - List: filter, bulk actions, clickable ports, and the Compose project.
+  - Detail page tabs: Overview, Inspect, Env, Mounts, Networks, and Files (read-only browsing with single-file download).
+  - Create form, with an advanced JSON override.
+  - **Recreate with changes:** if the new container fails to start, FleetOps rolls back to the old one.
+  - **Duplicate:** host ports are cleared so the copy doesn't clash with the original.
+- **Images.** List, pull with layer progress, build from a Dockerfile or tar context with a streamed log, tag, history, inspect, remove and prune.
+- **Volumes.** List, create with driver options, inspect, remove and prune.
+- **Networks.** List, create (subnet, gateway, internal, attachable), connect or disconnect containers, remove and prune.
+- **Compose projects.** Containers grouped by project, with start, stop, restart and down.
+
+**Interface**
+- Command palette (⌘K / Ctrl-K) to jump to any resource or run an action on it.
+- `/` focuses the list filter.
+- Dark, light and system themes.
+- Values that look like secrets are masked until clicked. This covers env, inspect JSON, image env, and volume driver options.
+
+### Next (P3c)
+
+- **Log viewer.** Virtualized, with a 200k-line buffer, follow mode, regex search, stream and timestamp toggles, ANSI colours, and download.
+- **Terminal.** xterm.js with resize and shell auto-detect.
+- **Live stats.** CPU and memory sparklines in the container list, and charts on the detail page.
+
+The server already streams logs, exec and stats over the websocket. The UI for them lands in P3c.
+
+## Quick start
+
+### Requirements
+
+| Tool | Version |
+|---|---|
+| Rust | stable, 1.86 or newer (`rust-toolchain.toml` pins stable with rustfmt and clippy) |
+| Node.js | 24 or newer |
+| pnpm | 12 (`packageManager` in `web/package.json`) |
+| Docker or Podman | A reachable Docker-compatible socket |
+
+### Build and run
+
+```sh
+git clone git@github.com:pravinbanjade/fleetops.git
+cd fleetops
+make build                      # builds web/dist, then the release binary with the UI embedded
+./target/release/fleetops --data ./data --bind 127.0.0.1:9000
+```
+
+Open <http://127.0.0.1:9000> and create the admin account. You have 10 minutes from startup to do this.
+
+When the socket isn't at `/var/run/docker.sock`, set `DOCKER_HOST`. This applies to Colima, rootless Docker and Podman:
+
+```sh
+DOCKER_HOST=unix://$HOME/.colima/default/docker.sock ./target/release/fleetops --data ./data
+# or take it from the current docker context:
+DOCKER_HOST=$(docker context inspect --format '{{.Endpoints.docker.Host}}') ./target/release/fleetops --data ./data
+```
+
+On first start, FleetOps registers a `local` environment when it can reach the socket.
+
+> Access to the Docker socket is equivalent to root access on the host. Don't expose FleetOps to untrusted networks without TLS, and create the admin account right away.
+
+A container image (`make image`, a multi-arch distroless image) is planned for P3d.
+
+## Configuration
+
+Configuration comes from CLI flags or environment variables. There is no config file.
+
+| Flag | Environment variable | Default | Description |
+|---|---|---|---|
+| `--data` | `FLEETOPS_DATA` | `/data` | Directory for `fleetops.db` (SQLite, WAL mode) and TLS material |
+| `--bind` | `FLEETOPS_BIND` | `0.0.0.0:9000` | Plain HTTP listen address |
+| `--tls-bind` | `FLEETOPS_TLS_BIND` | unset (HTTPS off) | HTTPS listen address, for example `0.0.0.0:9443` |
+| `--tls-cert` / `--tls-key` | `FLEETOPS_TLS_CERT` / `FLEETOPS_TLS_KEY` | unset | PEM certificate and key; pass both or neither. When unset, a self-signed certificate is generated and saved in the data directory |
+| `--hsts` | `FLEETOPS_HSTS` | off | Send HSTS on HTTPS responses. Enable it only when no client uses the plain HTTP listener, because browsers apply HSTS per host, not per port |
+| `--docker-host` | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker endpoint for the `local` environment |
+| `--log-level` | `FLEETOPS_LOG` | `info` | `tracing` filter, for example `fleetops_api=debug,info` |
+| `--openapi` | — | — | Print the OpenAPI document to stdout and exit |
+
+Run `fleetops --help` to see the full list.
+
+## Development
+
+```sh
+make dev          # API on :9000 plus the Vite dev server on :5173 (proxies /api and the websocket)
+```
+
+Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`, which git ignores. It reads `DOCKER_HOST` from the environment, or from the current docker context when the variable is unset.
+
+| Target | What it does |
+|---|---|
+| `make dev` | Runs `dev-server` and `dev-web` together |
+| `make test` | `cargo test --workspace`, which uses mocks and needs no Docker |
+| `make test-docker` | Integration tests against the current docker context's daemon (`docker-it` feature) |
+| `make test-web` | Web typecheck, lint, vitest, and a check that the generated API client matches the OpenAPI document |
+| `make lint` | `cargo fmt --check` and `clippy -D warnings` |
+| `make fmt` | `cargo fmt --all` |
+| `make web` | Builds the UI into `web/dist` |
+| `make build` | `make web`, then a release build of the `fleetops` binary |
+| `make openapi` | Regenerates `crates/fleetops-api/openapi.json` and the TypeScript client after an API change |
+
+### Notes
+
+- **Building without the UI.** `cargo build` works without `web/dist`. The server's `build.rs` writes a placeholder page, and the API still works under `/api/v1`.
+- **After changing the API,** run `make openapi` and commit both generated files. `cargo test` and `make test-web` fail until the committed document and client match the code.
+- **The integration tests** (`make test-docker`) create and remove their own labelled resources. Run them against a daemon where that's acceptable.
+- **TDD.** New behaviour starts with a failing test.
+
+### Design documents
+
+Design documents live in `docs/superpowers/`:
+
+- `specs/2026-09-29-fleetops-core-docker-design.md` is the sub-project 1 design and the authority for behaviour.
+- `plans/` holds the implementation plans, one per phase (P1, P2a–c, P3a–b so far).
+
+## Architecture
+
+```
+fleetops/
+├─ crates/
+│  ├─ fleetops-server/   bin `fleetops`: CLI and config, startup, TLS, maintenance jobs, embeds web/dist
+│  ├─ fleetops-api/      axum router, handlers, auth and CSRF, authz, audit, websocket hub, OpenAPI (utoipa)
+│  ├─ fleetops-core/     domain types, the Environment and DockerOps traits, errors, recreate planning; no I/O
+│  ├─ fleetops-docker/   bollard-backed implementation of the core traits (LocalDocker)
+│  └─ fleetops-store/    sqlx + SQLite: migrations and repositories (users, sessions, environments, settings, audit)
+├─ web/                  React 19 + TypeScript + Vite
+│  └─ src/api/gen/       client generated from the OpenAPI document
+└─ docs/superpowers/     specs and plans
+```
+
+- **Environments.** Every Docker route is scoped to an environment (`/envs/{env}/…`). Handlers resolve the environment through an `EnvRegistry` and call the `DockerOps` trait. They never call bollard directly. Sub-project 1 ships `LocalDocker`. The agent (sub-project 2) and Kubernetes (sub-project 4) will add more environment kinds without changes to the handlers.
+- **Request pipeline.** Each request passes through: session auth → CSRF check (mutations only) → resolve the environment → `authorize(user, env, action)` → Docker operation → audit entry → response. `authorize` lives in `fleetops-api::authz`, so fine-grained RBAC (sub-project 5) can replace its body without touching handlers.
+- **Real time.** A per-environment hub shares one Docker events stream among all browser tabs. Stats streams are reference-counted per container.
+- **Backpressure.** Each websocket subscription has a bounded queue. Events and stats drop the oldest items when the queue is full. Logs drop lines and send a `gap` message. Exec applies true backpressure.
+- **Web stack.** TanStack Router (lazy routes), React Query, TanStack Table, Tailwind with shadcn/ui, and cmdk. Docker events patch the query cache directly.
+
+## API
+
+The REST API lives under `/api/v1` and uses JSON. The OpenAPI document is served at `/api/v1/openapi.json`, and a copy is committed at `crates/fleetops-api/openapi.json`.
+
+| Area | Endpoints |
+|---|---|
+| Auth | `POST /auth/setup`, `/auth/login`, `/auth/logout`, `/auth/password` · `GET /auth/me`, `/auth/status` · `GET`/`DELETE /auth/sessions[/{id}]` |
+| Admin | `/users`, `/envs` (mutations are admin-only), `GET /audit` |
+| Docker | `/envs/{env}/{info,df,containers,images,volumes,networks,compose-projects}/…` |
+| Tasks | `GET /tasks/{id}` for long-running image pulls and builds, which return `202 {task_id}` |
+| Health | `GET /health` |
+
+Errors use the shape `{code, message, details?, request_id}`. Every response carries an `X-Request-Id` header. Docker's own error messages are passed through.
+
+### Websocket
+
+The websocket is at `/api/v1/ws`. Each browser tab opens one connection, authenticated by the session cookie and checked against the Origin header.
+
+- **Subscribing.** Clients send `{op:"sub", sub, topic, env, id?, opts?}`. The topics are `events`, `stats`, `logs`, `exec` and `task`.
+- **Server messages.** The server replies with `data`, `gap`, `end` and `error` frames. It also sends `env_status` when an environment goes up or down.
+- **Exec.** Terminal input and output use binary frames: `[u32 sub id, big-endian][payload]`.
+
+The full protocol is in section 5.2 of the spec.
+
+## Security
+
+- **Authentication.** All Docker routes need a signed-in session, and mutations also need the `X-CSRF-Token` header.
+- **Cookies.** Session cookies are `HttpOnly` and `SameSite=Strict`, and `Secure` over TLS.
+- **Session expiry.** Sessions expire after 7 days idle or 30 days in total.
+- **Headers.** Responses send a strict CSP, `frame-ancestors 'none'`, `X-Content-Type-Options` and `Referrer-Policy`. They also send HSTS when you enable it.
+- **Secret masking is display-only.** The API returns values unredacted, and anyone with access can reveal them.
+- **No telemetry.** FleetOps does not phone home.
+
+## Roadmap
+
+| # | Sub-project | Summary |
+|---|---|---|
+| **1** | **Core + local Docker** (in progress) | Server, embedded UI, auth, environments, full Docker resource management, real-time channel |
+| 2 | Agent + multi-host | Rust agent that dials out to the server over a multiplexed websocket tunnel |
+| 3 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
+| 4 | Kubernetes | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec, Helm |
+| 5 | Teams & enterprise (free) | Per-environment RBAC, OIDC/SSO, LDAP, API tokens, backup and restore |
+
+Progress on sub-project 1:
+
+- **Done:**
+  - P1, backend foundation
+  - P2a, Docker environments and resources
+  - P2b, websocket hub and tasks
+  - P2c, OpenAPI
+  - P3a, web foundation
+  - P3b, resource and admin pages
+- **Remaining:**
+  - P3c, logs, terminal and stats
+  - P3d, Playwright e2e, container image and CI
