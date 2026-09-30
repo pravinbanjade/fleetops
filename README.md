@@ -9,7 +9,7 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 3).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is in progress. The backend is complete. The web UI covers every resource page and the admin pages. Still to come: the log viewer, the terminal, live stats (P3c), end-to-end tests, the container image and CI (P3d).
+> **Status: early development.** Sub-project 1 (core and local Docker) is in progress. The backend and the web UI are complete: every resource page, the admin pages, the log viewer, the terminal and live stats. Still to come: end-to-end tests, the container image and CI (P3d).
 
 ## Contents
 
@@ -37,7 +37,11 @@ What sets it apart:
 - **Dashboard.** Container counts by state, disk usage, and host information.
 - **Containers.**
   - List: filter, bulk actions, clickable ports, and the Compose project.
-  - Detail page tabs: Overview, Inspect, Env, Mounts, Networks, and Files (read-only browsing with single-file download).
+  - List columns for live CPU and memory, with sparklines of the last minute. Only rows on screen subscribe.
+  - Detail page tabs: Overview, Inspect, Env, Mounts, Networks, Stats, Logs, Terminal, and Files (read-only browsing with single-file download).
+  - **Logs:** virtualized, keeping the newest 200k lines. Follow mode pauses when you scroll up. Text or regex search with highlighting and next/previous, stdout and stderr toggles, timestamps, wrapping, tail and time-range controls, ANSI colours, and download of the lines shown or the full log. A reconnect or a restart picks up where the log left off, without repeating lines.
+  - **Terminal:** xterm.js with resize. The shell is auto-detected (bash, then sh), or you can choose a shell or command and a user. Ctrl+Shift+C copies. A dropped connection ends the session rather than silently starting a new one. Every session is audited.
+  - **Stats:** live CPU, memory, network and block I/O charts for the last two minutes.
   - Create form, with an advanced JSON override.
   - **Recreate with changes:** if the new container fails to start, FleetOps rolls back to the old one.
   - **Duplicate:** host ports are cleared so the copy doesn't clash with the original.
@@ -51,14 +55,6 @@ What sets it apart:
 - `/` focuses the list filter.
 - Dark, light and system themes.
 - Values that look like secrets are masked until clicked. This covers env, inspect JSON, image env, and volume driver options.
-
-### Next (P3c)
-
-- **Log viewer.** Virtualized, with a 200k-line buffer, follow mode, regex search, stream and timestamp toggles, ANSI colours, and download.
-- **Terminal.** xterm.js with resize and shell auto-detect.
-- **Live stats.** CPU and memory sparklines in the container list, and charts on the detail page.
-
-The server already streams logs, exec and stats over the websocket. The UI for them lands in P3c.
 
 ## Quick start
 
@@ -145,7 +141,7 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 Design documents live in `docs/superpowers/`:
 
 - `specs/2026-09-29-fleetops-core-docker-design.md` is the sub-project 1 design and the authority for behaviour.
-- `plans/` holds the implementation plans, one per phase (P1, P2a–c, P3a–b so far).
+- `plans/` holds the implementation plans, one per phase (P1, P2a–c, P3a–c so far).
 
 ## Architecture
 
@@ -166,7 +162,7 @@ fleetops/
 - **Request pipeline.** Each request passes through: session auth → CSRF check (mutations only) → resolve the environment → `authorize(user, env, action)` → Docker operation → audit entry → response. `authorize` lives in `fleetops-api::authz`, so fine-grained RBAC (sub-project 5) can replace its body without touching handlers.
 - **Real time.** A per-environment hub shares one Docker events stream among all browser tabs. Stats streams are reference-counted per container.
 - **Backpressure.** Each websocket subscription has a bounded queue. Events and stats drop the oldest items when the queue is full. Logs drop lines and send a `gap` message. Exec applies true backpressure.
-- **Web stack.** TanStack Router (lazy routes), React Query, TanStack Table, Tailwind with shadcn/ui, and cmdk. Docker events patch the query cache directly.
+- **Web stack.** TanStack Router (lazy routes), React Query, TanStack Table and Virtual, Tailwind with shadcn/ui, cmdk, xterm.js and uPlot. Docker events patch the query cache directly. xterm.js and uPlot load only when their tab opens.
 
 ## API
 
@@ -220,6 +216,6 @@ Progress on sub-project 1:
   - P2c, OpenAPI
   - P3a, web foundation
   - P3b, resource and admin pages
-- **Remaining:**
   - P3c, logs, terminal and stats
+- **Remaining:**
   - P3d, Playwright e2e, container image and CI

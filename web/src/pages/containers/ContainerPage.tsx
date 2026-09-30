@@ -27,8 +27,10 @@ import type { ContainerTab } from "./tabs";
 
 const FROM = "/authed/shell/envs/$env/containers/$id";
 
-// xterm.js is large; it loads only when the Terminal tab opens.
+// xterm.js and uPlot load only when their tab opens.
 const TerminalTab = lazy(() => import("./terminal/TerminalTab").then((m) => ({ default: m.TerminalTab })));
+const StatsTab = lazy(() => import("./stats/StatsTab").then((m) => ({ default: m.StatsTab })));
+const loading = <p className="text-sm text-muted-foreground">Loading…</p>;
 
 export function ContainerPage() {
   const { env, id } = useParams({ from: FROM });
@@ -60,6 +62,7 @@ export function ContainerPage() {
           <TabsTrigger value="env">Env</TabsTrigger>
           <TabsTrigger value="mounts">Mounts</TabsTrigger>
           <TabsTrigger value="networks">Networks</TabsTrigger>
+          <TabsTrigger value="stats">Stats</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="terminal">Terminal</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
@@ -79,11 +82,16 @@ export function ContainerPage() {
         <TabsContent value="networks">
           <Networks c={c} />
         </TabsContent>
+        <TabsContent value="stats">
+          <Suspense fallback={loading}>
+            <StatsTab env={env} id={id} running={c.State.Running === true} />
+          </Suspense>
+        </TabsContent>
         <TabsContent value="logs">
           <LogsTab env={env} id={id} name={name} running={c.State.Running === true} />
         </TabsContent>
         <TabsContent value="terminal">
-          <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+          <Suspense fallback={loading}>
             <TerminalTab env={env} id={id} running={c.State.Running === true} />
           </Suspense>
         </TabsContent>
