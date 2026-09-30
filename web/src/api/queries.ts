@@ -8,6 +8,7 @@ import {
   getEnvStatus,
   getMe,
   inspectContainer,
+  listContainerFiles,
   listContainers,
   listEnvs,
   listImages,
@@ -33,6 +34,12 @@ export const keys = {
   df: (env: string) => ["env", env, "df"] as const,
   containers: (env: string) => ["env", env, "containers"] as const,
   container: (env: string, id: string) => ["env", env, "containers", id] as const,
+  /**
+   * A directory listing inside a container. Outside the containers prefix
+   * on purpose: a listing downloads the directory's whole subtree, so it is
+   * not refetched on every container event.
+   */
+  containerFiles: (env: string, id: string, dir: string) => ["env", env, "container-files", id, dir] as const,
   images: (env: string) => ["env", env, "images"] as const,
   image: (env: string, id: string) => ["env", env, "images", id] as const,
   volumes: (env: string) => ["env", env, "volumes"] as const,
@@ -99,6 +106,13 @@ export const containerQuery = (env: string, id: string) =>
   queryOptions({
     queryKey: keys.container(env, id),
     queryFn: async () => (await inspectContainer({ path: { env, id } })).data as unknown as ContainerInspect,
+    retry: retryUnlessGone,
+  });
+
+export const containerFilesQuery = (env: string, id: string, dir: string) =>
+  queryOptions({
+    queryKey: keys.containerFiles(env, id, dir),
+    queryFn: async () => (await listContainerFiles({ path: { env, id }, query: { path: dir } })).data,
     retry: retryUnlessGone,
   });
 

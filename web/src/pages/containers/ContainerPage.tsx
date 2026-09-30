@@ -20,13 +20,14 @@ import { shortId } from "@/lib/format";
 import { isSecretKey, splitEnv } from "@/lib/secrets";
 import { FormError } from "@/pages/AuthLayout";
 import { ACTIONS, actionsFor, RemoveDialog } from "./actions";
+import { FilesTab } from "./FilesTab";
 import type { ContainerTab } from "./tabs";
 
 const FROM = "/authed/shell/envs/$env/containers/$id";
 
 export function ContainerPage() {
   const { env, id } = useParams({ from: FROM });
-  const { tab = "overview" } = useSearch({ from: FROM });
+  const { tab = "overview", path = "/" } = useSearch({ from: FROM });
   const navigate = useNavigate({ from: "/envs/$env/containers/$id" });
   const q = useQuery(containerQuery(env, id));
   const back = (
@@ -54,6 +55,7 @@ export function ContainerPage() {
           <TabsTrigger value="env">Env</TabsTrigger>
           <TabsTrigger value="mounts">Mounts</TabsTrigger>
           <TabsTrigger value="networks">Networks</TabsTrigger>
+          <TabsTrigger value="files">Files</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
           <Overview c={c} />
@@ -69,6 +71,9 @@ export function ContainerPage() {
         </TabsContent>
         <TabsContent value="networks">
           <Networks c={c} />
+        </TabsContent>
+        <TabsContent value="files">
+          <FilesTab env={env} id={id} path={path} />
         </TabsContent>
       </Tabs>
     </Page>

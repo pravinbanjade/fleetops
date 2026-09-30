@@ -122,8 +122,9 @@ const containersRoute = createRoute({
 const containerRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "containers/$id",
-  validateSearch: (s: Record<string, unknown>): { tab?: ContainerTab } => ({
+  validateSearch: (s: Record<string, unknown>): { tab?: ContainerTab; path?: string } => ({
     tab: CONTAINER_TABS.find((t) => t === s.tab),
+    path: typeof s.path === "string" && s.path.startsWith("/") ? s.path : undefined,
   }),
   component: lazyRouteComponent(() => import("@/pages/containers/ContainerPage"), "ContainerPage"),
 });
