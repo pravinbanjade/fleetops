@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatAgo, formatBytes, shortId } from "@/lib/format";
 import { imageName, PruneImagesDialog, RemoveImagesDialog } from "./dialogs";
+import { BuildDialog, PullDialog } from "./TaskDialogs";
 
 const col = columns<ImageSummary>();
 
@@ -45,13 +46,21 @@ export function ImagesPage() {
   const [cols] = useState(() => imageColumns(env));
   const [removing, setRemoving] = useState<ImageSummary[] | null>(null);
   const [pruning, setPruning] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [building, setBuilding] = useState(false);
   return (
     <Page
       title="Images"
       actions={
-        <Button variant="outline" onClick={() => setPruning(true)}>
-          Prune
-        </Button>
+        <>
+          <Button variant="outline" onClick={() => setPruning(true)}>
+            Prune
+          </Button>
+          <Button variant="outline" onClick={() => setBuilding(true)}>
+            Build
+          </Button>
+          <Button onClick={() => setPulling(true)}>Pull</Button>
+        </>
       }
     >
       <DataTable
@@ -84,6 +93,8 @@ export function ImagesPage() {
         />
       )}
       {pruning && <PruneImagesDialog env={env} onDone={() => setPruning(false)} />}
+      {pulling && <PullDialog env={env} onClose={() => setPulling(false)} />}
+      {building && <BuildDialog env={env} onClose={() => setBuilding(false)} />}
     </Page>
   );
 }

@@ -12,6 +12,7 @@ import { ApiError } from "@/api/client";
 import { authStatusQuery, envsQuery, meQuery } from "@/api/queries";
 import { Shell } from "@/components/Shell";
 import { LiveProvider } from "@/live/LiveProvider";
+import { TaskProvider } from "@/live/TaskProvider";
 import { LoginPage } from "@/pages/LoginPage";
 import { NoEnvironmentsPage, NotFoundPage } from "@/pages/misc";
 import { CONTAINER_TABS, type ContainerTab } from "@/pages/containers/tabs";
@@ -80,7 +81,9 @@ const authedRoute = createRoute({
   },
   component: () => (
     <LiveProvider>
-      <Outlet />
+      <TaskProvider>
+        <Outlet />
+      </TaskProvider>
     </LiveProvider>
   ),
 });
