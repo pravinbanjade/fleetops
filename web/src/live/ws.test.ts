@@ -77,6 +77,33 @@ describe("WsClient", () => {
     expect(sock.frames().filter((f) => f.op === "unsub")).toHaveLength(1);
   });
 
+  it("ends a subscription made without resubscribe when the connection drops", () => {
+    const ws = client();
+    const sock = FakeWebSocket.latest();
+    sock.open();
+    const onLost = vi.fn();
+    const kept = vi.fn();
+    ws.subscribe({ topic: "exec", env: "local", id: "c1" }, { onData: () => {}, onLost }, { resubscribe: false });
+    ws.subscribe({ topic: "events", env: "local" }, { onData: () => {}, onLost: kept });
+    sock.drop();
+    expect(onLost).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(100);
+    FakeWebSocket.latest().open();
+    expect(FakeWebSocket.latest().frames()).toEqual([{ op: "sub", sub: 2, topic: "events", env: "local" }]);
+    expect(kept).not.toHaveBeenCalled();
+  });
+
+  it("still sends a no-resubscribe subscription made before the socket first opened", () => {
+    const ws = client();
+    const onLost = vi.fn();
+    ws.subscribe({ topic: "exec", env: "local", id: "c1" }, { onData: () => {}, onLost }, { resubscribe: false });
+    FakeWebSocket.latest().drop(); // the first attempt failed
+    vi.advanceTimersByTime(100);
+    FakeWebSocket.latest().open();
+    expect(onLost).not.toHaveBeenCalled();
+    expect(FakeWebSocket.latest().frames()).toEqual([{ op: "sub", sub: 1, topic: "exec", env: "local", id: "c1" }]);
+  });
+
   it("reconnects with backoff and resubscribes every active subscription", () => {
     const delays: number[] = [];
     const onReconnect = vi.fn();

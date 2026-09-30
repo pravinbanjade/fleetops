@@ -21,6 +21,20 @@ export interface SubHandlers {
   onError?(msg: ErrorMsg): void;
   /** The connection was re-established and the subscription sent again. */
   onResubscribe?(): void;
+  /**
+   * The connection dropped and, because it was made with
+   * `resubscribe: false`, the subscription is over.
+   */
+  onLost?(): void;
+}
+
+export interface SubOptions {
+  /**
+   * Send the subscription again after a reconnect (the default). An exec
+   * session cannot resume, so a terminal passes false: resending it would
+   * silently start a new process.
+   */
+  resubscribe?: boolean;
 }
 
 /**
@@ -60,6 +74,7 @@ export function wsUrl(loc: Location = window.location) {
 interface Active {
   spec: SubSpec;
   handlers: SubHandlers;
+  resubscribe: boolean;
 }
 
 /**
@@ -89,9 +104,13 @@ export class WsClient {
     this.connect();
   }
 
-  subscribe(spec: SubSpec, handlers: SubHandlers): { sub: number; unsubscribe: () => void } {
+  subscribe(
+    spec: SubSpec,
+    handlers: SubHandlers,
+    { resubscribe = true }: SubOptions = {},
+  ): { sub: number; unsubscribe: () => void } {
     const sub = this.nextSub++;
-    this.subs.set(sub, { spec, handlers });
+    this.subs.set(sub, { spec, handlers, resubscribe });
     this.sendSub(sub, spec);
     return {
       sub,
@@ -156,6 +175,15 @@ export class WsClient {
       if (this.socket !== socket) return;
       this.socket = null;
       if (this.stopped) return;
+      // Only a subscription that reached an open socket is lost; one still
+      // queued is sent once a socket opens.
+      if (socketOpened) {
+        for (const [sub, a] of this.subs) {
+          if (a.resubscribe) continue;
+          this.subs.delete(sub);
+          a.handlers.onLost?.();
+        }
+      }
       if (!socketOpened) this.opts.onConnectFailed?.();
       if (this.attempt === 0) this.opts.onState?.("reconnecting");
       const delay = (this.opts.backoff ?? defaultBackoff)(this.attempt++);
