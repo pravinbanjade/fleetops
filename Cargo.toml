@@ -45,3 +45,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 utoipa = "5.5"
 utoipa-axum = "0.2"
 uuid = { version = "1", features = ["v4"] }
+
+# Release binaries ship without debug symbols (the image is about 20 MB).
+[profile.release]
+strip = true
