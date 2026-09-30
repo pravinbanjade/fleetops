@@ -1,22 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
-import {
-  Boxes,
-  ChevronsUpDown,
-  Database,
-  Layers,
-  LayoutDashboard,
-  LogOut,
-  Monitor,
-  Moon,
-  Network,
-  Rows3,
-  ScrollText,
-  Server,
-  Sun,
-  User,
-  Users,
-} from "lucide-react";
+import { ChevronsUpDown, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
 import { envsQuery, envStatusQuery } from "@/api/queries";
 import { useLogout, useSession } from "@/auth/session";
 import { Badge } from "@/components/ui/badge";
@@ -32,27 +16,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEnvEvents, useLive } from "@/live/LiveProvider";
+import { CommandPalette } from "./CommandPalette";
+import { ADMIN_NAV, NAV } from "./nav";
 import { useTheme, type Theme } from "@/theme";
 
 const LINK =
   "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent data-[status=active]:bg-accent data-[status=active]:font-medium";
-
-/** Administration pages, shown to admins. */
-const ADMIN_NAV = [
-  { to: "/admin/users", label: "Users", icon: Users },
-  { to: "/admin/envs", label: "Environments", icon: Server },
-  { to: "/admin/audit", label: "Audit log", icon: ScrollText },
-] as const;
-
-/** The environment-scoped pages, in sidebar order. */
-const NAV = [
-  { to: "/envs/$env", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/envs/$env/containers", label: "Containers", icon: Boxes },
-  { to: "/envs/$env/images", label: "Images", icon: Layers },
-  { to: "/envs/$env/volumes", label: "Volumes", icon: Database },
-  { to: "/envs/$env/networks", label: "Networks", icon: Network },
-  { to: "/envs/$env/compose", label: "Compose", icon: Rows3 },
-] as const;
 
 export function Shell() {
   const { env } = useParams({ strict: false });
@@ -63,6 +32,7 @@ export function Shell() {
           FleetOps
         </Link>
         <EnvSwitcher current={env} />
+        <CommandPalette env={env} />
         {env && (
           <nav className="grid gap-1" aria-label="Environment">
             {NAV.map(({ to, label, icon: Icon }) => (
