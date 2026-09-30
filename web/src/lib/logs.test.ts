@@ -1,5 +1,15 @@
 import type { LogLine } from "@/api/gen/types.gen";
-import { compileQuery, LogBuffer, LogMatches, logText, matchRanges, splitTimestamp, timestampKey } from "./logs";
+import { parseAnsi } from "./ansi";
+import {
+  compileQuery,
+  LogBuffer,
+  LogMatches,
+  logText,
+  markSegments,
+  matchRanges,
+  splitTimestamp,
+  timestampKey,
+} from "./logs";
 
 const out = (text: string): LogLine => ({ stream: "stdout", text });
 const at = (sec: number, text: string, frac = "") =>
@@ -130,12 +140,45 @@ describe("LogMatches", () => {
     expect(m.seqs).toEqual([2, 5]);
   });
 
+  it("starts over when synced with a new query and catches up with the same one", () => {
+    const b = new LogBuffer();
+    b.append(["error", "warn"].map(out));
+    const m = new LogMatches(b);
+    const err = compileQuery("error", false) as RegExp;
+    expect(m.sync(err)).toEqual([0]);
+    b.append([out("error again")]);
+    expect(m.sync(err)).toEqual([0, 2]);
+    expect(m.sync(compileQuery("warn", false) as RegExp)).toEqual([1]);
+  });
+
   it("matches nothing without a query", () => {
     const b = new LogBuffer();
     b.append([out("error")]);
     const m = new LogMatches(b);
     m.setQuery(null);
     expect(m.seqs).toEqual([]);
+  });
+});
+
+describe("markSegments", () => {
+  it("marks matches across colour changes and keeps each part's style", () => {
+    const segs = parseAnsi("ab\x1b[31mcd\x1b[0mef");
+    expect(markSegments(segs, [[1, 3]])).toEqual([
+      { text: "a", style: {}, mark: false },
+      { text: "b", style: {}, mark: true },
+      { text: "c", style: { fg: 1 }, mark: true },
+      { text: "d", style: { fg: 1 }, mark: false },
+      { text: "ef", style: {}, mark: false },
+    ]);
+  });
+
+  it("marks several matches in one segment", () => {
+    expect(markSegments(parseAnsi("xaxa"), [[1, 2], [3, 4]]).map((s) => [s.text, s.mark])).toEqual([
+      ["x", false],
+      ["a", true],
+      ["x", false],
+      ["a", true],
+    ]);
   });
 });
 

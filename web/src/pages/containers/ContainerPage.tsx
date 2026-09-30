@@ -76,7 +76,7 @@ export function ContainerPage() {
           <Networks c={c} />
         </TabsContent>
         <TabsContent value="logs">
-          <LogsTab env={env} id={id} running={c.State.Running === true} />
+          <LogsTab env={env} id={id} name={name} running={c.State.Running === true} />
         </TabsContent>
         <TabsContent value="files">
           <FilesTab env={env} id={id} path={path} />

@@ -1,7 +1,7 @@
 import { observeElementRect, useVirtualizer } from "@tanstack/react-virtual";
 import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { cssColor, parseAnsi, type Style } from "@/lib/ansi";
-import type { LogBuffer, LogEntry } from "@/lib/logs";
+import { markSegments, matchRanges, type LogBuffer, type LogEntry } from "@/lib/logs";
 import { cn } from "@/lib/utils";
 
 /** Height of one unwrapped line, in pixels. */
@@ -18,6 +18,10 @@ interface Props {
   wrap: boolean;
   follow: boolean;
   onFollowChange(follow: boolean): void;
+  /** The search to highlight, if any. */
+  highlight?: RegExp | null;
+  /** The seq of the current match: scrolled into view and marked. */
+  current?: number | null;
 }
 
 /**
@@ -27,7 +31,7 @@ interface Props {
  * scrolling back to the bottom resumes it. While paused, the lines in
  * view stay put when old lines are dropped from the top.
  */
-export function LogView({ buffer, version, timestamps, wrap, follow, onFollowChange }: Props) {
+export function LogView({ buffer, version, timestamps, wrap, follow, onFollowChange, highlight, current }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const count = buffer.length;
   // The virtualiser's methods change identity freely, so the compiler leaves this component unmemoised.
@@ -46,6 +50,10 @@ export function LogView({ buffer, version, timestamps, wrap, follow, onFollowCha
   useLayoutEffect(() => {
     if (follow && count > 0) v.scrollToIndex(count - 1, { align: "end" });
   }, [follow, version, count, v]);
+
+  useLayoutEffect(() => {
+    if (current != null && buffer.bySeq(current)) v.scrollToIndex(current - buffer.firstSeq, { align: "center" });
+  }, [current, buffer, v]);
 
   // Keep the view on the same lines while old ones are dropped above it.
   const firstSeq = buffer.firstSeq;
@@ -90,10 +98,11 @@ export function LogView({ buffer, version, timestamps, wrap, follow, onFollowCha
                 "absolute top-0 left-0 border-l-2 border-transparent px-3 leading-5",
                 wrap ? "w-full break-all whitespace-pre-wrap" : "w-max min-w-full whitespace-pre",
                 e.stream === "stderr" && "border-destructive/70",
+                e.seq === current && "bg-accent",
               )}
               style={{ transform: `translateY(${item.start}px)`, height: wrap ? undefined : ROW }}
             >
-              <LogRow entry={e} timestamps={timestamps} />
+              <LogRow entry={e} timestamps={timestamps} highlight={highlight ?? null} />
             </div>
           );
         })}
@@ -102,7 +111,7 @@ export function LogView({ buffer, version, timestamps, wrap, follow, onFollowCha
   );
 }
 
-function LogRow({ entry, timestamps }: { entry: LogEntry; timestamps: boolean }) {
+function LogRow({ entry, timestamps, highlight }: { entry: LogEntry; timestamps: boolean; highlight: RegExp | null }) {
   if (entry.stream === "gap") {
     return (
       <span className="text-muted-foreground italic">
@@ -110,14 +119,22 @@ function LogRow({ entry, timestamps }: { entry: LogEntry; timestamps: boolean })
       </span>
     );
   }
+  const segments = parseAnsi(entry.text);
+  const ranges = highlight ? matchRanges(segments.map((s) => s.text).join(""), highlight) : [];
   return (
     <>
       {timestamps && entry.ts && <span className="mr-3 text-muted-foreground">{shortTimestamp(entry.ts)}</span>}
-      {parseAnsi(entry.text).map((s, i) => (
-        <span key={i} style={css(s.style)}>
-          {s.text}
-        </span>
-      ))}
+      {markSegments(segments, ranges).map((s, i) =>
+        s.mark ? (
+          <mark key={i} style={css(s.style)} className="rounded-sm bg-yellow-300/80 text-inherit dark:bg-yellow-500/50">
+            {s.text}
+          </mark>
+        ) : (
+          <span key={i} style={css(s.style)}>
+            {s.text}
+          </span>
+        ),
+      )}
     </>
   );
 }
