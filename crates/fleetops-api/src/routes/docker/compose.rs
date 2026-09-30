@@ -1,4 +1,5 @@
 use super::ctx;
+use crate::openapi::{ComposeActionName, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
     authz::Action,
@@ -9,8 +10,18 @@ use crate::{
 use axum::{extract::State, Json};
 use fleetops_core::docker::ContainerAction;
 use fleetops_core::Error;
-use serde_json::{json, Value};
+use serde::Serialize;
+use utoipa::ToSchema;
 
+#[utoipa::path(
+    get,
+    path = "/envs/{env}/compose-projects",
+    operation_id = "listComposeProjects",
+    tag = "compose",
+    summary = "Compose projects on the environment",
+    params(EnvParam),
+    responses((status = 200, description = "Projects", body = Vec<ComposeProject>))
+)]
 pub async fn list(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -22,11 +33,20 @@ pub async fn list(
 
 /// start | stop | restart | down (down removes the project's containers).
 /// Every member is attempted; per-container failures are reported, not fatal.
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/compose-projects/{project}/{action}",
+    operation_id = "composeAction",
+    tag = "compose",
+    summary = "Start, stop, restart or remove (`down`) a project's containers",
+    params(EnvParam, ("project" = String, Path, description = "Project name"), ("action" = ComposeActionName, Path)),
+    responses((status = 200, description = "Every member was attempted; failures are listed", body = ComposeOutcome))
+)]
 pub async fn action(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath((env, project, action)): ApiPath<(String, String, String)>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<ComposeOutcome>> {
     let op = match action.as_str() {
         "start" => Some(ContainerAction::Start),
         "stop" => Some(ContainerAction::Stop),
@@ -69,6 +89,14 @@ pub async fn action(
     Ok(affected(members.len() - errors.len(), errors))
 }
 
-fn affected(n: usize, errors: Vec<String>) -> Json<Value> {
-    Json(json!({ "affected": n, "errors": errors }))
+#[derive(Serialize, ToSchema)]
+pub struct ComposeOutcome {
+    /// Containers the action succeeded on.
+    pub affected: usize,
+    /// `name: error` for each container it failed on.
+    pub errors: Vec<String>,
+}
+
+fn affected(affected: usize, errors: Vec<String>) -> Json<ComposeOutcome> {
+    Json(ComposeOutcome { affected, errors })
 }

@@ -3,6 +3,15 @@ use axum::{extract::State, Json};
 use fleetops_core::{Error, Role};
 
 /// A task's current state. Other users' tasks look missing to non-admins.
+#[utoipa::path(
+    get,
+    path = "/tasks/{id}",
+    operation_id = "getTask",
+    tag = "tasks",
+    summary = "A task's current state",
+    params(("id" = String, Path, description = "Task id")),
+    responses((status = 200, description = "Task", body = TaskInfo))
+)]
 pub async fn get(
     State(s): State<AppState>,
     cu: CurrentUser,

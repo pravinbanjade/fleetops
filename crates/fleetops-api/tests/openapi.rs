@@ -4,14 +4,14 @@
 
 mod common;
 
-use common::contract::{self, doc, Exchange};
+use common::contract::{self, doc, route_of, Exchange};
 use common::*;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 
 const METHODS: [&str; 5] = ["get", "post", "put", "patch", "delete"];
 /// Documented operations; update when adding or removing a route.
-const OPERATIONS: usize = 15;
+const OPERATIONS: usize = 57;
 
 fn operations() -> Vec<(&'static str, &'static str, &'static Value)> {
     let mut out = Vec::new();
@@ -146,6 +146,30 @@ fn exchange<'a>(method: &'a str, path: &'a str, status: u16, body: &'a Value) ->
         content_type: Some("application/json"),
         body,
     }
+}
+
+#[test]
+fn routes_resolve_like_axum() {
+    assert_eq!(
+        route_of("/api/v1/envs/local/containers/prune"),
+        Some("/api/v1/envs/{env}/containers/prune")
+    );
+    assert_eq!(
+        route_of("/api/v1/envs/local/containers/web"),
+        Some("/api/v1/envs/{env}/containers/{id}")
+    );
+    assert_eq!(
+        route_of("/api/v1/envs/local/containers/web/stop"),
+        Some("/api/v1/envs/{env}/containers/{id}/{action}")
+    );
+    assert_eq!(
+        route_of("/api/v1/envs/local/containers/web/spec"),
+        Some("/api/v1/envs/{env}/containers/{id}/spec")
+    );
+    assert_eq!(route_of("/api/v1/nope"), None);
+    let err = json!({"code": "not_found", "message": "not found: x", "request_id": "r1"});
+    let x = exchange("GET", "/api/v1/envs/local/containers/x", 404, &err);
+    assert_eq!(contract::check(&x), Ok(()));
 }
 
 #[test]

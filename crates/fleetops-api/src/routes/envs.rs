@@ -1,3 +1,4 @@
+use crate::openapi::EnvParam;
 use crate::{
     auth::extract::CurrentUser,
     authz::{authorize, Action},
@@ -10,20 +11,29 @@ use fleetops_core::env::{validate_env_name, validate_env_url, EnvKind, EnvStatus
 use fleetops_core::now_unix;
 use fleetops_store::EnvironmentRecord;
 use serde::Deserialize;
+use utoipa::ToSchema;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateEnv {
     pub name: String,
     pub kind: EnvKind,
     pub url: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct UpdateEnv {
     pub name: Option<String>,
     pub url: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/envs",
+    operation_id = "listEnvs",
+    tag = "environments",
+    summary = "List environments",
+    responses((status = 200, description = "All environments", body = Vec<EnvironmentRecord>))
+)]
 pub async fn list(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -32,6 +42,15 @@ pub async fn list(
     Ok(Json(s.store.list_environments().await?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/envs",
+    operation_id = "createEnv",
+    tag = "environments",
+    summary = "Add an environment",
+    request_body = CreateEnv,
+    responses((status = 201, description = "Created", body = EnvironmentRecord))
+)]
 pub async fn create(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -63,6 +82,16 @@ async fn find(s: &AppState, name: &str) -> ApiResult<EnvironmentRecord> {
     Ok(s.store.get_environment(env.id()).await?)
 }
 
+#[utoipa::path(
+    patch,
+    path = "/envs/{env}",
+    operation_id = "updateEnv",
+    tag = "environments",
+    summary = "Rename an environment or change its URL",
+    params(EnvParam),
+    request_body = UpdateEnv,
+    responses((status = 200, description = "Updated", body = EnvironmentRecord))
+)]
 pub async fn update(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -93,6 +122,15 @@ pub async fn update(
     Ok(Json(rec))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/envs/{env}",
+    operation_id = "deleteEnv",
+    tag = "environments",
+    summary = "Remove an environment",
+    params(EnvParam),
+    responses((status = 204, description = "Removed"))
+)]
 pub async fn remove(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -115,6 +153,15 @@ pub async fn remove(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    get,
+    path = "/envs/{env}/status",
+    operation_id = "getEnvStatus",
+    tag = "environments",
+    summary = "Whether the endpoint answers, with its engine version",
+    params(EnvParam),
+    responses((status = 200, description = "Current status", body = EnvStatus))
+)]
 pub async fn status(
     State(s): State<AppState>,
     cu: CurrentUser,

@@ -1,4 +1,5 @@
 use super::{ctx, ForceQuery};
+use crate::openapi::{Bytes, ContainerActionName, EnvIdParam, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
     authz::Action,
@@ -18,6 +19,7 @@ use fleetops_core::recreate::recreate;
 use fleetops_core::{now_unix, Error};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::{IntoParams, ToSchema};
 
 /// Largest file the browser will download through the API.
 pub const MAX_DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
@@ -26,7 +28,7 @@ fn yes() -> bool {
     true
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CreateBody {
     #[serde(flatten)]
     pub spec: ContainerSpec,
@@ -35,28 +37,39 @@ pub struct CreateBody {
     pub start: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct Created {
     pub id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct NameBody {
     pub name: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct PathQuery {
+    /// Absolute path inside the container.
     pub path: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct RecreateResult {
     pub id: String,
     pub old_removed: bool,
     pub backup_name: String,
 }
 
+#[utoipa::path(
+    get,
+    path = "/envs/{env}/containers",
+    operation_id = "listContainers",
+    tag = "containers",
+    summary = "List containers, running or not",
+    params(EnvParam),
+    responses((status = 200, description = "Containers", body = Vec<ContainerSummary>))
+)]
 pub async fn list(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -66,6 +79,16 @@ pub async fn list(
     Ok(Json(c.ops.list_containers().await?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/containers",
+    operation_id = "createContainer",
+    tag = "containers",
+    summary = "Create a container, and start it unless `start` is false",
+    params(EnvParam),
+    request_body = CreateBody,
+    responses((status = 201, description = "Created", body = Created))
+)]
 pub async fn create(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -92,6 +115,15 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(Created { id })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/envs/{env}/containers/{id}",
+    operation_id = "inspectContainer",
+    tag = "containers",
+    summary = "Docker's container inspect, verbatim",
+    params(EnvIdParam),
+    responses((status = 200, description = "Inspect output", body = Object))
+)]
 pub async fn inspect(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -101,6 +133,15 @@ pub async fn inspect(
     Ok(Json(c.ops.inspect_container(&id).await?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/envs/{env}/containers/{id}/spec",
+    operation_id = "getContainerSpec",
+    tag = "containers",
+    summary = "The container as an editable spec, for recreate and duplicate",
+    params(EnvIdParam),
+    responses((status = 200, description = "Spec", body = ContainerSpec))
+)]
 pub async fn spec(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -110,6 +151,15 @@ pub async fn spec(
     Ok(Json(c.ops.container_spec(&id).await?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/containers/{id}/{action}",
+    operation_id = "containerAction",
+    tag = "containers",
+    summary = "Start, stop, restart, kill, pause or unpause a container",
+    params(EnvIdParam, ("action" = ContainerActionName, Path)),
+    responses((status = 204, description = "Done"))
+)]
 pub async fn action(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -130,6 +180,16 @@ pub async fn action(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/containers/{id}/rename",
+    operation_id = "renameContainer",
+    tag = "containers",
+    summary = "Rename a container",
+    params(EnvIdParam),
+    request_body = NameBody,
+    responses((status = 204, description = "Renamed"))
+)]
 pub async fn rename(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -144,6 +204,15 @@ pub async fn rename(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    delete,
+    path = "/envs/{env}/containers/{id}",
+    operation_id = "deleteContainer",
+    tag = "containers",
+    summary = "Remove a container",
+    params(EnvIdParam, ForceQuery),
+    responses((status = 204, description = "Removed"))
+)]
 pub async fn remove(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -158,6 +227,15 @@ pub async fn remove(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/containers/prune",
+    operation_id = "pruneContainers",
+    tag = "containers",
+    summary = "Remove stopped containers",
+    params(EnvParam),
+    responses((status = 200, description = "What was removed", body = PruneReport))
+)]
 pub async fn prune(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -169,6 +247,16 @@ pub async fn prune(
     Ok(Json(res?))
 }
 
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/containers/{id}/recreate",
+    operation_id = "recreateContainer",
+    tag = "containers",
+    summary = "Replace a container with one built from `spec`, keeping the old one if that fails",
+    params(EnvIdParam),
+    request_body = ContainerSpec,
+    responses((status = 200, description = "Recreated", body = RecreateResult))
+)]
 pub async fn recreate_container(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -187,6 +275,16 @@ pub async fn recreate_container(
     }))
 }
 
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/containers/{id}/duplicate",
+    operation_id = "duplicateContainer",
+    tag = "containers",
+    summary = "Create and start a copy under a new name",
+    params(EnvIdParam),
+    request_body = NameBody,
+    responses((status = 201, description = "Created", body = Created))
+)]
 pub async fn duplicate(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -210,6 +308,15 @@ pub async fn duplicate(
     Ok((StatusCode::CREATED, Json(Created { id: res? })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/envs/{env}/containers/{id}/files",
+    operation_id = "listContainerFiles",
+    tag = "containers",
+    summary = "List a directory inside a container",
+    params(EnvIdParam, PathQuery),
+    responses((status = 200, description = "Directory listing", body = DirListing))
+)]
 pub async fn list_files(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -220,6 +327,15 @@ pub async fn list_files(
     Ok(Json(c.ops.list_dir(&id, &q.path).await?))
 }
 
+#[utoipa::path(
+    get,
+    path = "/envs/{env}/containers/{id}/files/download",
+    operation_id = "downloadContainerFile",
+    tag = "containers",
+    summary = "Download one file from a container (up to 100 MiB)",
+    params(EnvIdParam, PathQuery),
+    responses((status = 200, description = "File contents", body = inline(Bytes), content_type = "application/octet-stream"))
+)]
 pub async fn download_file(
     State(s): State<AppState>,
     cu: CurrentUser,
