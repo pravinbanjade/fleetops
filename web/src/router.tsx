@@ -171,6 +171,18 @@ const volumeRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/volumes/VolumePage"), "VolumePage"),
 });
 
+const networksRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "networks",
+  component: lazyRouteComponent(() => import("@/pages/networks/NetworksPage"), "NetworksPage"),
+});
+
+const networkRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "networks/$id",
+  component: lazyRouteComponent(() => import("@/pages/networks/NetworkPage"), "NetworkPage"),
+});
+
 const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
@@ -190,6 +202,8 @@ const routeTree = rootRoute.addChildren([
         imageRoute,
         volumesRoute,
         volumeRoute,
+        networksRoute,
+        networkRoute,
       ]), accountRoute])]),
 ]);
 
