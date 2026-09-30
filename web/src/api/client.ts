@@ -28,6 +28,13 @@ export interface ApiOptions {
   onUnauthorized?: () => void;
 }
 
+let unauthorized: (() => void) | undefined;
+
+/** Reports a lost session found outside the HTTP client (the websocket). */
+export function reportUnauthorized() {
+  unauthorized?.();
+}
+
 // Requests whose 401 is an answer, not a lost session.
 const PROBES = ["/api/v1/auth/me", "/api/v1/auth/login", "/api/v1/auth/setup"];
 
@@ -37,6 +44,7 @@ const PROBES = ["/api/v1/auth/me", "/api/v1/auth/login", "/api/v1/auth/setup"];
  * operations whose security lists the `csrf` scheme.
  */
 export function configureApi(opts: ApiOptions = {}) {
+  unauthorized = opts.onUnauthorized;
   client.setConfig({
     baseUrl: window.location.origin,
     credentials: "same-origin",
@@ -50,7 +58,7 @@ export function configureApi(opts: ApiOptions = {}) {
     const body = typeof error === "object" && error !== null ? (error as Partial<ErrorBody>) : undefined;
     const path = new URL(request.url).pathname;
     if (response.status === 401 && !PROBES.includes(path)) {
-      opts.onUnauthorized?.();
+      reportUnauthorized();
     }
     return new ApiError(response.status, body);
   });

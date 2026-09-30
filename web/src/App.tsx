@@ -2,8 +2,7 @@ import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react
 import { RouterProvider, type RouterHistory } from "@tanstack/react-router";
 import { useState } from "react";
 import { Toaster } from "sonner";
-import { configureApi } from "@/api/client";
-import { keys } from "@/api/queries";
+import { configureApi, setCsrfToken } from "@/api/client";
 import { toastError } from "@/lib/errors";
 import { createAppRouter } from "@/router";
 import { ThemeProvider, useTheme } from "@/theme";
@@ -27,8 +26,10 @@ export function createApp(history?: RouterHistory) {
   const queryClient = createQueryClient();
   const router = createAppRouter(queryClient, history);
   configureApi({
+    // The next user of this tab must not see this user's cached data.
     onUnauthorized: () => {
-      queryClient.removeQueries({ queryKey: keys.me });
+      setCsrfToken(undefined);
+      queryClient.clear();
       const here = router.state.location.href;
       void router.navigate({ to: "/login", search: { redirect: here } });
     },

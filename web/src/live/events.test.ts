@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventApplier, keysForEvent, RECENT_EVENTS } from "./events";
 import { keys } from "@/api/queries";
@@ -68,7 +68,7 @@ describe("EventApplier", () => {
     expect(spy).not.toHaveBeenCalled();
     vi.advanceTimersByTime(100);
     expect(spy).toHaveBeenCalledTimes(3);
-    expect(spy).toHaveBeenCalledWith({ queryKey: keys.containers("local") }, { cancelRefetch: false });
+    expect(spy).toHaveBeenCalledWith({ queryKey: keys.containers("local") });
   });
 
   it("marks matching cached queries stale and leaves others alone", () => {
@@ -79,6 +79,28 @@ describe("EventApplier", () => {
     applier.flush();
     expect(qc.getQueryState(keys.containers("local"))?.isInvalidated).toBe(true);
     expect(qc.getQueryState(keys.networks("local"))?.isInvalidated).toBe(false);
+  });
+
+  it("refetches again when an event lands while a refetch is in flight", async () => {
+    vi.useRealTimers();
+    const resolvers: ((v: number) => void)[] = [];
+    const queryFn = vi.fn(() => new Promise<number>((r) => resolvers.push(r)));
+    const obs = new QueryObserver(qc, { queryKey: keys.info("local"), queryFn });
+    const unsub = obs.subscribe(() => {});
+    resolvers[0](0);
+    await vi.waitFor(() => expect(obs.getCurrentResult().data).toBe(0));
+    const applier = new EventApplier(qc, 0);
+    applier.apply("local", ev("container", "start"));
+    applier.flush();
+    expect(queryFn).toHaveBeenCalledTimes(2);
+    // This event postdates the in-flight request, whose answer may not include it.
+    applier.apply("local", ev("container", "start"));
+    applier.flush();
+    expect(queryFn).toHaveBeenCalledTimes(3);
+    resolvers[1](1);
+    resolvers[2](2);
+    await vi.waitFor(() => expect(obs.getCurrentResult().data).toBe(2));
+    unsub();
   });
 
   it("leaves exec noise out of the feed", () => {

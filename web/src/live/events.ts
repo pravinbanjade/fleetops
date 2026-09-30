@@ -78,8 +78,10 @@ export class EventApplier {
     this.timer = null;
     const batch = [...this.pending.values()];
     this.pending.clear();
+    // A refetch already in flight may have been answered before these
+    // events happened, so it is cancelled and started again.
     for (const queryKey of batch) {
-      void this.qc.invalidateQueries({ queryKey }, { cancelRefetch: false });
+      void this.qc.invalidateQueries({ queryKey });
     }
   }
 

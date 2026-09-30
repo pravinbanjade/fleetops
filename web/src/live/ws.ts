@@ -38,6 +38,17 @@ export interface WsOptions {
   onEnvStatus?(env: string, status: EnvStatus): void;
   /** Called after a reconnect, once every subscription has been sent again. */
   onReconnect?(): void;
+  /**
+   * The server ended the connection because the session is gone; the
+   * client stops reconnecting.
+   */
+  onUnauthorized?(): void;
+  /**
+   * A socket closed without ever opening. The server refuses the upgrade
+   * with a 401 when the session is gone, which a browser cannot see, so the
+   * caller can check the session over HTTP.
+   */
+  onConnectFailed?(): void;
 }
 
 export const defaultBackoff = (attempt: number) => Math.min(30_000, 500 * 2 ** attempt);
@@ -127,7 +138,9 @@ export class WsClient {
     socket.binaryType = "arraybuffer";
     this.socket = socket;
     if (!this.opened && this.attempt === 0) this.opts.onState?.("connecting");
+    let socketOpened = false;
     socket.onopen = () => {
+      socketOpened = true;
       const reconnect = this.opened;
       this.opened = true;
       this.attempt = 0;
@@ -143,6 +156,7 @@ export class WsClient {
       if (this.socket !== socket) return;
       this.socket = null;
       if (this.stopped) return;
+      if (!socketOpened) this.opts.onConnectFailed?.();
       if (this.attempt === 0) this.opts.onState?.("reconnecting");
       const delay = (this.opts.backoff ?? defaultBackoff)(this.attempt++);
       this.timer = setTimeout(() => {
@@ -170,6 +184,11 @@ export class WsClient {
       return;
     }
     const sub = msg.sub;
+    if (msg.type === "error" && sub == null && msg.code === "unauthorized") {
+      this.close();
+      this.opts.onUnauthorized?.();
+      return;
+    }
     if (sub == null) return;
     const active = this.subs.get(sub);
     if (!active) return;

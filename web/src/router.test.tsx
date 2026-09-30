@@ -65,6 +65,38 @@ describe("routing", () => {
   });
 });
 
+describe("a lost session", () => {
+  it("does not show the previous user's data to the next one", async () => {
+    let lost = false;
+    let sessionsCalls = 0;
+    const BOB = { csrf_token: "csrf-2", user: { ...ADMIN.user, id: 2, username: "bob" } };
+    mockFetch({
+      ...loggedIn,
+      "GET /api/v1/auth/me": () => (lost ? json(401, unauthorized.json) : json(200, ADMIN)),
+      "GET /api/v1/envs/local/info": () => (lost ? json(401, unauthorized.json) : json(200, {})),
+      "POST /api/v1/auth/login": () => ((lost = false), json(200, BOB)),
+      "GET /api/v1/auth/sessions": () =>
+        ++sessionsCalls === 1
+          ? json(200, [{ id: 7, created_at: 0, last_seen_at: 0, expires_at: 0, current: false, user_agent: "AdminsLaptop", ip: "10.0.0.9" }])
+          : new Promise<Response>(() => {}), // bob's list never arrives: only cached data could show
+    });
+    const { history, screen } = renderApp("/account");
+    const user = userEvent.setup();
+    expect(await screen.findByText("AdminsLaptop")).toBeInTheDocument();
+    lost = true;
+    await user.click(screen.getByRole("button", { name: "Environment" }));
+    await user.click(await screen.findByRole("menuitem", { name: "local" }));
+    await waitFor(() => expect(history.location.pathname).toBe("/login"));
+    await user.type(screen.getByLabelText("Username"), "bob");
+    await user.type(screen.getByLabelText("Password"), "bobs-password-1");
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await user.click(await screen.findByRole("button", { name: "bob" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Account" }));
+    expect(await screen.findByRole("heading", { name: "Account" })).toBeInTheDocument();
+    expect(screen.queryByText("AdminsLaptop")).toBeNull();
+  });
+});
+
 describe("safeRedirect", () => {
   it("keeps local paths only", () => {
     expect(safeRedirect("/envs/local?x=1")).toBe("/envs/local?x=1");
