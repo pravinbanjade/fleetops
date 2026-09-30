@@ -144,6 +144,18 @@ const editContainerRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/containers/ContainerFormPage"), "EditContainerPage"),
 });
 
+const imagesRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "images",
+  component: lazyRouteComponent(() => import("@/pages/images/ImagesPage"), "ImagesPage"),
+});
+
+const imageRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "images/$id",
+  component: lazyRouteComponent(() => import("@/pages/images/ImagePage"), "ImagePage"),
+});
+
 const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
@@ -159,6 +171,8 @@ const routeTree = rootRoute.addChildren([
         newContainerRoute,
         containerRoute,
         editContainerRoute,
+        imagesRoute,
+        imageRoute,
       ]), accountRoute])]),
 ]);
 

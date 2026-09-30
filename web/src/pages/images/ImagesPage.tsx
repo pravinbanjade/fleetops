@@ -1,0 +1,89 @@
+import { useQuery } from "@tanstack/react-query";
+import { Link, useParams } from "@tanstack/react-router";
+import { useState } from "react";
+import { imagesQuery } from "@/api/queries";
+import type { ImageSummary } from "@/api/gen/types.gen";
+import { columns, DataTable, type Column } from "@/components/DataTable";
+import { Page } from "@/components/Page";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { formatAgo, formatBytes, shortId } from "@/lib/format";
+import { imageName, PruneImagesDialog, RemoveImagesDialog } from "./dialogs";
+
+const col = columns<ImageSummary>();
+
+function imageColumns(env: string): Column<ImageSummary>[] {
+  return [
+    col.accessor((i) => imageName(i.repo_tags, i.id), {
+      id: "tags",
+      header: "Tags",
+      enableHiding: false,
+      cell: (c) => (
+        <Link
+          to="/envs/$env/images/$id"
+          params={{ env, id: c.row.original.id }}
+          className="font-medium hover:underline"
+        >
+          {c.row.original.repo_tags.length ? c.row.original.repo_tags.join(", ") : <span className="text-muted-foreground">&lt;none&gt;</span>}
+        </Link>
+      ),
+    }),
+    col.accessor((i) => shortId(i.id), { id: "id", header: "ID", cell: (c) => <code className="text-xs">{c.getValue()}</code> }),
+    col.accessor("size", { header: "Size", cell: (c) => formatBytes(c.getValue()) }),
+    col.accessor("created", { header: "Created", cell: (c) => formatAgo(c.getValue()) }),
+    col.accessor((i) => (i.in_use ? "in use" : "unused"), {
+      id: "in_use",
+      header: "Used",
+      cell: (c) => (c.row.original.in_use ? <Badge variant="secondary">in use</Badge> : <span className="text-muted-foreground">unused</span>),
+    }),
+  ];
+}
+
+export function ImagesPage() {
+  const { env } = useParams({ from: "/authed/shell/envs/$env/images" });
+  const list = useQuery(imagesQuery(env));
+  const [cols] = useState(() => imageColumns(env));
+  const [removing, setRemoving] = useState<ImageSummary[] | null>(null);
+  const [pruning, setPruning] = useState(false);
+  return (
+    <Page
+      title="Images"
+      actions={
+        <Button variant="outline" onClick={() => setPruning(true)}>
+          Prune
+        </Button>
+      }
+    >
+      <DataTable
+        label="Images"
+        data={list.data}
+        error={list.error}
+        columns={cols}
+        getRowId={(i) => i.id}
+        empty="No images in this environment."
+        initialSorting={[{ id: "created", desc: true }]}
+        selectable
+        actions={(selected, clear) => (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              setRemoving(selected);
+              clear();
+            }}
+          >
+            Remove
+          </Button>
+        )}
+      />
+      {removing && (
+        <RemoveImagesDialog
+          env={env}
+          images={removing.map((i) => ({ id: i.id, name: imageName(i.repo_tags, i.id) }))}
+          onDone={() => setRemoving(null)}
+        />
+      )}
+      {pruning && <PruneImagesDialog env={env} onDone={() => setPruning(false)} />}
+    </Page>
+  );
+}
