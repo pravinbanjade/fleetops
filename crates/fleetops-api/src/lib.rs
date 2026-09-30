@@ -11,6 +11,7 @@ mod headers;
 mod request_id;
 mod routes;
 pub mod state;
+pub mod ws;
 
 use axum::{middleware::from_fn, Router};
 

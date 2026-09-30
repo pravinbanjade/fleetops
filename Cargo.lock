@@ -605,6 +605,7 @@ dependencies = [
  "axum",
  "fleetops-core",
  "fleetops-store",
+ "futures-util",
  "hex",
  "http-body-util",
  "rand",
