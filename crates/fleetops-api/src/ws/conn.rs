@@ -11,6 +11,7 @@ use crate::{
     AppState,
 };
 use axum::extract::ws::{Message, WebSocket};
+use fleetops_core::docker::DockerOps;
 use fleetops_core::{now_unix, Error, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
@@ -22,18 +23,25 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::{broadcast::error::RecvError, Notify};
+use tokio::sync::{broadcast::error::RecvError, mpsc, Notify};
 
 /// Subscriptions one connection may hold at once.
 pub const MAX_SUBS: usize = 256;
 /// Largest client frame accepted.
 pub const MAX_FRAME_BYTES: usize = 1 << 20;
 
+pub(super) struct ExecCtl {
+    pub input: mpsc::Sender<Vec<u8>>,
+    pub exec_id: String,
+    pub ops: Arc<dyn DockerOps>,
+}
+
 /// A live subscription. Dropping it (unsub, or the connection closing)
 /// stops its producer.
 pub(super) struct Sub {
     pub queue: Arc<SubQueue>,
     pub task: tokio::task::AbortHandle,
+    pub exec: Option<ExecCtl>,
 }
 
 impl Drop for Sub {
@@ -208,12 +216,22 @@ async fn session_still_valid(s: &AppState, token_hash: &str, user_id: i64) -> bo
     s.store.get_user(user_id).await.is_ok()
 }
 
-/// Exec input; until the exec topic exists no subscription takes any.
-fn input(shared: &Shared, sub: u32, _data: Vec<u8>) {
-    shared.fail(
-        Some(sub),
-        &Error::NotFound(format!("no exec subscription {sub}")),
-    );
+fn input(shared: &Shared, sub: u32, data: Vec<u8>) {
+    let subs = shared.subs.lock().unwrap();
+    match subs.get(&sub).and_then(|s| s.exec.as_ref()) {
+        Some(ctl) => {
+            if ctl.input.try_send(data).is_err() {
+                shared.fail(
+                    Some(sub),
+                    &Error::Conflict("terminal input is backed up".into()),
+                );
+            }
+        }
+        None => shared.fail(
+            Some(sub),
+            &Error::NotFound(format!("no exec subscription {sub}")),
+        ),
+    }
 }
 
 async fn handle(s: &AppState, cu: &CurrentUser, shared: &Arc<Shared>, msg: ClientMsg) {
@@ -253,10 +271,28 @@ async fn handle(s: &AppState, cu: &CurrentUser, shared: &Arc<Shared>, msg: Clien
             shared.subs.lock().unwrap().remove(&sub);
         }
         ClientMsg::Input { sub, data } => input(shared, sub, data.into_bytes()),
-        ClientMsg::Resize { sub, .. } => shared.fail(
-            Some(sub),
-            &Error::NotFound(format!("no exec subscription {sub}")),
-        ),
+        ClientMsg::Resize { sub, cols, rows } => {
+            let target = shared
+                .subs
+                .lock()
+                .unwrap()
+                .get(&sub)
+                .and_then(|s| s.exec.as_ref().map(|c| (c.ops.clone(), c.exec_id.clone())));
+            match target {
+                Some((ops, exec_id)) => {
+                    let shared = shared.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = ops.exec_resize(&exec_id, cols, rows).await {
+                            shared.fail(Some(sub), &e);
+                        }
+                    });
+                }
+                None => shared.fail(
+                    Some(sub),
+                    &Error::NotFound(format!("no exec subscription {sub}")),
+                ),
+            }
+        }
     }
 }
 
@@ -278,6 +314,7 @@ async fn start(
         Topic::Events => topics::events(&c, env, id).await,
         Topic::Stats => topics::stats(&c, env, id).await,
         Topic::Logs => topics::logs(&c, env, id, opts).await,
+        Topic::Exec => topics::exec(&c, env, id, opts).await,
         other => Err(Error::Invalid(format!(
             "topic {other:?} is not available yet"
         ))),

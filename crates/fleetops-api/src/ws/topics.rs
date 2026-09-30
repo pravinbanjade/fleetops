@@ -2,8 +2,8 @@
 //! needs, starts a producer task that fills the subscription's queue, and
 //! returns the subscription.
 
-use super::conn::Sub;
-use super::protocol;
+use super::conn::{ExecCtl, Sub};
+use super::protocol::{self, encode_binary, Out};
 use super::queue::{Policy, SubQueue};
 use crate::{
     auth::extract::CurrentUser,
@@ -12,8 +12,9 @@ use crate::{
 };
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
-use fleetops_core::streams::LogOptions;
-use fleetops_core::{Error, Result};
+use fleetops_core::streams::{ExecOptions, LogOptions};
+use fleetops_core::{now_unix, Error, Result};
+use fleetops_store::NewAudit;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
@@ -106,6 +107,7 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        exec: None,
     })
 }
 
@@ -138,6 +140,7 @@ pub(super) async fn stats(c: &Ctx<'_>, env: Option<String>, id: Option<String>) 
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        exec: None,
     })
 }
 
@@ -193,5 +196,88 @@ pub(super) async fn logs(
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        exec: None,
     })
+}
+
+/// An interactive TTY in container `id`: output as binary frames, input
+/// through `input` frames, resized with `resize`.
+pub(super) async fn exec(
+    c: &Ctx<'_>,
+    env: Option<String>,
+    id: Option<String>,
+    opts_v: Value,
+) -> Result<Sub> {
+    let (s, cu, sub) = (c.s, c.cu, c.sub);
+    let (env, ops) = docker_for(s, cu, &env, Action::DockerWrite)?;
+    let id = required(&id, "id")?.to_string();
+    let o: ExecOptions = opts(opts_v)?;
+    let session = ops.exec_start(&id, &o).await;
+    // Only the error text crosses the await: the session is not Sync.
+    let failure = session.as_ref().err().map(|e| e.to_string());
+    audit_exec(s, cu, env.id(), &id, &o, failure).await;
+    let session = session?;
+    let q = c.queue(Policy::Block);
+    let qq = q.clone();
+    let mut output = session.output;
+    let exec_id = session.exec_id.clone();
+    let task_ops = ops.clone();
+    let task = tokio::spawn(async move {
+        while let Some(chunk) = output.next().await {
+            let Ok(bytes) = chunk else { break };
+            // Waits while the client is behind: Docker's output is
+            // read no faster than the socket drains it.
+            if !qq.push_wait(Out::Binary(encode_binary(sub, &bytes))).await {
+                return;
+            }
+        }
+        let mut code = None;
+        for _ in 0..20 {
+            code = task_ops.exec_exit_code(&exec_id).await.ok().flatten();
+            if code.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        qq.finish(protocol::end(sub, "exited", json!({ "exit_code": code })));
+    });
+    Ok(Sub {
+        queue: q,
+        task: task.abort_handle(),
+        exec: Some(ExecCtl {
+            input: session.input,
+            exec_id: session.exec_id,
+            ops,
+        }),
+    })
+}
+
+/// Exec is root-equivalent access to the container, so every attempt is
+/// audited with the command.
+async fn audit_exec(
+    s: &AppState,
+    cu: &CurrentUser,
+    env_id: i64,
+    id: &str,
+    o: &ExecOptions,
+    failure: Option<String>,
+) {
+    let (result, mut detail) = match failure {
+        None => ("success", json!({})),
+        Some(e) => ("failure", json!({ "error": e })),
+    };
+    detail["cmd"] = json!(o.command());
+    let entry = NewAudit {
+        ts: now_unix(),
+        user_id: Some(cu.user.id),
+        environment_id: Some(env_id),
+        action: "container.exec",
+        target_type: Some("container"),
+        target_id: Some(id),
+        result,
+        detail: Some(detail),
+    };
+    if let Err(e) = s.store.insert_audit(&entry).await {
+        tracing::error!(error = %e, "failed to write audit log");
+    }
 }
