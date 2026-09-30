@@ -1,8 +1,15 @@
-import { useState, type ReactNode } from "react";
+import { ChevronDown, ChevronUp, Download } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { toast } from "sonner";
+import type { LogLine } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { saveText } from "@/lib/download";
+import { compileQuery, LogBuffer, LogMatches, logText } from "@/lib/logs";
+import { useLive } from "@/live/LiveProvider";
 import { LogView } from "./LogView";
 import { DEFAULT_QUERY, useLogStream, type LogQuery } from "./useLogStream";
 
@@ -21,8 +28,11 @@ const SINCE = [
   ["86400", "Last 24 hours"],
 ] as const;
 
-/** The container's log, live: tail and time range, streams, timestamps, wrapping and follow. */
-export function LogsTab({ env, id, running }: { env: string; id: string; running: boolean }) {
+/**
+ * The container's log, live: tail and time range, streams, timestamps,
+ * wrapping and follow, search, and download.
+ */
+export function LogsTab({ env, id, name, running }: { env: string; id: string; name: string; running: boolean }) {
   const [query, setQuery] = useState<LogQuery>(DEFAULT_QUERY);
   const [since, setSince] = useState("");
   const [timestamps, setTimestamps] = useState(false);
@@ -30,6 +40,10 @@ export function LogsTab({ env, id, running }: { env: string; id: string; running
   const [follow, setFollow] = useState(true);
   const { buffer, version, state, clear } = useLogStream(env, id, query, running);
   const change = (q: Partial<LogQuery>) => setQuery({ ...query, ...q });
+  const search = useSearch(buffer, version);
+  const jump = (dir: 1 | -1) => {
+    if (search.jump(dir) !== null) setFollow(false);
+  };
 
   return (
     <div className="grid gap-3">
@@ -80,6 +94,38 @@ export function LogsTab({ env, id, running }: { env: string; id: string; running
           Clear
         </Button>
       </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Input
+          aria-label="Search logs"
+          placeholder="Search"
+          className="w-64"
+          value={search.text}
+          onChange={(e) => search.setText(e.target.value)}
+          onKeyDown={(e: KeyboardEvent) => {
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            jump(e.shiftKey ? -1 : 1);
+          }}
+        />
+        <Toggle id="logs-regex" checked={search.regex} onChange={search.setRegex}>
+          Regex
+        </Toggle>
+        <Button variant="outline" size="icon" aria-label="Previous match" disabled={!search.seqs.length} onClick={() => jump(-1)}>
+          <ChevronUp />
+        </Button>
+        <Button variant="outline" size="icon" aria-label="Next match" disabled={!search.seqs.length} onClick={() => jump(1)}>
+          <ChevronDown />
+        </Button>
+        <span aria-live="polite" className={search.error ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>
+          {search.summary}
+        </span>
+        <div className="ml-auto flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => saveText(`${name}.log`, logText(buffer.entries(), timestamps))}>
+            <Download /> Download shown
+          </Button>
+          <FullDownload env={env} id={id} name={name} query={query} timestamps={timestamps} />
+        </div>
+      </div>
       <LogStatus state={state} running={running} empty={buffer.length === 0} />
       <LogView
         buffer={buffer}
@@ -88,6 +134,8 @@ export function LogsTab({ env, id, running }: { env: string; id: string; running
         wrap={wrap}
         follow={follow}
         onFollowChange={setFollow}
+        highlight={search.re}
+        current={search.current}
       />
     </div>
   );
@@ -132,4 +180,97 @@ function LogStatus({ state, running, empty }: { state: ReturnType<typeof useLogS
   if (state.state === "ended") return <p className="text-sm text-muted-foreground">The log stream ended.</p>;
   if (empty) return <p className="text-sm text-muted-foreground">No log lines yet.</p>;
   return null;
+}
+
+/**
+ * The search box's state: the matching lines' seqs, kept current as lines
+ * arrive, and the match the user has moved to.
+ */
+function useSearch(buffer: LogBuffer, version: number) {
+  const [text, setText] = useState("");
+  const [regex, setRegex] = useState(false);
+  const [current, setCurrent] = useState<{ text: string; regex: boolean; seq: number } | null>(null);
+  const compiled = useMemo(() => compileQuery(text, regex), [text, regex]);
+  const re = compiled instanceof RegExp ? compiled : null;
+  const matches = useMemo(() => new LogMatches(buffer), [buffer]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `version` marks new lines in the buffer
+  const seqs = useMemo(() => [...matches.sync(re)], [matches, re, version]);
+  const seq = current && current.text === text && current.regex === regex ? current.seq : null;
+  const index = seq === null ? -1 : seqs.indexOf(seq);
+
+  /** Moves to the next (1) or previous (-1) match, wrapping around; returns its seq. */
+  const jump = (dir: 1 | -1) => {
+    if (!seqs.length) return null;
+    let next: number;
+    if (seq === null) next = dir === 1 ? seqs[0] : seqs[seqs.length - 1];
+    else if (dir === 1) next = seqs.find((s) => s > seq) ?? seqs[0];
+    else next = seqs.findLast((s) => s < seq) ?? seqs[seqs.length - 1];
+    setCurrent({ text, regex, seq: next });
+    return next;
+  };
+
+  const error = compiled && !(compiled instanceof RegExp) ? compiled.error : null;
+  const summary = error
+    ? "Invalid regular expression"
+    : !re
+      ? ""
+      : !seqs.length
+        ? "No matches"
+        : index >= 0
+          ? `${index + 1} of ${seqs.length}`
+          : `${seqs.length} ${seqs.length === 1 ? "match" : "matches"}`;
+  return { text, setText, regex, setRegex, re, seqs, current: seq, jump, error, summary };
+}
+
+/** Fetches the whole log (not only the lines held) and saves it. */
+function FullDownload({
+  env,
+  id,
+  name,
+  query,
+  timestamps,
+}: {
+  env: string;
+  id: string;
+  name: string;
+  query: LogQuery;
+  timestamps: boolean;
+}) {
+  const { ws } = useLive();
+  const [busy, setBusy] = useState(false);
+  // Leaving the page abandons a download still in progress.
+  const pending = useRef<(() => void) | null>(null);
+  useEffect(() => () => pending.current?.(), []);
+  const start = () => {
+    if (!ws) return;
+    setBusy(true);
+    const all = new LogBuffer(Infinity);
+    pending.current = ws.subscribe(
+      {
+        topic: "logs",
+        env,
+        id,
+        opts: { follow: false, tail: null, since: null, timestamps: true, stdout: query.stdout, stderr: query.stderr },
+      },
+      {
+        onData: (d) => all.append(d as LogLine[]),
+        onGap: (n) => all.gap(n),
+        onEnd: () => {
+          pending.current = null;
+          setBusy(false);
+          saveText(`${name}.log`, logText(all.entries(), timestamps));
+        },
+        onError: (m) => {
+          pending.current = null;
+          setBusy(false);
+          toast.error(`Could not download the log: ${m.message}`);
+        },
+      },
+    ).unsubscribe;
+  };
+  return (
+    <Button variant="outline" size="sm" disabled={busy} onClick={start}>
+      <Download /> {busy ? "Preparing…" : "Download full log"}
+    </Button>
+  );
 }

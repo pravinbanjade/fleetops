@@ -1,6 +1,6 @@
 import { act, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { json, mockFetch } from "@/test/fetch";
 import { FakeWebSocket } from "@/test/fake-ws";
 import { loggedIn, renderApp } from "@/test/app";
@@ -174,5 +174,110 @@ describe("logs tab", () => {
     const { screen, sock, sub } = await openLogs();
     act(() => sock.receive({ sub, type: "error", code: "not_found", message: "No such container: c1" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("No such container: c1");
+  });
+});
+
+describe("logs search", () => {
+  it("highlights matches, counts them and moves between them, pausing follow", async () => {
+    const { screen, log, sock, sub } = await openLogs();
+    act(() =>
+      sock.receive({
+        sub,
+        type: "data",
+        data: [at(1, "GET /health 200"), at(2, "\x1b[31mERROR\x1b[0m db down"), at(3, "ok"), at(4, "error: retry")],
+      }),
+    );
+    await within(log).findByText("ok");
+    await userEvent.type(screen.getByLabelText("Search logs"), "error");
+    expect(screen.getByText("2 matches")).toBeInTheDocument();
+    const marks = log.querySelectorAll("mark");
+    expect([...marks].map((m) => m.textContent)).toEqual(["ERROR", "error"]);
+    // The match keeps its colour.
+    expect(marks[0]).toHaveStyle({ color: "var(--ansi-1)" });
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Follow" })).not.toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("2 of 2")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("1 of 2")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Previous match" }));
+    expect(screen.getByText("2 of 2")).toBeInTheDocument();
+  });
+
+  it("counts matches in lines that arrive after the search", async () => {
+    const { screen, log, sock, sub } = await openLogs();
+    await userEvent.type(screen.getByLabelText("Search logs"), "timeout");
+    expect(screen.getByText("No matches")).toBeInTheDocument();
+    act(() => sock.receive({ sub, type: "data", data: [at(1, "request timeout")] }));
+    await within(log).findByText("timeout");
+    expect(screen.getByText("1 match")).toBeInTheDocument();
+  });
+
+  it("searches with a regular expression and says when it is invalid", async () => {
+    const { screen, log, sock, sub } = await openLogs();
+    act(() => sock.receive({ sub, type: "data", data: [at(1, "took 120ms"), at(2, "took 9ms")] }));
+    await within(log).findByText("took 9ms");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Regex" }));
+    const box = screen.getByLabelText("Search logs");
+    await userEvent.type(box, "\\d{{3}ms");
+    expect(screen.getByText("1 match")).toBeInTheDocument();
+    await userEvent.clear(box);
+    await userEvent.type(box, "(");
+    expect(screen.getByText("Invalid regular expression")).toBeInTheDocument();
+  });
+});
+
+describe("logs download", () => {
+  function captureDownloads() {
+    const saved: { name: string; blob: Blob }[] = [];
+    let last: Blob | null = null;
+    // jsdom has no object URLs; each test file runs in its own environment.
+    URL.createObjectURL = (b: Blob) => {
+      last = b;
+      return "blob:log";
+    };
+    URL.revokeObjectURL = () => {};
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push({ name: this.download, blob: last! });
+    });
+    return saved;
+  }
+
+  it("saves the lines shown, as plain text", async () => {
+    const saved = captureDownloads();
+    const { screen, log, sock, sub } = await openLogs();
+    act(() => sock.receive({ sub, type: "data", data: [at(1, "\x1b[32mready\x1b[0m")] }));
+    await within(log).findByText("ready");
+    await userEvent.click(screen.getByRole("button", { name: "Download shown" }));
+    expect(saved).toHaveLength(1);
+    expect(saved[0].name).toBe("web.log");
+    expect(await saved[0].blob.text()).toBe("ready\n");
+  });
+
+  it("fetches the whole log for a full download", async () => {
+    const saved = captureDownloads();
+    const { screen, sock, sub } = await openLogs();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Timestamps" }));
+    await userEvent.click(screen.getByRole("button", { name: "Download full log" }));
+    const full = await logsSub(sock, sub);
+    expect(full.opts).toEqual({ follow: false, tail: null, since: null, timestamps: true, stdout: true, stderr: true });
+    expect(screen.getByRole("button", { name: /Preparing/ })).toBeDisabled();
+    act(() => {
+      sock.receive({ sub: full.sub, type: "data", data: [at(1, "first ever")] });
+      sock.receive({ sub: full.sub, type: "end", reason: "eof" });
+    });
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(await saved[0].blob.text()).toBe("2026-09-30T10:00:01.000000001Z first ever\n");
+    expect(screen.getByRole("button", { name: "Download full log" })).toBeEnabled();
+  });
+
+  it("says why a full download failed", async () => {
+    captureDownloads();
+    const { screen, sock, sub } = await openLogs();
+    await userEvent.click(screen.getByRole("button", { name: "Download full log" }));
+    const full = await logsSub(sock, sub);
+    act(() => sock.receive({ sub: full.sub, type: "error", code: "env_unavailable", message: "Docker is down" }));
+    expect(await screen.findByText("Could not download the log: Docker is down")).toBeInTheDocument();
   });
 });

@@ -1,5 +1,5 @@
 import type { LogLine } from "@/api/gen/types.gen";
-import { stripAnsi } from "./ansi";
+import { stripAnsi, type Segment } from "./ansi";
 
 /** Most lines the log viewer keeps; the oldest are dropped past this. */
 export const LOG_BUFFER_MAX = 200_000;
@@ -177,6 +177,13 @@ export class LogMatches {
     this.buffer = buffer;
   }
 
+  /** Brings the matches up to date for `re`, starting over if it changed. */
+  sync(re: RegExp | null) {
+    if (re === this.re) this.update();
+    else this.setQuery(re);
+    return this.seqs;
+  }
+
   setQuery(re: RegExp | null) {
     this.re = re;
     this.seqs = [];
@@ -200,6 +207,31 @@ export class LogMatches {
     }
     this.scanned = end;
   }
+}
+
+/**
+ * Splits styled segments at match boundaries, so matches can be marked
+ * without losing their colours. `ranges` index the segments' joined text.
+ */
+export function markSegments(segments: Segment[], ranges: [number, number][]): (Segment & { mark: boolean })[] {
+  const out: (Segment & { mark: boolean })[] = [];
+  let pos = 0;
+  let r = 0;
+  for (const seg of segments) {
+    let i = 0;
+    while (i < seg.text.length) {
+      const at = pos + i;
+      while (r < ranges.length && ranges[r][1] <= at) r++;
+      const range = ranges[r];
+      const inside = range !== undefined && range[0] <= at;
+      const stop = inside ? range[1] : range ? range[0] : Infinity;
+      const len = Math.min(seg.text.length - i, stop - at);
+      out.push({ text: seg.text.slice(i, i + len), style: seg.style, mark: inside });
+      i += len;
+    }
+    pos += seg.text.length;
+  }
+  return out;
 }
 
 /** The lines as a text file: timestamps if wanted, escapes removed. */
