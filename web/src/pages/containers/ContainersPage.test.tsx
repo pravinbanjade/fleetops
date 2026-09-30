@@ -1,7 +1,8 @@
-import { waitFor, within } from "@testing-library/react";
+import { act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { json, mockFetch } from "@/test/fetch";
+import { FakeWebSocket } from "@/test/fake-ws";
 import { loggedIn, renderApp } from "@/test/app";
 import { container } from "@/test/docker";
 
@@ -103,12 +104,75 @@ describe("containers list", () => {
     const { screen } = renderApp("/envs/local/containers");
     await waitFor(() => expect(rows(screen)).toHaveLength(2));
     list = [...LIST, container({ id: "c3", name: "cache" })];
-    const { act } = await import("@testing-library/react");
-    const { FakeWebSocket } = await import("@/test/fake-ws");
     const sock = FakeWebSocket.latest();
     act(() => sock.open());
     const sub = sock.frames().find((f) => f.topic === "events").sub;
     act(() => sock.receive({ sub, type: "data", data: { kind: "container", action: "create", id: "c3", attributes: {}, time: 1 } }));
     await waitFor(() => expect(rows(screen)).toHaveLength(3));
+  });
+});
+
+const stat = (time: number, cpu: number, mem: number) => ({
+  time,
+  cpu_percent: cpu,
+  memory_used: mem,
+  memory_limit: 2_000_000_000,
+  net_rx: 0,
+  net_tx: 0,
+  block_read: 0,
+  block_write: 0,
+  pids: 3,
+});
+
+describe("containers list stats", () => {
+  it("shows live CPU and memory for running containers, one subscription each", async () => {
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: LIST } });
+    const { screen } = renderApp("/envs/local/containers");
+    await waitFor(() => expect(rows(screen)).toHaveLength(2));
+    const sock = FakeWebSocket.latest();
+    act(() => sock.open());
+    await waitFor(() => expect(sock.frames().some((f) => f.topic === "stats")).toBe(true));
+    const stats = sock.frames().filter((f) => f.topic === "stats");
+    // Only the running container, and once for both its cells.
+    expect(stats).toEqual([{ op: "sub", sub: expect.any(Number), topic: "stats", env: "local", id: "c1" }]);
+    act(() => {
+      sock.receive({ sub: stats[0].sub, type: "data", data: stat(1000, 3.21, 40_000_000) });
+      sock.receive({ sub: stats[0].sub, type: "data", data: stat(2000, 12.6, 48_000_000) });
+    });
+    const web = rows(screen).find((r) => r.textContent?.includes("web"))!;
+    expect(await within(web).findByText("13%")).toBeInTheDocument();
+    expect(within(web).getByText("48.0 MB")).toBeInTheDocument();
+    expect(within(web).getByRole("img", { name: "CPU of web" }).querySelector("polyline")).toBeInTheDocument();
+    const db = rows(screen).find((r) => r.textContent?.includes("db"))!;
+    expect(within(db).getAllByText("—")).toHaveLength(2);
+  });
+
+  it("subscribes only for rows on screen", async () => {
+    const observed: { el: Element; cb: IntersectionObserverCallback }[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        cb: IntersectionObserverCallback;
+        constructor(cb: IntersectionObserverCallback) {
+          this.cb = cb;
+        }
+        observe(el: Element) {
+          observed.push({ el, cb: this.cb });
+        }
+        disconnect() {}
+      },
+    );
+    const many = Array.from({ length: 3 }, (_, i) => container({ id: `c${i}`, name: `app-${i}` }));
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: many } });
+    const { screen } = renderApp("/envs/local/containers");
+    await waitFor(() => expect(rows(screen)).toHaveLength(3));
+    const sock = FakeWebSocket.latest();
+    act(() => sock.open());
+    await waitFor(() => expect(observed.length).toBeGreaterThan(0));
+    expect(sock.frames().filter((f) => f.topic === "stats")).toEqual([]);
+    const row = rows(screen).find((r) => r.textContent?.includes("app-1"))!;
+    const cell = observed.find((o) => row.contains(o.el))!;
+    act(() => cell.cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
+    await waitFor(() => expect(sock.frames().filter((f) => f.topic === "stats").map((f) => f.id)).toEqual(["c1"]));
   });
 });

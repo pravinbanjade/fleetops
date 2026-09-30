@@ -107,7 +107,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
   const width = table.getVisibleLeafColumns().length + (props.selectable ? 1 : 0);
 
   return (
-    <div className="grid gap-3">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <Input
           type="search"

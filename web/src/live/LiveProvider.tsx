@@ -1,18 +1,30 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { ApiError, reportUnauthorized } from "@/api/client";
 import { envStatusQuery, keys } from "@/api/queries";
 import { getMe } from "@/api/gen/sdk.gen";
 import type { DockerEvent } from "@/api/gen/types.gen";
 import { EventApplier } from "./events";
+import { StatsStore, type StatsPoint } from "./stats";
 import { WsClient, wsUrl, type ConnState, type SubHandlers, type SubSpec } from "./ws";
 
 interface Live {
   ws: WsClient | null;
   state: ConnState;
+  stats: StatsStore | null;
 }
 
-const LiveContext = createContext<Live>({ ws: null, state: "connecting" });
+const LiveContext = createContext<Live>({ ws: null, state: "connecting", stats: null });
 
 /**
  * Owns the tab's websocket while a user is logged in. Environment status
@@ -34,12 +46,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }),
   );
 
+  const [stats] = useState(() => new StatsStore(ws));
+
   useEffect(() => {
     ws.start();
     return () => ws.close();
   }, [ws]);
 
-  const live = useMemo(() => ({ ws, state }), [ws, state]);
+  const live = useMemo(() => ({ ws, state, stats }), [ws, state, stats]);
   return <LiveContext value={live}>{children}</LiveContext>;
 }
 
@@ -71,6 +85,21 @@ export function useSubscription(spec: SubSpec | null, handlers: SubHandlers) {
     });
     return unsubscribe;
   }, [ws, specKey]);
+}
+
+const NO_STATS: StatsPoint[] = [];
+
+/**
+ * A container's recent stats, live while `enabled`: one shared
+ * subscription per container across the tab (see `StatsStore`).
+ */
+export function useContainerStats(env: string, id: string, enabled: boolean): StatsPoint[] {
+  const { stats } = useLive();
+  const subscribe = useCallback(
+    (onChange: () => void) => (stats && enabled ? stats.subscribe(env, id, onChange) : () => {}),
+    [stats, env, id, enabled],
+  );
+  return useSyncExternalStore(subscribe, () => (stats && enabled ? stats.get(env, id) : NO_STATS));
 }
 
 /** Sends the user to login when a failed reconnect was a lost session. */

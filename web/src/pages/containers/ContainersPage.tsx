@@ -8,11 +8,14 @@ import type { ContainerSummary } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
+import { Sparkline } from "@/components/Sparkline";
 import { StateBadge } from "@/components/StateBadge";
+import { useInView } from "@/components/useInView";
 import { Button } from "@/components/ui/button";
 import { bulkMessage, runBulk } from "@/lib/bulk";
-import { formatAgo, formatBytes, shortId } from "@/lib/format";
+import { formatAgo, formatBytes, formatPercent, shortId } from "@/lib/format";
 import { portLinks } from "@/lib/ports";
+import { useContainerStats } from "@/live/LiveProvider";
 import { ACTIONS, RemoveDialog } from "./actions";
 
 const col = columns<ContainerSummary>();
@@ -49,9 +52,49 @@ function containerColumns(env: string): Column<ContainerSummary>[] {
       enableSorting: false,
       cell: (c) => <Ports container={c.row.original} />,
     }),
+    col.display({ id: "cpu", header: "CPU", cell: (c) => <Usage env={env} container={c.row.original} kind="cpu" /> }),
+    col.display({
+      id: "memory",
+      header: "Memory",
+      cell: (c) => <Usage env={env} container={c.row.original} kind="memory" />,
+    }),
     col.accessor("created", { header: "Created", cell: (c) => formatAgo(c.getValue()) }),
     col.accessor((c) => c.compose_project ?? "", { id: "compose", header: "Compose project" }),
   ];
+}
+
+/**
+ * Live CPU or memory for a running container: the latest value and a
+ * sparkline of the last minute. Only rows on screen subscribe; the CPU and
+ * memory cells of one row share a subscription.
+ */
+function Usage({ env, container, kind }: { env: string; container: ContainerSummary; kind: "cpu" | "memory" }) {
+  const [ref, inView] = useInView<HTMLDivElement>();
+  const points = useContainerStats(env, container.id, container.state === "running" && inView);
+  const last = points.at(-1);
+  if (!last) {
+    return (
+      <div ref={ref} className="text-muted-foreground">
+        —
+      </div>
+    );
+  }
+  if (kind === "cpu") {
+    const values = points.map((p) => p.cpu_percent);
+    return (
+      <div ref={ref} className="flex items-center gap-2 tabular-nums">
+        <Sparkline values={values} max={Math.max(100, ...values)} label={`CPU of ${container.name}`} />
+        <span className="w-12 text-right">{formatPercent(last.cpu_percent)}</span>
+      </div>
+    );
+  }
+  const values = points.map((p) => p.memory_used);
+  return (
+    <div ref={ref} className="flex items-center gap-2 tabular-nums" title={`Limit ${formatBytes(last.memory_limit)}`}>
+      <Sparkline values={values} max={Math.max(...values) * 1.2 || 1} label={`Memory of ${container.name}`} />
+      <span className="w-16 text-right">{formatBytes(last.memory_used)}</span>
+    </div>
+  );
 }
 
 function Ports({ container }: { container: ContainerSummary }) {

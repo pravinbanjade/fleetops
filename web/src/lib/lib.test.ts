@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/api/client";
 import { errorMessage } from "./errors";
-import { formatBytes } from "./format";
+import { formatBytes, formatPercent } from "./format";
 
 describe("formatBytes", () => {
   it("scales by 1000 with one decimal", () => {
@@ -15,6 +15,16 @@ describe("formatBytes", () => {
     expect(formatBytes(undefined)).toBe("—");
     expect(formatBytes(-1)).toBe("—");
     expect(formatBytes(Number.NaN)).toBe("—");
+  });
+});
+
+describe("formatPercent", () => {
+  it("keeps one decimal below 10% and none above", () => {
+    expect(formatPercent(0.04)).toBe("0.0%");
+    expect(formatPercent(3.26)).toBe("3.3%");
+    expect(formatPercent(12.6)).toBe("13%");
+    expect(formatPercent(250)).toBe("250%");
+    expect(formatPercent(Number.NaN)).toBe("—");
   });
 });
 

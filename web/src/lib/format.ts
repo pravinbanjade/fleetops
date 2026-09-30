@@ -31,3 +31,9 @@ export function formatAgo(unix: number, now = Date.now()): string {
 export function shortId(id: string): string {
   return id.replace(/^sha256:/, "").slice(0, 12);
 }
+
+/** A CPU percentage as `docker stats` shows it, which can pass 100 on several cores: 0.4%, 12%, 250%. */
+export function formatPercent(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "—";
+  return n < 10 ? `${n.toFixed(1)}%` : `${Math.round(n)}%`;
+}
