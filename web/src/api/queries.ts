@@ -6,6 +6,7 @@ import {
   getDiskUsage,
   getEngineInfo,
   getEnvStatus,
+  getContainerSpec,
   getMe,
   inspectContainer,
   listContainerFiles,
@@ -106,6 +107,14 @@ export const containerQuery = (env: string, id: string) =>
   queryOptions({
     queryKey: keys.container(env, id),
     queryFn: async () => (await inspectContainer({ path: { env, id } })).data as unknown as ContainerInspect,
+    retry: retryUnlessGone,
+  });
+
+/** The container as the create form edits it (for recreate and duplicate). */
+export const containerSpecQuery = (env: string, id: string) =>
+  queryOptions({
+    queryKey: [...keys.container(env, id), "spec"] as const,
+    queryFn: async () => (await getContainerSpec({ path: { env, id } })).data,
     retry: retryUnlessGone,
   });
 
