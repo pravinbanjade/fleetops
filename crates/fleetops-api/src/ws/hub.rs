@@ -81,6 +81,10 @@ async fn run_events(
             status: status_json(s),
         });
     };
+    // One interval for the whole task: a sleep recreated on every event
+    // would never fire on a busy host.
+    let mut idle = tokio::time::interval(IDLE_CHECK);
+    idle.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     while tx.receiver_count() > 0 {
         let current = env.status().await;
         let ops = match (&current, env.docker()) {
@@ -99,23 +103,36 @@ async fn run_events(
             up = true;
             announce(&current);
         }
+        // Connected again: the next drop backs off from the start.
+        backoff = initial_backoff;
         let mut events = ops.events();
         loop {
             tokio::select! {
                 item = events.next() => match item {
                     Some(Ok(e)) => {
-                        backoff = initial_backoff;
-                        let _ = tx.send(e);
+                        // Fails only when nobody listens any more.
+                        if tx.send(e).is_err() {
+                            return;
+                        }
                     }
                     // Dropped: go round and reconnect.
                     Some(Err(_)) | None => break,
                 },
-                _ = tokio::time::sleep(IDLE_CHECK) => {
+                _ = idle.tick() => {
                     if tx.receiver_count() == 0 {
                         return;
                     }
                 }
             }
+        }
+        // Every drop is a transition, even when Docker is back before the
+        // next status check: events in the gap are lost, so clients must
+        // hear down/up to know to refetch.
+        if up {
+            up = false;
+            announce(&EnvStatus::Down {
+                reason: "Docker event stream dropped; reconnecting".into(),
+            });
         }
         if tx.receiver_count() > 0 {
             tokio::time::sleep(backoff).await;

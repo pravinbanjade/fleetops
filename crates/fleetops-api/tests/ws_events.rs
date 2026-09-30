@@ -98,3 +98,48 @@ async fn recreated_environment_gets_a_fresh_docker_stream() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn events_stream_closes_even_while_events_keep_flowing() {
+    // A busy host (health checks, CI) never goes quiet; the shared stream
+    // must still stop when its last subscriber leaves.
+    let t = app().await;
+    let admin = t.with_local().await;
+    let addr = t.serve().await;
+    let fake = t.fake.clone();
+    let emitter = tokio::spawn(async move {
+        loop {
+            fake.emit_event(event("busy", "exec_start"));
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    });
+    for round in 0..3 {
+        let mut ws = Ws::open(addr, &admin).await;
+        ws.send(ws_sub(1, "events", None, Value::Null)).await;
+        ws.until(|v| is(v, 1, "data")).await;
+        drop(ws);
+        eventually(&format!("stream closed after round {round}"), || {
+            t.fake.open_event_streams() == 0
+        })
+        .await;
+    }
+    emitter.abort();
+}
+
+#[tokio::test]
+async fn quick_restart_is_announced_even_when_status_never_fails() {
+    // Docker restarted between two status checks: the stream dropped, but
+    // every check the hub makes finds Docker up again.
+    let t = app_with(ws_config()).await;
+    let admin = t.with_local().await;
+    let mut ws = Ws::open(t.serve().await, &admin).await;
+    ws.send(ws_sub(1, "events", None, Value::Null)).await;
+    for round in 0..2 {
+        eventually("events stream", || t.fake.open_event_streams() == 1).await;
+        t.fake.end_event_streams();
+        let down = ws.until(|v| v["type"] == "env_status").await;
+        assert_eq!(down["status"]["state"], "down", "round {round}");
+        let up = ws.until(|v| v["type"] == "env_status").await;
+        assert_eq!(up["status"]["state"], "up", "round {round}");
+    }
+}
