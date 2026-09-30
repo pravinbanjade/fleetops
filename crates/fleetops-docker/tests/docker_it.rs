@@ -488,6 +488,26 @@ mod streams {
     }
 
     #[tokio::test]
+    async fn recent_events_replay_what_already_happened_and_end() {
+        let d = docker().await;
+        let since = fleetops_core::now_unix() - 1;
+        let name = unique("recent");
+        let id = d.create_container(&sleeper(&name)).await.unwrap();
+        d.remove_container(&id, true, false).await.unwrap();
+        let events = tokio::time::timeout(Duration::from_secs(10), d.recent_events(since))
+            .await
+            .expect("recent_events ends by itself")
+            .unwrap();
+        let mine: Vec<&str> = events
+            .iter()
+            .filter(|e| e.id == id)
+            .map(|e| e.action.as_str())
+            .collect();
+        assert_eq!(mine, ["create", "destroy"]);
+        assert!(events.iter().all(|e| e.time >= since));
+    }
+
+    #[tokio::test]
     async fn stats_stream_yields_samples() {
         let d = docker().await;
         let name = unique("stats");

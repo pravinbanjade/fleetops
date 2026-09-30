@@ -17,6 +17,8 @@ pub struct FakeState {
     pub volumes: Vec<VolumeSummary>,
     pub networks: Vec<NetworkSummary>,
     pub calls: Vec<String>,
+    /// What `recent_events` replays.
+    pub past_events: Vec<DockerEvent>,
     next_id: usize,
 }
 
@@ -536,6 +538,16 @@ impl StreamOps for FakeDocker {
         let (tx, rx) = mpsc::unbounded_channel();
         self.streams().events.push(tx);
         rx_stream(rx)
+    }
+
+    async fn recent_events(&self, since: i64) -> Result<Vec<DockerEvent>> {
+        let st = self.state.lock().unwrap();
+        Ok(st
+            .past_events
+            .iter()
+            .filter(|e| e.time >= since)
+            .cloned()
+            .collect())
     }
 
     fn stats(&self, id: &str) -> BoxStream<StatsSample> {
