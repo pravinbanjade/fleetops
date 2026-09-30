@@ -288,3 +288,15 @@ fn checker_rejects_undocumented_routes() {
     let e = contract::check(&exchange("GET", "/api/v1/nope", 200, &ok)).unwrap_err();
     assert!(e.contains("the route is not documented"), "{e}");
 }
+
+/// `crates/fleetops-api/openapi.json` is committed for the web client
+/// generator (`pnpm gen:api`) and for review of API changes.
+#[test]
+fn committed_document_matches_the_code() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/openapi.json");
+    let committed = std::fs::read_to_string(path).unwrap_or_default();
+    assert!(
+        committed.trim_end() == fleetops_api::openapi::json(),
+        "{path} is out of date; run `make openapi` and commit the result"
+    );
+}

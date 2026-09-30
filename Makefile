@@ -1,4 +1,4 @@
-.PHONY: dev-server test test-docker lint fmt build
+.PHONY: dev-server test test-docker lint fmt build openapi
 
 dev-server:
 	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null)} \
@@ -21,3 +21,8 @@ fmt:
 
 build:
 	cargo build --release -p fleetops-server
+
+# Regenerates the committed OpenAPI document after an API change;
+# `cargo test` fails until it matches the code.
+openapi:
+	cargo run -q -p fleetops-server -- --openapi > crates/fleetops-api/openapi.json
