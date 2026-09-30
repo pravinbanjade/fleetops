@@ -4,7 +4,19 @@ use axum::{
     Json,
 };
 use fleetops_core::Error;
-use serde_json::json;
+use serde::Serialize;
+use utoipa::ToSchema;
+
+/// The JSON body of every error response.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ErrorBody {
+    /// Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,
+    /// `forbidden`, `rate_limited`, `env_unavailable`, `upstream`, `internal`.
+    pub code: &'static str,
+    pub message: String,
+    /// Matches the `x-request-id` response header and the server log.
+    pub request_id: Option<String>,
+}
 
 /// Wraps the domain error so it can be returned from handlers.
 #[derive(Debug)]
@@ -41,11 +53,11 @@ impl IntoResponse for ApiError {
             }
             other => other.to_string(),
         };
-        let body = json!({
-            "code": self.0.code(),
-            "message": message,
-            "request_id": crate::request_id::current(),
-        });
+        let body = ErrorBody {
+            code: self.0.code(),
+            message,
+            request_id: crate::request_id::current(),
+        };
         let mut res = (status, Json(body)).into_response();
         if let Error::RateLimited { retry_after_secs } = self.0 {
             res.headers_mut()

@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod contract;
 pub mod fake_docker;
 
 use axum::{
@@ -107,7 +108,18 @@ pub fn session_from(r: &Resp) -> Session {
 }
 
 impl TestApp {
+    /// Sends `r` and checks the exchange against the OpenAPI document
+    /// (see `contract`), failing the test on any mismatch.
     pub async fn send(&self, r: Request<Body>) -> Resp {
+        let (parts, body) = r.into_parts();
+        let sent = body.collect().await.unwrap().to_bytes();
+        let request: Option<Value> = parts
+            .headers
+            .get("content-type")
+            .filter(|ct| ct.as_bytes().starts_with(b"application/json"))
+            .and_then(|_| serde_json::from_slice(&sent).ok());
+        let (method, path) = (parts.method.clone(), parts.uri.path().to_string());
+        let r = Request::from_parts(parts, Body::from(sent));
         let res = self.router.clone().oneshot(r).await.unwrap();
         let status = res.status();
         let headers = res.headers().clone();
@@ -118,6 +130,17 @@ impl TestApp {
             serde_json::from_slice(&bytes)
                 .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()))
         };
+        let exchange = contract::Exchange {
+            method: method.as_str(),
+            path: &path,
+            request: request.as_ref(),
+            status: status.as_u16(),
+            content_type: headers.get("content-type").and_then(|v| v.to_str().ok()),
+            body: &json,
+        };
+        if let Err(e) = contract::check(&exchange) {
+            panic!("OpenAPI contract: {e}");
+        }
         Resp {
             status,
             headers,

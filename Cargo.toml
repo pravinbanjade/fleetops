@@ -23,6 +23,7 @@ clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
 hex = "0.4"
 http-body-util = "0.1"
+jsonschema = { version = "0.58", default-features = false }
 mime_guess = "2"
 rand = "0.8"
 rcgen = "0.13"
@@ -42,4 +43,5 @@ tower = { version = "0.5", features = ["util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 utoipa = "5.5"
+utoipa-axum = "0.2"
 uuid = { version = "1", features = ["v4"] }

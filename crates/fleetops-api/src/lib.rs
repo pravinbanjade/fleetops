@@ -8,6 +8,7 @@ pub mod envs;
 pub mod error;
 pub mod extract;
 mod headers;
+pub mod openapi;
 mod request_id;
 mod routes;
 pub mod state;
@@ -27,7 +28,10 @@ pub struct IsTls(pub bool);
 pub fn app(state: AppState, static_files: Router) -> Router {
     let hsts = state.config.hsts;
     Router::new()
-        .nest("/api/v1", routes::api().with_state(state))
+        .nest(
+            openapi::API_BASE,
+            routes::api().with_state(state).split_for_parts().0,
+        )
         .merge(static_files)
         .layer(from_fn(move |req, next| {
             headers::security_headers(hsts, req, next)

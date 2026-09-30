@@ -1,6 +1,7 @@
 //! `Json`/`Path` wrappers whose rejections use the standard error body
 //! `{code, message, request_id}` instead of axum's plain-text defaults.
 
+use crate::error::ErrorBody;
 use axum::{
     extract::{
         rejection::{JsonRejection, PathRejection},
@@ -11,14 +12,13 @@ use axum::{
     Json,
 };
 use serde::de::DeserializeOwned;
-use serde_json::json;
 
 fn rejection(status: StatusCode, message: String) -> Response {
-    let body = json!({
-        "code": "invalid",
-        "message": message,
-        "request_id": crate::request_id::current(),
-    });
+    let body = ErrorBody {
+        code: "invalid",
+        message,
+        request_id: crate::request_id::current(),
+    };
     (status, Json(body)).into_response()
 }
 
