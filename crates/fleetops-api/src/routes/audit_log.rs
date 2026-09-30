@@ -1,8 +1,5 @@
-use crate::{auth::extract::AdminUser, ApiResult, AppState};
-use axum::{
-    extract::{Query, State},
-    Json,
-};
+use crate::{auth::extract::AdminUser, extract::ApiQuery, ApiResult, AppState};
+use axum::{extract::State, Json};
 use fleetops_store::AuditEntry;
 use serde::Deserialize;
 use utoipa::IntoParams;
@@ -28,7 +25,7 @@ pub struct AuditQuery {
 pub async fn list(
     State(s): State<AppState>,
     _admin: AdminUser,
-    Query(q): Query<AuditQuery>,
+    ApiQuery(q): ApiQuery<AuditQuery>,
 ) -> ApiResult<Json<Vec<AuditEntry>>> {
     let limit = q.limit.unwrap_or(100).clamp(1, 500);
     Ok(Json(s.store.list_audit(limit, q.before).await?))

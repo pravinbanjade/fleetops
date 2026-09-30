@@ -6,15 +6,11 @@ use crate::openapi::{BuildForm, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
     authz::Action,
-    extract::{ApiJson, ApiPath},
+    extract::{ApiJson, ApiMultipart, ApiPath},
     tasks::{NewTask, TaskInfo, TaskStatus},
     ApiResult, AppState,
 };
-use axum::{
-    extract::{Multipart, State},
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::docker::split_image_reference;
 use fleetops_core::streams::{BoxStream, BuildContext, BuildSpec};
 use fleetops_core::{now_unix, Error};
@@ -146,7 +142,7 @@ pub async fn build(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
-    mut form: Multipart,
+    ApiMultipart(mut form): ApiMultipart,
 ) -> ApiResult<(StatusCode, Json<TaskStarted>)> {
     let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
     let (mut context, mut tag, mut dockerfile) = (None, None, None);

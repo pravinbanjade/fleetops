@@ -3,14 +3,10 @@ use crate::openapi::{EnvIdParam, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
     authz::Action,
-    extract::{ApiJson, ApiPath},
+    extract::{ApiJson, ApiPath, ApiQuery},
     ApiResult, AppState,
 };
-use axum::{
-    extract::{Query, State},
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::docker::{ImageSummary, PruneReport};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -131,7 +127,7 @@ pub async fn remove(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
-    Query(q): Query<ForceQuery>,
+    ApiQuery(q): ApiQuery<ForceQuery>,
 ) -> ApiResult<Json<ImageRemoved>> {
     let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
     let res = c.ops.remove_image(&id, q.force).await;
@@ -152,7 +148,7 @@ pub async fn prune(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
-    Query(q): Query<PruneQuery>,
+    ApiQuery(q): ApiQuery<PruneQuery>,
 ) -> ApiResult<Json<PruneReport>> {
     let all = q.all;
     let c = ctx(&s, cu, &env, Action::DockerWrite).await?;

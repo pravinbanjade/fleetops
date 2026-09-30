@@ -8,10 +8,11 @@ pub mod topics;
 
 use crate::{
     auth::{cookie::read_cookie, cookie::SESSION_COOKIE, extract::CurrentUser, token::hash_token},
+    extract::rejection,
     ApiError, AppState,
 };
 use axum::{
-    extract::{State, WebSocketUpgrade},
+    extract::{ws::rejection::WebSocketUpgradeRejection, State, WebSocketUpgrade},
     http::{header, HeaderMap},
     response::{IntoResponse, Response},
 };
@@ -43,7 +44,7 @@ pub async fn handler(
     State(s): State<AppState>,
     cu: CurrentUser,
     headers: HeaderMap,
-    ws: WebSocketUpgrade,
+    ws: Result<WebSocketUpgrade, WebSocketUpgradeRejection>,
 ) -> Response {
     if !origin_allowed(&headers) {
         return ApiError(Error::Forbidden(
@@ -51,6 +52,10 @@ pub async fn handler(
         ))
         .into_response();
     }
+    let ws = match ws {
+        Ok(ws) => ws,
+        Err(r) => return rejection(r.status(), r.body_text()),
+    };
     // CurrentUser already validated this cookie.
     let token_hash = read_cookie(&headers, SESSION_COOKIE)
         .map(|t| hash_token(&t))
