@@ -5,3 +5,6 @@ web/dist/
 .DS_Store
 .superpowers/
 .dev-data/
+.playwright-mcp/
+.claude/
+.impeccable/
