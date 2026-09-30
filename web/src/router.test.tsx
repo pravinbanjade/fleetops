@@ -84,7 +84,7 @@ describe("a lost session", () => {
     const user = userEvent.setup();
     expect(await screen.findByText("AdminsLaptop")).toBeInTheDocument();
     lost = true;
-    await user.click(screen.getByRole("button", { name: "Environment" }));
+    await user.click(screen.getByRole("button", { name: /^Environment/ }));
     await user.click(await screen.findByRole("menuitem", { name: "local" }));
     await waitFor(() => expect(history.location.pathname).toBe("/login"));
     await user.type(screen.getByLabelText("Username"), "bob");

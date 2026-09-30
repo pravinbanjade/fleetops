@@ -3,7 +3,7 @@ import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
 import { ChevronsUpDown, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
 import { envsQuery, envStatusQuery } from "@/api/queries";
 import { useLogout, useSession } from "@/auth/session";
-import { Badge } from "@/components/ui/badge";
+import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -26,15 +26,16 @@ const LINK =
 export function Shell() {
   const { env } = useParams({ strict: false });
   return (
-    <div className="flex min-h-svh">
-      <aside className="flex w-56 shrink-0 flex-col gap-4 border-r p-3">
+    <div className="flex min-h-svh flex-col md:flex-row">
+      {/* Below md the sidebar sits above the page, its links wrapping in rows. */}
+      <aside className="flex shrink-0 flex-col gap-4 border-b p-3 md:w-56 md:border-r md:border-b-0">
         <Link to="/" className="px-2 text-lg font-semibold">
           FleetOps
         </Link>
         <EnvSwitcher current={env} />
         <CommandPalette env={env} />
         {env && (
-          <nav className="grid gap-1" aria-label="Environment">
+          <nav className="flex flex-wrap gap-1 md:grid" aria-label="Environment">
             {NAV.map(({ to, label, icon: Icon }) => (
               <Link
                 key={to}
@@ -50,7 +51,7 @@ export function Shell() {
           </nav>
         )}
         <AdminNav />
-        <div className="mt-auto">
+        <div className="md:mt-auto">
           <UserMenu />
         </div>
       </aside>
@@ -67,8 +68,8 @@ function AdminNav() {
   const { user } = useSession();
   if (user.role !== "admin") return null;
   return (
-    <nav className="grid gap-1" aria-label="Administration">
-      <div className="px-2 text-xs font-medium text-muted-foreground">Administration</div>
+    <nav className="flex flex-wrap items-center gap-1 md:grid" aria-label="Administration">
+      <div className="w-full px-2 text-xs font-medium text-muted-foreground">Administration</div>
       {ADMIN_NAV.map(({ to, label, icon: Icon }) => (
         <Link key={to} to={to} className={LINK}>
           <Icon className="size-4" />
@@ -100,8 +101,11 @@ function EnvSwitcher({ current }: { current?: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="justify-between" aria-label="Environment">
-          <span className="truncate">{current ?? "Choose environment"}</span>
+        <Button variant="outline" className="justify-between">
+          <span className="truncate">
+            <span className="sr-only">Environment: </span>
+            {current ?? "Choose environment"}
+          </span>
           {current ? <EnvStatusBadge env={current} /> : <ChevronsUpDown className="size-4 opacity-50" />}
         </Button>
       </DropdownMenuTrigger>
@@ -120,12 +124,12 @@ function EnvSwitcher({ current }: { current?: string }) {
 export function EnvStatusBadge({ env }: { env: string }) {
   const { data } = useQuery(envStatusQuery(env));
   if (!data) return null;
-  return data.state === "up" ? (
-    <Badge variant="secondary">up</Badge>
-  ) : (
-    <Badge variant="destructive" title={data.reason}>
-      down
-    </Badge>
+  if (data.state === "up") return <StateBadge state="up" />;
+  return (
+    <span title={data.reason}>
+      <StateBadge state="down" />
+      <span className="sr-only">: {data.reason}</span>
+    </span>
   );
 }
 
