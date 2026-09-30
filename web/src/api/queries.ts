@@ -14,6 +14,7 @@ import {
   inspectNetwork,
   inspectVolume,
   listContainerFiles,
+  listComposeProjects,
   listContainers,
   listEnvs,
   listImages,
@@ -164,6 +165,12 @@ export const networkQuery = (env: string, id: string) =>
     queryKey: keys.network(env, id),
     queryFn: async () => (await inspectNetwork({ path: { env, id } })).data as unknown as NetworkInspect,
     retry: retryUnlessGone,
+  });
+
+export const composeProjectsQuery = (env: string) =>
+  queryOptions({
+    queryKey: keys.composeProjects(env),
+    queryFn: async () => (await listComposeProjects(path(env))).data,
   });
 
 export const recentEventsQuery = (env: string) =>

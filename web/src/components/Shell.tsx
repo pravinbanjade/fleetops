@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
-import { Boxes, ChevronsUpDown, Database, Layers, LayoutDashboard, Network, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
+import { Boxes, ChevronsUpDown, Database, Layers, LayoutDashboard, Network, Rows3, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
 import { envsQuery, envStatusQuery } from "@/api/queries";
 import { useLogout, useSession } from "@/auth/session";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,7 @@ const NAV = [
   { to: "/envs/$env/images", label: "Images", icon: Layers },
   { to: "/envs/$env/volumes", label: "Volumes", icon: Database },
   { to: "/envs/$env/networks", label: "Networks", icon: Network },
+  { to: "/envs/$env/compose", label: "Compose", icon: Rows3 },
 ] as const;
 
 export function Shell() {
