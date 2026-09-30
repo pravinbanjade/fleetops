@@ -11,6 +11,7 @@ import {
   Moon,
   Network,
   Rows3,
+  ScrollText,
   Server,
   Sun,
   User,
@@ -40,6 +41,7 @@ const LINK =
 const ADMIN_NAV = [
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/envs", label: "Environments", icon: Server },
+  { to: "/admin/audit", label: "Audit log", icon: ScrollText },
 ] as const;
 
 /** The environment-scoped pages, in sidebar order. */
