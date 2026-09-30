@@ -2,10 +2,12 @@ pub mod audit_log;
 pub mod auth;
 pub mod docker;
 pub mod envs;
+pub mod tasks;
 pub mod users;
 
 use crate::{error::ApiError, AppState};
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{delete, get, patch, post, put},
     Json, Router,
 };
@@ -28,12 +30,15 @@ pub fn api() -> Router<AppState> {
         .route("/users/{id}", patch(users::update).delete(users::remove))
         .route("/audit", get(audit_log::list))
         .route("/ws", get(crate::ws::handler))
+        .route("/tasks/{id}", get(tasks::get))
         .merge(env_routes())
         .fallback(not_found)
 }
 
 fn env_routes() -> Router<AppState> {
-    use docker::{compose, containers as c, images as i, networks as n, system, volumes as v};
+    use docker::{
+        compose, containers as c, image_tasks, images as i, networks as n, system, volumes as v,
+    };
     Router::new()
         .route("/envs", get(envs::list).post(envs::create))
         .route("/envs/{env}", patch(envs::update).delete(envs::remove))
@@ -61,6 +66,11 @@ fn env_routes() -> Router<AppState> {
         .route("/envs/{env}/containers/{id}/{action}", post(c::action))
         .route("/envs/{env}/images", get(i::list))
         .route("/envs/{env}/images/prune", post(i::prune))
+        .route("/envs/{env}/images/pull", post(image_tasks::pull))
+        .route(
+            "/envs/{env}/images/build",
+            post(image_tasks::build).layer(DefaultBodyLimit::max(image_tasks::BUILD_UPLOAD_MAX)),
+        )
         .route("/envs/{env}/images/{id}", get(i::inspect).delete(i::remove))
         .route("/envs/{env}/images/{id}/history", get(i::history))
         .route("/envs/{env}/images/{id}/tag", post(i::tag))

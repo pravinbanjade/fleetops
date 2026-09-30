@@ -17,7 +17,7 @@ anyhow = "1"
 argon2 = { version = "0.5", features = ["std"] }
 async-trait = "0.1"
 bollard = "0.21"
-axum = { version = "0.8", features = ["ws"] }
+axum = { version = "0.8", features = ["ws", "multipart"] }
 axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
 clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
