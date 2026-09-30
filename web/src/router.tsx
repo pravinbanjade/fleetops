@@ -183,6 +183,12 @@ const networkRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/networks/NetworkPage"), "NetworkPage"),
 });
 
+const composeRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "compose",
+  component: lazyRouteComponent(() => import("@/pages/compose/ComposePage"), "ComposePage"),
+});
+
 const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
@@ -204,6 +210,7 @@ const routeTree = rootRoute.addChildren([
         volumeRoute,
         networksRoute,
         networkRoute,
+        composeRoute,
       ]), accountRoute])]),
 ]);
 
