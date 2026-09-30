@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker test-web lint fmt build openapi
+.PHONY: dev dev-server dev-web web test test-docker test-web e2e lint fmt build openapi
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -28,6 +28,15 @@ test-web:
 test-docker:
 	DOCKER_HOST=$$(docker context inspect --format '{{.Endpoints.docker.Host}}') \
 		sh -c 'cargo test -p fleetops-docker --features docker-it --test docker_it && cargo test -p fleetops-server --features docker-it --test live'
+
+# The Playwright end-to-end test: a release build with the UI embedded,
+# driven in Chromium against the current docker context's daemon. It pulls
+# busybox and creates (then removes) one container named fleetops-e2e-*.
+e2e: build
+	pnpm -C web exec playwright install chromium
+	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
+		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
+		pnpm -C web exec playwright test
 
 lint:
 	cargo fmt --all --check
