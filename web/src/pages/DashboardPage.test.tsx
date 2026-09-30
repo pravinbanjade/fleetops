@@ -88,4 +88,32 @@ describe("dashboard", () => {
     const { screen } = renderApp("/envs/local");
     expect(await screen.findByText("Docker said no", {}, { timeout: 3000 })).toBeInTheDocument();
   });
+
+  it("recovers when the environment comes back up", async () => {
+    let up = false;
+    const UP = { state: "up", version: { version: "29.5.2", api_version: "1.52", os: "linux", arch: "arm64" } };
+    mockFetch({
+      ...loggedIn,
+      "GET /api/v1/envs/local/status": () => json(200, up ? UP : { state: "down", reason: "socket not found" }),
+      "GET /api/v1/envs/local/info": () =>
+        up ? json(200, info) : json(503, { code: "env_unavailable", message: "docker is down" }),
+    });
+    const { screen } = renderApp("/envs/local");
+    expect(await screen.findByRole("alert")).toHaveTextContent("socket not found");
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBeGreaterThan(0));
+    const sock = FakeWebSocket.latest();
+    act(() => sock.open());
+    // The server refuses an events subscription while the environment is down.
+    for (const f of sock.frames().filter((f) => f.op === "sub" && f.topic === "events")) {
+      act(() => sock.receive({ sub: f.sub, type: "error", code: "env_unavailable", message: "docker is down" }));
+    }
+    const before = sock.frames().length;
+    up = true;
+    act(() => sock.receive({ type: "env_status", env: "local", status: UP }));
+    expect(await screen.findByText("29.5.2")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Containers")).toHaveTextContent("3"));
+    await waitFor(() =>
+      expect(sock.frames().slice(before).some((f) => f.op === "sub" && f.topic === "events" && f.env === "local")).toBe(true),
+    );
+  });
 });

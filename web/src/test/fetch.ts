@@ -7,11 +7,13 @@ export interface Call {
   body: unknown;
 }
 
-type Handler = (call: Call) => Response | { status?: number; json?: unknown } | undefined;
+type Reply = Response | { status?: number; json?: unknown } | undefined;
+type Handler = (call: Call) => Reply | Promise<Reply>;
 
 /**
  * Stubs `fetch` with `routes`, keyed "METHOD /path". A handler returns a
- * Response or `{status, json}`; unmatched requests get a 404 ErrorBody.
+ * Response or `{status, json}` (or a promise of one, to hold a request
+ * open); unmatched requests get a 404 ErrorBody.
  * Returns the list of calls made, in order.
  */
 export function mockFetch(routes: Record<string, Handler | { status?: number; json?: unknown }>) {
@@ -29,7 +31,7 @@ export function mockFetch(routes: Record<string, Handler | { status?: number; js
       };
       calls.push(call);
       const route = routes[`${call.method} ${url.pathname}`];
-      const out = typeof route === "function" ? route(call) : route;
+      const out = typeof route === "function" ? await route(call) : route;
       if (out instanceof Response) return out;
       if (!out) return json(404, { code: "not_found", message: `no mock for ${call.method} ${url.pathname}` });
       return out.json === undefined ? new Response(null, { status: out.status ?? 204 }) : json(out.status ?? 200, out.json);

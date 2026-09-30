@@ -125,6 +125,29 @@ describe("WsClient", () => {
     expect(states).toEqual(["connecting", "reconnecting"]);
   });
 
+  it("stops and reports when the server ends the connection as unauthorized", () => {
+    const onUnauthorized = vi.fn();
+    client({ onUnauthorized });
+    const sock = FakeWebSocket.latest();
+    sock.open();
+    sock.receive({ sub: null, type: "error", code: "unauthorized", message: "session expired" });
+    sock.drop();
+    vi.advanceTimersByTime(60_000);
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("reports each reconnect attempt that fails to open", () => {
+    const onConnectFailed = vi.fn();
+    client({ onConnectFailed });
+    FakeWebSocket.latest().open();
+    FakeWebSocket.latest().drop();
+    expect(onConnectFailed).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100);
+    FakeWebSocket.latest().drop();
+    expect(onConnectFailed).toHaveBeenCalledOnce();
+  });
+
   it("does not reconnect after close(), and start() opens it again with the same subscriptions", () => {
     const ws = client();
     FakeWebSocket.latest().open();

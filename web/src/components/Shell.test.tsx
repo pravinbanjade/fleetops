@@ -45,4 +45,41 @@ describe("shell", () => {
     await waitFor(() => expect(screen.queryByText(/Lost the live connection/)).toBeNull());
     await waitFor(() => expect(status()).toBeGreaterThan(before));
   });
+
+  it("sends the user to login when the live connection reports the session ended", async () => {
+    let out = false;
+    mockFetch({
+      ...loggedIn,
+      "GET /api/v1/auth/me": () => (out ? json(401, { code: "unauthorized", message: "no session" }) : json(200, ADMIN)),
+    });
+    const { history, screen } = renderApp("/envs/local");
+    await screen.findByRole("heading", { name: "local" });
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBeGreaterThan(0));
+    const sock = FakeWebSocket.latest();
+    act(() => sock.open());
+    out = true;
+    act(() => {
+      sock.receive({ sub: null, type: "error", code: "unauthorized", message: "session expired" });
+      sock.drop();
+    });
+    await waitFor(() => expect(history.location.pathname).toBe("/login"));
+    expect(history.location.search).toContain("redirect=%2Fenvs%2Flocal");
+  });
+
+  it("checks the session when reconnecting fails, and sends the user to login if it ended", async () => {
+    let out = false;
+    mockFetch({
+      ...loggedIn,
+      "GET /api/v1/auth/me": () => (out ? json(401, { code: "unauthorized", message: "no session" }) : json(200, ADMIN)),
+    });
+    const { history, screen } = renderApp("/envs/local");
+    await screen.findByRole("heading", { name: "local" });
+    await waitFor(() => expect(FakeWebSocket.instances.length).toBeGreaterThan(0));
+    act(() => FakeWebSocket.latest().open());
+    out = true;
+    act(() => FakeWebSocket.latest().drop());
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2), { timeout: 2000 });
+    act(() => FakeWebSocket.latest().drop()); // the server refused the upgrade
+    await waitFor(() => expect(history.location.pathname).toBe("/login"));
+  });
 });

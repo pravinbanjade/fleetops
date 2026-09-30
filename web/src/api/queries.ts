@@ -70,8 +70,15 @@ export const envsQuery = queryOptions({
 
 const path = (env: string) => ({ path: { env } });
 
+/** How often a down environment's status is checked, to notice it coming back. */
+export const ENV_DOWN_POLL_MS = 5000;
+
 export const envStatusQuery = (env: string) =>
-  queryOptions({ queryKey: keys.envStatus(env), queryFn: async () => (await getEnvStatus(path(env))).data });
+  queryOptions({
+    queryKey: keys.envStatus(env),
+    queryFn: async () => (await getEnvStatus(path(env))).data,
+    refetchInterval: (q) => (q.state.data?.state === "down" ? ENV_DOWN_POLL_MS : false),
+  });
 
 export const infoQuery = (env: string) =>
   queryOptions({ queryKey: keys.info(env), queryFn: async () => (await getEngineInfo(path(env))).data as EngineInfo });

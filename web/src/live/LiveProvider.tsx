@@ -1,6 +1,8 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { keys } from "@/api/queries";
+import { ApiError, reportUnauthorized } from "@/api/client";
+import { envStatusQuery, keys } from "@/api/queries";
+import { getMe } from "@/api/gen/sdk.gen";
 import type { DockerEvent } from "@/api/gen/types.gen";
 import { EventApplier } from "./events";
 import { WsClient, wsUrl, type ConnState, type SubHandlers, type SubSpec } from "./ws";
@@ -27,6 +29,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         onState: setState,
         onEnvStatus: (env, status) => qc.setQueryData(keys.envStatus(env), status),
         onReconnect: () => void qc.invalidateQueries({ queryKey: ["env"] }),
+        onUnauthorized: reportUnauthorized,
+        onConnectFailed: () => void checkSession(),
       }),
   );
 
@@ -69,10 +73,40 @@ export function useSubscription(spec: SubSpec | null, handlers: SubHandlers) {
   }, [ws, specKey]);
 }
 
-/** Keeps `env`'s queries live from its Docker event stream. */
+/** Sends the user to login when a failed reconnect was a lost session. */
+async function checkSession() {
+  try {
+    await getMe();
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) reportUnauthorized();
+  }
+}
+
+/**
+ * Keeps `env`'s queries live from its Docker event stream. While the
+ * environment is down there is no stream (the server refuses one) and its
+ * status is polled; when it comes back up, everything scoped to it is
+ * refetched and the stream is subscribed again.
+ */
 export function useEnvEvents(env: string) {
   const qc = useQueryClient();
   const [applier] = useState(() => new EventApplier(qc));
   useEffect(() => () => applier.dispose(), [applier]);
-  useSubscription({ topic: "events", env }, { onData: (d) => applier.apply(env, d as DockerEvent) });
+  const { data: status } = useQuery(envStatusQuery(env));
+  const down = status?.state === "down";
+  const wasDown = useRef(false);
+  useEffect(() => {
+    if (down) {
+      wasDown.current = true;
+    } else if (wasDown.current) {
+      wasDown.current = false;
+      void qc.invalidateQueries({ queryKey: keys.env(env) });
+    }
+  }, [down, env, qc]);
+  useSubscription(down ? null : { topic: "events", env }, {
+    onData: (d) => applier.apply(env, d as DockerEvent),
+    onError: (m) => {
+      if (m.code === "env_unavailable") qc.setQueryData(keys.envStatus(env), { state: "down", reason: m.message });
+    },
+  });
 }
