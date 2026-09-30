@@ -1,0 +1,178 @@
+import { act, fireEvent, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it } from "vitest";
+import { json, mockFetch } from "@/test/fetch";
+import { FakeWebSocket } from "@/test/fake-ws";
+import { loggedIn, renderApp } from "@/test/app";
+import { inspect } from "@/test/docker";
+
+const WEB = inspect({ Id: "c1abcdef0123456789", Name: "/web" });
+const STOPPED = inspect({
+  Id: "c1abcdef0123456789",
+  Name: "/web",
+  State: { Status: "exited", Running: false, ExitCode: 0 },
+});
+
+const at = (sec: number, text: string, stream = "stdout") => ({
+  stream,
+  text: `2026-09-30T10:00:${String(sec).padStart(2, "0")}.000000001Z ${text}`,
+});
+
+/** Opens the page's socket and returns it with the newest logs subscription. */
+async function logsSub(sock = FakeWebSocket.latest(), after = 0) {
+  if (sock.readyState !== FakeWebSocket.OPEN) act(() => sock.open());
+  let frame: { sub: number; opts: Record<string, unknown> } | undefined;
+  await waitFor(() => {
+    frame = sock.frames().filter((f) => f.op === "sub" && f.topic === "logs" && f.sub > after).pop();
+    expect(frame).toBeTruthy();
+  });
+  return { sock, sub: frame!.sub, opts: frame!.opts };
+}
+
+async function openLogs(inspectBody = WEB) {
+  mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers/c1": { json: inspectBody } });
+  const { screen } = renderApp("/envs/local/containers/c1?tab=logs");
+  const log = await screen.findByRole("log", { name: "Container logs" });
+  return { screen, log, ...(await logsSub()) };
+}
+
+describe("logs tab", () => {
+  it("follows the log with timestamps requested, and renders colours and stderr", async () => {
+    const { log, sock, sub, opts } = await openLogs();
+    expect(opts).toEqual({ follow: true, timestamps: true, tail: 1000, since: null, stdout: true, stderr: true });
+    act(() =>
+      sock.receive({ sub, type: "data", data: [at(1, "\x1b[31mred alert\x1b[0m"), at(2, "disk full", "stderr")] }),
+    );
+    const red = await within(log).findByText("red alert");
+    expect(red).toHaveStyle({ color: "var(--ansi-1)" });
+    expect(within(log).getByText("disk full").parentElement).toHaveClass("border-destructive/70");
+    expect(within(log).queryByText(/2026-09-30/)).toBeNull();
+  });
+
+  it("shows timestamps when asked, without asking the server again", async () => {
+    const { screen, log, sock, sub } = await openLogs();
+    act(() => sock.receive({ sub, type: "data", data: [at(1, "hello")] }));
+    await within(log).findByText("hello");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Timestamps" }));
+    expect(within(log).getByText("2026-09-30 10:00:01.000Z")).toBeInTheDocument();
+    expect(sock.frames().filter((f) => f.topic === "logs")).toHaveLength(1);
+  });
+
+  it("starts over when the tail or the streams change", async () => {
+    const { screen, log, sock, sub } = await openLogs();
+    act(() => sock.receive({ sub, type: "data", data: [at(1, "old line")] }));
+    await within(log).findByText("old line");
+    await userEvent.selectOptions(screen.getByLabelText("Lines"), "All lines");
+    const next = await logsSub(sock, sub);
+    expect(next.opts).toMatchObject({ tail: null });
+    expect(sock.frames()).toContainEqual({ op: "unsub", sub });
+    expect(within(log).queryByText("old line")).toBeNull();
+    await userEvent.click(screen.getByRole("checkbox", { name: "stderr" }));
+    expect((await logsSub(sock, next.sub)).opts).toMatchObject({ tail: null, stderr: false, stdout: true });
+  });
+
+  it("asks for lines since the chosen time", async () => {
+    const { screen, sock, sub } = await openLogs();
+    const now = Math.floor(Date.now() / 1000);
+    await userEvent.selectOptions(screen.getByLabelText("Since"), "Last hour");
+    const since = (await logsSub(sock, sub)).opts.since as number;
+    expect(since).toBeGreaterThanOrEqual(now - 3600);
+    expect(since).toBeLessThanOrEqual(now - 3600 + 5);
+  });
+
+  it("resumes after a reconnect without repeating lines", async () => {
+    const { log, sock, sub } = await openLogs();
+    act(() => sock.receive({ sub, type: "data", data: [at(1, "one"), at(2, "two")] }));
+    await within(log).findByText("two");
+    act(() => sock.drop());
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2), { timeout: 2000 });
+    const again = await logsSub(FakeWebSocket.latest());
+    // The same subscription is sent again and the server replays its tail.
+    act(() =>
+      again.sock.receive({ sub: again.sub, type: "data", data: [at(1, "one"), at(2, "two"), at(3, "three")] }),
+    );
+    await within(log).findByText("three");
+    expect(within(log).getAllByText("one")).toHaveLength(1);
+    expect(within(log).getAllByText("two")).toHaveLength(1);
+  });
+
+  it("says when the container is stopped, and picks up when it starts again", async () => {
+    let body = STOPPED;
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers/c1": () => json(200, body) });
+    const { screen } = renderApp("/envs/local/containers/c1?tab=logs");
+    const log = await screen.findByRole("log", { name: "Container logs" });
+    const { sock, sub } = await logsSub();
+    act(() => {
+      sock.receive({ sub, type: "data", data: [at(1, "last words")] });
+      sock.receive({ sub, type: "end", reason: "eof" });
+    });
+    expect(await screen.findByText(/The container is not running/)).toBeInTheDocument();
+    body = WEB;
+    const events = sock.frames().find((f) => f.topic === "events").sub;
+    act(() =>
+      sock.receive({ sub: events, type: "data", data: { kind: "container", action: "start", id: "c1", attributes: {}, time: 2 } }),
+    );
+    const next = await logsSub(sock, sub);
+    await waitFor(() => expect(screen.queryByText(/The container is not running/)).toBeNull());
+    act(() => sock.receive({ sub: next.sub, type: "data", data: [at(1, "last words"), at(5, "back up")] }));
+    await within(log).findByText("back up");
+    expect(within(log).getAllByText("last words")).toHaveLength(1);
+  });
+
+  it("keeps a 250k-line log to the newest 200k and renders only the rows in view", async () => {
+    const { log, sock, sub } = await openLogs();
+    const lines = Array.from({ length: 250_000 }, (_, i) => ({ stream: "stdout", text: `line ${i}` }));
+    act(() => sock.receive({ sub, type: "data", data: lines }));
+    // jsdom does not scroll, so the view shows the oldest line kept.
+    expect(await within(log).findByText("line 50000")).toBeInTheDocument();
+    expect(within(log).queryByText("line 49999")).toBeNull();
+    expect(log.querySelectorAll("[data-index]").length).toBeLessThan(100);
+    expect((log.firstElementChild as HTMLElement).style.height).toBe(`${200_000 * 20}px`);
+  });
+
+  it("marks lines the server skipped", async () => {
+    const { log, sock, sub } = await openLogs();
+    act(() => {
+      sock.receive({ sub, type: "data", data: [at(1, "before")] });
+      sock.receive({ sub, type: "gap", dropped: 250 });
+    });
+    expect(await within(log).findByText(/250 lines skipped/)).toBeInTheDocument();
+  });
+
+  it("pauses following when scrolled up and resumes at the bottom", async () => {
+    const { screen, log } = await openLogs();
+    const follow = screen.getByRole("checkbox", { name: "Follow" });
+    expect(follow).toBeChecked();
+    Object.defineProperty(log, "scrollHeight", { configurable: true, value: 10_000 });
+    Object.defineProperty(log, "clientHeight", { configurable: true, value: 600 });
+    const scrollTo = (top: number) => {
+      log.scrollTop = top;
+      fireEvent.scroll(log);
+    };
+    scrollTo(9_400);
+    scrollTo(4_000);
+    expect(follow).not.toBeChecked();
+    scrollTo(9_400);
+    expect(follow).toBeChecked();
+  });
+
+  it("clears the lines shown and keeps them cleared after a reconnect", async () => {
+    const { screen, log, sock, sub } = await openLogs();
+    act(() => sock.receive({ sub, type: "data", data: [at(1, "noise")] }));
+    await within(log).findByText("noise");
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(within(log).queryByText("noise")).toBeNull();
+    act(() => sock.drop());
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2), { timeout: 2000 });
+    const again = await logsSub(FakeWebSocket.latest());
+    act(() => again.sock.receive({ sub: again.sub, type: "data", data: [at(1, "noise"), at(2, "fresh")] }));
+    await within(log).findByText("fresh");
+    expect(within(log).queryByText("noise")).toBeNull();
+  });
+
+  it("shows the server's error", async () => {
+    const { screen, sock, sub } = await openLogs();
+    act(() => sock.receive({ sub, type: "error", code: "not_found", message: "No such container: c1" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("No such container: c1");
+  });
+});
