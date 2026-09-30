@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { lazy, Suspense, useState, type FormEvent } from "react";
 import { containerQuery, keys } from "@/api/queries";
 import { containerAction, renameContainer } from "@/api/gen/sdk.gen";
 import type { ContainerActionName } from "@/api/gen/types.gen";
@@ -26,6 +26,9 @@ import { LogsTab } from "./logs/LogsTab";
 import type { ContainerTab } from "./tabs";
 
 const FROM = "/authed/shell/envs/$env/containers/$id";
+
+// xterm.js is large; it loads only when the Terminal tab opens.
+const TerminalTab = lazy(() => import("./terminal/TerminalTab").then((m) => ({ default: m.TerminalTab })));
 
 export function ContainerPage() {
   const { env, id } = useParams({ from: FROM });
@@ -58,6 +61,7 @@ export function ContainerPage() {
           <TabsTrigger value="mounts">Mounts</TabsTrigger>
           <TabsTrigger value="networks">Networks</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="terminal">Terminal</TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
@@ -77,6 +81,11 @@ export function ContainerPage() {
         </TabsContent>
         <TabsContent value="logs">
           <LogsTab env={env} id={id} name={name} running={c.State.Running === true} />
+        </TabsContent>
+        <TabsContent value="terminal">
+          <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+            <TerminalTab env={env} id={id} running={c.State.Running === true} />
+          </Suspense>
         </TabsContent>
         <TabsContent value="files">
           <FilesTab env={env} id={id} path={path} />
