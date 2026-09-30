@@ -129,6 +129,21 @@ const containerRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/containers/ContainerPage"), "ContainerPage"),
 });
 
+const newContainerRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "containers/new",
+  validateSearch: (s: Record<string, unknown>): { from?: string } => ({
+    from: typeof s.from === "string" && s.from ? s.from : undefined,
+  }),
+  component: lazyRouteComponent(() => import("@/pages/containers/ContainerFormPage"), "NewContainerPage"),
+});
+
+const editContainerRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "containers/$id/edit",
+  component: lazyRouteComponent(() => import("@/pages/containers/ContainerFormPage"), "EditContainerPage"),
+});
+
 const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
@@ -138,7 +153,13 @@ const accountRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
-  authedRoute.addChildren([indexRoute, shellRoute.addChildren([envRoute.addChildren([dashboardRoute, containersRoute, containerRoute]), accountRoute])]),
+  authedRoute.addChildren([indexRoute, shellRoute.addChildren([envRoute.addChildren([
+        dashboardRoute,
+        containersRoute,
+        newContainerRoute,
+        containerRoute,
+        editContainerRoute,
+      ]), accountRoute])]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {

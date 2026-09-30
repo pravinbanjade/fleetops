@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { joinArgs } from "@/lib/args";
 import { errorMessage } from "@/lib/errors";
 import { shortId } from "@/lib/format";
 import { isSecretKey, splitEnv } from "@/lib/secrets";
@@ -99,6 +100,16 @@ function ContainerActions({ env, c, name }: { env: string; c: ContainerInspect; 
       <Button variant="outline" onClick={() => setRenaming(true)}>
         Rename
       </Button>
+      <Button variant="outline" asChild>
+        <Link to="/envs/$env/containers/$id/edit" params={{ env, id: c.Id }}>
+          Edit
+        </Link>
+      </Button>
+      <Button variant="outline" asChild>
+        <Link to="/envs/$env/containers/new" params={{ env }} search={{ from: c.Id }}>
+          Duplicate
+        </Link>
+      </Button>
       <Button variant="destructive" onClick={() => setRemoving(true)}>
         Remove
       </Button>
@@ -175,7 +186,7 @@ function Overview({ c }: { c: ContainerInspect }) {
           ["Error", c.State.Error],
           ["Started", c.State.Running ? new Date(c.State.StartedAt!).toLocaleString() : undefined],
           ["Created", new Date(c.Created).toLocaleString()],
-          ["Command", [...(c.Config.Entrypoint ?? []), ...(c.Config.Cmd ?? [])].join(" ")],
+          ["Command", joinArgs([...(c.Config.Entrypoint ?? []), ...(c.Config.Cmd ?? [])])],
           ["Restart policy", restart && restart.Name !== "no" && restart.Name ? restart.Name : "no"],
           ["Ports", ports.length ? ports.join(", ") : "none"],
         ]}

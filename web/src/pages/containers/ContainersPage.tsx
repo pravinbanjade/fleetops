@@ -95,7 +95,21 @@ export function ContainersPage() {
   });
 
   return (
-    <Page title="Containers" actions={<Button variant="outline" onClick={() => setPruning(true)}>Prune</Button>}>
+    <Page
+      title="Containers"
+      actions={
+        <>
+          <Button variant="outline" onClick={() => setPruning(true)}>
+            Prune
+          </Button>
+          <Button asChild>
+            <Link to="/envs/$env/containers/new" params={{ env }}>
+              Create container
+            </Link>
+          </Button>
+        </>
+      }
+    >
       <DataTable
         label="Containers"
         data={list.data}

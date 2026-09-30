@@ -33,6 +33,7 @@ describe("container page", () => {
     const overview = screen.getByLabelText("Container details");
     expect(within(overview).getByText("c1abcdef0123")).toBeInTheDocument();
     expect(within(overview).getByText("0.0.0.0:8080 → 80/tcp")).toBeInTheDocument();
+    expect(within(overview).getByText('nginx -g "daemon off;"')).toBeInTheDocument();
     expect(within(overview).getByText("unless-stopped")).toBeInTheDocument();
     expect(within(screen.getByLabelText("Labels")).getByText("shop")).toBeInTheDocument();
   });
