@@ -33,4 +33,7 @@ pub struct Config {
     /// tracing filter, e.g. `info` or `fleetops_api=debug,info`.
     #[arg(long, env = "FLEETOPS_LOG", default_value = "info")]
     pub log_level: String,
+    /// Print the OpenAPI document to stdout and exit without starting.
+    #[arg(long)]
+    pub openapi: bool,
 }

@@ -1,0 +1,4799 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "fleetops",
+    "description": "Container management API. Authenticate with `POST /auth/login`; the session cookie authenticates later calls, and every call that is not GET must also send the `csrf_token` from the login response in the `x-csrf-token` header.",
+    "license": {
+      "name": "Apache-2.0"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/audit": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "Audit entries, newest first",
+        "operationId": "listAudit",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Entries to return, 1-500 (default 100).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Only entries with an id below this, for paging.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEntry"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Log in",
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Logged in; the session cookie is set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfo"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "End this session",
+        "operationId": "logout",
+        "responses": {
+          "204": {
+            "description": "Logged out; the cookie is cleared"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "The current user and CSRF token",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "description": "Current session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfo"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/password": {
+      "put": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Change your password and end your other sessions",
+        "operationId": "changePassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePassword"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Changed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "The current user's active sessions",
+        "operationId": "listSessions",
+        "responses": {
+          "200": {
+            "description": "Active sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SessionView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Log out one of your sessions",
+        "operationId": "revokeSession",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Session id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/auth/setup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Create the first admin and log in",
+        "operationId": "setup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Admin created; the session cookie is set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfo"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/auth/status": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Whether first-run setup is still needed",
+        "operationId": "getAuthStatus",
+        "responses": {
+          "200": {
+            "description": "Setup state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/envs": {
+      "get": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "List environments",
+        "operationId": "listEnvs",
+        "responses": {
+          "200": {
+            "description": "All environments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EnvironmentRecord"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Add an environment",
+        "operationId": "createEnv",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEnv"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentRecord"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}": {
+      "delete": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Remove an environment",
+        "operationId": "deleteEnv",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Rename an environment or change its URL",
+        "operationId": "updateEnv",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEnv"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentRecord"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/compose-projects": {
+      "get": {
+        "tags": [
+          "compose"
+        ],
+        "summary": "Compose projects on the environment",
+        "operationId": "listComposeProjects",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ComposeProject"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/compose-projects/{project}/{action}": {
+      "post": {
+        "tags": [
+          "compose"
+        ],
+        "summary": "Start, stop, restart or remove (`down`) a project's containers",
+        "operationId": "composeAction",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "path",
+            "description": "Project name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ComposeActionName"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every member was attempted; failures are listed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComposeOutcome"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "List containers, running or not",
+        "operationId": "listContainers",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Containers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContainerSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "Create a container, and start it unless `start` is false",
+        "operationId": "createContainer",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers/prune": {
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "Remove stopped containers",
+        "operationId": "pruneContainers",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What was removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PruneReport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers/{id}": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "Docker's container inspect, verbatim",
+        "operationId": "inspectContainer",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inspect output",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "Remove a container",
+        "operationId": "deleteContainer",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "description": "Remove even if running or in use.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "volumes",
+            "in": "query",
+            "description": "Containers only: also remove anonymous volumes.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers/{id}/duplicate": {
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "Create and start a copy under a new name",
+        "operationId": "duplicateContainer",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NameBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers/{id}/files": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "List a directory inside a container",
+        "operationId": "listContainerFiles",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Absolute path inside the container.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Directory listing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirListing"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers/{id}/files/download": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "Download one file from a container (up to 100 MiB)",
+        "operationId": "downloadContainerFile",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "description": "Absolute path inside the container.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File contents",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary",
+                  "description": "Raw bytes, e.g. a downloaded file."
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers/{id}/recreate": {
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "Replace a container with one built from `spec`, keeping the old one if that fails",
+        "operationId": "recreateContainer",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContainerSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Recreated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecreateResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers/{id}/rename": {
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "Rename a container",
+        "operationId": "renameContainer",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NameBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Renamed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers/{id}/spec": {
+      "get": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "The container as an editable spec, for recreate and duplicate",
+        "operationId": "getContainerSpec",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Spec",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContainerSpec"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/containers/{id}/{action}": {
+      "post": {
+        "tags": [
+          "containers"
+        ],
+        "summary": "Start, stop, restart, kill, pause or unpause a container",
+        "operationId": "containerAction",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ContainerActionName"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Done"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/df": {
+      "get": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Docker's `/system/df`, verbatim",
+        "operationId": "getDiskUsage",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Disk usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/images": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "List images",
+        "operationId": "listImages",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Images",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImageSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/images/build": {
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Build an image in the background (upload up to 100 MiB)",
+        "operationId": "buildImage",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Started; follow it on the websocket `task` topic",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStarted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/images/prune": {
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Remove dangling images, or all unused ones with `all`",
+        "operationId": "pruneImages",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "all",
+            "in": "query",
+            "description": "Also remove unused tagged images, not just dangling ones.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What was removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PruneReport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/images/pull": {
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Pull an image in the background",
+        "operationId": "pullImage",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PullBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Started; follow it on the websocket `task` topic",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskStarted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/images/{id}": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Docker's image inspect, verbatim",
+        "operationId": "inspectImage",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inspect output",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Remove an image",
+        "operationId": "deleteImage",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "description": "Remove even if running or in use.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "volumes",
+            "in": "query",
+            "description": "Containers only: also remove anonymous volumes.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed and untagged ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageRemoved"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/images/{id}/history": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Docker's image history, verbatim",
+        "operationId": "getImageHistory",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Layers, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/images/{id}/tag": {
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Add a tag to an image",
+        "operationId": "tagImage",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Tagged"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/info": {
+      "get": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Docker's `/info`, verbatim",
+        "operationId": "getEngineInfo",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Engine information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/networks": {
+      "get": {
+        "tags": [
+          "networks"
+        ],
+        "summary": "List networks",
+        "operationId": "listNetworks",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Networks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NetworkSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "networks"
+        ],
+        "summary": "Create a network",
+        "operationId": "createNetwork",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedNetwork"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/networks/prune": {
+      "post": {
+        "tags": [
+          "networks"
+        ],
+        "summary": "Remove unused networks",
+        "operationId": "pruneNetworks",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What was removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PruneReport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/networks/{id}": {
+      "get": {
+        "tags": [
+          "networks"
+        ],
+        "summary": "Docker's network inspect, verbatim",
+        "operationId": "inspectNetwork",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inspect output",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "networks"
+        ],
+        "summary": "Remove a network",
+        "operationId": "deleteNetwork",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/networks/{id}/connect": {
+      "post": {
+        "tags": [
+          "networks"
+        ],
+        "summary": "Attach a container to a network",
+        "operationId": "connectNetwork",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Attached"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/networks/{id}/disconnect": {
+      "post": {
+        "tags": [
+          "networks"
+        ],
+        "summary": "Detach a container from a network",
+        "operationId": "disconnectNetwork",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Resource id or name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Detached"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/status": {
+      "get": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Whether the endpoint answers, with its engine version",
+        "operationId": "getEnvStatus",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/volumes": {
+      "get": {
+        "tags": [
+          "volumes"
+        ],
+        "summary": "List volumes",
+        "operationId": "listVolumes",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Volumes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VolumeSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "volumes"
+        ],
+        "summary": "Create a volume",
+        "operationId": "createVolume",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolumeSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumeSummary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/volumes/prune": {
+      "post": {
+        "tags": [
+          "volumes"
+        ],
+        "summary": "Remove unused volumes",
+        "operationId": "pruneVolumes",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What was removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PruneReport"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/volumes/{name}": {
+      "get": {
+        "tags": [
+          "volumes"
+        ],
+        "summary": "Docker's volume inspect, verbatim",
+        "operationId": "inspectVolume",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Volume name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inspect output",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "volumes"
+        ],
+        "summary": "Remove a volume",
+        "operationId": "deleteVolume",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Volume name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "description": "Remove even if running or in use.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "volumes",
+            "in": "query",
+            "description": "Containers only: also remove anonymous volumes.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Liveness check",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "The server is up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "The OpenAPI document for this API.",
+        "operationId": "getOpenApi",
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 document",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/tasks/{id}": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "A task's current state",
+        "operationId": "getTask",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Task id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskInfo"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "List users",
+        "operationId": "listUsers",
+        "responses": {
+          "200": {
+            "description": "All users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Create a user",
+        "operationId": "createUser",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUser"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/{id}": {
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Delete a user",
+        "operationId": "deleteUser",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Change a user's role or password",
+        "operationId": "updateUser",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUser"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ws": {
+      "get": {
+        "tags": [
+          "websocket"
+        ],
+        "summary": "Open the real-time websocket",
+        "operationId": "openWebsocket",
+        "responses": {
+          "101": {
+            "description": "Switching protocols. Text frames are `ClientMsg` from the client and `ServerMsg` from the server; exec I/O uses binary frames `[u32 sub id, big-endian][bytes]`."
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AttachBody": {
+        "type": "object",
+        "required": [
+          "container"
+        ],
+        "properties": {
+          "container": {
+            "type": "string"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Disconnect only: detach even if the container is running."
+          }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "ts",
+          "action",
+          "result"
+        ],
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "detail": {},
+          "environment_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "result": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AuthStatus": {
+        "type": "object",
+        "required": [
+          "setup_required",
+          "setup_open"
+        ],
+        "properties": {
+          "setup_open": {
+            "type": "boolean",
+            "description": "`POST /auth/setup` is still accepted (the setup window has not closed)."
+          },
+          "setup_required": {
+            "type": "boolean",
+            "description": "No user exists yet."
+          }
+        }
+      },
+      "BuildForm": {
+        "type": "object",
+        "description": "Multipart body of `POST /envs/{env}/images/build`: send `context` or\n`dockerfile`, not both.",
+        "properties": {
+          "context": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary",
+            "description": "A tar of the build context."
+          },
+          "dockerfile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "binary",
+            "description": "A lone Dockerfile, when there is no other context."
+          },
+          "dockerfile_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Dockerfile path inside the context (default `Dockerfile`)."
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Tag for the built image, e.g. `app:1.2`."
+          }
+        }
+      },
+      "ChangePassword": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string"
+          },
+          "new_password": {
+            "type": "string"
+          }
+        }
+      },
+      "ClientMsg": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "sub",
+              "topic",
+              "op"
+            ],
+            "properties": {
+              "env": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "sub"
+                ]
+              },
+              "opts": {
+                "description": "`logs`: [`LogOptions`](fleetops_core::streams::LogOptions);\n`exec`: [`ExecOptions`](fleetops_core::streams::ExecOptions)."
+              },
+              "sub": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "topic": {
+                "$ref": "#/components/schemas/Topic"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "sub",
+              "op"
+            ],
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "unsub"
+                ]
+              },
+              "sub": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Exec stdin as text, for clients that cannot send binary frames.",
+            "required": [
+              "sub",
+              "data",
+              "op"
+            ],
+            "properties": {
+              "data": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "input"
+                ]
+              },
+              "sub": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "sub",
+              "cols",
+              "rows",
+              "op"
+            ],
+            "properties": {
+              "cols": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "resize"
+                ]
+              },
+              "rows": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "sub": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "A text frame from the client. Exec stdin may also arrive as a binary\nframe of `[u32 sub id, big-endian][bytes]`."
+      },
+      "ComposeActionName": {
+        "type": "string",
+        "description": "`POST /envs/{env}/compose-projects/{project}/{action}` actions; `down`\nremoves the project's containers.",
+        "enum": [
+          "start",
+          "stop",
+          "restart",
+          "down"
+        ]
+      },
+      "ComposeOutcome": {
+        "type": "object",
+        "required": [
+          "affected",
+          "errors"
+        ],
+        "properties": {
+          "affected": {
+            "type": "integer",
+            "description": "Containers the action succeeded on.",
+            "minimum": 0
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`name: error` for each container it failed on."
+          }
+        }
+      },
+      "ComposeProject": {
+        "type": "object",
+        "required": [
+          "name",
+          "services",
+          "containers",
+          "running",
+          "status"
+        ],
+        "properties": {
+          "containers": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "running": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "description": "running | partial | stopped"
+          }
+        }
+      },
+      "ContainerActionName": {
+        "type": "string",
+        "description": "`POST /envs/{env}/containers/{id}/{action}` actions.",
+        "enum": [
+          "start",
+          "stop",
+          "restart",
+          "kill",
+          "pause",
+          "unpause"
+        ]
+      },
+      "ContainerSpec": {
+        "type": "object",
+        "description": "Everything the create/recreate form edits. `advanced` is a Docker API\n`ContainerCreate` JSON object merged over the generated body.",
+        "properties": {
+          "advanced": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "binds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`source:target[:mode]` bind or named-volume mounts.",
+            "default": []
+          },
+          "cap_add": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "cmd": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "default": null
+          },
+          "entrypoint": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "default": null
+          },
+          "env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "image": {
+            "type": "string",
+            "default": ""
+          },
+          "labels": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "memory_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "default": null
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "nano_cpus": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "default": null
+          },
+          "network": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortBinding"
+            },
+            "default": []
+          },
+          "privileged": {
+            "type": "boolean",
+            "default": false
+          },
+          "restart_policy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "no | always | unless-stopped | on-failure",
+            "default": null
+          }
+        }
+      },
+      "ContainerSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "image",
+          "image_id",
+          "state",
+          "status",
+          "created",
+          "ports",
+          "labels",
+          "volumes"
+        ],
+        "properties": {
+          "compose_project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "compose_service": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "image_id": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortMapping"
+            }
+          },
+          "state": {
+            "type": "string",
+            "description": "created | running | paused | restarting | exited | removing | dead"
+          },
+          "status": {
+            "type": "string"
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names of named volumes mounted by this container."
+          }
+        }
+      },
+      "CreateBody": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ContainerSpec"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "boolean",
+                "description": "Start the container after creating it (default true)."
+              }
+            }
+          }
+        ]
+      },
+      "CreateEnv": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "url"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/EnvKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateUser": {
+        "type": "object",
+        "required": [
+          "username",
+          "password",
+          "role"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "Created": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "CreatedNetwork": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "Credentials": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "DirEntry": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "size",
+          "mode",
+          "modified"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/EntryKind"
+          },
+          "link_target": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "modified": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "DirListing": {
+        "type": "object",
+        "required": [
+          "path",
+          "entries",
+          "truncated"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DirEntry"
+            }
+          },
+          "path": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the listing hit the size/entry cap and is incomplete."
+          }
+        }
+      },
+      "DockerEvent": {
+        "type": "object",
+        "description": "One Docker event, reduced to what the UI needs to patch its caches.",
+        "required": [
+          "kind",
+          "action",
+          "id",
+          "attributes",
+          "time"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "create | start | die | destroy | pull | ..."
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "container | image | volume | network | daemon | ..."
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The actor's `name` attribute when Docker sends one."
+          },
+          "time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds."
+          }
+        }
+      },
+      "EngineVersion": {
+        "type": "object",
+        "required": [
+          "version",
+          "api_version",
+          "os",
+          "arch"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string"
+          },
+          "arch": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "EntryKind": {
+        "type": "string",
+        "enum": [
+          "file",
+          "dir",
+          "symlink",
+          "other"
+        ]
+      },
+      "EnvKind": {
+        "type": "string",
+        "enum": [
+          "docker-local"
+        ]
+      },
+      "EnvStatus": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "version",
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "up"
+                ]
+              },
+              "version": {
+                "$ref": "#/components/schemas/EngineVersion"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "state"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "down"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "EnvironmentRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "url",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorBody": {
+        "type": "object",
+        "description": "The JSON body of every error response.",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,\n`forbidden`, `rate_limited`, `env_unavailable`, `upstream`, `internal`."
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Matches the `x-request-id` response header and the server log."
+          }
+        }
+      },
+      "ExecOptions": {
+        "type": "object",
+        "properties": {
+          "cmd": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "`None` auto-detects a shell (bash, falling back to sh).",
+            "default": null
+          },
+          "cols": {
+            "type": "integer",
+            "format": "int32",
+            "default": 80,
+            "minimum": 0
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32",
+            "default": 24,
+            "minimum": 0
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Always `ok`."
+          }
+        }
+      },
+      "ImageRemoved": {
+        "type": "object",
+        "required": [
+          "removed"
+        ],
+        "properties": {
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Image ids deleted and tags removed, as Docker reports them."
+          }
+        }
+      },
+      "ImageSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "repo_tags",
+          "size",
+          "created",
+          "in_use"
+        ],
+        "properties": {
+          "created": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "in_use": {
+            "type": "boolean"
+          },
+          "repo_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LogLine": {
+        "type": "object",
+        "required": [
+          "stream",
+          "text"
+        ],
+        "properties": {
+          "stream": {
+            "$ref": "#/components/schemas/LogStream"
+          },
+          "text": {
+            "type": "string",
+            "description": "One line without its trailing newline. With `timestamps`, Docker's\nRFC 3339 timestamp and a space come first."
+          }
+        }
+      },
+      "LogOptions": {
+        "type": "object",
+        "properties": {
+          "follow": {
+            "type": "boolean",
+            "default": true
+          },
+          "since": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds.",
+            "default": null
+          },
+          "stderr": {
+            "type": "boolean",
+            "default": true
+          },
+          "stdout": {
+            "type": "boolean",
+            "default": true
+          },
+          "tail": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Lines from the end to start with; `None` means the whole log.",
+            "default": 1000,
+            "minimum": 0
+          },
+          "timestamps": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "LogStream": {
+        "type": "string",
+        "enum": [
+          "stdout",
+          "stderr"
+        ]
+      },
+      "NameBody": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "NetworkSpec": {
+        "type": "object",
+        "properties": {
+          "attachable": {
+            "type": "boolean",
+            "default": false
+          },
+          "driver": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "gateway": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "internal": {
+            "type": "boolean",
+            "default": false
+          },
+          "labels": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string",
+            "default": ""
+          },
+          "subnet": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        }
+      },
+      "NetworkSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "driver",
+          "scope",
+          "internal",
+          "attachable"
+        ],
+        "properties": {
+          "attachable": {
+            "type": "boolean"
+          },
+          "driver": {
+            "type": "string"
+          },
+          "gateway": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "internal": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "subnet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PortBinding": {
+        "type": "object",
+        "required": [
+          "container_port"
+        ],
+        "properties": {
+          "container_port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "host_ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "host_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "None publishes on a random host port.",
+            "minimum": 0
+          },
+          "protocol": {
+            "type": "string"
+          }
+        }
+      },
+      "PortMapping": {
+        "type": "object",
+        "required": [
+          "private_port",
+          "protocol"
+        ],
+        "properties": {
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "private_port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "public_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "PruneReport": {
+        "type": "object",
+        "required": [
+          "deleted",
+          "space_reclaimed"
+        ],
+        "properties": {
+          "deleted": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "space_reclaimed": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PullBody": {
+        "type": "object",
+        "required": [
+          "image"
+        ],
+        "properties": {
+          "image": {
+            "type": "string",
+            "description": "`nginx`, `nginx:1.27`, `ghcr.io/org/app:2` or `repo@sha256:...`."
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Overrides any tag in `image`."
+          }
+        }
+      },
+      "RecreateResult": {
+        "type": "object",
+        "required": [
+          "id",
+          "old_removed",
+          "backup_name"
+        ],
+        "properties": {
+          "backup_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "old_removed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Role": {
+        "type": "string",
+        "enum": [
+          "admin",
+          "user"
+        ]
+      },
+      "ServerMsg": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A payload for subscription `sub`: a `DockerEvent`, a `StatsSample`,\nan array of `LogLine`s, or a task progress message.",
+            "required": [
+              "sub",
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {},
+              "sub": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "data"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The logs queue overflowed and `dropped` lines were skipped.",
+            "required": [
+              "sub",
+              "dropped",
+              "type"
+            ],
+            "properties": {
+              "dropped": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "sub": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "gap"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The subscription is over. `reason` is `closed`, `ended`, `eof`,\n`exited` (with `exit_code`), `succeeded` or `failed` (with `task`).",
+            "required": [
+              "sub",
+              "reason",
+              "type"
+            ],
+            "properties": {
+              "exit_code": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "sub": {
+                "type": "integer",
+                "format": "int32",
+                "minimum": 0
+              },
+              "task": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TaskInfo"
+                  }
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "end"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A request failed; `sub` is null when the frame named no valid\nsubscription. `code` is an error code as in `ErrorBody`.",
+            "required": [
+              "code",
+              "message",
+              "type"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "sub": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "error"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An environment went up or down.",
+            "required": [
+              "env",
+              "status",
+              "type"
+            ],
+            "properties": {
+              "env": {
+                "type": "string"
+              },
+              "status": {
+                "$ref": "#/components/schemas/EnvStatus"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "env_status"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "A text frame from the server, as the builders below write it. Exec\noutput arrives as binary frames of `[u32 sub id, big-endian][bytes]`.\nDocumentation only: `tests/openapi.rs` checks each builder against it."
+      },
+      "SessionInfo": {
+        "type": "object",
+        "required": [
+          "user",
+          "csrf_token"
+        ],
+        "properties": {
+          "csrf_token": {
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        }
+      },
+      "SessionView": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "last_seen_at",
+          "expires_at",
+          "current"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_seen_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_agent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "StatsSample": {
+        "type": "object",
+        "description": "One stats sample for a container, with CPU already turned into a\npercentage of one core times the number of cores (as `docker stats`).",
+        "required": [
+          "time",
+          "cpu_percent",
+          "memory_used",
+          "memory_limit",
+          "net_rx",
+          "net_tx",
+          "block_read",
+          "block_write",
+          "pids"
+        ],
+        "properties": {
+          "block_read": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "block_write": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cpu_percent": {
+            "type": "number",
+            "format": "double"
+          },
+          "memory_limit": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "memory_used": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "net_rx": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "net_tx": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "pids": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix milliseconds."
+          }
+        }
+      },
+      "TagBody": {
+        "type": "object",
+        "required": [
+          "repo"
+        ],
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          }
+        }
+      },
+      "TaskInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "env",
+          "target",
+          "status",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "env": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`image.pull` or `image.build`."
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "target": {
+            "type": "string",
+            "description": "What the task works on, e.g. the image reference."
+          }
+        }
+      },
+      "TaskStarted": {
+        "type": "object",
+        "required": [
+          "task_id"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Subscribe to it with the websocket `task` topic or poll `GET /tasks/{id}`."
+          }
+        }
+      },
+      "TaskStatus": {
+        "type": "string",
+        "enum": [
+          "running",
+          "succeeded",
+          "failed"
+        ]
+      },
+      "Topic": {
+        "type": "string",
+        "enum": [
+          "events",
+          "stats",
+          "logs",
+          "exec",
+          "task"
+        ]
+      },
+      "UpdateEnv": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "UpdateUser": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Role"
+              }
+            ]
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "role",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "role": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "VolumeSpec": {
+        "type": "object",
+        "properties": {
+          "driver": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "driver_opts": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "labels": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string",
+            "default": ""
+          }
+        }
+      },
+      "VolumeSummary": {
+        "type": "object",
+        "required": [
+          "name",
+          "driver",
+          "mountpoint",
+          "labels",
+          "in_use"
+        ],
+        "properties": {
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "driver": {
+            "type": "string"
+          },
+          "in_use": {
+            "type": "boolean"
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "mountpoint": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "csrf": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-csrf-token"
+      },
+      "session": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "fleetops_session"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "system",
+      "description": "Server health and this document"
+    },
+    {
+      "name": "auth",
+      "description": "Setup, login and sessions"
+    },
+    {
+      "name": "users",
+      "description": "User accounts (admin only)"
+    },
+    {
+      "name": "audit",
+      "description": "Audit log (admin only)"
+    },
+    {
+      "name": "environments",
+      "description": "Managed Docker endpoints"
+    },
+    {
+      "name": "containers"
+    },
+    {
+      "name": "images"
+    },
+    {
+      "name": "volumes"
+    },
+    {
+      "name": "networks"
+    },
+    {
+      "name": "compose",
+      "description": "Compose projects, grouped by label"
+    },
+    {
+      "name": "tasks",
+      "description": "Background image pulls and builds"
+    },
+    {
+      "name": "websocket",
+      "description": "Real-time events, stats, logs and exec"
+    }
+  ]
+}
