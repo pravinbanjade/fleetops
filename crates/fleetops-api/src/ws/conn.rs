@@ -1,0 +1,283 @@
+//! One websocket connection: a reader that handles client frames and owns
+//! the subscriptions, and a writer that drains every subscription's queue
+//! fairly onto the socket.
+
+use super::protocol::{self, decode_binary, ClientMsg, Out, Topic};
+use super::queue::{Policy, SubQueue};
+use super::topics;
+use crate::{
+    auth::{extract::CurrentUser, SESSION_IDLE_SECS, SESSION_TOUCH_SECS},
+    authz::{authorize, Action},
+    AppState,
+};
+use axum::extract::ws::{Message, WebSocket};
+use fleetops_core::{now_unix, Error, Result};
+use futures_util::{SinkExt, StreamExt};
+use serde_json::Value;
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
+};
+use tokio::sync::{broadcast::error::RecvError, Notify};
+
+/// Subscriptions one connection may hold at once.
+pub const MAX_SUBS: usize = 256;
+/// Largest client frame accepted.
+pub const MAX_FRAME_BYTES: usize = 1 << 20;
+
+/// A live subscription. Dropping it (unsub, or the connection closing)
+/// stops its producer.
+pub(super) struct Sub {
+    pub queue: Arc<SubQueue>,
+    pub task: tokio::task::AbortHandle,
+}
+
+impl Drop for Sub {
+    fn drop(&mut self) {
+        self.queue.close();
+        self.task.abort();
+    }
+}
+
+/// State shared by reader and writer.
+struct Shared {
+    subs: Mutex<HashMap<u32, Sub>>,
+    /// Connection-level messages: errors and env_status.
+    control: Arc<SubQueue>,
+    ready: Arc<Notify>,
+    closing: AtomicBool,
+}
+
+impl Shared {
+    fn say(&self, msg: Out) {
+        self.control.push(msg, 1);
+    }
+
+    fn fail(&self, sub: Option<u32>, e: &Error) {
+        self.say(protocol::error(sub, e.code(), &e.to_string()));
+    }
+}
+
+pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSocket) {
+    let (mut sink, mut incoming) = socket.split();
+    let ready = Arc::new(Notify::new());
+    let shared = Arc::new(Shared {
+        subs: Mutex::new(HashMap::new()),
+        control: Arc::new(SubQueue::new(0, Policy::DropOldest, 256, ready.clone())),
+        ready,
+        closing: AtomicBool::new(false),
+    });
+
+    let gone = Arc::new(Notify::new());
+    let writer = {
+        let shared = shared.clone();
+        let gone = gone.clone();
+        tokio::spawn(async move {
+            write_loop(&shared, &mut sink).await;
+            gone.notify_one();
+        })
+    };
+
+    let mut status = s.hubs.status().subscribe();
+    let mut check = tokio::time::interval(s.config.ws_session_check);
+    check.tick().await;
+    loop {
+        tokio::select! {
+            frame = incoming.next() => match frame {
+                Some(Ok(Message::Text(t))) => match serde_json::from_str::<ClientMsg>(&t) {
+                    Ok(msg) => handle(&s, &cu, &shared, msg).await,
+                    Err(e) => shared.fail(None, &Error::Invalid(format!("bad frame: {e}"))),
+                },
+                Some(Ok(Message::Binary(b))) => match decode_binary(&b) {
+                    Some((sub, payload)) => input(&shared, sub, payload.to_vec()),
+                    None => shared.fail(None, &Error::Invalid("binary frame shorter than 4 bytes".into())),
+                },
+                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                Some(Ok(_)) => {}
+            },
+            change = status.recv() => match change {
+                Ok(c) => {
+                    if authorize(&cu.user, None, Action::EnvRead).is_ok() {
+                        shared.say(protocol::env_status(&c.env, &c.status));
+                    }
+                }
+                Err(RecvError::Lagged(_)) => {}
+                Err(RecvError::Closed) => {}
+            },
+            _ = check.tick() => {
+                if !session_still_valid(&s, &token_hash, cu.user.id).await {
+                    shared.fail(None, &Error::Unauthorized("session ended".into()));
+                    break;
+                }
+            }
+            // The writer stopped: the socket is gone.
+            _ = gone.notified() => break,
+        }
+    }
+    // Stop producers, flush what is queued for the client, then close.
+    shared.subs.lock().unwrap().clear();
+    shared.closing.store(true, Ordering::SeqCst);
+    shared.ready.notify_one();
+    let abort = writer.abort_handle();
+    if tokio::time::timeout(Duration::from_secs(2), writer)
+        .await
+        .is_err()
+    {
+        abort.abort();
+    }
+}
+
+/// Sends queued messages until the socket fails or the connection closes.
+async fn write_loop<S>(shared: &Shared, sink: &mut S)
+where
+    S: SinkExt<Message, Error = axum::Error> + Unpin,
+{
+    loop {
+        let wake = shared.ready.notified();
+        let mut sent = false;
+        if let Some(m) = shared.control.pop() {
+            if send(sink, m).await.is_err() {
+                return;
+            }
+            sent = true;
+        }
+        // One message per subscription per round keeps it fair.
+        let queues: Vec<_> = shared
+            .subs
+            .lock()
+            .unwrap()
+            .values()
+            .map(|s| s.queue.clone())
+            .collect();
+        for q in queues {
+            if let Some(m) = q.pop() {
+                if send(sink, m).await.is_err() {
+                    return;
+                }
+                sent = true;
+            }
+            if q.drained() {
+                let mut subs = shared.subs.lock().unwrap();
+                if subs
+                    .get(&q.sub())
+                    .is_some_and(|s| Arc::ptr_eq(&s.queue, &q))
+                {
+                    subs.remove(&q.sub());
+                }
+            }
+        }
+        if !sent {
+            if shared.closing.load(Ordering::SeqCst) {
+                let _ = sink.send(Message::Close(None)).await;
+                return;
+            }
+            wake.await;
+        }
+    }
+}
+
+async fn send<S>(sink: &mut S, m: Out) -> std::result::Result<(), axum::Error>
+where
+    S: SinkExt<Message, Error = axum::Error> + Unpin,
+{
+    sink.send(match m {
+        Out::Text(t) => Message::Text(t.into()),
+        Out::Binary(b) => Message::Binary(b.into()),
+    })
+    .await
+}
+
+/// Re-checks the session behind a long-lived connection, so logging out
+/// or revoking a session also ends its websockets. Keeps the session from
+/// idling out while a tab is open.
+async fn session_still_valid(s: &AppState, token_hash: &str, user_id: i64) -> bool {
+    let now = now_unix();
+    let Ok(Some(session)) = s.store.find_session(token_hash).await else {
+        return false;
+    };
+    if session.user_id != user_id || !session.is_active(now, SESSION_IDLE_SECS) {
+        return false;
+    }
+    if now - session.last_seen_at >= SESSION_TOUCH_SECS {
+        let _ = s.store.touch_session(session.id, now).await;
+    }
+    s.store.get_user(user_id).await.is_ok()
+}
+
+/// Exec input; until the exec topic exists no subscription takes any.
+fn input(shared: &Shared, sub: u32, _data: Vec<u8>) {
+    shared.fail(
+        Some(sub),
+        &Error::NotFound(format!("no exec subscription {sub}")),
+    );
+}
+
+async fn handle(s: &AppState, cu: &CurrentUser, shared: &Arc<Shared>, msg: ClientMsg) {
+    match msg {
+        ClientMsg::Sub {
+            sub,
+            topic,
+            env,
+            id,
+            opts,
+        } => {
+            {
+                let subs = shared.subs.lock().unwrap();
+                if subs.contains_key(&sub) {
+                    drop(subs);
+                    return shared
+                        .fail(Some(sub), &Error::Conflict(format!("sub {sub} is in use")));
+                }
+                if subs.len() >= MAX_SUBS {
+                    drop(subs);
+                    return shared.fail(
+                        Some(sub),
+                        &Error::Conflict(format!(
+                            "at most {MAX_SUBS} subscriptions per connection"
+                        )),
+                    );
+                }
+            }
+            match start(s, cu, shared, sub, (topic, env, id, opts)).await {
+                Ok(entry) => {
+                    shared.subs.lock().unwrap().insert(sub, entry);
+                }
+                Err(e) => shared.fail(Some(sub), &e),
+            }
+        }
+        ClientMsg::Unsub { sub } => {
+            shared.subs.lock().unwrap().remove(&sub);
+        }
+        ClientMsg::Input { sub, data } => input(shared, sub, data.into_bytes()),
+        ClientMsg::Resize { sub, .. } => shared.fail(
+            Some(sub),
+            &Error::NotFound(format!("no exec subscription {sub}")),
+        ),
+    }
+}
+
+async fn start(
+    s: &AppState,
+    cu: &CurrentUser,
+    shared: &Shared,
+    sub: u32,
+    msg: (Topic, Option<String>, Option<String>, Value),
+) -> Result<Sub> {
+    let (topic, env, id, _opts) = msg;
+    let c = topics::Ctx {
+        s,
+        cu,
+        sub,
+        ready: shared.ready.clone(),
+    };
+    match topic {
+        Topic::Events => topics::events(&c, env, id).await,
+        other => Err(Error::Invalid(format!(
+            "topic {other:?} is not available yet"
+        ))),
+    }
+}

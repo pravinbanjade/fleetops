@@ -25,6 +25,9 @@ pub struct FakeDocker {
     pub state: Mutex<FakeState>,
     /// When false, the environment reports Down and `docker()` is None.
     pub reachable: AtomicBool,
+    pub streams: Mutex<FakeStreams>,
+    pub hold_pulls: AtomicBool,
+    pub release_pulls: Arc<Notify>,
 }
 
 fn not_found(kind: &str, id: &str) -> Error {
@@ -405,5 +408,267 @@ impl EnvFactory for FakeFactory {
             name: name.into(),
             docker: self.0.clone(),
         }))
+    }
+}
+
+// ---- streams ---------------------------------------------------------------
+
+use fleetops_core::streams::{
+    BoxStream, BuildContext, BuildSpec, DockerEvent, ExecOptions, ExecSession, LogLine, LogOptions,
+    LogStream, StatsSample, StreamOps,
+};
+use futures_util::{stream, StreamExt};
+use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
+use tokio::sync::{mpsc, Notify};
+
+type Tx<T> = mpsc::UnboundedSender<Result<T>>;
+
+/// Hand-driven streams: tests push events, stats and log lines and can end
+/// streams to simulate the daemon going away.
+#[derive(Default)]
+pub struct FakeStreams {
+    events: Vec<Tx<DockerEvent>>,
+    stats: Vec<(String, Tx<StatsSample>)>,
+    logs: HashMap<String, Vec<LogLine>>,
+    follow: Vec<(String, Tx<LogLine>)>,
+    pub resizes: Vec<(String, u16, u16)>,
+    pub builds: Vec<BuildSpec>,
+    pub pulls: Vec<String>,
+    execs: usize,
+}
+
+fn rx_stream<T: Send + 'static>(rx: mpsc::UnboundedReceiver<Result<T>>) -> BoxStream<T> {
+    Box::pin(stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|v| (v, rx))
+    }))
+}
+
+pub fn event(id: &str, action: &str) -> DockerEvent {
+    DockerEvent {
+        kind: "container".into(),
+        action: action.into(),
+        id: id.into(),
+        name: Some(format!("{id}-name")),
+        attributes: Default::default(),
+        time: 1,
+    }
+}
+
+pub fn sample(cpu: f64) -> StatsSample {
+    StatsSample {
+        time: 1,
+        cpu_percent: cpu,
+        memory_used: 10,
+        memory_limit: 100,
+        net_rx: 0,
+        net_tx: 0,
+        block_read: 0,
+        block_write: 0,
+        pids: 1,
+    }
+}
+
+impl FakeDocker {
+    fn streams(&self) -> std::sync::MutexGuard<'_, FakeStreams> {
+        self.streams.lock().unwrap()
+    }
+
+    pub fn emit_event(&self, e: DockerEvent) {
+        self.streams()
+            .events
+            .retain(|tx| tx.send(Ok(e.clone())).is_ok());
+    }
+
+    /// Event streams currently open (not yet dropped by their consumer).
+    pub fn open_event_streams(&self) -> usize {
+        let mut s = self.streams();
+        s.events.retain(|tx| !tx.is_closed());
+        s.events.len()
+    }
+
+    /// Ends every open events stream, as a daemon restart would.
+    pub fn end_event_streams(&self) {
+        self.streams().events.clear();
+    }
+
+    pub fn emit_stats(&self, id: &str, s: StatsSample) {
+        self.streams()
+            .stats
+            .retain(|(i, tx)| i != id || tx.send(Ok(s.clone())).is_ok());
+    }
+
+    pub fn open_stats(&self, id: &str) -> usize {
+        let mut s = self.streams();
+        s.stats.retain(|(_, tx)| !tx.is_closed());
+        s.stats.iter().filter(|(i, _)| i == id).count()
+    }
+
+    pub fn end_stats(&self, id: &str) {
+        self.streams().stats.retain(|(i, _)| i != id);
+    }
+
+    pub fn set_logs(&self, id: &str, lines: Vec<LogLine>) {
+        self.streams().logs.insert(id.into(), lines);
+    }
+
+    pub fn emit_log(&self, id: &str, line: LogLine) {
+        self.streams()
+            .follow
+            .retain(|(i, tx)| i != id || tx.send(Ok(line.clone())).is_ok());
+    }
+}
+
+pub fn line(stream: LogStream, text: &str) -> LogLine {
+    LogLine {
+        stream,
+        text: text.into(),
+    }
+}
+
+/// Chunks pulled from the `flood` exec so far, across all sessions.
+pub static FLOOD_CHUNKS: AtomicUsize = AtomicUsize::new(0);
+pub const FLOOD_CHUNK: usize = 16 * 1024;
+
+#[async_trait]
+impl StreamOps for FakeDocker {
+    fn events(&self) -> BoxStream<DockerEvent> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.streams().events.push(tx);
+        rx_stream(rx)
+    }
+
+    fn stats(&self, id: &str) -> BoxStream<StatsSample> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.streams().stats.push((id.into(), tx));
+        rx_stream(rx)
+    }
+
+    fn logs(&self, id: &str, opts: &LogOptions) -> BoxStream<LogLine> {
+        let mut preset: Vec<LogLine> = self
+            .streams()
+            .logs
+            .get(id)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|l| match l.stream {
+                LogStream::Stdout => opts.stdout,
+                LogStream::Stderr => opts.stderr,
+            })
+            .collect();
+        if let Some(n) = opts.tail {
+            let skip = preset.len().saturating_sub(n as usize);
+            preset.drain(..skip);
+        }
+        let head = stream::iter(preset.into_iter().map(Ok));
+        if opts.follow {
+            let (tx, rx) = mpsc::unbounded_channel();
+            self.streams().follow.push((id.into(), tx));
+            Box::pin(head.chain(rx_stream(rx)))
+        } else {
+            Box::pin(head)
+        }
+    }
+
+    /// Echoes input back as `echo:<input>`; `exit\n` ends the session with
+    /// code 0. The command `flood` streams output forever, lazily.
+    async fn exec_start(&self, id: &str, opts: &ExecOptions) -> Result<ExecSession> {
+        self.container(id)
+            .ok_or_else(|| not_found("container", id))?;
+        let exec_id = {
+            let mut s = self.streams();
+            s.execs += 1;
+            format!("exec{}", s.execs)
+        };
+        self.call(format!("exec {id} {}", opts.command().join(" ")));
+        let (input, mut input_rx) = mpsc::channel::<Vec<u8>>(64);
+        if opts.cmd.as_deref() == Some(&["flood".to_string()][..]) {
+            let output = stream::repeat_with(|| {
+                FLOOD_CHUNKS.fetch_add(1, Ordering::SeqCst);
+                Ok(vec![b'x'; FLOOD_CHUNK])
+            });
+            return Ok(ExecSession {
+                exec_id,
+                output: Box::pin(output),
+                input,
+            });
+        }
+        let (out_tx, out_rx) = mpsc::unbounded_channel();
+        let _ = out_tx.send(Ok(b"$ ".to_vec()));
+        tokio::spawn(async move {
+            while let Some(buf) = input_rx.recv().await {
+                if buf == b"exit\n" {
+                    break;
+                }
+                let mut echo = b"echo:".to_vec();
+                echo.extend(buf);
+                if out_tx.send(Ok(echo)).is_err() {
+                    break;
+                }
+            }
+        });
+        Ok(ExecSession {
+            exec_id,
+            output: rx_stream(out_rx),
+            input,
+        })
+    }
+
+    async fn exec_resize(&self, exec_id: &str, cols: u16, rows: u16) -> Result<()> {
+        self.streams().resizes.push((exec_id.into(), cols, rows));
+        Ok(())
+    }
+
+    async fn exec_exit_code(&self, _exec_id: &str) -> Result<Option<i64>> {
+        Ok(Some(0))
+    }
+
+    /// `missing` fails with Docker's 404. While `hold_pulls` is set, a pull
+    /// sends its first message and then waits for `release_pulls`.
+    fn pull_image(&self, image: &str, tag: &str) -> BoxStream<Value> {
+        let reference = format!("{image}:{tag}");
+        self.streams().pulls.push(reference.clone());
+        let hold = self.hold_pulls.load(Ordering::SeqCst);
+        let release = self.release_pulls.clone();
+        let missing = image == "missing";
+        Box::pin(
+            stream::iter([Ok(json!({"status": format!("Pulling from {image}")}))]).chain(
+                stream::once(async move {
+                    if hold {
+                        release.notified().await;
+                    }
+                    if missing {
+                        vec![Err(Error::Upstream {
+                            status: 404,
+                            message: "manifest unknown".into(),
+                        })]
+                    } else {
+                        vec![
+                            Ok(json!({"status": "Download complete", "id": "layer1"})),
+                            Ok(json!({"status": format!("Status: Downloaded newer image for {reference}")})),
+                        ]
+                    }
+                })
+                .flat_map(stream::iter),
+            ),
+        )
+    }
+
+    /// A Dockerfile containing `fail` fails the way a failing RUN step does.
+    fn build_image(&self, spec: BuildSpec) -> BoxStream<Value> {
+        let fails = matches!(&spec.context, BuildContext::Dockerfile(d) if String::from_utf8_lossy(d).contains("fail"));
+        self.streams().builds.push(spec);
+        let tail = if fails {
+            Ok(
+                json!({"errorDetail": {"message": "The command '/bin/sh -c fail' returned a non-zero code: 1"}}),
+            )
+        } else {
+            Ok(json!({"aux": {"ID": "sha256:built"}}))
+        };
+        Box::pin(stream::iter([
+            Ok(json!({"stream": "Step 1/1 : FROM alpine\n"})),
+            tail,
+        ]))
     }
 }

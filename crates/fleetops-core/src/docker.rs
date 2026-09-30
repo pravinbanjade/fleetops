@@ -346,6 +346,12 @@ pub trait NetworkOps: Send + Sync {
 }
 
 /// Everything a Docker-kind environment can do.
-pub trait DockerOps: SystemOps + ContainerOps + ImageOps + VolumeOps + NetworkOps {}
+pub trait DockerOps:
+    SystemOps + ContainerOps + ImageOps + VolumeOps + NetworkOps + crate::streams::StreamOps
+{
+}
 
-impl<T: SystemOps + ContainerOps + ImageOps + VolumeOps + NetworkOps> DockerOps for T {}
+impl<T> DockerOps for T where
+    T: SystemOps + ContainerOps + ImageOps + VolumeOps + NetworkOps + crate::streams::StreamOps
+{
+}
