@@ -1,5 +1,6 @@
-//! rust-embed needs web/dist to exist at compile time. Until the web UI is
-//! built (plan P3), write a placeholder page so the server still compiles.
+//! rust-embed needs web/dist to exist at compile time. When the web UI has
+//! not been built (`make web`), write a placeholder page so the server
+//! still compiles.
 use std::{fs, path::PathBuf};
 
 const PLACEHOLDER: &str = "<!doctype html><html><head><meta charset=\"utf-8\"><title>FleetOps</title></head>\
