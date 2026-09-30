@@ -47,6 +47,11 @@ export function LogView({ buffer, version, timestamps, wrap, follow, onFollowCha
     getItemKey: (i) => buffer.at(i)?.seq ?? i,
   });
 
+  // Heights measured while wrapping are stale once it is turned off (and the reverse).
+  useLayoutEffect(() => {
+    v.measure();
+  }, [wrap, v]);
+
   useLayoutEffect(() => {
     if (follow && count > 0) v.scrollToIndex(count - 1, { align: "end" });
   }, [follow, version, count, v]);

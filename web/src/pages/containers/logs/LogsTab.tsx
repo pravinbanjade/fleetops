@@ -32,13 +32,25 @@ const SINCE = [
  * The container's log, live: tail and time range, streams, timestamps,
  * wrapping and follow, search, and download.
  */
-export function LogsTab({ env, id, name, running }: { env: string; id: string; name: string; running: boolean }) {
+export function LogsTab({
+  env,
+  id,
+  name,
+  running,
+  startedAt,
+}: {
+  env: string;
+  id: string;
+  name: string;
+  running: boolean;
+  startedAt?: string;
+}) {
   const [query, setQuery] = useState<LogQuery>(DEFAULT_QUERY);
   const [since, setSince] = useState("");
   const [timestamps, setTimestamps] = useState(false);
   const [wrap, setWrap] = useState(false);
   const [follow, setFollow] = useState(true);
-  const { buffer, version, state, clear } = useLogStream(env, id, query, running);
+  const { buffer, version, state, clear } = useLogStream(env, id, query, startedAt);
   const change = (q: Partial<LogQuery>) => setQuery({ ...query, ...q });
   const search = useSearch(buffer, version);
   const jump = (dir: 1 | -1) => {
@@ -245,6 +257,11 @@ function FullDownload({
     if (!ws) return;
     setBusy(true);
     const all = new LogBuffer(Infinity);
+    let skipped = 0;
+    const finish = () => {
+      pending.current = null;
+      setBusy(false);
+    };
     pending.current = ws.subscribe(
       {
         topic: "logs",
@@ -254,18 +271,26 @@ function FullDownload({
       },
       {
         onData: (d) => all.append(d as LogLine[]),
-        onGap: (n) => all.gap(n),
+        onGap: (n) => {
+          skipped += n;
+          all.gap(n);
+        },
         onEnd: () => {
-          pending.current = null;
-          setBusy(false);
+          finish();
           saveText(`${name}.log`, logText(all.entries(), timestamps));
+          if (skipped) toast.warning(`Saved the log, but ${skipped} lines were skipped because the browser fell behind.`);
         },
         onError: (m) => {
-          pending.current = null;
-          setBusy(false);
+          finish();
           toast.error(`Could not download the log: ${m.message}`);
         },
+        onLost: () => {
+          finish();
+          toast.error("The connection dropped, so the download was cancelled.");
+        },
       },
+      // Sent again after a reconnect, it would append the whole log a second time.
+      { resubscribe: false },
     ).unsubscribe;
   };
   return (

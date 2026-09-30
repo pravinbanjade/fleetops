@@ -130,6 +130,61 @@ describe("logs tab", () => {
     expect((log.firstElementChild as HTMLElement).style.height).toBe(`${200_000 * 20}px`);
   });
 
+  it("lays rows out at the fixed height again after wrapping is turned off", async () => {
+    const { screen, log, sock, sub } = await openLogs();
+    act(() => sock.receive({ sub, type: "data", data: [at(1, "a"), at(2, "b"), at(3, "c")] }));
+    await within(log).findByText("c");
+    // Wrapped rows are measured; jsdom measures them as 0px tall.
+    await userEvent.click(screen.getByRole("checkbox", { name: "Wrap lines" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Wrap lines" }));
+    const tops = [...log.querySelectorAll<HTMLElement>("[data-index]")].map((r) => r.style.transform);
+    expect(tops).toEqual(["translateY(0px)", "translateY(20px)", "translateY(40px)"]);
+  });
+
+  it("follows a restart it never saw as stopped", async () => {
+    let body = WEB;
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers/c1": () => json(200, body) });
+    const { screen } = renderApp("/envs/local/containers/c1?tab=logs");
+    const log = await screen.findByRole("log", { name: "Container logs" });
+    const { sock, sub } = await logsSub();
+    act(() => {
+      sock.receive({ sub, type: "data", data: [at(1, "first run")] });
+      sock.receive({ sub, type: "end", reason: "eof" });
+    });
+    // The refetch after `die` and `start` lands once it is running again.
+    body = inspect({
+      Id: "c1abcdef0123456789",
+      Name: "/web",
+      State: { Status: "running", Running: true, StartedAt: "2026-09-30T10:05:00Z", ExitCode: 0 },
+    });
+    const events = sock.frames().find((f) => f.topic === "events").sub;
+    act(() =>
+      sock.receive({ sub: events, type: "data", data: { kind: "container", action: "start", id: "c1", attributes: {}, time: 2 } }),
+    );
+    const next = await logsSub(sock, sub);
+    act(() => sock.receive({ sub: next.sub, type: "data", data: [at(1, "first run"), at(9, "second run")] }));
+    await within(log).findByText("second run");
+    expect(within(log).getAllByText("first run")).toHaveLength(1);
+    expect(screen.queryByText("The log stream ended.")).toBeNull();
+  });
+
+  it("resumes from the last line held, not from the tail, so nothing logged meanwhile is missed", async () => {
+    const { log, sock, sub } = await openLogs();
+    act(() => sock.receive({ sub, type: "data", data: [at(1, "one"), at(2, "two")] }));
+    await within(log).findByText("two");
+    act(() => sock.drop());
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2), { timeout: 2000 });
+    const again = await logsSub(FakeWebSocket.latest());
+    expect(again.opts).toEqual({
+      follow: true,
+      timestamps: true,
+      tail: null,
+      since: Math.floor(Date.parse("2026-09-30T10:00:02Z") / 1000),
+      stdout: true,
+      stderr: true,
+    });
+  });
+
   it("marks lines the server skipped", async () => {
     const { log, sock, sub } = await openLogs();
     act(() => {
@@ -269,6 +324,37 @@ describe("logs download", () => {
     });
     await waitFor(() => expect(saved).toHaveLength(1));
     expect(await saved[0].blob.text()).toBe("2026-09-30T10:00:01.000000001Z first ever\n");
+    expect(screen.getByRole("button", { name: "Download full log" })).toBeEnabled();
+  });
+
+  it("says when a full download is missing lines the server skipped", async () => {
+    const saved = captureDownloads();
+    const { screen, sock, sub } = await openLogs();
+    await userEvent.click(screen.getByRole("button", { name: "Download full log" }));
+    const full = await logsSub(sock, sub);
+    act(() => {
+      sock.receive({ sub: full.sub, type: "data", data: [at(1, "early")] });
+      sock.receive({ sub: full.sub, type: "gap", dropped: 30 });
+      sock.receive({ sub: full.sub, type: "end", reason: "eof" });
+    });
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(await screen.findByText("Saved the log, but 30 lines were skipped because the browser fell behind.")).toBeInTheDocument();
+  });
+
+  it("cancels a full download when the connection drops, instead of starting it over", async () => {
+    const saved = captureDownloads();
+    const { screen, sock, sub } = await openLogs();
+    await userEvent.click(screen.getByRole("button", { name: "Download full log" }));
+    const full = await logsSub(sock, sub);
+    act(() => sock.receive({ sub: full.sub, type: "data", data: [at(1, "partial")] }));
+    act(() => sock.drop());
+    expect(await screen.findByText("The connection dropped, so the download was cancelled.")).toBeInTheDocument();
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2), { timeout: 2000 });
+    const next = FakeWebSocket.latest();
+    act(() => next.open());
+    await waitFor(() => expect(next.frames().some((f) => f.topic === "logs")).toBe(true));
+    expect(next.frames().filter((f) => f.topic === "logs" && f.opts.follow === false)).toEqual([]);
+    expect(saved).toEqual([]);
     expect(screen.getByRole("button", { name: "Download full log" })).toBeEnabled();
   });
 

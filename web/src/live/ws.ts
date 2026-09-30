@@ -19,8 +19,12 @@ export interface SubHandlers {
   onEnd?(msg: EndMsg): void;
   /** The server refused or failed the subscription; it is no longer active. */
   onError?(msg: ErrorMsg): void;
-  /** The connection was re-established and the subscription sent again. */
-  onResubscribe?(): void;
+  /**
+   * The connection was re-established and the subscription is about to be
+   * sent again. Returning a spec sends that instead, from then on: a log
+   * can ask to start after the last line it holds.
+   */
+  onResubscribe?(): SubSpec | void;
   /**
    * The connection dropped and, because it was made with
    * `resubscribe: false`, the subscription is over.
@@ -164,9 +168,9 @@ export class WsClient {
       this.opened = true;
       this.attempt = 0;
       this.opts.onState?.("open");
-      for (const [sub, { spec, handlers }] of this.subs) {
-        this.sendSub(sub, spec);
-        if (reconnect) handlers.onResubscribe?.();
+      for (const [sub, active] of this.subs) {
+        if (reconnect) active.spec = active.handlers.onResubscribe?.() ?? active.spec;
+        this.sendSub(sub, active.spec);
       }
       if (reconnect) this.opts.onReconnect?.();
     };

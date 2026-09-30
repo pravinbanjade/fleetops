@@ -51,6 +51,7 @@ export class LogBuffer {
   private head = 0;
   private nextSeq = 0;
   private lastKey: string | null = null;
+  private lastTs: string | null = null;
   private resumeAfter: string | null = null;
   /** Bumped on every change, for React to notice. */
   version = 0;
@@ -89,6 +90,7 @@ export class LogBuffer {
           this.resumeAfter = null;
         }
         this.lastKey = key;
+        this.lastTs = ts;
       }
       this.push({ seq: this.nextSeq, stream: l.stream, ts, text });
       changed = true;
@@ -99,6 +101,17 @@ export class LogBuffer {
   gap(dropped: number) {
     this.push({ seq: this.nextSeq, stream: "gap", ts: null, text: "", dropped });
     this.version++;
+  }
+
+  /**
+   * Unix seconds to ask the server for so nothing after the last line held
+   * is missed, or null when no timestamped line is held. The second is
+   * rounded down; `resume()` drops the overlap.
+   */
+  get resumeSince(): number | null {
+    if (!this.lastTs) return null;
+    const ms = Date.parse(this.lastTs);
+    return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
   }
 
   /** Skips replayed lines on the next append (see the class comment). */
@@ -120,6 +133,7 @@ export class LogBuffer {
   reset() {
     this.clear();
     this.lastKey = null;
+    this.lastTs = null;
     this.resumeAfter = null;
   }
 
