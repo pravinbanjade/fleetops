@@ -1,6 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate, useParams } from "@tanstack/react-router";
-import { Boxes, ChevronsUpDown, Database, Layers, LayoutDashboard, Network, Rows3, LogOut, Monitor, Moon, Sun, User } from "lucide-react";
+import {
+  Boxes,
+  ChevronsUpDown,
+  Database,
+  Layers,
+  LayoutDashboard,
+  LogOut,
+  Monitor,
+  Moon,
+  Network,
+  Rows3,
+  Server,
+  Sun,
+  User,
+  Users,
+} from "lucide-react";
 import { envsQuery, envStatusQuery } from "@/api/queries";
 import { useLogout, useSession } from "@/auth/session";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +32,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { useTheme, type Theme } from "@/theme";
+
+const LINK =
+  "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent data-[status=active]:bg-accent data-[status=active]:font-medium";
+
+/** Administration pages, shown to admins. */
+const ADMIN_NAV = [
+  { to: "/admin/users", label: "Users", icon: Users },
+  { to: "/admin/envs", label: "Environments", icon: Server },
+] as const;
 
 /** The environment-scoped pages, in sidebar order. */
 const NAV = [
@@ -45,7 +69,7 @@ export function Shell() {
                 to={to}
                 params={{ env }}
                 activeOptions={{ exact: to === "/envs/$env" }}
-                className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent data-[status=active]:bg-accent data-[status=active]:font-medium"
+                className={LINK}
               >
                 <Icon className="size-4" />
                 {label}
@@ -53,6 +77,7 @@ export function Shell() {
             ))}
           </nav>
         )}
+        <AdminNav />
         <div className="mt-auto">
           <UserMenu />
         </div>
@@ -63,6 +88,22 @@ export function Shell() {
         <Outlet />
       </main>
     </div>
+  );
+}
+
+function AdminNav() {
+  const { user } = useSession();
+  if (user.role !== "admin") return null;
+  return (
+    <nav className="grid gap-1" aria-label="Administration">
+      <div className="px-2 text-xs font-medium text-muted-foreground">Administration</div>
+      {ADMIN_NAV.map(({ to, label, icon: Icon }) => (
+        <Link key={to} to={to} className={LINK}>
+          <Icon className="size-4" />
+          {label}
+        </Link>
+      ))}
+    </nav>
   );
 }
 

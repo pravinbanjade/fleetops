@@ -189,6 +189,29 @@ const composeRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/compose/ComposePage"), "ComposePage"),
 });
 
+/** Administration: admins only; anyone else is sent to the start page. */
+const adminRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/admin",
+  beforeLoad: async ({ context }) => {
+    const me = await context.queryClient.ensureQueryData(meQuery);
+    if (me.user.role !== "admin") throw redirect({ to: "/" });
+  },
+  component: Outlet,
+});
+
+const usersRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "users",
+  component: lazyRouteComponent(() => import("@/pages/admin/UsersPage"), "UsersPage"),
+});
+
+const envsAdminRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "envs",
+  component: lazyRouteComponent(() => import("@/pages/admin/EnvironmentsPage"), "EnvironmentsPage"),
+});
+
 const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
@@ -198,7 +221,10 @@ const accountRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
-  authedRoute.addChildren([indexRoute, shellRoute.addChildren([envRoute.addChildren([
+  authedRoute.addChildren([
+    indexRoute,
+    shellRoute.addChildren([
+      envRoute.addChildren([
         dashboardRoute,
         containersRoute,
         newContainerRoute,
@@ -211,7 +237,11 @@ const routeTree = rootRoute.addChildren([
         networksRoute,
         networkRoute,
         composeRoute,
-      ]), accountRoute])]),
+      ]),
+      adminRoute.addChildren([usersRoute, envsAdminRoute]),
+      accountRoute,
+    ]),
+  ]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {

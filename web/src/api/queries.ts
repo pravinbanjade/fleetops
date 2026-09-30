@@ -20,6 +20,7 @@ import {
   listImages,
   listNetworks,
   listSessions,
+  listUsers,
   listVolumes,
 } from "./gen/sdk.gen";
 import type { DockerEvent } from "./gen/types.gen";
@@ -34,6 +35,8 @@ export const keys = {
   me: ["auth", "me"] as const,
   sessions: ["auth", "sessions"] as const,
   envs: ["envs"] as const,
+  users: ["users"] as const,
+  audit: ["audit"] as const,
   env: (env: string) => ["env", env] as const,
   envStatus: (env: string) => ["env", env, "status"] as const,
   info: (env: string) => ["env", env, "info"] as const,
@@ -81,6 +84,11 @@ export const sessionsQuery = queryOptions({
 export const envsQuery = queryOptions({
   queryKey: keys.envs,
   queryFn: async () => (await listEnvs()).data,
+});
+
+export const usersQuery = queryOptions({
+  queryKey: keys.users,
+  queryFn: async () => (await listUsers()).data,
 });
 
 const path = (env: string) => ({ path: { env } });
