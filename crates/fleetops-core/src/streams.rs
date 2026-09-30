@@ -8,11 +8,12 @@ use futures_util::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeMap, pin::Pin};
+use utoipa::ToSchema;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = Result<T>> + Send>>;
 
 /// One Docker event, reduced to what the UI needs to patch its caches.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct DockerEvent {
     /// container | image | volume | network | daemon | ...
     pub kind: String,
@@ -28,7 +29,7 @@ pub struct DockerEvent {
 
 /// One stats sample for a container, with CPU already turned into a
 /// percentage of one core times the number of cores (as `docker stats`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct StatsSample {
     /// Unix milliseconds.
     pub time: i64,
@@ -42,14 +43,14 @@ pub struct StatsSample {
     pub pids: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum LogStream {
     Stdout,
     Stderr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct LogLine {
     pub stream: LogStream,
     /// One line without its trailing newline. With `timestamps`, Docker's
@@ -59,7 +60,7 @@ pub struct LogLine {
 
 pub const LOG_TAIL_DEFAULT: u32 = 1000;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct LogOptions {
     pub follow: bool,
@@ -85,7 +86,7 @@ impl Default for LogOptions {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ExecOptions {
     /// `None` auto-detects a shell (bash, falling back to sh).

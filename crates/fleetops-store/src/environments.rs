@@ -1,8 +1,9 @@
 use crate::{db_err, Store};
 use fleetops_core::{Error, Result};
 use serde::Serialize;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow, ToSchema)]
 pub struct EnvironmentRecord {
     pub id: i64,
     pub name: String,

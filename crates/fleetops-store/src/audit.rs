@@ -2,6 +2,7 @@ use crate::{db_err, Store};
 use fleetops_core::{Error, Result};
 use serde::Serialize;
 use serde_json::Value;
+use utoipa::ToSchema;
 
 pub struct NewAudit<'a> {
     pub ts: i64,
@@ -14,7 +15,7 @@ pub struct NewAudit<'a> {
     pub detail: Option<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
 pub struct AuditEntry {
     pub id: i64,
     pub ts: i64,
