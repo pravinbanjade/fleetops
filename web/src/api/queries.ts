@@ -1,11 +1,13 @@
 import { queryOptions } from "@tanstack/react-query";
-import { setCsrfToken } from "./client";
+import { ApiError, setCsrfToken } from "./client";
+import type { ContainerInspect } from "./docker";
 import {
   getAuthStatus,
   getDiskUsage,
   getEngineInfo,
   getEnvStatus,
   getMe,
+  inspectContainer,
   listContainers,
   listEnvs,
   listImages,
@@ -88,6 +90,17 @@ export const dfQuery = (env: string) =>
 
 export const containersQuery = (env: string) =>
   queryOptions({ queryKey: keys.containers(env), queryFn: async () => (await listContainers(path(env))).data });
+
+/** Retry a failed detail query once, but not when the resource is gone. */
+const retryUnlessGone = (failures: number, err: unknown) =>
+  !(err instanceof ApiError && err.status === 404) && failures < 1;
+
+export const containerQuery = (env: string, id: string) =>
+  queryOptions({
+    queryKey: keys.container(env, id),
+    queryFn: async () => (await inspectContainer({ path: { env, id } })).data as unknown as ContainerInspect,
+    retry: retryUnlessGone,
+  });
 
 export const imagesQuery = (env: string) =>
   queryOptions({ queryKey: keys.images(env), queryFn: async () => (await listImages(path(env))).data });

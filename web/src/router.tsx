@@ -14,6 +14,7 @@ import { Shell } from "@/components/Shell";
 import { LiveProvider } from "@/live/LiveProvider";
 import { LoginPage } from "@/pages/LoginPage";
 import { NoEnvironmentsPage, NotFoundPage } from "@/pages/misc";
+import { CONTAINER_TABS, type ContainerTab } from "@/pages/containers/tabs";
 import { SetupPage } from "@/pages/SetupPage";
 
 export interface RouterContext {
@@ -118,6 +119,15 @@ const containersRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/containers/ContainersPage"), "ContainersPage"),
 });
 
+const containerRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "containers/$id",
+  validateSearch: (s: Record<string, unknown>): { tab?: ContainerTab } => ({
+    tab: CONTAINER_TABS.find((t) => t === s.tab),
+  }),
+  component: lazyRouteComponent(() => import("@/pages/containers/ContainerPage"), "ContainerPage"),
+});
+
 const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
@@ -127,7 +137,7 @@ const accountRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
-  authedRoute.addChildren([indexRoute, shellRoute.addChildren([envRoute.addChildren([dashboardRoute, containersRoute]), accountRoute])]),
+  authedRoute.addChildren([indexRoute, shellRoute.addChildren([envRoute.addChildren([dashboardRoute, containersRoute, containerRoute]), accountRoute])]),
 ]);
 
 export function createAppRouter(queryClient: QueryClient, history?: RouterHistory) {

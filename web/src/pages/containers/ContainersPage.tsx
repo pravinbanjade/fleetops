@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { containersQuery, keys } from "@/api/queries";
@@ -17,12 +17,20 @@ import { ACTIONS, RemoveDialog } from "./actions";
 
 const col = columns<ContainerSummary>();
 
-function containerColumns(): Column<ContainerSummary>[] {
+function containerColumns(env: string): Column<ContainerSummary>[] {
   return [
     col.accessor("name", {
       header: "Name",
       enableHiding: false,
-      cell: (c) => <span className="font-medium">{c.getValue()}</span>,
+      cell: (c) => (
+        <Link
+          to="/envs/$env/containers/$id"
+          params={{ env, id: c.row.original.id }}
+          className="font-medium hover:underline"
+        >
+          {c.getValue()}
+        </Link>
+      ),
     }),
     col.accessor("image", {
       header: "Image",
@@ -69,7 +77,7 @@ export function ContainersPage() {
   const { env } = useParams({ from: "/authed/shell/envs/$env/containers" });
   const qc = useQueryClient();
   const list = useQuery(containersQuery(env));
-  const [cols] = useState(() => containerColumns());
+  const [cols] = useState(() => containerColumns(env));
   const [removing, setRemoving] = useState<ContainerSummary[] | null>(null);
   const [pruning, setPruning] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: keys.containers(env) });
