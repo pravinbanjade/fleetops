@@ -25,7 +25,9 @@ export function KubeOverviewPage({ env }: { env: string }) {
           </div>
           <div className="rounded-lg border p-4">
             <dt className="text-xs text-muted-foreground">Nodes</dt>
-            <dd className="text-lg">{version.nodes_ready} of {version.nodes} nodes ready</dd>
+            <dd className="text-lg">
+              {version.nodes == null ? "Not visible to these credentials" : `${version.nodes_ready} of ${version.nodes} nodes ready`}
+            </dd>
           </div>
           <div className="rounded-lg border p-4">
             <dt className="text-xs text-muted-foreground">Pods</dt>

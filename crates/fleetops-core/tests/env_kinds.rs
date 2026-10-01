@@ -35,8 +35,8 @@ fn an_up_status_tags_its_version() {
         version: EnvVersion::Kube(KubeVersion {
             git_version: "v1.32.0".into(),
             platform: "linux/amd64".into(),
-            nodes: 3,
-            nodes_ready: 2,
+            nodes: Some(3),
+            nodes_ready: Some(2),
         }),
     };
     assert_eq!(

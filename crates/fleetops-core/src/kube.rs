@@ -198,8 +198,9 @@ pub struct KubeEvent {
 pub struct KubeVersion {
     pub git_version: String,
     pub platform: String,
-    pub nodes: u32,
-    pub nodes_ready: u32,
+    /// `None` when the credentials may not list nodes.
+    pub nodes: Option<u32>,
+    pub nodes_ready: Option<u32>,
 }
 
 /// A running TTY exec in a pod.
