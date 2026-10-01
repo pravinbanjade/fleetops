@@ -9,7 +9,7 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 3).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0: the backend, the web UI, end-to-end tests, the container image and CI. Next is sub-project 2, the agent for managing more than one host.
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Next is sub-project 3, stacks and GitOps.
 
 ## Contents
 
@@ -49,6 +49,13 @@ What sets it apart:
 - **Volumes.** List, create with driver options, inspect, remove and prune.
 - **Networks.** List, create (subnet, gateway, internal, attachable), connect or disconnect containers, remove and prune.
 - **Compose projects.** Containers grouped by project, with start, stop, restart and down.
+
+**Remote hosts**
+- **Dial-out agent.** `fleetops-agent` runs on each remote host and connects out to the server, so the host opens no port and never exposes its Docker socket.
+- **One-time join command.** Admin → Environments → Add → Agent gives a `docker run` command with a 15-minute, single-use join token. The agent swaps it for its own key on first connect.
+- **Live state.** Agent environments show as online, offline (with when they were last seen) or waiting, and switch live as agents connect and drop.
+- **Key rotation.** Rotating an agent's key disconnects it and issues a new join command. Deleting the environment revokes the agent.
+- **Everything works remotely.** Lists, live events, logs, terminal, stats, files and image builds work on agent environments exactly as on the local one.
 
 **Interface**
 - Command palette (⌘K / Ctrl-K) to jump to any resource or run an action on it.
@@ -111,6 +118,14 @@ The container reaches the socket through the group that owns it, which `--group-
 
 `make image-smoke` starts the image against the local daemon and checks that it serves the UI and can reach Docker.
 
+### Add a remote host
+
+1. In **Admin → Environments**, choose **Add environment → Agent on a remote host** and name it.
+2. Run the command it shows on the remote host. It starts `ghcr.io/pravinbanjade/fleetops-agent` with the host's Docker socket and a `fleetops-agent` volume for its key.
+3. The environment shows as online within a few seconds.
+
+The agent must reach the server over HTTPS (start the server with `--tls-bind`). Plain HTTP is accepted only from the same machine. For a self-signed certificate, mount it into the agent and pass `--ca /ca.pem`. Agent flags: `--server`, `--join-token` (first start only), `--data` (default `/data`), `--docker` (default `unix:///var/run/docker.sock`), `--ca`, `--log`; each has a `FLEETOPS_AGENT_*` variable.
+
 ## Configuration
 
 Configuration comes from CLI flags or environment variables. There is no config file.
@@ -140,16 +155,18 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 |---|---|
 | `make dev` | Runs `dev-server` and `dev-web` together |
 | `make test` | `cargo test --workspace`, which uses mocks and needs no Docker |
-| `make test-docker` | Integration tests against the current docker context's daemon (`docker-it` feature) |
+| `make test-docker` | Integration tests against the current docker context's daemon (`docker-it` feature); the Docker suite runs a second time through an agent tunnel |
 | `make test-web` | Web typecheck, lint, vitest, and a check that the generated API client matches the OpenAPI document |
-| `make e2e` | `make build`, then the Playwright end-to-end test in Chromium against the current docker context's daemon |
-| `make rss-bench` | `make build`, then checks idle RSS stays under 50 MiB with 50 containers on the current docker context's daemon (`COUNT`, `LIMIT_MIB` override) |
+| `make e2e` | `make build` and the agent, then the Playwright end-to-end tests in Chromium against the current docker context's daemon |
+| `make rss-bench` | `make build`, then checks idle RSS stays under 50 MiB with 50 containers, under 50 MiB + 1 MiB per agent with 10 agents, and under 15 MiB per agent (`COUNT`, `LIMIT_MIB`, `AGENTS`, `AGENT_LIMIT_MIB` override) |
 | `make lint` | `cargo fmt --check` and `clippy -D warnings` |
 | `make fmt` | `cargo fmt --all` |
 | `make web` | Builds the UI into `web/dist` |
 | `make build` | `make web`, then a release build of the `fleetops` binary |
 | `make image` | Builds the `fleetops:dev` container image for linux/amd64 and linux/arm64 (`IMAGE` and `PLATFORMS` override) |
+| `make image-agent` | Builds the `fleetops-agent:dev` image (`AGENT_IMAGE` and `PLATFORMS` override) |
 | `make image-smoke` | Runs `$(IMAGE)` against the local daemon and checks the UI, the non-root user and Docker access |
+| `make agent-smoke` | Runs `$(IMAGE)` and `$(AGENT_IMAGE)` together and checks that the agent enrolls and its environment reaches Docker |
 | `make openapi` | Regenerates `crates/fleetops-api/openapi.json` and the TypeScript client after an API change |
 
 ### Notes
@@ -157,9 +174,9 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 - **Building without the UI.** `cargo build` works without `web/dist`. The server's `build.rs` writes a placeholder page, and the API still works under `/api/v1`.
 - **After changing the API,** run `make openapi` and commit both generated files. `cargo test` and `make test-web` fail until the committed document and client match the code.
 - **The integration tests** (`make test-docker`) create and remove their own labelled resources. Run them against a daemon where that's acceptable.
-- **The end-to-end test** (`make e2e`) starts the server on `127.0.0.1:9123` with an empty data directory (`web/e2e-data`). It pulls `busybox:1.37`, and creates and then removes one container named `fleetops-e2e-*`. It leaves the image in place. On failure, `pnpm -C web exec playwright show-trace` opens the trace saved under `web/test-results`.
-- **CI** (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull requests: `make lint test`, `make test-docker`, `make test-web`, `make e2e`, `make rss-bench`, and the image build for both platforms followed by `make image-smoke`.
-- **Releases** (`.github/workflows/release.yml`) run on a `vX.Y.Z` tag that matches the workspace version in `Cargo.toml`. They push the image to GHCR and publish the binaries to a GitHub release.
+- **The end-to-end test** (`make e2e`) starts the server on `127.0.0.1:9123` with an empty data directory (`web/e2e-data`). It pulls `busybox:1.37`, and creates and then removes containers named `fleetops-e2e-*`; the second spec enrolls a real `fleetops-agent` against the same daemon. It leaves the image in place. On failure, `pnpm -C web exec playwright show-trace` opens the trace saved under `web/test-results`.
+- **CI** (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull requests: `make lint test`, `make test-docker`, `make test-web`, `make e2e`, `make rss-bench`, and the server and agent image builds for both platforms followed by `make image-smoke` and `make agent-smoke`.
+- **Releases** (`.github/workflows/release.yml`) run on a `vX.Y.Z` tag that matches the workspace version in `Cargo.toml`. They push the server and agent images to GHCR and publish both binaries to a GitHub release.
 - **TDD.** New behaviour starts with a failing test.
 
 ### Design documents
@@ -167,7 +184,8 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 Design documents live in `docs/superpowers/`:
 
 - `specs/2026-09-29-fleetops-core-docker-design.md` is the sub-project 1 design and the authority for behaviour.
-- `plans/` holds the implementation plans, one per phase (P1, P2a–c, P3a–d).
+- `specs/2026-10-01-fleetops-agent-multihost-design.md` is the sub-project 2 (agent) design.
+- `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), and one for sub-project 2.
 
 ## Architecture
 
@@ -177,15 +195,18 @@ fleetops/
 │  ├─ fleetops-server/   bin `fleetops`: CLI and config, startup, TLS, maintenance jobs, embeds web/dist
 │  ├─ fleetops-api/      axum router, handlers, auth and CSRF, authz, audit, websocket hub, OpenAPI (utoipa)
 │  ├─ fleetops-core/     domain types, the Environment and DockerOps traits, errors, recreate planning; no I/O
-│  ├─ fleetops-docker/   bollard-backed implementation of the core traits (LocalDocker)
+│  ├─ fleetops-docker/   bollard-backed implementation of the core traits (LocalDocker, AgentDockerEnv)
+│  ├─ fleetops-tunnel/   yamux over a WebSocket, the agent control protocol, the live-session registry
+│  ├─ fleetops-agent/    bin `fleetops-agent`: dial-out, key storage, byte pipe to the host's Docker socket
 │  └─ fleetops-store/    sqlx + SQLite: migrations and repositories (users, sessions, environments, settings, audit)
 ├─ web/                  React 19 + TypeScript + Vite
 │  └─ src/api/gen/       client generated from the OpenAPI document
 └─ docs/superpowers/     specs and plans
 ```
 
-- **Environments.** Every Docker route is scoped to an environment (`/envs/{env}/…`). Handlers resolve the environment through an `EnvRegistry` and call the `DockerOps` trait. They never call bollard directly. Sub-project 1 ships `LocalDocker`. The agent (sub-project 2) and Kubernetes (sub-project 4) will add more environment kinds without changes to the handlers.
+- **Environments.** Every Docker route is scoped to an environment (`/envs/{env}/…`). Handlers resolve the environment through an `EnvRegistry` and call the `DockerOps` trait. They never call bollard directly. Local environments use `LocalDocker` on a socket; agent environments (`docker-agent`) use the same `LocalDocker` over a tunnel. Kubernetes (sub-project 4) will add another kind without changes to the handlers.
 - **Request pipeline.** Each request passes through: session auth → CSRF check (mutations only) → resolve the environment → `authorize(user, env, action)` → Docker operation → audit entry → response. `authorize` lives in `fleetops-api::authz`, so fine-grained RBAC (sub-project 5) can replace its body without touching handlers.
+- **Agent tunnel.** Each agent opens one WebSocket to `/api/v1/agent/connect` and runs a yamux session over it. The agent's first stream carries a small JSON control protocol (hello, welcome, ping, bye). Every other stream is opened by the server and is a raw connection to the host's Docker socket: bollard runs over a custom transport whose connector opens a stream, so hijacked exec and streamed logs need nothing special. Each stream has its own 256 KiB flow-control window, so a slow reader stalls only its own stream.
 - **Real time.** A per-environment hub shares one Docker events stream among all browser tabs. Stats streams are reference-counted per container.
 - **Backpressure.** Each websocket subscription has a bounded queue. Events and stats drop the oldest items when the queue is full. Logs drop lines and send a `gap` message. Exec applies true backpressure.
 - **Web stack.** TanStack Router (lazy routes), React Query, TanStack Table and Virtual, Tailwind with shadcn/ui, cmdk, xterm.js and uPlot. Docker events patch the query cache directly. xterm.js and uPlot load only when their tab opens.
@@ -197,7 +218,8 @@ The REST API lives under `/api/v1` and uses JSON. The OpenAPI document is served
 | Area | Endpoints |
 |---|---|
 | Auth | `POST /auth/setup`, `/auth/login`, `/auth/logout`, `/auth/password` · `GET /auth/me`, `/auth/status` · `GET`/`DELETE /auth/sessions[/{id}]` |
-| Admin | `/users`, `/envs` (mutations are admin-only), `GET /audit` |
+| Admin | `/users`, `/envs` (mutations are admin-only), `POST /envs/{env}/agent/rotate`, `GET /audit` |
+| Agents | `GET /agent/connect`: the agent tunnel, a WebSocket upgrade with `Authorization: Bearer fj_…` (join token) or `fk_…` (agent key); not for browsers |
 | Docker | `/envs/{env}/{info,df,containers,images,volumes,networks,compose-projects}/…` |
 | Tasks | `GET /tasks/{id}` for long-running image pulls and builds, which return `202 {task_id}` |
 | Health | `GET /health` |
@@ -221,6 +243,9 @@ The full protocol is in section 5.2 of the spec.
 - **Session expiry.** Sessions expire after 7 days idle or 30 days in total.
 - **Headers.** Responses send a strict CSP, `frame-ancestors 'none'`, `X-Content-Type-Options` and `Referrer-Policy`. They also send HSTS when you enable it.
 - **Secret masking is display-only.** The API returns values unredacted, and anyone with access can reveal them.
+- **Agents.** Join tokens last 15 minutes and work once; the server stores only SHA-256 hashes of tokens and keys. Agent credentials open the tunnel and nothing else. Failed agent connects are rate-limited per address. Agents must use HTTPS unless they connect from the same machine.
+- **Trust.** A compromised server is root on every agent host, as it already is on its local socket. Treat the server like the hosts it manages.
+- **Reverse proxies.** Pass WebSocket upgrades through to `/api/v1/agent/connect`, and keep idle timeouts above 30 s (the server pings agents every 15 s).
 - **No telemetry.** FleetOps does not phone home.
 - **Container image.** It runs as a non-root user on `distroless/static`, with no shell. Docker access comes only from the socket group you grant with `--group-add`.
 
@@ -229,7 +254,7 @@ The full protocol is in section 5.2 of the spec.
 | # | Sub-project | Summary |
 |---|---|---|
 | **1** | **Core + local Docker** (done) | Server, embedded UI, auth, environments, full Docker resource management, real-time channel |
-| 2 | Agent + multi-host | Rust agent that dials out to the server over a multiplexed websocket tunnel |
+| **2** | **Agent + multi-host** (done) | Rust agent that dials out to the server over a multiplexed websocket tunnel |
 | 3 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
 | 4 | Kubernetes | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec, Helm |
 | 5 | Teams & enterprise (free) | Per-environment RBAC, OIDC/SSO, LDAP, API tokens, backup and restore |
