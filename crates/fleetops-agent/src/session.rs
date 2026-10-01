@@ -36,6 +36,7 @@ pub async fn run(
     target: Target,
     docker_url: &str,
     data: &Path,
+    silence: Duration,
 ) -> Ended {
     let session = Session::spawn(tungstenite_io(ws), Role::Client, move |stream| {
         let target = target.clone();
@@ -45,12 +46,12 @@ pub async fn run(
             }
         });
     });
-    let ended = control(&session, docker_url, data).await;
+    let ended = control(&session, docker_url, data, silence).await;
     session.close().await;
     ended
 }
 
-async fn control(session: &Session, docker_url: &str, data: &Path) -> Ended {
+async fn control(session: &Session, docker_url: &str, data: &Path, silence: Duration) -> Ended {
     let Ok(stream) = session.open_stream().await else {
         return Ended::Dropped;
     };
@@ -85,7 +86,14 @@ async fn control(session: &Session, docker_url: &str, data: &Path) -> Ended {
         _ => return Ended::Dropped,
     }
     loop {
-        match read_msg(&mut rx).await {
+        // The server pings every 15 s. Silence longer than `silence` means
+        // the connection is dead even if TCP has not noticed (a crashed
+        // server, a NAT that dropped the mapping): dial again.
+        let Ok(msg) = tokio::time::timeout(silence, read_msg(&mut rx)).await else {
+            tracing::warn!("no word from the server for {silence:?}; reconnecting");
+            return Ended::Dropped;
+        };
+        match msg {
             Ok(Some(Msg::Ping { n })) => {
                 if write_msg(&mut tx, &Msg::Pong { n }).await.is_err() {
                     return Ended::Dropped;
