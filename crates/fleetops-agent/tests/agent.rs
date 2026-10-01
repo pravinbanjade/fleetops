@@ -264,3 +264,57 @@ async fn a_silent_server_is_dropped_and_redialed() {
     }
     panic!("the agent never gave up on a server that stopped pinging");
 }
+
+#[tokio::test]
+async fn a_new_join_command_re_enrolls_over_a_rotated_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let docker = fake_docker(dir.path());
+    let store = Store::in_memory().await.unwrap();
+    let (env_id, token) = agent_env(&store).await;
+    let srv = server(store.clone(), 0).await;
+    let data = dir.path().join("data");
+    let first = tokio::spawn(fleetops_agent::run(config(
+        &srv.base,
+        &data,
+        &docker,
+        Some(token),
+    )));
+    eventually("connected", || srv.state.agents.connected() == 1).await;
+    let old_key = std::fs::read_to_string(data.join("agent.key")).unwrap();
+
+    // The admin rotates; the old agent is told and stops.
+    let token2 = fleetops_api::agents::new_join_token();
+    store
+        .rotate_agent(
+            env_id,
+            &fleetops_api::auth_token_hash(&token2),
+            fleetops_core::now_unix() + 900,
+        )
+        .await
+        .unwrap();
+    srv.state.agents.revoke(env_id);
+    let _ = tokio::time::timeout(Duration::from_secs(5), first).await;
+    eventually("old session gone", || srv.state.agents.connected() == 0).await;
+
+    // The new command runs on the same host, with the same data volume.
+    let second = tokio::spawn(fleetops_agent::run(config(
+        &srv.base,
+        &data,
+        &docker,
+        Some(token2),
+    )));
+    for _ in 0..100 {
+        if srv.state.agents.connected() == 1 {
+            break;
+        }
+        assert!(!second.is_finished(), "{:?}", second.await);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        srv.state.agents.connected(),
+        1,
+        "the new join command did not reconnect"
+    );
+    let new_key = std::fs::read_to_string(data.join("agent.key")).unwrap();
+    assert_ne!(new_key, old_key, "a fresh key replaced the rotated one");
+}

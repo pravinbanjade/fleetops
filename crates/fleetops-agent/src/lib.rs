@@ -29,8 +29,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let target = fleetops_tunnel::Target::parse(&config.docker)?;
     let tls = Arc::new(dial::tls_config(config.ca.as_deref())?);
     let mut backoff = Backoff::new(Duration::from_secs(1), Duration::from_secs(30));
+    // Set once the server rejects the stored key: a key rotated in the UI
+    // stays in the data volume, and the new join command must still work.
+    let mut key_rejected = false;
     loop {
-        let key = creds::load_key(&config.data)?;
+        let key = creds::load_key(&config.data)?.filter(|_| !key_rejected);
         let bearer = match (&key, &config.join_token) {
             (Some(k), _) => k.clone(),
             (None, Some(j)) => j.clone(),
@@ -56,9 +59,15 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                 session::Ended::Dropped => tracing::warn!("disconnected from {}", config.server),
             },
             Err(dial::DialError::Refused(401)) if key.is_some() => {
-                return Err(anyhow!(
-                    "the server rejected this agent's key (revoked or environment deleted)"
-                ));
+                if config.join_token.is_none() {
+                    return Err(anyhow!(
+                        "the server rejected this agent's key (revoked or environment deleted); \
+                         re-enroll with a new join command"
+                    ));
+                }
+                tracing::info!("stored key rejected; enrolling with the join token");
+                key_rejected = true;
+                continue;
             }
             Err(dial::DialError::Refused(code)) => {
                 tracing::warn!(code, "server refused the connection")
