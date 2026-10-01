@@ -150,8 +150,13 @@ pub async fn create(
             };
             (rec, Some(enrollment))
         }
+        EnvKind::KubeConfig | EnvKind::KubeAgent => {
+            return Err(
+                Error::Invalid("Kubernetes environments are not available yet".into()).into(),
+            )
+        }
     };
-    s.envs.insert(&rec)?;
+    s.envs.insert(&rec, None)?;
     audit(
         &s,
         Some(cu.user.id),
@@ -207,7 +212,8 @@ pub async fn update(
         .store
         .update_environment(current.id, &new_name, &new_url, now_unix())
         .await?;
-    s.envs.replace(&current.name, &rec)?;
+    let credential = s.store.env_credential(rec.id).await?;
+    s.envs.replace(&current.name, &rec, credential)?;
     audit(
         &s,
         Some(cu.user.id),

@@ -13,6 +13,10 @@ pub enum Action {
     DockerRead,
     /// Change Docker resources in an environment.
     DockerWrite,
+    /// Read Kubernetes objects, events and pod logs.
+    KubeRead,
+    /// Delete, scale, restart, and exec into pods.
+    KubeWrite,
 }
 
 pub fn authorize(user: &User, _env_id: Option<i64>, action: Action) -> Result<()> {
@@ -33,6 +37,14 @@ mod tests {
             role,
             created_at: 0,
             updated_at: 0,
+        }
+    }
+
+    #[test]
+    fn users_and_admins_may_read_and_change_kubernetes() {
+        for role in [Role::Admin, Role::User] {
+            assert!(authorize(&user(role), Some(1), Action::KubeRead).is_ok());
+            assert!(authorize(&user(role), Some(1), Action::KubeWrite).is_ok());
         }
     }
 

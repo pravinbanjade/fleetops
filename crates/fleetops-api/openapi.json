@@ -4004,7 +4004,9 @@
         "type": "string",
         "enum": [
           "docker-local",
-          "docker-agent"
+          "docker-agent",
+          "kube-config",
+          "kube-agent"
         ]
       },
       "EnvStatus": {
@@ -4023,7 +4025,7 @@
                 ]
               },
               "version": {
-                "$ref": "#/components/schemas/EngineVersion"
+                "$ref": "#/components/schemas/EnvVersion"
               }
             }
           },
@@ -4046,6 +4048,53 @@
             }
           }
         ]
+      },
+      "EnvVersion": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EngineVersion"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "docker"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KubeVersion"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "kube"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "description": "What an up environment reports about itself."
       },
       "EnvView": {
         "allOf": [
@@ -4148,6 +4197,14 @@
             "default": 80,
             "minimum": 0
           },
+          "container": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Kubernetes only: the container; `None` is the pod's first. Docker\nignores it.",
+            "default": null
+          },
           "rows": {
             "type": "integer",
             "format": "int32",
@@ -4222,6 +4279,33 @@
           }
         }
       },
+      "KubeVersion": {
+        "type": "object",
+        "required": [
+          "git_version",
+          "platform",
+          "nodes",
+          "nodes_ready"
+        ],
+        "properties": {
+          "git_version": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "nodes_ready": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "platform": {
+            "type": "string"
+          }
+        }
+      },
       "LogLine": {
         "type": "object",
         "required": [
@@ -4241,6 +4325,14 @@
       "LogOptions": {
         "type": "object",
         "properties": {
+          "container": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Kubernetes only: the container; `None` is the pod's first. Docker\nignores it.",
+            "default": null
+          },
           "follow": {
             "type": "boolean",
             "default": true

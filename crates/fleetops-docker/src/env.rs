@@ -1,8 +1,8 @@
 use crate::LocalDocker;
 use async_trait::async_trait;
 use fleetops_core::docker::{DockerOps, SystemOps};
-use fleetops_core::env::{EnvFactory, EnvKind, EnvStatus, Environment};
-use fleetops_core::Result;
+use fleetops_core::env::{EnvFactory, EnvKind, EnvSpec, EnvStatus, EnvVersion, Environment};
+use fleetops_core::{Error, Result};
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -65,7 +65,9 @@ impl Environment for LocalDockerEnv {
             }
         };
         match tokio::time::timeout(STATUS_TIMEOUT, client.version()).await {
-            Ok(Ok(version)) => EnvStatus::Up { version },
+            Ok(Ok(version)) => EnvStatus::Up {
+                version: EnvVersion::Docker(version),
+            },
             Ok(Err(e)) => EnvStatus::Down {
                 reason: e.to_string(),
             },
@@ -95,13 +97,19 @@ impl DockerEnvFactory {
 }
 
 impl EnvFactory for DockerEnvFactory {
-    fn build(&self, id: i64, name: &str, kind: EnvKind, url: &str) -> Result<Arc<dyn Environment>> {
-        match kind {
-            EnvKind::DockerLocal => Ok(Arc::new(LocalDockerEnv::new(id, name, url))),
+    fn build(&self, spec: &EnvSpec) -> Result<Arc<dyn Environment>> {
+        match spec.kind {
+            EnvKind::DockerLocal => Ok(Arc::new(LocalDockerEnv::new(
+                spec.id, &spec.name, &spec.url,
+            ))),
             EnvKind::DockerAgent => Ok(Arc::new(crate::AgentDockerEnv::new(
-                id,
-                name,
+                spec.id,
+                &spec.name,
                 self.agents.clone(),
+            ))),
+            EnvKind::KubeConfig | EnvKind::KubeAgent => Err(Error::Invalid(format!(
+                "{} is not a Docker environment kind",
+                spec.kind.as_str()
             ))),
         }
     }
@@ -113,12 +121,13 @@ mod tests {
     #[tokio::test]
     async fn missing_socket_is_down_not_an_error() {
         let env = DockerEnvFactory::default()
-            .build(
-                1,
-                "local",
-                EnvKind::DockerLocal,
-                "unix:///nonexistent/docker.sock",
-            )
+            .build(&EnvSpec {
+                id: 1,
+                name: "local".into(),
+                kind: EnvKind::DockerLocal,
+                url: "unix:///nonexistent/docker.sock".into(),
+                credential: None,
+            })
             .unwrap();
         assert_eq!(env.name(), "local");
         assert!(env.docker().is_none());

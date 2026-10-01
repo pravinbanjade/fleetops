@@ -298,15 +298,24 @@ export type Enrollment = {
 
 export type EntryKind = 'file' | 'dir' | 'symlink' | 'other';
 
-export type EnvKind = 'docker-local' | 'docker-agent';
+export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent';
 
 export type EnvStatus = {
     state: 'up';
-    version: EngineVersion;
+    version: EnvVersion;
 } | {
     reason: string;
     state: 'down';
 };
+
+/**
+ * What an up environment reports about itself.
+ */
+export type EnvVersion = (EngineVersion & {
+    kind: 'docker';
+}) | (KubeVersion & {
+    kind: 'kube';
+});
 
 /**
  * An environment as listed: agent environments carry their agent's state.
@@ -346,6 +355,11 @@ export type ExecOptions = {
      */
     cmd?: Array<string> | null;
     cols?: number;
+    /**
+     * Kubernetes only: the container; `None` is the pod's first. Docker
+     * ignores it.
+     */
+    container?: string | null;
     rows?: number;
     user?: string | null;
 };
@@ -372,6 +386,13 @@ export type ImageSummary = {
     size: number;
 };
 
+export type KubeVersion = {
+    git_version: string;
+    nodes: number;
+    nodes_ready: number;
+    platform: string;
+};
+
 export type LogLine = {
     stream: LogStream;
     /**
@@ -382,6 +403,11 @@ export type LogLine = {
 };
 
 export type LogOptions = {
+    /**
+     * Kubernetes only: the container; `None` is the pod's first. Docker
+     * ignores it.
+     */
+    container?: string | null;
     follow?: boolean;
     /**
      * Unix seconds.

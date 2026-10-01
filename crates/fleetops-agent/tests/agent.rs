@@ -128,7 +128,9 @@ async fn the_agent_enrolls_and_its_environment_comes_up() {
     assert!(data.join("agent.key").exists());
     let env = srv.state.envs.get("web-01").unwrap();
     match env.status().await {
-        fleetops_core::env::EnvStatus::Up { version } => assert_eq!(version.version, "27.0.0"),
+        fleetops_core::env::EnvStatus::Up {
+            version: fleetops_core::env::EnvVersion::Docker(version),
+        } => assert_eq!(version.version, "27.0.0"),
         other => panic!("{other:?}"),
     }
     assert!(store.get_agent(env_id).await.unwrap().unwrap().enrolled);
