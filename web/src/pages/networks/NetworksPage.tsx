@@ -20,7 +20,7 @@ function networkColumns(env: string): Column<NetworkSummary>[] {
         <Link
           to="/envs/$env/networks/$id"
           params={{ env, id: c.row.original.id }}
-          className="font-medium hover:underline"
+          className="font-ident font-medium hover:underline"
         >
           {c.getValue()}
         </Link>

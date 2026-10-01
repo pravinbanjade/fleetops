@@ -21,7 +21,7 @@ function volumeColumns(env: string): Column<Row>[] {
         <Link
           to="/envs/$env/volumes/$name"
           params={{ env, name: c.getValue() }}
-          className="block max-w-80 truncate font-medium hover:underline"
+          className="block max-w-80 truncate font-ident font-medium hover:underline"
         >
           {c.getValue()}
         </Link>

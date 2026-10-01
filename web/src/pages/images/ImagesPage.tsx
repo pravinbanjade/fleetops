@@ -4,6 +4,7 @@ import { useState } from "react";
 import { imagesQuery } from "@/api/queries";
 import type { ImageSummary } from "@/api/gen/types.gen";
 import { columns, DataTable, type Column } from "@/components/DataTable";
+import { ImageRef } from "@/components/ImageRef";
 import { Page } from "@/components/Page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,9 +24,18 @@ function imageColumns(env: string): Column<ImageSummary>[] {
         <Link
           to="/envs/$env/images/$id"
           params={{ env, id: c.row.original.id }}
-          className="font-medium hover:underline"
+          className="flex flex-wrap gap-x-3 gap-y-0.5 hover:underline"
         >
-          {c.row.original.repo_tags.length ? c.row.original.repo_tags.join(", ") : <span className="text-muted-foreground">&lt;none&gt;</span>}
+          {c.row.original.repo_tags.length ? (
+            c.row.original.repo_tags.map((t, i) => (
+              <span key={t}>
+                {i > 0 && <span className="sr-only">, </span>}
+                <ImageRef value={t} />
+              </span>
+            ))
+          ) : (
+            <span className="text-muted-foreground">&lt;none&gt;</span>
+          )}
         </Link>
       ),
     }),

@@ -72,14 +72,18 @@ typography:
     fontWeight: 400
     lineHeight: "1.25rem"
     fontFeature: "\"tnum\""
-    fontVariation: "\"wdth\" 88"
+  ident:
+    fontFamily: "JetBrains Mono Variable, ui-monospace, SFMono-Regular, Menlo, monospace"
+    fontSize: "0.8125rem"
+    fontWeight: 500
+    lineHeight: "1.25rem"
+    fontFeature: "\"liga\" 0"
   readout:
     fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.125rem"
     fontWeight: 600
     lineHeight: "1.75rem"
     fontFeature: "\"tnum\""
-    fontVariation: "\"wdth\" 88"
   label:
     fontFamily: "Mona Sans Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.75rem"
@@ -218,7 +222,7 @@ components:
 
 FleetOps is a controller's strip board. Every container, image, volume and event is a fielded strip: a row of boxed cells divided by hairline rules, with a squared state holder at its left edge, racked in bays by urgency. The board is cool near-black by default, and the chrome uses three greys only: the bay (page and rail), the strip (rows and panels) and the rule (every divider). Nothing on the board is decorative. The rest of the colour is either the operator's cord (amber) or a reading (state, environment identity, machine output).
 
-The density is that of an operations tool used beside a terminal. Rows are 40 to 44px, controls are 32 to 36px, and numerals are tabular so columns line up like a readout. One variable face, Mona Sans, carries every role through its width axis. Strip fields are cut narrow at 88% so more fits in a cell. Headlines are set wide at 112% so a page or an environment name reads like a painted callsign. JetBrains Mono is used only for machine output: timestamps, IDs, error text from Docker, key legends and logs.
+The density is that of an operations tool used beside a terminal. Rows are 40 to 44px, controls are 32 to 36px, and numerals are tabular so columns line up like a readout. Mona Sans carries the interface at its normal width: prose, labels, controls and strip fields. Headlines are set wide at 112% so a page or an environment name reads like a painted callsign, and only the small state holders and environment tags are cut narrow at 88%. JetBrains Mono is used for anything Docker or Kubernetes wrote: container, image, volume, network and object names, image references, IDs, timestamps, Docker's error text, key legends and logs.
 
 The board is flat. Depth appears only when something floats above it (menus, dialogs, the mobile drawer). The world's one piece of motion is the holder flash. When Docker changes a container's state on screen, its holder rings once in the cord's amber and then settles. With reduced motion, the flash is dropped.
 
@@ -227,7 +231,7 @@ The board is flat. Depth appears only when something floats above it (menus, dia
 - Amber is the only accent (the cord), and it marks the primary action, selection, focus and the active nav row.
 - State hues are readings only: green means running, orange means transitional, red means failed, and an outline means idle.
 - Each environment has an identity hue, shown as a 3px band and a squared tag, and that hue is never a state hue or the cord.
-- Mona Sans is set on its width axis (88% for strip fields, 112% for callsigns), and mono is used only for machine output.
+- Mona Sans is set at normal width for the interface, 112% for callsigns and 88% only for holders; mono is used for identifiers and machine output.
 - The attention bay can be walked with j/k, and Enter opens logs. A g-chord jumps between pages.
 - The interface is dark first, and light is fully supported.
 
@@ -277,21 +281,22 @@ Logs use a 16-colour ANSI palette, defined per theme as `--ansi-0` to `--ansi-15
 **Display / Interface Font:** Mona Sans Variable (with ui-sans-serif, system-ui)
 **Mono Font:** JetBrains Mono Variable (with ui-monospace, SFMono-Regular, Menlo)
 
-**Character:** One grotesque cut three ways. It is narrow for the fielded strip, normal width for prose and controls, and wide for callsigns. JetBrains Mono is kept for anything a machine wrote.
+**Character:** A grotesque for what FleetOps says and a mono for what Docker wrote. Mona Sans is normal width for prose, controls and strip fields, wide for callsigns, and narrow only inside state holders. JetBrains Mono, at 13px so its wider glyphs keep the strip's measure and with ligatures off, sets every identifier: a strip's name in it reads apart from the status and labels around it.
 
 ### Hierarchy
 - **Headline** (600, 1.375rem, 1.25, width 112%, -0.012em): the page title, which is often the environment's name.
 - **Title** (600, 1.125rem, width 112%): the attention bay's headline ("3 containers need attention"). The same callsign cut at 1rem is used for dialog titles, and at 15px for the FleetOps wordmark.
 - **Panel title** (600, 0.875rem, normal width): the header of each board panel, next to a 16px muted icon.
 - **Body** (400, 0.875rem, 1.25rem): controls, meta lines and prose.
-- **Strip** (400/600, 0.875rem, width 88%, tabular): the fields of a strip list, table cells, detail labels and readouts. A strip's name is set in 600.
-- **Readout** (600, 1.125rem, width 88%, tabular): live CPU and memory values, and the counts in the state tabs (these use the callsign cut).
+- **Strip** (400, 0.875rem, normal width, tabular): the fields of a strip list, table cells, detail labels and readouts.
+- **Ident** (JetBrains Mono 500, 0.8125rem, no ligatures): a strip's name and every other identifier Docker or Kubernetes wrote. An image reference is set the same way, in full, with a digest cut to 12 hex digits.
+- **Readout** (600, 1.125rem, normal width, tabular): live CPU and memory values, and the counts in the state tabs (these use the callsign cut).
 - **Label** (500, 0.75rem): column heads, readout labels, group headings and asides, in muted ink and sentence case.
 - **Holder** (600, 11px, width 88%, +0.04em, uppercase): the state word inside a holder, exactly as Docker reports it.
 - **Mono** (0.75rem, or 10px for key legends): timestamps, IDs, Docker error strings, kbd legends and logs.
 
 ### Named Rules
-**The Two Widths Rule.** Width is the hierarchy tool. Use 88% for fields that must fit a cell and 112% for names that must be recognised at a glance. Weight stays at 400, 500 or 600.
+**The Two Faces Rule.** Face is the hierarchy tool in a strip: Mona Sans for what FleetOps says, JetBrains Mono for what Docker wrote. Width 112% is kept for callsigns and 88% for holders; strip fields stay at normal width. Weight stays at 400, 500 or 600.
 
 **The Machine Voice Rule.** Mono means a machine wrote it. Human-facing labels never use mono, and Docker's own error text always does.
 
@@ -411,7 +416,7 @@ Icons are Lucide, 16px in chrome (14px in breadcrumbs and readout labels, 20px f
 - **Do** build every new surface from the three greys (bay, strip, rule), with the float strip used only for layers that can be dismissed.
 - **Do** mark the operator's place (primary action, selection, focus, current page) with the cord, and only with the cord.
 - **Do** show a resource's state as a squared holder with Docker's exact word in uppercase, and read a non-zero exit as fail.
-- **Do** set strip fields at width 88% and names that must be recognised at width 112%. Keep numerals tabular.
+- **Do** set identifiers in mono (`font-ident`) and strip fields in Mona Sans at normal width; keep 112% for callsigns and 88% for holders. Keep numerals tabular.
 - **Do** give every environment-scoped view the environment's band and EnvTag, taking the hue from `envHue`.
 - **Do** make any new strip list walkable with j/k and Enter when it is a list of things to act on.
 - **Do** rack long lists that are sorted by state into labelled urgency bays, and name the phone columns that survive below 640px.

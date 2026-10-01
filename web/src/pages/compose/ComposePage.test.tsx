@@ -26,7 +26,7 @@ describe("compose projects", () => {
     const card = await screen.findByRole("region", { name: "shop" });
     expect(within(card).getByText("partial")).toBeInTheDocument();
     expect(within(card).getByText("1 of 2 running")).toBeInTheDocument();
-    expect(within(card).getByText("Services: web, db")).toBeInTheDocument();
+    expect(card).toHaveTextContent("Services: web, db");
     const list = within(card).getByRole("list", { name: "Containers of shop" });
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(2));
     expect(within(list).queryByText("loner")).not.toBeInTheDocument();

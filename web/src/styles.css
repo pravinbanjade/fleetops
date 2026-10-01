@@ -149,8 +149,26 @@
   --color-live: var(--live);
 }
 
-/* Strip fields: a semi-condensed cut of the interface face. */
+/*
+ * Strip fields: the interface face at its normal width with readout numerals. Condensing it made
+ * names and tags read as one cramped run; identifiers carry the density instead, in mono.
+ */
 @utility font-strip {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Identifiers Docker or Kubernetes wrote (names, images, IDs): mono a step below the strip so its
+ * wider glyphs keep the same measure, and no ligatures, so "fl" in a name stays two letters.
+ */
+@utility font-ident {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-variant-ligatures: none;
+}
+
+/* State holders and environment tags: small caps cut narrow so a long state fits the holder. */
+@utility font-holder {
   font-stretch: 88%;
 }
 

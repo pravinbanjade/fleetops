@@ -92,7 +92,7 @@ export function StateBadge({
       data-slot="state"
       data-tone={t}
       className={cn(
-        "font-strip inline-flex h-5 min-w-[4.75rem] shrink-0 items-center justify-center rounded-xs px-1.5 text-[11px] leading-none font-semibold tracking-[0.04em] whitespace-nowrap uppercase",
+        "font-holder inline-flex h-5 min-w-[4.75rem] shrink-0 items-center justify-center rounded-xs px-1.5 text-[11px] leading-none font-semibold tracking-[0.04em] whitespace-nowrap uppercase",
         FILL[t],
         className,
       )}
