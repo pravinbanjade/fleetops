@@ -40,7 +40,7 @@ async fn creating_an_agent_environment_returns_a_one_time_command() {
     assert!(cmd.contains(&format!("--join-token {token}")), "{cmd}");
     assert!(
         cmd.contains(&format!(
-            "ghcr.io/pravinbanjade/fleetops-agent:{}",
+            "docker.io/pravinbanjade/fleetops-agent:{}",
             env!("CARGO_PKG_VERSION")
         )),
         "{cmd}"

@@ -99,7 +99,7 @@ On first start, FleetOps registers a `local` environment when it can reach the s
 
 ### Run a release
 
-Each release publishes `registry.gitlab.com/pravinbanjade/fleetops:<version>` (and `latest`) for linux/amd64 and linux/arm64, and static linux binaries with SHA-256 checksums on the [releases page](https://gitlab.com/pravinbanjade/fleetops/-/releases). Run the image with the `docker run` below, using `registry.gitlab.com/pravinbanjade/fleetops:latest` in place of `fleetops:dev`.
+Each release publishes `docker.io/pravinbanjade/fleetops:<version>` (and `latest`) for linux/amd64 and linux/arm64, and static linux binaries with SHA-256 checksums on the [releases page](https://gitlab.com/pravinbanjade/fleetops/-/releases). Run the image with the `docker run` below, using `docker.io/pravinbanjade/fleetops:latest` in place of `fleetops:dev`.
 
 ### Run the container image
 
@@ -121,7 +121,7 @@ The container reaches the socket through the group that owns it, which `--group-
 ### Add a remote host
 
 1. In **Admin → Environments**, choose **Add environment → Agent on a remote host** and name it.
-2. Run the command it shows on the remote host. It starts `ghcr.io/pravinbanjade/fleetops-agent` with the host's Docker socket and a `fleetops-agent` volume for its key.
+2. Run the command it shows on the remote host. It starts `docker.io/pravinbanjade/fleetops-agent` with the host's Docker socket and a `fleetops-agent` volume for its key.
 3. The environment shows as online within a few seconds.
 
 The agent must reach the server over HTTPS (start the server with `--tls-bind`). Plain HTTP is accepted only from the same machine. For a self-signed certificate, mount it into the agent and pass `--ca /ca.pem`. Agent flags: `--server`, `--join-token` (first start only), `--data` (default `/data`), `--docker` (default `unix:///var/run/docker.sock`), `--ca`, `--log`; each has a `FLEETOPS_AGENT_*` variable.
@@ -199,7 +199,7 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 - **The integration tests** (`make test-docker`) create and remove their own labelled resources. Run them against a daemon where that's acceptable.
 - **The end-to-end test** (`make e2e`) starts the server on `127.0.0.1:9123` with an empty data directory (`web/e2e-data`). It pulls `busybox:1.37`, and creates and then removes containers named `fleetops-e2e-*`; the second spec enrolls a real `fleetops-agent` against the same daemon. It leaves the image in place. On failure, `pnpm -C web exec playwright show-trace` opens the trace saved under `web/test-results`.
 - **CI** (`.gitlab-ci.yml`) runs on pushes to `main` and on merge requests: `make lint test`, `make test-docker`, `make test-web`, `make e2e`, `make rss-bench`, the kind suite (`make test-kube e2e-kube agent-kube-smoke`), and the server and agent image builds for both platforms followed by `make image-smoke` and `make agent-smoke`. Jobs run in `ci/Dockerfile`'s image and start their own Docker daemon (`ci/start-docker.sh`).
-- **Releases** (the `publish` and `release` jobs in `.gitlab-ci.yml`) run on a `vX.Y.Z` tag that matches the workspace version in `Cargo.toml`. They push the server and agent images (`registry.gitlab.com/pravinbanjade/fleetops` and `.../fleetops/agent`) to the GitLab container registry, upload both binaries to the generic package registry and link them from a GitLab release.
+- **Releases** (the `publish` and `release` jobs in `.gitlab-ci.yml`) run on a `vX.Y.Z` tag that matches the workspace version in `Cargo.toml`. They push the server and agent images (`docker.io/pravinbanjade/fleetops` and `docker.io/pravinbanjade/fleetops-agent`) to Docker Hub with the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` CI/CD variables, upload both binaries to the generic package registry and link them from a GitLab release.
 - **TDD.** New behaviour starts with a failing test.
 
 ### Design documents
