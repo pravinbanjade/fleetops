@@ -7,13 +7,23 @@ import { Page } from "@/components/Page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatTime } from "@/lib/format";
+import { SystemAvatar, UserAvatar } from "@/components/UserAvatar";
 
 type Row = AuditEntry & { envName: string };
 const col = columns<Row>();
 
 const COLUMNS: Column<Row>[] = [
   col.accessor("ts", { header: "Time", cell: (c) => formatTime(c.getValue()) }),
-  col.accessor((e) => e.username ?? (e.user_id == null ? "system" : `user ${e.user_id}`), { id: "user", header: "User" }),
+  col.accessor((e) => e.username ?? (e.user_id == null ? "system" : `user ${e.user_id}`), {
+    id: "user",
+    header: "User",
+    cell: (c) => (
+      <span className="flex items-center gap-2">
+        {c.row.original.user_id == null ? <SystemAvatar /> : <UserAvatar name={c.getValue()} size="sm" />}
+        {c.getValue()}
+      </span>
+    ),
+  }),
   col.accessor("action", { header: "Action", cell: (c) => <code className="text-xs">{c.getValue()}</code> }),
   col.accessor("envName", { header: "Environment" }),
   col.accessor((e) => [e.target_type, e.target_id].filter(Boolean).join(" "), {

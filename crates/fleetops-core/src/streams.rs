@@ -153,6 +153,9 @@ pub struct BuildSpec {
 pub trait StreamOps: Send + Sync {
     /// Docker events from now on. Ends when the daemon connection drops.
     fn events(&self) -> BoxStream<DockerEvent>;
+    /// The events Docker still holds from `since` (Unix seconds) up to now,
+    /// oldest first. Docker keeps only its most recent events in memory.
+    async fn recent_events(&self, since: i64) -> Result<Vec<DockerEvent>>;
     /// About one sample per second until the container stops.
     fn stats(&self, id: &str) -> BoxStream<StatsSample>;
     fn logs(&self, id: &str, opts: &LogOptions) -> BoxStream<LogLine>;

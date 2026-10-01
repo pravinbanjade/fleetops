@@ -1,28 +1,50 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "@fontsource-variable/mona-sans/wdth.css";
+@import "@fontsource-variable/jetbrains-mono/wght.css";
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Strip Bay. Chrome is three greys per theme: the bay (page), the strip
+ * (rows, panels) and the rule (every divider). One amber "cord" marks the
+ * primary action, selection and focus. Every other hue is a reading.
+ */
 :root {
-  --radius: 0.5rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --radius: 0.375rem;
+  --background: oklch(0.967 0.004 255);
+  --foreground: oklch(0.205 0.015 255);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.205 0.015 255);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --popover-foreground: oklch(0.205 0.015 255);
+  /* The cord: dark amber so white text and the ring hold AA on paper. */
+  --primary: oklch(0.53 0.125 62);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.935 0.006 255);
+  --secondary-foreground: oklch(0.205 0.015 255);
+  --muted: oklch(0.935 0.006 255);
+  --muted-foreground: oklch(0.47 0.016 255);
+  --accent: oklch(0.935 0.006 255);
+  --accent-foreground: oklch(0.205 0.015 255);
+  --destructive: oklch(0.54 0.2 27);
+  --border: oklch(0.885 0.006 255);
+  --input: oklch(0.84 0.008 255);
+  --ring: oklch(0.53 0.125 62);
+  /* A tint of the cord for selected rows and the active nav row. */
+  --cord-soft: oklch(0.53 0.125 62 / 0.1);
+  /* The rail sits on the bay; a rule, not a fourth grey, separates it. */
+  --rail: var(--background);
+
+  /* State holders: fill and ink, each pair at least 4.5:1. */
+  --state-run: oklch(0.5 0.115 158);
+  --state-run-ink: oklch(1 0 0);
+  --state-wait: oklch(0.75 0.155 62);
+  --state-wait-ink: oklch(0.25 0.07 50);
+  --state-fail: oklch(0.52 0.19 27);
+  --state-fail-ink: oklch(1 0 0);
+  --live: oklch(0.6 0.14 158);
+
   /* ANSI colours 0–15 for log lines: darker shades that read on a light background. */
   --ansi-0: #000000;
   --ansi-1: #c0262d;
@@ -43,24 +65,35 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: oklch(0.158 0.008 255);
+  --foreground: oklch(0.945 0.006 90);
+  --card: oklch(0.198 0.01 255);
+  --card-foreground: oklch(0.945 0.006 90);
+  --popover: oklch(0.215 0.011 255);
+  --popover-foreground: oklch(0.945 0.006 90);
+  --primary: oklch(0.82 0.15 78);
+  --primary-foreground: oklch(0.21 0.045 60);
+  --secondary: oklch(0.25 0.012 255);
+  --secondary-foreground: oklch(0.945 0.006 90);
+  --muted: oklch(0.25 0.012 255);
+  --muted-foreground: oklch(0.72 0.014 255);
+  --accent: oklch(0.25 0.012 255);
+  --accent-foreground: oklch(0.945 0.006 90);
+  --destructive: oklch(0.7 0.18 25);
+  --border: oklch(0.285 0.012 255);
+  --input: oklch(0.33 0.013 255);
+  --ring: oklch(0.82 0.15 78);
+  --cord-soft: oklch(0.82 0.15 78 / 0.1);
+  --rail: var(--background);
+
+  --state-run: oklch(0.76 0.15 158);
+  --state-run-ink: oklch(0.2 0.05 158);
+  --state-wait: oklch(0.78 0.15 60);
+  --state-wait-ink: oklch(0.22 0.06 50);
+  --state-fail: oklch(0.68 0.19 25);
+  --state-fail-ink: oklch(0.15 0.04 25);
+  --live: oklch(0.76 0.15 158);
+
   --ansi-0: #3b3b3b;
   --ansi-1: #ff6b6b;
   --ansi-2: #69db7c;
@@ -80,9 +113,13 @@
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
+  --font-sans: "Mona Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-xs: 2px;
+  --radius-sm: calc(var(--radius) - 3px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 2px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -101,13 +138,88 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-cord-soft: var(--cord-soft);
+  --color-rail: var(--rail);
+  --color-state-run: var(--state-run);
+  --color-state-run-ink: var(--state-run-ink);
+  --color-state-wait: var(--state-wait);
+  --color-state-wait-ink: var(--state-wait-ink);
+  --color-state-fail: var(--state-fail);
+  --color-state-fail-ink: var(--state-fail-ink);
+  --color-live: var(--live);
+}
+
+/* Strip fields: a semi-condensed cut of the interface face. */
+@utility font-strip {
+  font-stretch: 88%;
+}
+
+/* Headlines: the face widened, like a printed callsign. */
+@utility font-callsign {
+  font-stretch: 112%;
+  letter-spacing: -0.012em;
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background font-sans text-foreground antialiased;
+    caret-color: var(--primary);
   }
+  ::selection {
+    background: oklch(from var(--primary) l c h / 0.3);
+    color: inherit;
+  }
+  /* Numbers in the interface line up like a readout. */
+  table,
+  time,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
+  /* One icon stroke across the app: Lucide at 1.75. */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+  a {
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+  /* Links carry the same ring as controls, not the browser's default. */
+  a:focus-visible {
+    @apply rounded-xs outline-2 outline-offset-2 outline-ring;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--input) transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* uPlot's legend and cursor, set in the world's type and greys. */
+.u-legend {
+  font: 500 12px/1.4 var(--font-sans);
+  color: var(--muted-foreground);
+  text-align: left;
+}
+.u-legend .u-series:first-child {
+  display: none;
+}
+.u-legend .u-value {
+  font-family: var(--font-mono);
+  color: var(--foreground);
 }

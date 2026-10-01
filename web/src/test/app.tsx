@@ -20,6 +20,8 @@ export const loggedIn = {
   "GET /api/v1/envs/local/df": { json: {} },
   "GET /api/v1/envs/local/volumes": { json: [] },
   "GET /api/v1/envs/local/networks": { json: [] },
+  "GET /api/v1/envs/local/containers": { json: [] },
+  "GET /api/v1/envs/local/events": { json: [] },
 };
 
 /** Renders the whole app at `path`; returns the memory history to inspect navigation. */

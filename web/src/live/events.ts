@@ -1,20 +1,9 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { keys } from "@/api/queries";
 import type { DockerEvent } from "@/api/gen/types.gen";
+import { isNoise, RECENT_EVENTS } from "./noise";
 
-/** How many events the dashboard feed keeps. */
-export const RECENT_EVENTS = 50;
-
-const QUIET = ["attach", "detach", "resize", "top", "export", "archive-path", "extract-to-dir"];
-
-/**
- * Container events that change nothing the UI shows: exec (healthchecks
- * run one every few seconds per container), attach and file copies.
- */
-export function isNoise(ev: DockerEvent): boolean {
-  const action = ev.action.split(":")[0];
-  return ev.kind === "container" && (action.startsWith("exec_") || QUIET.includes(action));
-}
+export { isNoise, RECENT_EVENTS };
 
 /**
  * The queries a Docker event makes stale; none for noise.
@@ -66,7 +55,12 @@ export class EventApplier {
 
   apply(env: string, ev: DockerEvent) {
     if (isNoise(ev)) return;
-    this.qc.setQueryData<DockerEvent[]>(keys.recentEvents(env), (old = []) => [ev, ...old].slice(0, RECENT_EVENTS));
+    // Until the dashboard loads the feed, Docker's history covers this
+    // event; creating the cache here would stop that load from happening.
+    const feed = keys.recentEvents(env);
+    if (this.qc.getQueryState(feed)) {
+      this.qc.setQueryData<DockerEvent[]>(feed, (old = []) => [ev, ...old].slice(0, RECENT_EVENTS));
+    }
     for (const key of keysForEvent(env, ev)) this.pending.set(JSON.stringify(key), key);
     if (this.pending.size > 0 && !this.timer) {
       this.timer = setTimeout(() => this.flush(), this.delay);

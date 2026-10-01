@@ -4,15 +4,26 @@ import { useEffect, useRef } from "react";
 
 export interface ChartSeries {
   label: string;
-  /** A concrete CSS colour: the chart draws on a canvas, which cannot read CSS variables. */
-  color: string;
+  /**
+   * The series' ink: a chart's first series in the text colour, a second one
+   * in the secondary text colour, dashed. State hues stay off charts: a
+   * metric is not a reading of health.
+   */
+  tone: "primary" | "secondary";
   values: (number | null)[];
 }
 
 const HEIGHT = 160;
-// Neutral enough to read on the light and the dark background.
-const AXIS = "#8a8a8a";
-const GRID = "rgba(138, 138, 138, 0.18)";
+const FONT = "11px 'JetBrains Mono Variable', ui-monospace, monospace";
+
+/**
+ * A theme colour for the canvas. A canvas cannot read CSS variables, so the
+ * variable is resolved when the chart draws; `alpha` fades an oklch value.
+ */
+function ink(name: "--foreground" | "--muted-foreground" | "--border", alpha?: number): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#8a8a8a";
+  return alpha === undefined || !v.startsWith("oklch(") ? v : v.replace(/\)$/, ` / ${alpha})`);
+}
 
 /**
  * A live time-series chart (uPlot). `times` are Unix seconds. The chart is
@@ -45,15 +56,16 @@ export function Chart({
       {
         width: el.clientWidth || 600,
         height: HEIGHT,
-        legend: { show: true },
+        legend: { show: true, live: true },
         cursor: { drag: { x: false, y: false } },
         scales: { x: { time: true }, y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] } },
         axes: [
-          { stroke: AXIS, grid: { stroke: GRID }, ticks: { stroke: GRID } },
+          { stroke: () => ink("--muted-foreground"), font: FONT, grid: { stroke: () => ink("--border") }, ticks: { stroke: () => ink("--border") } },
           {
-            stroke: AXIS,
-            grid: { stroke: GRID },
-            ticks: { stroke: GRID },
+            stroke: () => ink("--muted-foreground"),
+            font: FONT,
+            grid: { stroke: () => ink("--border") },
+            ticks: { stroke: () => ink("--border") },
             size: 72,
             values: (_u, vals) => vals.map((v) => fmt(v)),
           },
@@ -62,9 +74,10 @@ export function Chart({
           {},
           ...series.map((s) => ({
             label: s.label,
-            stroke: s.color,
+            stroke: () => ink(s.tone === "primary" ? "--foreground" : "--muted-foreground"),
             width: 1.5,
-            fill: `${s.color}22`,
+            dash: s.tone === "secondary" ? [4, 3] : undefined,
+            fill: s.tone === "primary" ? () => ink("--foreground", 0.08) : undefined,
             value: (_u: uPlot, v: number | null) => fmt(v),
           })),
         ],
@@ -75,7 +88,11 @@ export function Chart({
     plot.current = u;
     const ro = new ResizeObserver(() => u.setSize({ width: el.clientWidth || 600, height: HEIGHT }));
     ro.observe(el);
+    // A theme switch repaints the canvas in the new theme's inks.
+    const mo = new MutationObserver(() => u.redraw(false));
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => {
+      mo.disconnect();
       ro.disconnect();
       u.destroy();
       plot.current = null;
@@ -87,8 +104,8 @@ export function Chart({
   }, [times, series]);
 
   return (
-    <figure className="grid gap-1">
-      <figcaption className="text-sm font-medium">{title}</figcaption>
+    <figure className="grid gap-2 rounded-lg border bg-card p-4">
+      <figcaption className="text-sm font-semibold">{title}</figcaption>
       <div ref={box} role="img" aria-label={`${title} chart`} className="min-w-0" />
     </figure>
   );
