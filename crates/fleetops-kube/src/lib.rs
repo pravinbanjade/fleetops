@@ -2,6 +2,7 @@
 //! through an agent tunnel, and the `KubeOps` implementation over it.
 
 pub mod client;
+pub mod env;
 pub mod errors;
 pub mod kinds;
 pub mod kubeconfig;

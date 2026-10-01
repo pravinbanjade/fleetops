@@ -13,6 +13,10 @@ pub struct Config {
     /// HTTPS listen address; HTTPS is disabled when unset.
     #[arg(long, env = "FLEETOPS_TLS_BIND")]
     pub tls_bind: Option<SocketAddr>,
+    /// 32 bytes, base64: seals stored kubeconfigs. Unset: <data>/secret.key,
+    /// created on first start. Back it up with the database.
+    #[arg(long, env = "FLEETOPS_SECRET_KEY", hide_env_values = true)]
+    pub secret_key: Option<String>,
     /// PEM certificate; a self-signed one is generated when unset.
     #[arg(long, env = "FLEETOPS_TLS_CERT", requires = "tls_key")]
     pub tls_cert: Option<PathBuf>,
