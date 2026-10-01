@@ -136,6 +136,8 @@ spec:
       serviceAccountName: fleetops-agent
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
         seccompProfile: {{type: RuntimeDefault}}
       containers:
         - name: agent
@@ -213,6 +215,18 @@ mod tests {
                 .to_string()
         };
         assert_ne!(ann(&a), ann(&b));
+    }
+
+    #[test]
+    fn the_pod_names_a_numeric_non_root_user() {
+        // The distroless image's USER is "nonroot", which kubelet cannot
+        // check against runAsNonRoot; without a numeric uid the pod never
+        // starts (CreateContainerConfigError).
+        let m = manifest("https://f", "fj_x");
+        assert!(
+            m.contains("runAsUser: 65532") && m.contains("runAsGroup: 65532"),
+            "{m}"
+        );
     }
 
     #[test]

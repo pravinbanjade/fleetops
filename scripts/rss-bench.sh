@@ -14,7 +14,8 @@
 # Usage: scripts/rss-bench.sh [binary] [agent binary]
 #        (defaults target/release/fleetops, target/release/fleetops-agent)
 # Environment: COUNT (default 50), LIMIT_MIB (default 50), SETTLE (seconds, default 10),
-#              AGENTS (default 10, 0 skips the agent phase), AGENT_LIMIT_MIB (default 15)
+#              AGENTS (default 10, 0 skips the agent phase), AGENT_LIMIT_MIB (default 15),
+#              KUBE_IT (kind fixtures dir; unset skips the kube phase), KUBE_ENVS (default 5)
 set -eu
 
 bin=${1:-target/release/fleetops}
@@ -140,3 +141,33 @@ server_limit=$((limit_mib + agents))
 echo "rss-bench: server $(to_mib "$server_kib") MiB with $agents agents (limit $server_limit MiB); agent $(to_mib "$agent_kib") MiB (limit $agent_limit_mib MiB)"
 [ "$server_kib" -le $((server_limit * 1024)) ] || fail "server RSS is over $server_limit MiB with $agents agents"
 [ "$agent_kib" -le $((agent_limit_mib * 1024)) ] || fail "agent RSS is over $agent_limit_mib MiB"
+
+# Kubernetes phase, when a kind cluster's fixtures are at $KUBE_IT
+# (scripts/kind-up.sh): kubeconfig environments with their lists polled.
+kube_envs=${KUBE_ENVS:-5}
+if [ -n "${KUBE_IT:-}" ] && [ "$kube_envs" -gt 0 ]; then
+  kubeconfig=$(python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$KUBE_IT/kubeconfig")
+  i=0
+  while [ "$i" -lt "$kube_envs" ]; do
+    curl -fsS -b "$jar" -H 'content-type: application/json' -H "Origin: $base" -H "x-csrf-token: $csrf" \
+      -d "{\"name\":\"rss-kube-$i\",\"kind\":\"kube-config\",\"kubeconfig\":$kubeconfig}" "$base/api/v1/envs" >/dev/null ||
+      fail "could not create kube environment $i"
+    i=$((i + 1))
+  done
+  round=0
+  while [ "$round" -lt 3 ]; do
+    i=0
+    while [ "$i" -lt "$kube_envs" ]; do
+      for kind in pods deployments services; do
+        curl -fsS -b "$jar" "$base/api/v1/envs/rss-kube-$i/k8s/$kind" >/dev/null || fail "rss-kube-$i cannot list $kind"
+      done
+      i=$((i + 1))
+    done
+    round=$((round + 1))
+  done
+  sleep "$settle"
+  kube_kib=$(peak_rss "$pid")
+  kube_limit=$((limit_mib + agents + 5))
+  echo "rss-bench: server $(to_mib "$kube_kib") MiB with $agents agents and $kube_envs kube environments (limit $kube_limit MiB)"
+  [ "$kube_kib" -le $((kube_limit * 1024)) ] || fail "server RSS is over $kube_limit MiB with $kube_envs kube environments"
+fi

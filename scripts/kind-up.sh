@@ -13,10 +13,15 @@ kind get clusters 2>/dev/null | grep -qx "$name" || kind create cluster --name "
 mkdir -p "$out"
 kind get kubeconfig --name "$name" > "$out/kubeconfig"
 export KUBECONFIG="$out/kubeconfig"
-docker pull -q busybox:1.37 >/dev/null
-# Preloading saves a pull; kind cannot load some multi-platform images
-# from Docker's containerd store, and then the cluster pulls instead.
-kind load docker-image busybox:1.37 --name "$name" >/dev/null 2>&1 || echo "busybox preload failed; the cluster will pull it"
+# Preloading saves a pull. `kind load` cannot read multi-platform images
+# from Docker's containerd store, so import the node's own platform; if
+# that fails too, the cluster pulls instead.
+node="$name-control-plane"
+plat="linux/$(docker exec "$node" uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+docker pull -q --platform "$plat" busybox:1.37 >/dev/null
+docker save --platform "$plat" busybox:1.37 |
+  docker exec -i "$node" ctr --namespace=k8s.io images import --digests --snapshotter=overlayfs - >/dev/null 2>&1 ||
+  echo "busybox preload failed; the cluster will pull it"
 kubectl apply -f "$(dirname "$0")/kube-it-fixtures.yaml" >/dev/null
 kubectl -n fleetops-it rollout status deploy/web --timeout=120s >/dev/null
 kubectl -n fleetops-it wait --for=condition=Ready pod/ticker --timeout=120s >/dev/null
