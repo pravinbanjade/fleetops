@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
-import { Check, ChevronsUpDown, LogOut, Menu, Monitor, Moon, RefreshCw, Settings2, Sun, X } from "lucide-react";
+import { Boxes, Check, ChevronsUpDown, LogOut, Menu, Monitor, Moon, RefreshCw, Settings2, Sun, X } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { envsQuery, envStatusQuery, meQuery } from "@/api/queries";
@@ -16,11 +16,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { envHue, envInitials } from "@/lib/env";
+import { envHue, envInitials, isKube } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { CommandPalette, typing } from "./CommandPalette";
-import { ADMIN_NAV, NAV } from "./nav";
+import { ADMIN_NAV, KUBE_NAV, NAV, navHref, type NavItem } from "./nav";
+import { WORKLOADS } from "@/pages/kube/kinds";
 import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
 
@@ -34,11 +35,13 @@ export function Shell() {
   const [drawerOn, setDrawerOn] = useState<string | null>(null);
   const drawer = drawerOn === pathname;
   const setDrawer = (open: boolean) => setDrawerOn(open ? pathname : null);
-  useGoKeys(env);
+  const { data: envs = [] } = useQuery(envsQuery);
+  const kube = isKube(envs.find((e) => e.name === env)?.kind);
+  useGoKeys(env, kube);
   return (
     <div className="min-h-svh md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
       <aside className="sticky top-0 hidden h-svh border-r bg-rail md:block">
-        <Rail env={env} />
+        <Rail env={env} kube={kube} />
       </aside>
       <DialogPrimitive.Root open={drawer} onOpenChange={setDrawer}>
         <DialogPrimitive.Portal>
@@ -51,14 +54,14 @@ export function Shell() {
                 <X />
               </Button>
             </DialogPrimitive.Close>
-            <Rail env={env} />
+            <Rail env={env} kube={kube} />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
       <main className="min-w-0">
-        <TopBar env={env} onMenu={() => setDrawer(true)} />
+        <TopBar env={env} kube={kube} onMenu={() => setDrawer(true)} />
         <ConnectionBanner />
-        {env && <EnvLive env={env} />}
+        {env && !kube && <EnvLive env={env} />}
         <Outlet />
       </main>
     </div>
@@ -66,7 +69,14 @@ export function Shell() {
 }
 
 /** The navigation rail: brand, environment, pages, administration, user. */
-function Rail({ env }: { env?: string }) {
+/** The params a nav item's link needs in `env`. */
+function navParams(item: NavItem, env: string) {
+  return ("kind" in item ? { env, kind: item.kind } : { env }) as never;
+}
+
+function Rail({ env, kube }: { env?: string; kube: boolean }) {
+  const { pathname } = useLocation();
+  const items: readonly NavItem[] = kube ? KUBE_NAV : NAV;
   return (
     <div className="relative flex h-full flex-col gap-5 overflow-y-auto p-3 pt-4">
       <EnvBand env={env} />
@@ -74,11 +84,15 @@ function Rail({ env }: { env?: string }) {
         <Mark />
         <span className="font-callsign text-[15px] font-semibold">FleetOps</span>
       </Link>
-      <EnvSwitcher current={env} />
+      <EnvSwitcher current={env} kube={kube} />
       {env && (
         <nav className="grid gap-0.5" aria-label="Environment">
-          {NAV.map(({ to, label, icon: Icon, key }) => (
-            <Link key={to} to={to} params={{ env }} activeOptions={{ exact: to === "/envs/$env" }} className={LINK}>
+          {items.map((item) => {
+            const { to, label, icon: Icon, key } = item;
+            const workloads =
+              "kind" in item && item.kind === "deployments" && WORKLOADS.some((k) => pathname.startsWith(`/envs/${encodeURIComponent(env)}/k8s/${k}`));
+            return (
+            <Link key={label} to={to} params={navParams(item, env)} activeOptions={{ exact: to === "/envs/$env" }} className={LINK} {...(workloads ? { "data-status": "active" } : {})}>
               <Icon className="size-4 shrink-0" strokeWidth={1.75} />
               {label}
               <kbd
@@ -88,7 +102,8 @@ function Rail({ env }: { env?: string }) {
                 G {key.toUpperCase()}
               </kbd>
             </Link>
-          ))}
+            );
+          })}
         </nav>
       )}
       <AdminNav />
@@ -129,7 +144,7 @@ function AdminNav() {
 }
 
 /** `g` then a page's key jumps to that page of the current environment. */
-function useGoKeys(env?: string) {
+function useGoKeys(env: string | undefined, kube: boolean) {
   const navigate = useNavigate();
   useEffect(() => {
     if (!env) return;
@@ -139,10 +154,11 @@ function useGoKeys(env?: string) {
       const k = e.key.toLowerCase();
       if (armed && Date.now() - armed < 1200) {
         armed = 0;
-        const hit = NAV.find((n) => n.key === k);
+        const items: readonly NavItem[] = kube ? KUBE_NAV : NAV;
+        const hit = items.find((n) => n.key === k);
         if (hit) {
           e.preventDefault();
-          void navigate({ to: hit.to, params: { env } });
+          void navigate({ to: hit.to, params: navParams(hit, env) });
         }
       } else if (k === "g") {
         armed = Date.now();
@@ -150,7 +166,7 @@ function useGoKeys(env?: string) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [env, navigate]);
+  }, [env, kube, navigate]);
 }
 
 /** Where the operator is, whether the screen is live, and the palette. */
@@ -166,12 +182,11 @@ function EnvBand({ env }: { env?: string }) {
   );
 }
 
-function TopBar({ env, onMenu }: { env?: string; onMenu: () => void }) {
+function TopBar({ env, kube, onMenu }: { env?: string; kube: boolean; onMenu: () => void }) {
   const { pathname } = useLocation();
+  const items: readonly NavItem[] = kube ? KUBE_NAV : NAV;
   const section =
-    [...NAV]
-      .reverse()
-      .find((n) => env && pathname.startsWith(n.to.replace("$env", encodeURIComponent(env)))) ??
+    [...items].reverse().find((n) => env && pathname.startsWith(navHref(n, env))) ??
     ADMIN_NAV.find((n) => pathname.startsWith(n.to));
   const SectionIcon = section?.icon;
   return (
@@ -261,7 +276,7 @@ export function EnvTag({ name, size = "md" }: { name: string; size?: "sm" | "md"
   );
 }
 
-function EnvSwitcher({ current }: { current?: string }) {
+function EnvSwitcher({ current, kube }: { current?: string; kube: boolean }) {
   const { data: envs = [] } = useQuery(envsQuery);
   const navigate = useNavigate();
   return (
@@ -283,7 +298,7 @@ function EnvSwitcher({ current }: { current?: string }) {
               {current ?? "Choose environment"}
             </span>
           </span>
-          {current && <EnvStatusBadge env={current} />}
+          {current && <EnvStatusBadge env={current} kube={kube} />}
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -293,6 +308,7 @@ function EnvSwitcher({ current }: { current?: string }) {
           <DropdownMenuItem key={e.id} onSelect={() => void navigate({ to: "/envs/$env", params: { env: e.name } })}>
             <EnvTag name={e.name} size="sm" />
             {e.name}
+            {isKube(e.kind) && <Boxes aria-label="Kubernetes" className="size-3.5 text-muted-foreground" />}
             {e.name === current && <Check className="ml-auto size-4 text-primary" />}
           </DropdownMenuItem>
         ))}
@@ -301,8 +317,8 @@ function EnvSwitcher({ current }: { current?: string }) {
   );
 }
 
-export function EnvStatusBadge({ env }: { env: string }) {
-  const { data } = useQuery(envStatusQuery(env));
+export function EnvStatusBadge({ env, kube = false }: { env: string; kube?: boolean }) {
+  const { data } = useQuery(envStatusQuery(env, kube));
   if (!data) return null;
   if (data.state === "up") return <StatusDot state="up" />;
   return (

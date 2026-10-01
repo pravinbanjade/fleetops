@@ -19,13 +19,14 @@ import {
   listContainers,
   listEnvs,
   listImages,
+  listKube,
   listNetworks,
   listSessions,
   listUsers,
   listRecentEvents,
   listVolumes,
 } from "./gen/sdk.gen";
-import type { DockerEvent } from "./gen/types.gen";
+import type { DockerEvent, KubeKind } from "./gen/types.gen";
 import { mergeEvents } from "@/live/noise";
 
 /**
@@ -59,6 +60,8 @@ export const keys = {
   networks: (env: string) => ["env", env, "networks"] as const,
   network: (env: string, id: string) => ["env", env, "networks", id] as const,
   composeProjects: (env: string) => ["env", env, "compose-projects"] as const,
+  kube: (env: string, kind: string, ns?: string) => ["env", env, "k8s", kind, ns ?? "*"] as const,
+  kubeObject: (env: string, kind: string, ns: string, name: string) => ["env", env, "k8s", kind, ns, name] as const,
   /** The newest Docker events seen over the websocket; filled by the live layer, never fetched. */
   recentEvents: (env: string) => ["live", env, "events"] as const,
 };
@@ -110,11 +113,25 @@ const path = (env: string) => ({ path: { env } });
 /** How often a down environment's status is checked, to notice it coming back. */
 export const ENV_DOWN_POLL_MS = 5000;
 
-export const envStatusQuery = (env: string) =>
+/** How often a Kubernetes environment's status is read; nothing pushes it. */
+export const KUBE_STATUS_POLL_MS = 15000;
+/** How often a visible Kubernetes list refreshes. */
+export const KUBE_LIST_POLL_MS = 5000;
+
+export const envStatusQuery = (env: string, kube = false) =>
   queryOptions({
     queryKey: keys.envStatus(env),
     queryFn: async () => (await getEnvStatus(path(env))).data,
-    refetchInterval: (q) => (q.state.data?.state === "down" ? ENV_DOWN_POLL_MS : false),
+    refetchInterval: (q) =>
+      q.state.data?.state === "down" ? ENV_DOWN_POLL_MS : kube ? KUBE_STATUS_POLL_MS : false,
+  });
+
+export const kubeListQuery = (env: string, kind: KubeKind, ns?: string) =>
+  queryOptions({
+    queryKey: keys.kube(env, kind, ns),
+    queryFn: async () => (await listKube({ path: { env, kind }, query: ns ? { namespace: ns } : {} })).data,
+    refetchInterval: KUBE_LIST_POLL_MS,
+    retry: (failures, err) => !(err instanceof ApiError && err.status === 403) && failures < 1,
   });
 
 export const infoQuery = (env: string) =>
