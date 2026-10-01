@@ -1,9 +1,12 @@
 //! Kubernetes environments on kube-rs: a client from a kubeconfig or
 //! through an agent tunnel, and the `KubeOps` implementation over it.
 
+pub mod client;
 pub mod errors;
 pub mod kinds;
 pub mod kubeconfig;
 pub mod mask;
 pub mod summaries;
 pub mod tunnel;
+
+pub use client::KubeClient;

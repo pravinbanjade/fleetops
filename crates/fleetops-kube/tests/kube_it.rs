@@ -11,6 +11,12 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::timeout;
 
+use fleetops_core::kube::{KubeKind, KubeOps, MASK};
+use fleetops_core::streams::{ExecOptions, LogOptions};
+use fleetops_core::Error;
+use k8s_openapi::api::core::v1::ConfigMap;
+use kube::api::PostParams;
+
 const WAIT: Duration = Duration::from_secs(15);
 
 #[tokio::test]
@@ -71,4 +77,188 @@ async fn through_the_tunnel_lists_pods_follows_logs_and_resizes_exec() {
         .unwrap();
     let out = String::from_utf8_lossy(&out);
     assert!(out.contains("45 123"), "{out}");
+}
+
+#[tokio::test]
+async fn every_kind_lists() {
+    let ops = common::ops();
+    for kind in KubeKind::ALL {
+        let ns = if kind.cluster_scoped() {
+            None
+        } else {
+            Some(NS)
+        };
+        ops.list(kind, ns)
+            .await
+            .unwrap_or_else(|e| panic!("{kind:?}: {e}"));
+    }
+    let ns = ops.list(KubeKind::Namespaces, None).await.unwrap();
+    assert!(ns.rows.iter().any(|r| r.name == NS));
+    let nodes = ops.list(KubeKind::Nodes, None).await.unwrap();
+    assert!(!nodes.rows.is_empty());
+    let deps = ops.list(KubeKind::Deployments, Some(NS)).await.unwrap();
+    let web = deps.rows.iter().find(|r| r.name == "web").expect("web");
+    assert!(web.columns["ready"].ends_with("/2"), "{web:?}");
+    // All namespaces includes ours.
+    let all = ops.list(KubeKind::Pods, None).await.unwrap();
+    assert!(all.rows.iter().any(|r| r.namespace.as_deref() == Some(NS)));
+}
+
+#[tokio::test]
+async fn a_capped_list_says_it_is_truncated() {
+    let ops = common::ops().with_list_cap(1);
+    let pods = ops.list(KubeKind::Pods, Some(NS)).await.unwrap();
+    assert_eq!(pods.rows.len(), 1);
+    assert!(pods.truncated);
+}
+
+#[tokio::test]
+async fn a_pod_shows_yaml_owners_and_containers() {
+    let ops = common::ops();
+    let pods = ops.list(KubeKind::Pods, Some(NS)).await.unwrap();
+    let web = pods
+        .rows
+        .iter()
+        .find(|r| r.name.starts_with("web-"))
+        .expect("a web pod");
+    let o = ops.get(KubeKind::Pods, NS, &web.name).await.unwrap();
+    assert!(
+        o.yaml.contains("kind: Pod") && !o.yaml.contains("managedFields"),
+        "{}",
+        o.yaml
+    );
+    let kinds: Vec<_> = o.owners.iter().map(|r| r.kind.as_str()).collect();
+    assert_eq!(kinds, ["ReplicaSet", "Deployment"]);
+    assert_eq!(o.owners[1].link, Some(KubeKind::Deployments));
+    assert_eq!(o.containers, ["web"]);
+    assert!(o.conditions.iter().any(|c| c.type_ == "Ready"));
+    let t = ops.get(KubeKind::Pods, NS, "ticker").await.unwrap();
+    assert_eq!(t.containers, ["main", "side"]);
+}
+
+#[tokio::test]
+async fn secret_yaml_never_contains_its_value() {
+    let ops = common::ops();
+    let s = ops.get(KubeKind::Secrets, NS, "creds").await.unwrap();
+    assert!(s.yaml.contains(MASK), "{}", s.yaml);
+    // Neither the plain value nor its base64 form, anywhere (the
+    // last-applied annotation holds it too).
+    assert!(!s.yaml.contains("hunter2-do-not-leak"), "{}", s.yaml);
+    assert!(!s.yaml.contains("aHVudGVyMi1kby1ub3QtbGVhaw"), "{}", s.yaml);
+}
+
+#[tokio::test]
+async fn scale_changes_the_desired_replicas() {
+    let ops = common::ops();
+    ops.scale(KubeKind::StatefulSets, NS, "db", 2)
+        .await
+        .unwrap();
+    common::eventually("db wants 2", || async {
+        let o = ops.get(KubeKind::StatefulSets, NS, "db").await.unwrap();
+        o.row.columns["ready"].ends_with("/2")
+    })
+    .await;
+    ops.scale(KubeKind::StatefulSets, NS, "db", 1)
+        .await
+        .unwrap();
+    assert!(matches!(
+        ops.scale(KubeKind::Pods, NS, "ticker", 2).await,
+        Err(Error::Invalid(_))
+    ));
+}
+
+#[tokio::test]
+async fn restart_stamps_the_template_and_records_events() {
+    let ops = common::ops();
+    ops.restart(KubeKind::Deployments, NS, "web").await.unwrap();
+    let o = ops.get(KubeKind::Deployments, NS, "web").await.unwrap();
+    assert!(
+        o.yaml.contains("kubectl.kubernetes.io/restartedAt"),
+        "{}",
+        o.yaml
+    );
+    common::eventually("a ScalingReplicaSet event", || async {
+        let ev = ops.events(KubeKind::Deployments, NS, "web").await.unwrap();
+        ev.iter().any(|e| e.reason == "ScalingReplicaSet")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn delete_removes_the_object() {
+    let ops = common::ops();
+    let name = format!("tmp-{}", std::process::id());
+    let cms: kube::Api<ConfigMap> = kube::Api::namespaced(common::tunnel_client(), NS);
+    let cm: ConfigMap =
+        serde_json::from_value(serde_json::json!({"metadata": {"name": name}})).unwrap();
+    cms.create(&PostParams::default(), &cm).await.unwrap();
+    ops.delete(KubeKind::ConfigMaps, NS, &name).await.unwrap();
+    assert!(matches!(
+        ops.get(KubeKind::ConfigMaps, NS, &name).await,
+        Err(Error::NotFound(_))
+    ));
+}
+
+#[tokio::test]
+async fn logs_and_exec_default_to_the_first_container() {
+    use futures_util::StreamExt;
+    let ops = common::ops();
+    let opts = LogOptions {
+        follow: false,
+        tail: Some(3),
+        ..LogOptions::default()
+    };
+    let lines: Vec<_> = ops.logs(NS, "ticker", &opts).collect().await;
+    assert!(!lines.is_empty());
+    for l in lines {
+        assert!(
+            l.unwrap().text.starts_with("tick"),
+            "side container's logs leaked in"
+        );
+    }
+    let exec = ExecOptions {
+        cmd: Some(vec!["cat".into(), "/proc/1/cmdline".into()]),
+        ..ExecOptions::default()
+    };
+    let mut session = ops.exec_start(NS, "ticker", &exec).await.unwrap();
+    let mut out = Vec::new();
+    while let Some(chunk) = session.output.next().await {
+        out.extend(chunk.unwrap());
+    }
+    assert!(
+        String::from_utf8_lossy(&out).contains("tick"),
+        "{}",
+        String::from_utf8_lossy(&out)
+    );
+}
+
+#[tokio::test]
+async fn exec_resizes_and_reports_the_exit_code() {
+    use futures_util::StreamExt;
+    let ops = common::ops();
+    let opts = ExecOptions {
+        cmd: Some(vec!["sh".into()]),
+        container: Some("main".into()),
+        ..ExecOptions::default()
+    };
+    let mut s = ops.exec_start(NS, "ticker", &opts).await.unwrap();
+    s.resize.send((123, 45)).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    s.input.send(b"stty size; exit 3\n".to_vec()).await.unwrap();
+    let mut out = Vec::new();
+    while let Some(chunk) = timeout(WAIT, s.output.next()).await.unwrap() {
+        out.extend(chunk.unwrap());
+    }
+    assert!(String::from_utf8_lossy(&out).contains("45 123"));
+    assert_eq!(timeout(WAIT, s.exit_code).await.unwrap().unwrap(), Some(3));
+}
+
+#[tokio::test]
+async fn a_narrow_token_gets_the_rbac_reason() {
+    let ops = fleetops_kube::KubeClient::new(common::tunnel_client_with("narrow-token"));
+    ops.list(KubeKind::Pods, Some(NS)).await.unwrap();
+    match ops.list(KubeKind::Deployments, Some(NS)).await {
+        Err(Error::Forbidden(m)) => assert!(m.contains("deployments"), "{m}"),
+        other => panic!("expected forbidden, got {other:?}"),
+    }
 }

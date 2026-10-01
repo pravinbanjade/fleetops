@@ -944,6 +944,7 @@ dependencies = [
 name = "fleetops-kube"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64",
  "fleetops-agent",
  "fleetops-core",
@@ -958,6 +959,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "tokio",
+ "tokio-util",
  "tower",
 ]
 
