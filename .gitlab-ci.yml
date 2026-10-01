@@ -1,7 +1,9 @@
 # CI runs on pushes to the default branch and on merge requests. A tag
 # vX.Y.Z (matching the workspace version in Cargo.toml) instead publishes
-# the multi-arch server and agent images to this project's container
-# registry and a release with static linux binaries of both.
+# the multi-arch server and agent images to Docker Hub (public; set the
+# masked CI/CD variables DOCKERHUB_USERNAME and DOCKERHUB_TOKEN) and a
+# release with static linux binaries of both. This project's own registry
+# holds only the CI image and the build cache.
 #
 # Every job but the first runs in ci/Dockerfile's image, built at the start
 # of the pipeline. Jobs that need Docker start a daemon in their own
@@ -19,7 +21,8 @@ stages: [prepare, test, release]
 
 variables:
   CI_IMAGE: $CI_REGISTRY_IMAGE/ci:$CI_COMMIT_REF_SLUG
-  AGENT_IMAGE_REPO: $CI_REGISTRY_IMAGE/agent
+  SERVER_IMAGE_REPO: docker.io/pravinbanjade/fleetops
+  AGENT_IMAGE_REPO: docker.io/pravinbanjade/fleetops-agent
   BUILD_CACHE: $CI_REGISTRY_IMAGE/cache:build
   CARGO_HOME: $CI_PROJECT_DIR/.cargo
   CARGO_TERM_COLOR: always
@@ -158,6 +161,7 @@ publish:
   rules:
     - if: $CI_COMMIT_TAG
   script:
+    - echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin docker.io
     - |
       version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
       [ "v$version" = "$CI_COMMIT_TAG" ] || { echo "tag $CI_COMMIT_TAG, Cargo.toml $version" >&2; exit 1; }
@@ -165,7 +169,7 @@ publish:
       tags() { echo "--tag $1:$version --tag $1:${version%.*} --tag $1:latest"; }
     - >
       docker buildx build . --target server --platform linux/amd64,linux/arm64 --push
-      $(tags "$CI_REGISTRY_IMAGE") $labels
+      $(tags "$SERVER_IMAGE_REPO") $labels
       --cache-from "type=registry,ref=$BUILD_CACHE"
       --cache-to "type=registry,ref=$BUILD_CACHE,mode=max,image-manifest=true,oci-mediatypes=true"
     - >
@@ -208,7 +212,7 @@ release:
   release:
     tag_name: $CI_COMMIT_TAG
     name: FleetOps $CI_COMMIT_TAG
-    description: "Images `$CI_REGISTRY_IMAGE:$VERSION` and `$AGENT_IMAGE_REPO:$VERSION` for linux/amd64 and linux/arm64, and static linux binaries of both with SHA-256 checksums."
+    description: "Images `$SERVER_IMAGE_REPO:$VERSION` and `$AGENT_IMAGE_REPO:$VERSION` for linux/amd64 and linux/arm64, and static linux binaries of both with SHA-256 checksums."
     assets:
       links:
         - { name: fleetops-$CI_COMMIT_TAG-linux-amd64, url: $PACKAGE/fleetops-$CI_COMMIT_TAG-linux-amd64, link_type: package }

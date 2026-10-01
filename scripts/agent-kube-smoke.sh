@@ -61,7 +61,7 @@ csrf=$(curl -fsSk -c "$jar" -H 'content-type: application/json' -H "Origin: $bas
 curl -fsSk -b "$jar" -H 'content-type: application/json' -H "Origin: $origin" -H "x-csrf-token: $csrf" \
   -d '{"name":"cluster","kind":"kube-agent"}' "$base/api/v1/envs" > "$work/env.json" || fail "create env"
 python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["enrollment"]["command"])' "$work/env.json" |
-  sed "s#ghcr.io/pravinbanjade/fleetops-agent:[^ ]*#$agent_image#" > "$work/apply.sh"
+  sed "s#docker.io/pravinbanjade/fleetops-agent:[^ ]*#$agent_image#" > "$work/apply.sh"
 grep -q -- '--kube' "$work/apply.sh" || fail "command is not a kube manifest"
 sh "$work/apply.sh" >/dev/null || fail "kubectl apply"
 
