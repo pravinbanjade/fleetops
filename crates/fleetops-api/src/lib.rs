@@ -18,6 +18,7 @@ pub mod ws;
 
 use axum::{middleware::from_fn, Router};
 
+pub use auth::token::hash_token as auth_token_hash;
 pub use error::{ApiError, ApiResult};
 pub use state::{ApiConfig, AppState};
 
