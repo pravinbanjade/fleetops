@@ -52,6 +52,7 @@ pub const API_BASE: &str = "/api/v1";
         (name = "volumes"),
         (name = "networks"),
         (name = "compose", description = "Compose projects, grouped by label"),
+        (name = "kubernetes", description = "Objects in Kubernetes environments"),
         (name = "tasks", description = "Background image pulls and builds"),
         (name = "websocket", description = "Real-time events, stats, logs and exec"),
     )

@@ -5,7 +5,7 @@
 use crate::LocalDocker;
 use async_trait::async_trait;
 use fleetops_core::docker::{DockerOps, SystemOps};
-use fleetops_core::env::{EnvKind, EnvStatus, Environment};
+use fleetops_core::env::{EnvKind, EnvStatus, EnvVersion, Environment};
 use fleetops_tunnel::registry::Registry;
 use std::{
     sync::{Arc, Mutex},
@@ -70,7 +70,9 @@ impl Environment for AgentDockerEnv {
             return EnvStatus::Down { reason };
         };
         match tokio::time::timeout(STATUS_TIMEOUT, client.version()).await {
-            Ok(Ok(version)) => EnvStatus::Up { version },
+            Ok(Ok(version)) => EnvStatus::Up {
+                version: EnvVersion::Docker(version),
+            },
             Ok(Err(e)) => EnvStatus::Down {
                 reason: format!("agent connected, Docker unreachable: {e}"),
             },

@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod contract;
 pub mod fake_docker;
+pub mod fake_kube;
 
 use axum::{
     body::Body,
@@ -16,6 +17,9 @@ use fleetops_store::Store;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::{net::SocketAddr, sync::Arc};
+
+/// A token kubeconfig for a cluster nobody listens on.
+pub const KUBECONFIG: &str = "apiVersion: v1\nkind: Config\ncurrent-context: dev\nclusters:\n- name: dev\n  cluster: {server: 'https://127.0.0.1:1'}\ncontexts:\n- name: dev\n  context: {cluster: dev, user: dev}\n- name: other\n  context: {cluster: dev, user: dev}\nusers:\n- name: dev\n  user: {token: very-secret-token}\n";
 use tower::ServiceExt;
 
 pub const ADMIN: &str = "admin";
@@ -173,6 +177,15 @@ impl TestApp {
     }
 
     /// Registers environment `name` (backed by `self.fake`) as `admin`.
+    /// A kube-config environment backed by `self.fake.kube`.
+    pub async fn add_kube_env(&self, admin: &Session, name: &str) {
+        let r = self
+            .send(req("POST", "/api/v1/envs", Some(serde_json::json!({
+                "name": name, "kind": "kube-config", "kubeconfig": KUBECONFIG, "skip_check": true})), Some(admin)))
+            .await;
+        assert_eq!(r.status, 201, "{:?}", r.json);
+    }
+
     pub async fn add_env(&self, admin: &Session, name: &str) {
         let r = self
             .send(req(

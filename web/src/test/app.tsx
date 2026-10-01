@@ -15,7 +15,7 @@ export const loggedIn = {
   "GET /api/v1/auth/status": { json: { setup_required: false, setup_open: false } },
   "GET /api/v1/auth/me": { json: ADMIN },
   "GET /api/v1/envs": { json: ENVS },
-  "GET /api/v1/envs/local/status": { json: { state: "up", version: { version: "29.5.2", api_version: "1.52", os: "linux", arch: "arm64" } } },
+  "GET /api/v1/envs/local/status": { json: { state: "up", version: { kind: "docker", version: "29.5.2", api_version: "1.52", os: "linux", arch: "arm64" } } },
   "GET /api/v1/envs/local/info": { json: {} },
   "GET /api/v1/envs/local/df": { json: {} },
   "GET /api/v1/envs/local/volumes": { json: [] },
@@ -30,3 +30,35 @@ export function renderApp(path: string) {
   render(<App history={history} />);
   return { history, screen };
 }
+
+/** A kube-config environment, for Kubernetes page tests (with `kubeRoutes`). */
+export const KUBE_ENV = {
+  id: 2,
+  name: "k",
+  kind: "kube-config",
+  url: "https://k:6443",
+  created_at: 0,
+  updated_at: 0,
+  agent: null,
+  kube: { server: "https://k:6443", context: "dev", user_kind: "token" },
+};
+
+/** A Kubernetes row, as the API lists it. */
+export function kubeRow(name: string, namespace: string | null = null, columns: Record<string, string> = {}, health = "ok") {
+  return { name, namespace, created: 1, status: health === "ok" ? "Running" : "2/3", health, columns };
+}
+
+/** Routes for the kube environment `k`, on top of `loggedIn`. */
+export const kubeRoutes = {
+  "GET /api/v1/envs": { json: [...ENVS, KUBE_ENV] },
+  "GET /api/v1/envs/k/status": {
+    json: { state: "up", version: { kind: "kube", git_version: "v1.32.0", platform: "linux/amd64", nodes: 3, nodes_ready: 3 } },
+  },
+  "GET /api/v1/envs/k/k8s/namespaces": { json: { rows: [kubeRow("apps"), kubeRow("default")], truncated: false } },
+  "GET /api/v1/envs/k/k8s/deployments": {
+    json: { rows: [kubeRow("web", "apps", { ready: "2/3", up_to_date: "3", available: "2" }, "warn")], truncated: false },
+  },
+  "GET /api/v1/envs/k/k8s/pods": {
+    json: { rows: [kubeRow("web-1", "apps", { ready: "1/1", restarts: "0", node: "n1", ip: "" })], truncated: false },
+  },
+};

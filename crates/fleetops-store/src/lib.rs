@@ -3,7 +3,9 @@
 
 mod agents;
 mod audit;
+mod credentials;
 mod environments;
+pub mod secrets;
 mod sessions;
 mod settings;
 mod users;
@@ -24,6 +26,8 @@ static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,
+    /// Seals credentials; a random per-process key until `with_secret_key`.
+    secrets: std::sync::Arc<secrets::SecretBox>,
 }
 
 impl Store {
@@ -64,7 +68,17 @@ impl Store {
             .run(&pool)
             .await
             .map_err(|e| Error::Internal(format!("migration failed: {e}")))?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            secrets: std::sync::Arc::new(secrets::SecretBox::new(&secrets::SecretKey::random())),
+        })
+    }
+
+    /// Seals and opens credentials with `key` instead of the random
+    /// per-process key every store starts with.
+    pub fn with_secret_key(mut self, key: &secrets::SecretKey) -> Self {
+        self.secrets = std::sync::Arc::new(secrets::SecretBox::new(key));
+        self
     }
 }
 

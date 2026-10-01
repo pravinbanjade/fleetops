@@ -19,7 +19,18 @@ interface Session {
  * A shell in the container. Nothing runs until the user connects: every
  * exec is audited, and switching tabs should not start one.
  */
-export function TerminalTab({ env, id, running }: { env: string; id: string; running: boolean }) {
+export function TerminalTab({
+  env,
+  id,
+  running,
+  container,
+}: {
+  env: string;
+  id: string;
+  running: boolean;
+  /** Kubernetes only: the pod's container. */
+  container?: string;
+}) {
   const [shell, setShell] = useState<Shell>("auto");
   const [command, setCommand] = useState("");
   const [user, setUser] = useState("");
@@ -114,7 +125,7 @@ export function TerminalTab({ env, id, running }: { env: string; id: string; run
           key={session.n}
           env={env}
           id={id}
-          opts={{ cmd: session.cmd, user: session.user }}
+          opts={{ cmd: session.cmd, user: session.user, container }}
           onStarted={() => setStarted(true)}
           onEnd={setEnded}
         />

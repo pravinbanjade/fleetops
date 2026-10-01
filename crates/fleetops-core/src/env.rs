@@ -1,6 +1,7 @@
 //! Environments are the things fleetops manages: a local Docker socket, or a
 //! remote host behind an agent. Kubernetes adds a kind later.
 
+use crate::kube::{KubeOps, KubeVersion};
 use crate::{docker::DockerOps, docker::EngineVersion, Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,10 @@ pub enum EnvKind {
     DockerLocal,
     /// A remote Docker host reached through a `fleetops-agent` tunnel.
     DockerAgent,
+    /// A cluster reached directly with a stored kubeconfig.
+    KubeConfig,
+    /// A cluster reached through an in-cluster `fleetops-agent --kube`.
+    KubeAgent,
 }
 
 impl EnvKind {
@@ -20,7 +25,13 @@ impl EnvKind {
         match self {
             EnvKind::DockerLocal => "docker-local",
             EnvKind::DockerAgent => "docker-agent",
+            EnvKind::KubeConfig => "kube-config",
+            EnvKind::KubeAgent => "kube-agent",
         }
+    }
+
+    pub fn is_kube(self) -> bool {
+        matches!(self, EnvKind::KubeConfig | EnvKind::KubeAgent)
     }
 }
 
@@ -31,6 +42,8 @@ impl FromStr for EnvKind {
         match s {
             "docker-local" => Ok(EnvKind::DockerLocal),
             "docker-agent" => Ok(EnvKind::DockerAgent),
+            "kube-config" => Ok(EnvKind::KubeConfig),
+            "kube-agent" => Ok(EnvKind::KubeAgent),
             other => Err(Error::Invalid(format!(
                 "unknown environment kind '{other}'"
             ))),
@@ -38,10 +51,18 @@ impl FromStr for EnvKind {
     }
 }
 
+/// What an up environment reports about itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum EnvVersion {
+    Docker(EngineVersion),
+    Kube(KubeVersion),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum EnvStatus {
-    Up { version: EngineVersion },
+    Up { version: EnvVersion },
     Down { reason: String },
 }
 
@@ -54,6 +75,11 @@ pub trait Environment: Send + Sync {
     /// Docker operations, when this environment is Docker-kind and its
     /// endpoint can be reached. `None` means "unavailable right now".
     fn docker(&self) -> Option<Arc<dyn DockerOps>>;
+    /// Kubernetes operations, for Kubernetes-kind environments that can be
+    /// reached.
+    fn kube(&self) -> Option<Arc<dyn KubeOps>> {
+        None
+    }
     /// Resolves when this environment's reachability may have changed, so
     /// a waiting reconnect can retry at once instead of sleeping out its
     /// backoff. Environments with no such signal never resolve.
@@ -62,10 +88,20 @@ pub trait Environment: Send + Sync {
     }
 }
 
+/// Everything a factory needs to build one live environment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnvSpec {
+    pub id: i64,
+    pub name: String,
+    pub kind: EnvKind,
+    pub url: String,
+    pub credential: Option<Credential>,
+}
+
 /// Builds live environments from stored records. The server supplies the
-/// bollard-backed factory; tests supply fakes.
+/// real factory; tests supply fakes.
 pub trait EnvFactory: Send + Sync {
-    fn build(&self, id: i64, name: &str, kind: EnvKind, url: &str) -> Result<Arc<dyn Environment>>;
+    fn build(&self, spec: &EnvSpec) -> Result<Arc<dyn Environment>>;
 }
 
 /// Environment names appear in URLs (`/envs/{name}/...`).
@@ -116,4 +152,35 @@ mod tests {
         // Users cannot type one in.
         assert!(validate_env_url("agent://42").is_err());
     }
+}
+/// A stored secret an environment is built from, already decrypted by
+/// the store. `Unreadable` carries why it could not be decrypted.
+#[derive(Clone, PartialEq, Eq)]
+pub enum Credential {
+    Kubeconfig(String),
+    Unreadable(String),
+}
+
+impl std::fmt::Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Credential::Kubeconfig(_) => f.write_str("Kubeconfig(<redacted>)"),
+            Credential::Unreadable(why) => write!(f, "Unreadable({why:?})"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum UserKind {
+    Token,
+    Cert,
+}
+
+/// What may be shown about a stored kubeconfig.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct KubeconfigSummary {
+    pub server: String,
+    pub context: String,
+    pub user_kind: UserKind,
 }

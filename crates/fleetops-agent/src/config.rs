@@ -30,6 +30,15 @@ pub struct Config {
     pub log: String,
     /// How long the server may stay silent (it pings every 15 s) before the
     /// agent treats the connection as dead and dials again.
+    /// Serve the in-cluster Kubernetes API instead of Docker; run as a pod.
+    #[arg(long, env = "FLEETOPS_AGENT_KUBE", conflicts_with = "docker")]
+    pub kube: bool,
+    /// Keep the agent key in this Secret (in $POD_NAMESPACE), not in --data.
+    #[arg(long, env = "FLEETOPS_AGENT_KEY_SECRET", requires = "kube")]
+    pub key_secret: Option<String>,
+    /// Tests: the apiserver to use instead of the in-cluster one.
+    #[arg(skip)]
+    pub kube_upstream: Option<crate::kube_proxy::KubeUpstream>,
     #[arg(skip = Duration::from_secs(45))]
     pub server_silence: Duration,
 }

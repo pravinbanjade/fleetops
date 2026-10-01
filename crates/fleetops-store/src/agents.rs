@@ -27,6 +27,7 @@ impl Store {
     pub async fn create_agent_environment(
         &self,
         name: &str,
+        kind: fleetops_core::env::EnvKind,
         join_hash: &str,
         join_expires_at: i64,
         now: i64,
@@ -34,9 +35,10 @@ impl Store {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO environments (name, kind, url, created_at, updated_at)
-             VALUES (?, 'docker-agent', '', ?, ?) RETURNING id",
+             VALUES (?, ?, '', ?, ?) RETURNING id",
         )
         .bind(name)
+        .bind(kind.as_str())
         .bind(now)
         .bind(now)
         .fetch_one(&mut *tx)

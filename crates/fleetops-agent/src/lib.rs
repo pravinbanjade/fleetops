@@ -5,6 +5,7 @@ pub mod backoff;
 pub mod config;
 pub mod creds;
 mod dial;
+pub mod kube_proxy;
 mod session;
 
 pub use config::Config;
@@ -20,40 +21,59 @@ use std::{
 const STABLE: Duration = Duration::from_secs(60);
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
-    creds::probe_writable(&config.data).with_context(|| {
-        format!(
-            "the data directory {} must be writable",
-            config.data.display()
+    let (inbound, desc, proxy) = if config.kube {
+        let up = match &config.kube_upstream {
+            Some(u) => u.clone(),
+            None => kube_proxy::KubeUpstream::in_cluster()?,
+        };
+        let proxy = kube_proxy::KubeProxy::new(up)?;
+        proxy.spawn_refresh(kube_proxy::TOKEN_REFRESH);
+        (
+            session::Inbound::Kube(proxy.clone()),
+            "kubernetes".to_string(),
+            Some(proxy),
         )
-    })?;
-    let target = fleetops_tunnel::Target::parse(&config.docker)?;
+    } else {
+        let target = fleetops_tunnel::Target::parse(&config.docker)?;
+        (
+            session::Inbound::Docker(target),
+            config.docker.clone(),
+            None,
+        )
+    };
+    let keys = match (&config.key_secret, proxy) {
+        (Some(name), Some(proxy)) => {
+            let ns = std::env::var("POD_NAMESPACE")
+                .context("POD_NAMESPACE must be set to keep the key in a Secret")?;
+            creds::Keys::Secret(creds::SecretKeys::new(proxy, ns, name.clone()))
+        }
+        (Some(_), None) => return Err(anyhow!("--key-secret needs --kube")),
+        (None, _) => creds::Keys::File(config.data.clone()),
+    };
+    keys.probe()
+        .await
+        .with_context(|| format!("{} must be writable", keys.describe()))?;
     let tls = Arc::new(dial::tls_config(config.ca.as_deref())?);
     let mut backoff = Backoff::new(Duration::from_secs(1), Duration::from_secs(30));
     // Set once the server rejects the stored key: a key rotated in the UI
     // stays in the data volume, and the new join command must still work.
     let mut key_rejected = false;
     loop {
-        let key = creds::load_key(&config.data)?.filter(|_| !key_rejected);
+        let key = keys.load().await?.filter(|_| !key_rejected);
         let bearer = match (&key, &config.join_token) {
             (Some(k), _) => k.clone(),
             (None, Some(j)) => j.clone(),
             (None, None) => {
                 return Err(anyhow!(
                     "no agent key in {} and no --join-token",
-                    config.data.display()
+                    keys.describe()
                 ))
             }
         };
         let started = Instant::now();
         match dial::dial(&config.server, &bearer, tls.clone()).await {
-            Ok(ws) => match session::run(
-                ws,
-                target.clone(),
-                &config.docker,
-                &config.data,
-                config.server_silence,
-            )
-            .await
+            Ok(ws) => match session::run(ws, inbound.clone(), &desc, &keys, config.server_silence)
+                .await
             {
                 session::Ended::Fatal(e) => return Err(e),
                 session::Ended::Dropped => tracing::warn!("disconnected from {}", config.server),

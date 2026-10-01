@@ -1,5 +1,5 @@
 use fleetops_core::docker::{ContainerAction, ContainerSpec, EngineVersion, PortBinding};
-use fleetops_core::env::{validate_env_name, validate_env_url, EnvKind, EnvStatus};
+use fleetops_core::env::{validate_env_name, validate_env_url, EnvKind, EnvStatus, EnvVersion};
 use fleetops_core::Error;
 use serde_json::json;
 
@@ -102,14 +102,18 @@ fn env_kind_and_status_serialization() {
     );
     assert!("k8s".parse::<EnvKind>().is_err());
     let up = EnvStatus::Up {
-        version: EngineVersion {
+        version: EnvVersion::Docker(EngineVersion {
             version: "29.0".into(),
             api_version: "1.54".into(),
             os: "linux".into(),
             arch: "arm64".into(),
-        },
+        }),
     };
     assert_eq!(serde_json::to_value(&up).unwrap()["state"], "up");
+    assert_eq!(
+        serde_json::to_value(&up).unwrap()["version"]["kind"],
+        "docker"
+    );
     assert_eq!(
         serde_json::to_value(&up).unwrap()["version"]["api_version"],
         "1.54"

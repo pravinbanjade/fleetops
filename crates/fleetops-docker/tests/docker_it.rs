@@ -7,7 +7,7 @@ use fleetops_core::docker::{
     ContainerAction, ContainerOps, ContainerSpec, EntryKind, ImageOps, NetworkOps, NetworkSpec,
     PortBinding, SystemOps, VolumeOps, VolumeSpec,
 };
-use fleetops_core::env::{EnvFactory, EnvKind, EnvStatus};
+use fleetops_core::env::{EnvFactory, EnvKind, EnvSpec, EnvStatus, EnvVersion};
 use fleetops_core::Error;
 use fleetops_docker::{DockerEnvFactory, LocalDocker};
 use futures_util::StreamExt;
@@ -74,10 +74,18 @@ fn sleeper(name: &str) -> ContainerSpec {
 #[tokio::test]
 async fn environment_status_is_up() {
     let env = DockerEnvFactory::default()
-        .build(1, "local", EnvKind::DockerLocal, &host())
+        .build(&EnvSpec {
+            id: 1,
+            name: "local".into(),
+            kind: EnvKind::DockerLocal,
+            url: host(),
+            credential: None,
+        })
         .unwrap();
     match env.status().await {
-        EnvStatus::Up { version } => assert!(!version.api_version.is_empty()),
+        EnvStatus::Up {
+            version: EnvVersion::Docker(version),
+        } => assert!(!version.api_version.is_empty()),
         other => panic!("expected up, got {other:?}"),
     }
     assert!(env.docker().is_some());
@@ -410,12 +418,13 @@ async fn daemon_loss_mid_session_is_unavailable_then_recovers() {
     let sock = dir.path().join("docker.sock");
     let proxy = socket_proxy(sock.clone());
     let env = DockerEnvFactory::default()
-        .build(
-            1,
-            "flaky",
-            EnvKind::DockerLocal,
-            &format!("unix://{}", sock.display()),
-        )
+        .build(&EnvSpec {
+            id: 1,
+            name: "flaky".into(),
+            kind: EnvKind::DockerLocal,
+            url: format!("unix://{}", sock.display()),
+            credential: None,
+        })
         .unwrap();
     assert!(matches!(env.status().await, EnvStatus::Up { .. }));
     let ops = env.docker().expect("reachable");

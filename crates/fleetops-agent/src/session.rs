@@ -1,15 +1,15 @@
 //! One connected session: hello, welcome (save a new key first), then
 //! answer pings until the server or the network ends it.
 
-use crate::creds;
+use crate::{creds::Keys, kube_proxy::KubeProxy};
 use anyhow::anyhow;
 use fleetops_tunnel::{
-    control::{read_msg, write_msg, ByeReason, HostInfo, Msg, PROTO_MAJOR},
+    control::{read_msg, write_msg, ByeReason, HostInfo, Msg, Serves, PROTO_MAJOR},
     forward,
     ws::tungstenite_io,
     Role, Session, Target,
 };
-use std::{path::Path, time::Duration};
+use std::{sync::Arc, time::Duration};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
@@ -20,7 +20,14 @@ pub enum Ended {
     Fatal(anyhow::Error),
 }
 
-fn host_info(docker: &str) -> HostInfo {
+/// Where the agent sends the server's streams.
+#[derive(Clone)]
+pub enum Inbound {
+    Docker(Target),
+    Kube(Arc<KubeProxy>),
+}
+
+fn host_info(docker: &str, serves: Serves) -> HostInfo {
     HostInfo {
         hostname: std::fs::read_to_string("/etc/hostname")
             .map(|s| s.trim().to_string())
@@ -28,30 +35,47 @@ fn host_info(docker: &str) -> HostInfo {
         os: std::env::consts::OS.into(),
         arch: std::env::consts::ARCH.into(),
         docker: docker.into(),
+        serves,
     }
 }
 
 pub async fn run(
     ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
-    target: Target,
-    docker_url: &str,
-    data: &Path,
+    inbound: Inbound,
+    target_desc: &str,
+    keys: &Keys,
     silence: Duration,
 ) -> Ended {
-    let session = Session::spawn(tungstenite_io(ws), Role::Client, move |stream| {
-        let target = target.clone();
-        tokio::spawn(async move {
-            if let Err(e) = forward(stream, &target).await {
-                tracing::debug!(error = %e, "stream to Docker ended");
+    let serves = match &inbound {
+        Inbound::Docker(_) => Serves::Docker,
+        Inbound::Kube(_) => Serves::Kube,
+    };
+    let session = Session::spawn(
+        tungstenite_io(ws),
+        Role::Client,
+        move |stream| match inbound.clone() {
+            Inbound::Docker(target) => {
+                tokio::spawn(async move {
+                    if let Err(e) = forward(stream, &target).await {
+                        tracing::debug!(error = %e, "stream to Docker ended");
+                    }
+                });
             }
-        });
-    });
-    let ended = control(&session, docker_url, data, silence).await;
+            Inbound::Kube(proxy) => {
+                tokio::spawn(async move {
+                    if let Err(e) = proxy.serve(stream).await {
+                        tracing::debug!(error = %e, "stream to the apiserver ended");
+                    }
+                });
+            }
+        },
+    );
+    let ended = control(&session, host_info(target_desc, serves), keys, silence).await;
     session.close().await;
     ended
 }
 
-async fn control(session: &Session, docker_url: &str, data: &Path, silence: Duration) -> Ended {
+async fn control(session: &Session, host: HostInfo, keys: &Keys, silence: Duration) -> Ended {
     let Ok(stream) = session.open_stream().await else {
         return Ended::Dropped;
     };
@@ -59,7 +83,7 @@ async fn control(session: &Session, docker_url: &str, data: &Path, silence: Dura
     let hello = Msg::Hello {
         proto: PROTO_MAJOR,
         agent_version: env!("CARGO_PKG_VERSION").into(),
-        host: host_info(docker_url),
+        host,
     };
     if write_msg(&mut tx, &hello).await.is_err() {
         return Ended::Dropped;
@@ -71,11 +95,11 @@ async fn control(session: &Session, docker_url: &str, data: &Path, silence: Dura
             ..
         }))) => {
             if let Some(key) = agent_key {
-                if let Err(e) = creds::save_key(data, &key) {
+                if let Err(e) = keys.save(&key).await {
                     return Ended::Fatal(anyhow!(
                         "enrolled, but could not save the key in {}: {e}; \
                          rotate the agent in the UI and start again",
-                        data.display()
+                        keys.describe()
                     ));
                 }
                 tracing::info!(env = %env_name, "enrolled; key saved");

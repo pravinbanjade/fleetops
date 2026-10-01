@@ -6,7 +6,13 @@ const T0: i64 = 1_800_000_000;
 async fn an_agent_environment_is_created_with_a_pending_join_token() {
     let s = Store::in_memory().await.unwrap();
     let env = s
-        .create_agent_environment("web-01", "join-hash", T0 + 900, T0)
+        .create_agent_environment(
+            "web-01",
+            fleetops_core::env::EnvKind::DockerAgent,
+            "join-hash",
+            T0 + 900,
+            T0,
+        )
         .await
         .unwrap();
     assert_eq!(env.kind, "docker-agent");
@@ -20,7 +26,13 @@ async fn an_agent_environment_is_created_with_a_pending_join_token() {
 async fn join_tokens_expire_and_are_single_use() {
     let s = Store::in_memory().await.unwrap();
     let env = s
-        .create_agent_environment("web-01", "j1", T0 + 900, T0)
+        .create_agent_environment(
+            "web-01",
+            fleetops_core::env::EnvKind::DockerAgent,
+            "j1",
+            T0 + 900,
+            T0,
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -48,7 +60,13 @@ async fn join_tokens_expire_and_are_single_use() {
 async fn rotating_revokes_the_key_and_issues_a_new_join_token() {
     let s = Store::in_memory().await.unwrap();
     let env = s
-        .create_agent_environment("web-01", "j1", T0 + 900, T0)
+        .create_agent_environment(
+            "web-01",
+            fleetops_core::env::EnvKind::DockerAgent,
+            "j1",
+            T0 + 900,
+            T0,
+        )
         .await
         .unwrap();
     s.enroll_agent(env.id, "j1", "k1", T0).await.unwrap();
@@ -65,7 +83,13 @@ async fn rotating_revokes_the_key_and_issues_a_new_join_token() {
 async fn seen_records_version_host_and_errors_and_delete_cascades() {
     let s = Store::in_memory().await.unwrap();
     let env = s
-        .create_agent_environment("web-01", "j1", T0 + 900, T0)
+        .create_agent_environment(
+            "web-01",
+            fleetops_core::env::EnvKind::DockerAgent,
+            "j1",
+            T0 + 900,
+            T0,
+        )
         .await
         .unwrap();
     s.record_agent_seen(
@@ -107,8 +131,14 @@ async fn agent_names_share_the_environment_namespace() {
         .await
         .unwrap();
     assert!(matches!(
-        s.create_agent_environment("web-01", "j", T0 + 900, T0)
-            .await,
+        s.create_agent_environment(
+            "web-01",
+            fleetops_core::env::EnvKind::DockerAgent,
+            "j",
+            T0 + 900,
+            T0
+        )
+        .await,
         Err(fleetops_core::Error::Conflict(_))
     ));
 }
