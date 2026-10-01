@@ -2,8 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { envsQuery, keys } from "@/api/queries";
-import { createEnv, deleteEnv, rotateAgent, updateEnv } from "@/api/gen/sdk.gen";
-import type { Enrollment, EnvView } from "@/api/gen/types.gen";
+import { createEnv, deleteEnv, kubeContexts, rotateAgent, updateEnv } from "@/api/gen/sdk.gen";
+import type { Enrollment, EnvKind, EnvView } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
@@ -11,6 +11,7 @@ import { EnvStatusBadge } from "@/components/Shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { errorMessage } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { AgentEnrollment } from "./AgentEnrollment";
 import { FormDialog } from "./FormDialog";
@@ -19,7 +20,25 @@ type Dialog = { kind: "add" } | { kind: "edit" | "delete" | "rotate"; env: EnvVi
 
 const col = columns<EnvView>();
 
-const isAgent = (e: EnvView) => e.kind === "docker-agent";
+const isAgent = (e: EnvView) => e.kind === "docker-agent" || e.kind === "kube-agent";
+
+/** An enrollment with the kind of environment it enrolls. */
+type Pending = { enrollment: Enrollment; kind: EnvKind };
+
+const KINDS: [EnvKind, string][] = [
+  ["docker-local", "Local socket or Docker API URL"],
+  ["docker-agent", "Agent on a remote host"],
+  ["kube-config", "Kubernetes cluster (kubeconfig)"],
+  ["kube-agent", "Kubernetes cluster (in-cluster agent)"],
+];
+
+const DESCRIPTIONS: Record<EnvKind, string> = {
+  "docker-local": "A Docker engine this server can reach: a unix socket, or tcp:// / http(s):// for an engine exposing its API.",
+  "docker-agent": "A remote host running fleetops-agent, which connects out to this server. You get the command to run there next.",
+  "kube-config":
+    "Paste a kubeconfig with a ServiceAccount token or client certificate. It is stored encrypted and never shown again. exec plugins (aws, gcloud) are not supported: use the in-cluster agent instead.",
+  "kube-agent": "You'll get a kubectl command that installs the agent in the cluster. The cluster needs no inbound access.",
+};
 
 /** What an agent environment's agent is doing, for the list. */
 function AgentCell({ env }: { env: EnvView }) {
@@ -40,7 +59,7 @@ export function EnvironmentsPage() {
   const envs = useQuery(envsQuery);
   const [dialog, setDialog] = useState<Dialog>(null);
   // Separate from `dialog`: a confirm dialog closes itself after it succeeds.
-  const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  const [enrollment, setEnrollment] = useState<Pending | null>(null);
   const close = () => setDialog(null);
   // Renaming or removing one changes every environment-scoped key, so all are refetched.
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: keys.envs }), qc.invalidateQueries({ queryKey: ["env"] })]);
@@ -49,7 +68,8 @@ export function EnvironmentsPage() {
     col.display({ id: "status", header: "Status", cell: (c) => <EnvStatusBadge env={c.row.original.name} /> }),
     col.display({ id: "agent", header: "Agent", cell: (c) => <AgentCell env={c.row.original} /> }),
     col.accessor("kind", { header: "Kind" }),
-    col.accessor("url", {
+    col.accessor((e) => (e.kube ? `${e.kube.server} · ${e.kube.context} (${e.kube.user_kind})` : e.url), {
+      id: "url",
       header: "URL",
       cell: (c) => (
         <code className="block max-w-[16rem] truncate text-xs" title={c.getValue()}>
@@ -99,12 +119,14 @@ export function EnvironmentsPage() {
           confirmLabel="Rotate"
           onConfirm={async () => {
             const { data } = await rotateAgent({ path: { env: dialog.env.name }, throwOnError: true });
-            setEnrollment(data);
+            setEnrollment({ enrollment: data, kind: dialog.env.kind as EnvKind });
             await refresh();
           }}
         />
       )}
-      {enrollment && <AgentEnrollment enrollment={enrollment} onClose={() => setEnrollment(null)} />}
+      {enrollment && (
+        <AgentEnrollment enrollment={enrollment.enrollment} kind={enrollment.kind} onClose={() => setEnrollment(null)} />
+      )}
       {dialog?.kind === "delete" && (
         <ConfirmDialog
           open
@@ -132,33 +154,56 @@ function EnvForm({
   env?: EnvView;
   onClose: () => void;
   onDone: () => Promise<unknown>;
-  onEnrollment?: (e: Enrollment) => void;
+  onEnrollment?: (p: Pending) => void;
 }) {
   const [name, setName] = useState(env?.name ?? "");
   const [url, setUrl] = useState(env?.url ?? "unix:///var/run/docker.sock");
-  const [kind, setKind] = useState<"docker-local" | "docker-agent">(env && isAgent(env) ? "docker-agent" : "docker-local");
-  const agent = kind === "docker-agent";
+  const [kind, setKind] = useState<EnvKind>((env?.kind as EnvKind | undefined) ?? "docker-local");
+  const [kubeconfig, setKubeconfig] = useState("");
+  const [contexts, setContexts] = useState<string[]>([]);
+  const [context, setContext] = useState<string | undefined>();
+  const [contextsError, setContextsError] = useState<string | null>(null);
+  const [skipCheck, setSkipCheck] = useState(false);
+  const agent = kind === "docker-agent" || kind === "kube-agent";
+
+  const loadContexts = async (text: string) => {
+    setContextsError(null);
+    if (!text.trim()) return setContexts([]);
+    try {
+      const { data } = await kubeContexts({ body: { kubeconfig: text }, throwOnError: true });
+      setContexts(data.contexts);
+      setContext(data.current ?? data.contexts[0]);
+    } catch (e) {
+      setContexts([]);
+      setContextsError(errorMessage(e));
+    }
+  };
+
   return (
     <FormDialog
       title={env ? `Edit ${env.name}` : "Add environment"}
-      description={
-        agent
-          ? "A remote host running fleetops-agent, which connects out to this server. You get the command to run there next."
-          : "A Docker engine this server can reach: a unix socket, or tcp:// / http(s):// for an engine exposing its API."
-      }
+      description={DESCRIPTIONS[kind]}
       submitLabel={env ? "Save" : "Add"}
       onClose={onClose}
       onSubmit={async () => {
         if (env) {
           const body = {
             name: name.trim() === env.name ? null : name.trim(),
-            url: agent || url.trim() === env.url ? null : url.trim(),
+            url: kind !== "docker-local" || url.trim() === env.url ? null : url.trim(),
+            ...(kind === "kube-config" && kubeconfig.trim()
+              ? { kubeconfig, skip_check: skipCheck, ...(context ? { context } : {}) }
+              : {}),
           };
-          if (!body.name && !body.url) return;
-          await updateEnv({ path: { env: env.name }, body });
+          if (!body.name && !body.url && !("kubeconfig" in body)) return;
+          await updateEnv({ path: { env: env.name }, body, throwOnError: true });
+        } else if (kind === "kube-config") {
+          await createEnv({
+            body: { name: name.trim(), kind, kubeconfig, ...(context ? { context } : {}), skip_check: skipCheck },
+            throwOnError: true,
+          });
         } else if (agent) {
           const { data } = await createEnv({ body: { name: name.trim(), kind }, throwOnError: true });
-          if (data.enrollment) onEnrollment?.(data.enrollment);
+          if (data.enrollment) onEnrollment?.({ enrollment: data.enrollment, kind });
         } else {
           await createEnv({ body: { name: name.trim(), url: url.trim(), kind } });
         }
@@ -168,25 +213,67 @@ function EnvForm({
       {!env && (
         <fieldset className="grid gap-2">
           <legend className="mb-2 text-sm font-medium">Kind</legend>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="radio" name="env-kind" checked={!agent} onChange={() => setKind("docker-local")} />
-            Local socket or Docker API URL
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="radio" name="env-kind" checked={agent} onChange={() => setKind("docker-agent")} />
-            Agent on a remote host
-          </label>
+          {KINDS.map(([k, label]) => (
+            <label key={k} className="flex items-center gap-2 text-sm">
+              <input type="radio" name="env-kind" checked={kind === k} onChange={() => setKind(k)} />
+              {label}
+            </label>
+          ))}
         </fieldset>
       )}
       <div className="grid gap-2">
         <Label htmlFor="env-name">Name</Label>
         <Input id="env-name" required value={name} onChange={(e) => setName(e.target.value)} />
       </div>
-      {!agent && (
+      {kind === "docker-local" && (
         <div className="grid gap-2">
           <Label htmlFor="env-url">Docker URL</Label>
           <Input id="env-url" required className="font-mono" value={url} onChange={(e) => setUrl(e.target.value)} />
         </div>
+      )}
+      {kind === "kube-config" && (
+        <>
+          <div className="grid gap-2">
+            <Label htmlFor="env-kubeconfig">{env ? "Replace kubeconfig" : "Kubeconfig"}</Label>
+            <textarea
+              id="env-kubeconfig"
+              required={!env}
+              rows={8}
+              spellCheck={false}
+              className="rounded-md border bg-background p-2 font-mono text-xs"
+              value={kubeconfig}
+              onChange={(e) => setKubeconfig(e.target.value)}
+              onBlur={(e) => void loadContexts(e.target.value)}
+              onPaste={(e) => {
+                const el = e.currentTarget;
+                setTimeout(() => void loadContexts(el.value), 0);
+              }}
+            />
+            {contextsError && <p className="text-sm text-destructive">{contextsError}</p>}
+          </div>
+          {contexts.length > 0 && (
+            <div className="grid gap-2">
+              <Label htmlFor="env-context">Context</Label>
+              <select
+                id="env-context"
+                aria-label="Context"
+                className="h-9 rounded-md border bg-background px-2"
+                value={context}
+                onChange={(e) => setContext(e.target.value)}
+              >
+                {contexts.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={skipCheck} onChange={(e) => setSkipCheck(e.target.checked)} />
+            Save without checking that the cluster answers
+          </label>
+        </>
       )}
     </FormDialog>
   );
