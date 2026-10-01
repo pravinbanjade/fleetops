@@ -84,3 +84,67 @@ async fn closing_the_session_ends_open_streams() {
     assert!(server.is_closed());
     assert!(server.open_stream().await.is_err());
 }
+
+/// A session whose agent side answers each stream once (as Docker would,
+/// which also acknowledges the stream in yamux) and then holds it open.
+fn silent_pair() -> (Session, Session) {
+    let (a, b) = duplex(1 << 20);
+    let server = Session::spawn(a, Role::Server, |_s| {});
+    let agent = Session::spawn(b, Role::Client, |mut s| {
+        tokio::spawn(async move {
+            let _ = s.write_all(b"k").await;
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+            drop(s);
+        });
+    });
+    (server, agent)
+}
+
+#[tokio::test]
+async fn closing_wakes_a_reader_already_waiting() {
+    let (server, _agent) = echo_pair();
+    let mut s = server.open_stream().await.unwrap();
+    s.write_all(b"x").await.unwrap();
+    let mut one = [0u8; 1];
+    s.read_exact(&mut one).await.unwrap();
+    // A follow-logs or terminal reader, parked waiting for more.
+    let reader = tokio::spawn(async move {
+        let mut b = [0u8; 16];
+        s.read(&mut b).await
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::timeout(Duration::from_secs(2), server.close())
+        .await
+        .expect("close hung");
+    let r = tokio::time::timeout(Duration::from_secs(2), reader)
+        .await
+        .expect("a waiting reader hung after the session closed")
+        .unwrap();
+    assert!(matches!(r, Ok(0) | Err(_)), "{r:?}");
+}
+
+#[tokio::test]
+async fn too_many_streams_fails_that_open_only() {
+    let (server, _agent) = silent_pair();
+    let mut held = Vec::new();
+    for _ in 0..fleetops_tunnel::MAX_STREAMS {
+        let mut s = server.open_stream().await.unwrap();
+        s.write_all(b"x").await.unwrap();
+        let mut k = [0u8; 1];
+        s.read_exact(&mut k).await.unwrap();
+        held.push(s);
+    }
+    let busy = server.open_stream().await;
+    assert!(busy.is_err(), "the stream over the limit was opened");
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        !server.is_closed(),
+        "the whole session died at the stream limit"
+    );
+    // A freed stream makes room again.
+    drop(held.pop());
+    tokio::time::timeout(Duration::from_secs(2), server.open_stream())
+        .await
+        .expect("no room after a stream closed")
+        .expect("open after a stream closed");
+}

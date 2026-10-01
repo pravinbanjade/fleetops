@@ -5,20 +5,65 @@
 //! receive window: a stream nobody reads stalls only its own sender.
 
 use async_trait::async_trait;
-use std::{collections::VecDeque, future::poll_fn, io, task::Poll};
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{mpsc, oneshot, watch};
+use std::{
+    collections::VecDeque,
+    future::poll_fn,
+    io,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::sync::{mpsc, oneshot, watch, OwnedSemaphorePermit, Semaphore};
 use tokio_util::compat::{Compat, FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use yamux::{Config, Connection, Mode};
 
-/// Streams one session may hold open at once (spec §2.2).
+/// Streams the server may open on one session at once (spec §2.2). Opens
+/// past this fail with "agent busy" and leave the session alone.
 pub const MAX_STREAMS: usize = 256;
+/// yamux's own limit, a little above ours: hitting it tears down the whole
+/// connection, so our semaphore must always run out first. The headroom
+/// covers the agent's control stream.
+const YAMUX_MAX_STREAMS: usize = MAX_STREAMS + 8;
 /// Each stream starts with yamux's default 256 KiB window; the connection
 /// may hand out at most one default window per allowed stream.
-const MAX_CONNECTION_WINDOW: usize = MAX_STREAMS * 256 * 1024;
+const MAX_CONNECTION_WINDOW: usize = YAMUX_MAX_STREAMS * 256 * 1024;
 
 /// One multiplexed byte stream, readable and writable with tokio's traits.
-pub type StreamHandle = Compat<yamux::Stream>;
+/// A stream this side opened holds one of the session's stream permits
+/// until it is dropped.
+pub struct StreamHandle {
+    inner: Compat<yamux::Stream>,
+    _permit: Option<OwnedSemaphorePermit>,
+}
+
+impl AsyncRead for StreamHandle {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for StreamHandle {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
@@ -28,13 +73,13 @@ pub enum Role {
 
 fn config() -> Config {
     let mut c = Config::default();
-    c.set_max_num_streams(MAX_STREAMS);
+    c.set_max_num_streams(YAMUX_MAX_STREAMS);
     c.set_max_connection_receive_window(Some(MAX_CONNECTION_WINDOW));
     c
 }
 
 enum Cmd {
-    Open(oneshot::Sender<io::Result<StreamHandle>>),
+    Open(oneshot::Sender<io::Result<Compat<yamux::Stream>>>),
     Close,
 }
 
@@ -45,6 +90,7 @@ enum Cmd {
 pub struct Session {
     cmds: mpsc::UnboundedSender<Cmd>,
     closed: watch::Receiver<bool>,
+    permits: Arc<Semaphore>,
 }
 
 fn aborted(e: impl std::fmt::Display) -> io::Error {
@@ -67,7 +113,8 @@ impl Session {
         let (cmds, mut rx) = mpsc::unbounded_channel();
         let (done, closed) = watch::channel(false);
         tokio::spawn(async move {
-            let mut opening: VecDeque<oneshot::Sender<io::Result<StreamHandle>>> = VecDeque::new();
+            let mut opening: VecDeque<oneshot::Sender<io::Result<Compat<yamux::Stream>>>> =
+                VecDeque::new();
             let mut closing = false;
             let mut handles_gone = false;
             poll_fn(|cx| loop {
@@ -80,8 +127,13 @@ impl Session {
                         Poll::Pending => break,
                     }
                 }
+                // Closing drops the connection while it is still active:
+                // that wakes every stream, so a reader parked on a terminal
+                // or follow-logs stream ends at once. (yamux's graceful
+                // close leaves parked readers asleep, and can stall on a
+                // dead peer.)
                 if closing {
-                    return conn.poll_close(cx).map(|_| ());
+                    return Poll::Ready(());
                 }
                 while !opening.is_empty() {
                     match conn.poll_new_outbound(cx) {
@@ -93,7 +145,10 @@ impl Session {
                     }
                 }
                 match conn.poll_next_inbound(cx) {
-                    Poll::Ready(Some(Ok(stream))) => on_inbound(stream.compat()),
+                    Poll::Ready(Some(Ok(stream))) => on_inbound(StreamHandle {
+                        inner: stream.compat(),
+                        _permit: None,
+                    }),
                     Poll::Ready(Some(Err(e))) => {
                         tracing::debug!(error = %e, "tunnel session ended");
                         return Poll::Ready(());
@@ -109,15 +164,29 @@ impl Session {
             drop(conn);
             let _ = done.send(true);
         });
-        Session { cmds, closed }
+        Session {
+            cmds,
+            closed,
+            permits: Arc::new(Semaphore::new(MAX_STREAMS)),
+        }
     }
 
     pub async fn open_stream(&self) -> io::Result<StreamHandle> {
+        let permit = self.permits.clone().try_acquire_owned().map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::WouldBlock,
+                format!("agent busy: {MAX_STREAMS} streams already open"),
+            )
+        })?;
         let (tx, rx) = oneshot::channel();
         if self.is_closed() || self.cmds.send(Cmd::Open(tx)).is_err() {
             return Err(io::Error::new(io::ErrorKind::NotConnected, "tunnel closed"));
         }
-        rx.await.map_err(|_| aborted("tunnel closed"))?
+        let inner = rx.await.map_err(|_| aborted("tunnel closed"))??;
+        Ok(StreamHandle {
+            inner,
+            _permit: Some(permit),
+        })
     }
 
     /// Closes the session and every stream on it.
