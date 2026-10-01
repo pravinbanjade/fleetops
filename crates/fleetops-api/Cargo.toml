@@ -8,6 +8,7 @@ rust-version.workspace = true
 fleetops-core.workspace = true
 fleetops-store.workspace = true
 fleetops-tunnel.workspace = true
+fleetops-kube.workspace = true
 argon2.workspace = true
 axum.workspace = true
 bytes.workspace = true

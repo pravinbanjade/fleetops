@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 
 const METHODS: [&str; 5] = ["get", "post", "put", "patch", "delete"];
 /// Documented operations; update when adding or removing a route.
-const OPERATIONS: usize = 61;
+const OPERATIONS: usize = 62;
 
 fn operations() -> Vec<(&'static str, &'static str, &'static Value)> {
     let mut out = Vec::new();
