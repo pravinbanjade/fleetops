@@ -954,6 +954,7 @@ dependencies = [
  "k8s-openapi",
  "kube",
  "rustls",
+ "serde",
  "serde-saphyr",
  "serde_json",
  "tokio",
