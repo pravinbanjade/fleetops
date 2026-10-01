@@ -77,7 +77,7 @@ What sets it apart:
 ### Build and run
 
 ```sh
-git clone git@github.com:pravinbanjade/fleetops.git
+git clone git@gitlab.com:pravinbanjade/fleetops.git
 cd fleetops
 make build                      # builds web/dist, then the release binary with the UI embedded
 ./target/release/fleetops --data ./data --bind 127.0.0.1:9000
@@ -99,7 +99,7 @@ On first start, FleetOps registers a `local` environment when it can reach the s
 
 ### Run a release
 
-Each release publishes `ghcr.io/pravinbanjade/fleetops:<version>` (and `latest`) for linux/amd64 and linux/arm64, and static linux binaries with SHA-256 checksums on the [releases page](https://github.com/pravinbanjade/fleetops/releases). Run the image with the `docker run` below, using `ghcr.io/pravinbanjade/fleetops:latest` in place of `fleetops:dev`.
+Each release publishes `registry.gitlab.com/pravinbanjade/fleetops:<version>` (and `latest`) for linux/amd64 and linux/arm64, and static linux binaries with SHA-256 checksums on the [releases page](https://gitlab.com/pravinbanjade/fleetops/-/releases). Run the image with the `docker run` below, using `registry.gitlab.com/pravinbanjade/fleetops:latest` in place of `fleetops:dev`.
 
 ### Run the container image
 
@@ -198,8 +198,8 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 - **After changing the API,** run `make openapi` and commit both generated files. `cargo test` and `make test-web` fail until the committed document and client match the code.
 - **The integration tests** (`make test-docker`) create and remove their own labelled resources. Run them against a daemon where that's acceptable.
 - **The end-to-end test** (`make e2e`) starts the server on `127.0.0.1:9123` with an empty data directory (`web/e2e-data`). It pulls `busybox:1.37`, and creates and then removes containers named `fleetops-e2e-*`; the second spec enrolls a real `fleetops-agent` against the same daemon. It leaves the image in place. On failure, `pnpm -C web exec playwright show-trace` opens the trace saved under `web/test-results`.
-- **CI** (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull requests: `make lint test`, `make test-docker`, `make test-web`, `make e2e`, `make rss-bench`, and the server and agent image builds for both platforms followed by `make image-smoke` and `make agent-smoke`.
-- **Releases** (`.github/workflows/release.yml`) run on a `vX.Y.Z` tag that matches the workspace version in `Cargo.toml`. They push the server and agent images to GHCR and publish both binaries to a GitHub release.
+- **CI** (`.gitlab-ci.yml`) runs on pushes to `main` and on merge requests: `make lint test`, `make test-docker`, `make test-web`, `make e2e`, `make rss-bench`, the kind suite (`make test-kube e2e-kube agent-kube-smoke`), and the server and agent image builds for both platforms followed by `make image-smoke` and `make agent-smoke`. Jobs run in `ci/Dockerfile`'s image and start their own Docker daemon (`ci/start-docker.sh`).
+- **Releases** (the `publish` and `release` jobs in `.gitlab-ci.yml`) run on a `vX.Y.Z` tag that matches the workspace version in `Cargo.toml`. They push the server and agent images (`registry.gitlab.com/pravinbanjade/fleetops` and `.../fleetops/agent`) to the GitLab container registry, upload both binaries to the generic package registry and link them from a GitLab release.
 - **TDD.** New behaviour starts with a failing test.
 
 ### Design documents
