@@ -1,6 +1,10 @@
 //! The agent's long-lived key, in `<data>/agent.key`, readable by its owner only.
 
+use crate::kube_proxy::KubeProxy;
+use base64::{engine::general_purpose::STANDARD, Engine};
+use hyper::{Method, StatusCode};
 use std::{fs, io, path::Path};
+use std::{path::PathBuf, sync::Arc};
 
 pub const KEY_FILE: &str = "agent.key";
 
@@ -34,6 +38,151 @@ pub fn probe_writable(dir: &Path) -> io::Result<()> {
     let probe = dir.join(".write-probe");
     fs::write(&probe, b"ok")?;
     fs::remove_file(probe)
+}
+
+/// Where the agent keeps its key: a file in --data, or a Secret.
+pub enum Keys {
+    File(PathBuf),
+    Secret(SecretKeys),
+}
+
+impl Keys {
+    pub async fn load(&self) -> io::Result<Option<String>> {
+        match self {
+            Keys::File(dir) => load_key(dir),
+            Keys::Secret(s) => s.load().await,
+        }
+    }
+
+    pub async fn save(&self, key: &str) -> io::Result<()> {
+        match self {
+            Keys::File(dir) => save_key(dir, key),
+            Keys::Secret(s) => s.save(key).await,
+        }
+    }
+
+    /// Fails unless a key could be saved, so a join token is never spent
+    /// by an agent that would lose the key it gets for it.
+    pub async fn probe(&self) -> io::Result<()> {
+        match self {
+            Keys::File(dir) => probe_writable(dir),
+            Keys::Secret(s) => s.probe().await,
+        }
+    }
+
+    pub fn describe(&self) -> String {
+        match self {
+            Keys::File(dir) => format!("the data directory {}", dir.display()),
+            Keys::Secret(s) => format!("the Secret {}/{}", s.namespace, s.name),
+        }
+    }
+}
+
+/// The key in Secret `name`, field `key`, through the apiserver.
+pub struct SecretKeys {
+    proxy: Arc<KubeProxy>,
+    pub(crate) namespace: String,
+    pub(crate) name: String,
+}
+
+const FIELD: &str = "key";
+
+impl SecretKeys {
+    pub fn new(proxy: Arc<KubeProxy>, namespace: String, name: String) -> Self {
+        Self {
+            proxy,
+            namespace,
+            name,
+        }
+    }
+
+    fn collection(&self) -> String {
+        format!("/api/v1/namespaces/{}/secrets", self.namespace)
+    }
+
+    fn path(&self) -> String {
+        format!("{}/{}", self.collection(), self.name)
+    }
+
+    fn fail(&self, what: &str, status: StatusCode, body: &[u8]) -> io::Error {
+        io::Error::other(format!(
+            "{what} Secret {}/{}: HTTP {status}: {}",
+            self.namespace,
+            self.name,
+            String::from_utf8_lossy(body)
+        ))
+    }
+
+    pub async fn load(&self) -> io::Result<Option<String>> {
+        let (status, body) = self
+            .proxy
+            .api(Method::GET, &self.path(), None, vec![])
+            .await?;
+        match status {
+            StatusCode::NOT_FOUND => Ok(None),
+            StatusCode::OK => {
+                let v: serde_json::Value =
+                    serde_json::from_slice(&body).map_err(io::Error::other)?;
+                let Some(b64) = v["data"][FIELD].as_str() else {
+                    return Ok(None);
+                };
+                let bytes = STANDARD.decode(b64).map_err(io::Error::other)?;
+                Ok(Some(String::from_utf8_lossy(&bytes).trim().to_string())
+                    .filter(|k| !k.is_empty()))
+            }
+            s => Err(self.fail("reading", s, &body)),
+        }
+    }
+
+    pub async fn save(&self, key: &str) -> io::Result<()> {
+        let data = serde_json::json!({ "data": { FIELD: STANDARD.encode(key) } });
+        let (status, body) = self
+            .proxy
+            .api(
+                Method::PATCH,
+                &self.path(),
+                Some("application/merge-patch+json"),
+                data.to_string().into_bytes(),
+            )
+            .await?;
+        match status {
+            StatusCode::OK => Ok(()),
+            StatusCode::NOT_FOUND => {
+                let secret = serde_json::json!({
+                    "apiVersion": "v1", "kind": "Secret", "type": "Opaque",
+                    "metadata": { "name": self.name },
+                    "data": { FIELD: STANDARD.encode(key) }
+                });
+                let (status, body) = self
+                    .proxy
+                    .api(
+                        Method::POST,
+                        &self.collection(),
+                        Some("application/json"),
+                        secret.to_string().into_bytes(),
+                    )
+                    .await?;
+                if status == StatusCode::CREATED || status == StatusCode::OK {
+                    Ok(())
+                } else {
+                    Err(self.fail("creating", status, &body))
+                }
+            }
+            s => Err(self.fail("updating", s, &body)),
+        }
+    }
+
+    /// The Secret must be readable (present or not): checks RBAC up front.
+    pub async fn probe(&self) -> io::Result<()> {
+        let (status, body) = self
+            .proxy
+            .api(Method::GET, &self.path(), None, vec![])
+            .await?;
+        match status {
+            StatusCode::OK | StatusCode::NOT_FOUND => Ok(()),
+            s => Err(self.fail("reading", s, &body)),
+        }
+    }
 }
 
 #[cfg(test)]
