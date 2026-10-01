@@ -23,21 +23,8 @@ impl Store {
         url: &str,
         now: i64,
     ) -> Result<EnvironmentRecord> {
-        sqlx::query_as(&format!(
-            "INSERT INTO environments (name, kind, url, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?) RETURNING {COLS}"
-        ))
-        .bind(name)
-        .bind(kind)
-        .bind(url)
-        .bind(now)
-        .bind(now)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| match db_err(e) {
-            Error::Conflict(_) => Error::Conflict(format!("environment '{name}' already exists")),
-            other => other,
-        })
+        let mut conn = self.pool.acquire().await.map_err(db_err)?;
+        insert_environment(&mut conn, name, kind, url, now).await
     }
 
     pub async fn list_environments(&self) -> Result<Vec<EnvironmentRecord>> {
@@ -92,4 +79,30 @@ impl Store {
         }
         Ok(())
     }
+}
+
+/// One environment row; shared by plain creates and creates that store a
+/// credential in the same transaction.
+pub(crate) async fn insert_environment(
+    conn: &mut sqlx::SqliteConnection,
+    name: &str,
+    kind: &str,
+    url: &str,
+    now: i64,
+) -> Result<EnvironmentRecord> {
+    sqlx::query_as(&format!(
+        "INSERT INTO environments (name, kind, url, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?) RETURNING {COLS}"
+    ))
+    .bind(name)
+    .bind(kind)
+    .bind(url)
+    .bind(now)
+    .bind(now)
+    .fetch_one(conn)
+    .await
+    .map_err(|e| match db_err(e) {
+        Error::Conflict(_) => Error::Conflict(format!("environment '{name}' already exists")),
+        other => other,
+    })
 }
