@@ -893,6 +893,7 @@ dependencies = [
  "axum",
  "bytes",
  "fleetops-core",
+ "fleetops-kube",
  "fleetops-store",
  "fleetops-tunnel",
  "futures-util",
