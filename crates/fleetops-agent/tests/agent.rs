@@ -38,10 +38,14 @@ struct Server {
 }
 
 async fn server(store: Store, port: u16) -> Server {
+    server_with(store, port, ApiConfig::default()).await
+}
+
+async fn server_with(store: Store, port: u16, config: ApiConfig) -> Server {
     let agents = Arc::new(fleetops_tunnel::registry::Registry::default());
     let state = AppState::new(
         store.clone(),
-        ApiConfig::default(),
+        config,
         Arc::new(DockerEnvFactory::new(agents.clone())),
     )
     .with_agents(agents);
@@ -101,6 +105,7 @@ fn config(
         docker: format!("unix://{}", docker.display()),
         ca: None,
         log: "warn".into(),
+        server_silence: Duration::from_secs(45),
     }
 }
 
@@ -218,4 +223,44 @@ async fn unwritable_data_dir_fails_before_connecting() {
         !store.get_agent(env_id).await.unwrap().unwrap().enrolled,
         "the join token was not spent"
     );
+}
+
+#[tokio::test]
+async fn a_silent_server_is_dropped_and_redialed() {
+    let dir = tempfile::tempdir().unwrap();
+    let docker = fake_docker(dir.path());
+    let store = Store::in_memory().await.unwrap();
+    let (_env_id, token) = agent_env(&store).await;
+    // A server that never pings: what a half-open connection looks like
+    // from the agent (server crashed, NAT dropped the mapping).
+    let srv = server_with(
+        store.clone(),
+        0,
+        ApiConfig {
+            agent_ping_interval: Duration::from_secs(3600),
+            ..ApiConfig::default()
+        },
+    )
+    .await;
+    let data = dir.path().join("data");
+    let mut cfg = config(&srv.base, &data, &docker, Some(token));
+    cfg.server_silence = Duration::from_millis(500);
+    tokio::spawn(fleetops_agent::run(cfg));
+
+    let connects = || async {
+        store
+            .list_audit(100, None)
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.action == "agent.connect")
+            .count()
+    };
+    for _ in 0..60 {
+        if connects().await >= 2 {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the agent never gave up on a server that stopped pinging");
 }

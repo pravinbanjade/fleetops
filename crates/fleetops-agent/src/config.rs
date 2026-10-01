@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 /// fleetops-agent: connects this host's Docker to a FleetOps server.
 #[derive(Debug, Clone, Parser)]
@@ -28,4 +28,8 @@ pub struct Config {
     pub ca: Option<PathBuf>,
     #[arg(long, env = "FLEETOPS_AGENT_LOG", default_value = "info")]
     pub log: String,
+    /// How long the server may stay silent (it pings every 15 s) before the
+    /// agent treats the connection as dead and dials again.
+    #[arg(skip = Duration::from_secs(45))]
+    pub server_silence: Duration,
 }

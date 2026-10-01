@@ -43,7 +43,15 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         };
         let started = Instant::now();
         match dial::dial(&config.server, &bearer, tls.clone()).await {
-            Ok(ws) => match session::run(ws, target.clone(), &config.docker, &config.data).await {
+            Ok(ws) => match session::run(
+                ws,
+                target.clone(),
+                &config.docker,
+                &config.data,
+                config.server_silence,
+            )
+            .await
+            {
                 session::Ended::Fatal(e) => return Err(e),
                 session::Ended::Dropped => tracing::warn!("disconnected from {}", config.server),
             },
