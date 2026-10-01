@@ -27,6 +27,17 @@ struct Live {
 
 impl Live {
     async fn call(&self, method: &str, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
+        self.call_from(None, method, uri, body).await
+    }
+
+    /// `origin` is what a browser would send; agent enrollment needs it.
+    async fn call_from(
+        &self,
+        origin: Option<&str>,
+        method: &str,
+        uri: &str,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
         let mut b = Request::builder()
             .method(method)
             .uri(uri)
@@ -34,6 +45,9 @@ impl Live {
             .header("x-csrf-token", &self.csrf);
         if body.is_some() {
             b = b.header("content-type", "application/json");
+        }
+        if let Some(o) = origin {
+            b = b.header("origin", o);
         }
         let mut r = b
             .body(body.map_or(Body::empty(), |v| Body::from(v.to_string())))
@@ -53,11 +67,8 @@ impl Live {
 async fn start() -> (Live, SocketAddr) {
     let host = std::env::var("DOCKER_HOST").expect("DOCKER_HOST (make test-docker sets it)");
     let store = Store::in_memory().await.unwrap();
-    let state = AppState::new(
-        store.clone(),
-        ApiConfig::default(),
-        Arc::new(DockerEnvFactory::default()),
-    );
+    // The server's own wiring: one agent registry for factory and state.
+    let state = fleetops_server::build_state(store.clone(), ApiConfig::default());
     bootstrap_local(&store, &state.envs, &host)
         .await
         .unwrap()
@@ -237,4 +248,85 @@ async fn every_topic_works_against_the_real_daemon() {
         v["sub"] == 1 && v["data"]["id"] == id.as_str() && v["data"]["action"] == "destroy"
     })
     .await;
+}
+
+#[tokio::test]
+async fn an_agent_environment_serves_the_same_api_as_local() {
+    use fleetops_tunnel::control::*;
+    let (live, addr) = start().await;
+    let (status, created) = live
+        .call_from(
+            Some(&format!("http://{addr}")),
+            "POST",
+            "/api/v1/envs",
+            Some(json!({"name": "remote", "kind": "docker-agent"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let token = created["enrollment"]["join_token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // A minimal agent in-process: the real tunnel, forwarding to DOCKER_HOST.
+    let target = fleetops_tunnel::Target::parse(&std::env::var("DOCKER_HOST").unwrap()).unwrap();
+    let mut req = format!("ws://{addr}/api/v1/agent/connect")
+        .into_client_request()
+        .unwrap();
+    req.headers_mut()
+        .insert("authorization", format!("Bearer {token}").parse().unwrap());
+    let (ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    let session = fleetops_tunnel::Session::spawn(
+        fleetops_tunnel::ws::tungstenite_io(ws),
+        fleetops_tunnel::Role::Client,
+        move |s| {
+            let target = target.clone();
+            tokio::spawn(async move {
+                let _ = fleetops_tunnel::forward(s, &target).await;
+            });
+        },
+    );
+    let control = session.open_stream().await.unwrap();
+    let (mut rx, mut tx) = tokio::io::split(control);
+    write_msg(
+        &mut tx,
+        &Msg::Hello {
+            proto: PROTO_MAJOR,
+            agent_version: "it".into(),
+            host: HostInfo::default(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        read_msg(&mut rx).await.unwrap(),
+        Some(Msg::Welcome { .. })
+    ));
+    // Answer pings in the background.
+    tokio::spawn(async move {
+        while let Ok(Some(m)) = read_msg(&mut rx).await {
+            if let Msg::Ping { n } = m {
+                let _ = write_msg(&mut tx, &Msg::Pong { n }).await;
+            }
+        }
+    });
+
+    let (_, status) = live.call("GET", "/api/v1/envs/remote/status", None).await;
+    assert_eq!(status["state"], "up", "{status}");
+    // Same daemon behind both environments. (Container counts race with
+    // the other live test, so compare the daemon's identity instead.)
+    let (_, local) = live.call("GET", "/api/v1/envs/local/info", None).await;
+    let (_, remote) = live.call("GET", "/api/v1/envs/remote/info", None).await;
+    assert!(remote["ID"].is_string(), "{remote}");
+    assert_eq!(local["ID"], remote["ID"], "same daemon");
+    let (status, list) = live
+        .call("GET", "/api/v1/envs/remote/containers", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert!(list.is_array());
+
+    session.close().await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let (_, status) = live.call("GET", "/api/v1/envs/remote/status", None).await;
+    assert_eq!(status["state"], "down", "{status}");
 }
