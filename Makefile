@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi
+.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -56,10 +56,22 @@ test-kube: kind-up
 	FLEETOPS_KUBE_IT=$(KUBE_IT) cargo test -p fleetops-kube --features kube-it --test kube_it -- --test-threads=4
 	FLEETOPS_KUBE_IT=$(KUBE_IT) FLEETOPS_IT_TUNNEL=1 cargo test -p fleetops-kube --features kube-it --test kube_it -- --test-threads=4
 
+# Set to a kind fixtures directory (make kind-up) to add the kube phase.
+KUBE_IT_RSS ?=
+
 rss-bench: build
 	cargo build --release -p fleetops-agent
-	scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
+	KUBE_IT="$(KUBE_IT_RSS)" scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
 		$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops-agent
+
+e2e-kube: build kind-up
+	pnpm -C web exec playwright install chromium
+	FLEETOPS_KIND=1 FLEETOPS_KUBE_IT=$(KUBE_IT) \
+		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
+		pnpm -C web exec playwright test e2e/kube.spec.ts
+
+agent-kube-smoke: kind-up
+	scripts/agent-kube-smoke.sh $(IMAGE) $(AGENT_IMAGE)
 
 lint:
 	cargo fmt --all --check

@@ -1,7 +1,7 @@
 # FleetOps — Sub-project 3: Kubernetes (read-mostly core)
 
 - **Date:** 2026-10-01
-- **Status:** Draft
+- **Status:** Implemented
 - **Builds on:** [Sub-project 1 spec](./2026-09-29-fleetops-core-docker-design.md), [Sub-project 2 spec](./2026-10-01-fleetops-agent-multihost-design.md)
 
 ## 1. Intent
@@ -167,7 +167,7 @@ Environments:
 **Credential storage.** The `creds` module gets a backend trait with two implementations:
 
 - `File` — today's 0600 key file in `--data`.
-- `KubeSecret` — in kube mode without `--data`, the key is stored in Secret `fleetops-agent-key` in the agent's namespace (read from the downward API env `POD_NAMESPACE`). The agent creates it on first enrollment and updates it on re-enrollment.
+- `KubeSecret` — with `--key-secret <name>` (the manifest passes `fleetops-agent-key`), the key is stored in that Secret in the agent's namespace (read from the downward API env `POD_NAMESPACE`). The agent creates it on first enrollment and patches it on re-enrollment. Its Role grants `get` and `patch` on that name and `create` on Secrets.
 
 The join token comes from env `FLEETOPS_AGENT_JOIN_TOKEN`, fed from a Secret in the manifest; the server URL from `FLEETOPS_AGENT_SERVER`.
 
@@ -213,7 +213,7 @@ For `kube-config` environments, `environments.url` holds the cluster's API serve
 3. Unless `skip_check`, call `/version` with a 5 s timeout; on failure return 400 `cannot reach cluster: <reason>` and store nothing.
 4. Encrypt and store; `url` = the cluster's server URL.
 
-`POST /envs/kube/contexts` with `{kubeconfig}` returns the context names and the default context, so the form can show a picker before saving. It stores nothing.
+`POST /kube/contexts` with `{kubeconfig}` returns the context names and the default context, so the form can show a picker before saving. It stores nothing.
 
 `PATCH /envs/{env}` may replace `kubeconfig` (same checks) or rename. The stored kubeconfig is never returned; environment views show `summary` (server, context, user kind).
 
@@ -232,7 +232,7 @@ The manifest contains:
 - Namespace `fleetops`.
 - ServiceAccount `fleetops-agent`.
 - ClusterRole `fleetops-agent` + ClusterRoleBinding: `get`, `list`, `watch` on the 12 kinds and `events`; `delete` on the 12 kinds except nodes and namespaces; `patch` on deployments, statefulsets, daemonsets and their `scale` subresource; `get` on `pods/log`; `create` and `get` on `pods/exec`; `get` on `/version`.
-- Role + RoleBinding in `fleetops`: `get`, `update` on Secret `fleetops-agent-key` (`resourceNames`), and `create` on secrets (Kubernetes cannot restrict `create` by name).
+- Role + RoleBinding in `fleetops`: `get`, `patch` on Secret `fleetops-agent-key` (`resourceNames`), and `create` on secrets (Kubernetes cannot restrict `create` by name).
 - Secret `fleetops-agent-join` with `FLEETOPS_JOIN_TOKEN`.
 - Deployment `fleetops-agent`: one replica, the agent image, `--kube`, `FLEETOPS_SERVER`, `POD_NAMESPACE` from the downward API, a read-only root filesystem, non-root, requests of 10m CPU and 16Mi memory, limit 64Mi.
 
@@ -254,7 +254,6 @@ All routes are under `/api/v1/envs/{env}/k8s`. A Kubernetes route on a Docker en
 
 | Method | Path | Action | Notes |
 |---|---|---|---|
-| GET | `/namespaces` | KubeRead | Names only, for the picker |
 | GET | `/{kind}?namespace=` | KubeRead | `KubeList`; no `namespace` means all namespaces |
 | GET | `/{kind}/{ns}/{name}` | KubeRead | `KubeObject` |
 | GET | `/{kind}/{ns}/{name}/events` | KubeRead | `KubeEvent[]`, newest first |
@@ -262,7 +261,7 @@ All routes are under `/api/v1/envs/{env}/k8s`. A Kubernetes route on a Docker en
 | POST | `/{kind}/{ns}/{name}/scale` `{replicas}` | KubeWrite | Deployments, StatefulSets; audited `k8s.scale` |
 | POST | `/{kind}/{ns}/{name}/restart` | KubeWrite | Deployments, StatefulSets, DaemonSets; audited `k8s.restart` |
 
-Plus, outside `/k8s`: `POST /envs/kube/contexts` (EnvManage, so admin only) from §4.1.
+Plus, outside `/envs`: `POST /kube/contexts` (EnvManage, so admin only) from §4.1. It is not under `/envs/` so that an environment named `kube` cannot collide with it.
 
 **Logs and exec** use the existing multiplexed WebSocket (`/api/v1/ws`), topics `logs` and `exec`, with `id = "<namespace>/<pod>"` and `opts.container`. The topic handlers dispatch on the environment: Kubernetes environments go to `KubeOps::logs` (KubeRead) and `KubeOps::exec_start` (KubeWrite, audited `k8s.exec` with the command). Frames, gap handling, binary terminal frames and `resize` are unchanged.
 
@@ -278,7 +277,7 @@ Limits: a list stops at 5,000 rows (`truncated: true`), paging with `limit`/`con
 - **Lists** reuse the existing table with kind-specific columns, for example Deployment: Ready, Up-to-date, Available, Age; Pod: Ready, Status, Restarts, Node, Age; Service: Type, Cluster IP, Ports, Age. They refresh every 5 s while the tab is visible. A 403 shows "No permission to list {kind} in {namespace}", not an empty table. A truncated list says so.
 - **Detail:** tabs Summary (row, conditions, owner chain as links), YAML (read-only `<pre>` with copy, like the existing JSON view; no highlighting library), Events. Pods add Logs (container picker, follow) and Terminal, reusing the existing log view and terminal view. Actions: scale (number dialog), restart, delete (confirm).
 - **Navigation:** the sidebar picks its item list by the environment's kind; `/envs/{env}` shows the Kubernetes overview instead of the Docker dashboard for Kubernetes kinds. Docker routes under a Kubernetes environment redirect to its overview.
-- **Admin › Environments:** the kind radios gain "Kubernetes (kubeconfig)", with a kubeconfig textarea, a context picker filled from `/envs/kube/contexts`, and a "save without checking" box, and "Kubernetes (agent)", which shows the `kubectl apply` command in the existing enrollment dialog. The list shows the server, context and user kind for kubeconfig clusters.
+- **Admin › Environments:** the kind radios gain "Kubernetes (kubeconfig)", with a kubeconfig textarea, a context picker filled from `/kube/contexts`, and a "save without checking" box, and "Kubernetes (agent)", which shows the `kubectl apply` command in the existing enrollment dialog. The list shows the server, context and user kind for kubeconfig clusters.
 
 ## 7. Error handling
 
@@ -300,7 +299,7 @@ Limits: a list stops at 5,000 rows (`truncated: true`), paging with `limit`/`con
 - Secret values are never returned: masked in YAML on the server, and absent from every DTO. Revealing a value is out of scope.
 - Tracing redacts `Authorization` headers on both the server's kube client and the agent's proxy; kubeconfig contents are never logged.
 - The agent forwards only Kubernetes API paths and always sends its own token, so the server cannot present other credentials through it.
-- The agent's in-cluster permissions are the ClusterRole in §4.2: no Secret writes beyond its own key Secret's namespace, no wildcard verbs.
+- The agent's in-cluster permissions are the ClusterRole in §4.2: it may delete Secrets like any listed kind, but creates and updates only its own key Secret; no wildcard verbs. Its pod runs as uid/gid 65532 with a read-only root filesystem.
 - Agents must connect over HTTPS, or from loopback, as in sub-project 2.
 - The README says to back up `secret.key` (or `FLEETOPS_SECRET_KEY`) with the database: without it, stored kubeconfigs are lost.
 

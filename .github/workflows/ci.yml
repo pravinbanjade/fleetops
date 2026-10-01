@@ -75,6 +75,36 @@ jobs:
             web/test-results/
           retention-days: 7
 
+  kube:
+    name: Kubernetes (kind)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: fleetops-test
+      - run: make test-kube
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm -C web install --frozen-lockfile
+      - run: pnpm -C web exec playwright install --with-deps chromium
+      - run: make e2e-kube
+      - run: make image IMAGE=fleetops:dev PLATFORMS=linux/amd64 && make image-agent AGENT_IMAGE=fleetops-agent:dev PLATFORMS=linux/amd64
+      - run: make agent-kube-smoke
+      - run: make rss-bench KUBE_IT_RSS=$PWD/target/kube-it
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kube-playwright-report
+          path: web/playwright-report
+
   rss:
     name: Idle memory (50 containers, under 50 MiB)
     runs-on: ubuntu-latest
