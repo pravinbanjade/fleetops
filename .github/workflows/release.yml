@@ -1,0 +1,76 @@
+name: Release
+
+# Pushing a tag vX.Y.Z publishes the multi-arch image to GHCR and a GitHub
+# release with static linux binaries. The tag must match the workspace
+# version in Cargo.toml.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/fleetops
+
+jobs:
+  release:
+    name: Image and binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag matches the workspace version
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME, Cargo.toml $version" >&2; exit 1; }
+
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The same build (cache hits), stopped at the bare-binary stage.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: binary
+          platforms: linux/amd64,linux/arm64
+          outputs: type=local,dest=out
+          cache-from: type=gha
+
+      - name: Package the binaries
+        run: |
+          mkdir dist
+          for arch in amd64 arm64; do
+            name=fleetops-$GITHUB_REF_NAME-linux-$arch
+            cp out/linux_$arch/fleetops "dist/$name"
+            (cd dist && sha256sum "$name" > "$name.sha256")
+          done
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "FleetOps $GITHUB_REF_NAME" --generate-notes --verify-tag
