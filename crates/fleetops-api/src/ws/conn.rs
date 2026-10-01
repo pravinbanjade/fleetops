@@ -30,10 +30,18 @@ pub const MAX_SUBS: usize = 256;
 /// Largest client frame accepted.
 pub const MAX_FRAME_BYTES: usize = 1 << 20;
 
+/// How a terminal resize reaches the process.
+pub(super) enum Resize {
+    Docker {
+        ops: Arc<dyn DockerOps>,
+        exec_id: String,
+    },
+    Kube(mpsc::Sender<(u16, u16)>),
+}
+
 pub(super) struct ExecCtl {
     pub input: mpsc::Sender<Vec<u8>>,
-    pub exec_id: String,
-    pub ops: Arc<dyn DockerOps>,
+    pub resize: Resize,
 }
 
 /// A live subscription. Dropping it (unsub, or the connection closing)
@@ -289,20 +297,29 @@ async fn handle(s: &AppState, cu: &CurrentUser, shared: &Arc<Shared>, msg: Clien
         }
         ClientMsg::Input { sub, data } => input(shared, sub, data.into_bytes()),
         ClientMsg::Resize { sub, cols, rows } => {
-            let target = shared
-                .subs
-                .lock()
-                .unwrap()
-                .get(&sub)
-                .and_then(|s| s.exec.as_ref().map(|c| (c.ops.clone(), c.exec_id.clone())));
+            enum Do {
+                Docker(Arc<dyn DockerOps>, String),
+                Kube(mpsc::Sender<(u16, u16)>),
+            }
+            let target = shared.subs.lock().unwrap().get(&sub).and_then(|s| {
+                s.exec.as_ref().map(|c| match &c.resize {
+                    Resize::Docker { ops, exec_id } => Do::Docker(ops.clone(), exec_id.clone()),
+                    Resize::Kube(tx) => Do::Kube(tx.clone()),
+                })
+            });
             match target {
-                Some((ops, exec_id)) => {
+                Some(Do::Docker(ops, exec_id)) => {
                     let shared = shared.clone();
                     tokio::spawn(async move {
                         if let Err(e) = ops.exec_resize(&exec_id, cols, rows).await {
                             shared.fail(Some(sub), &e);
                         }
                     });
+                }
+                // A full channel means resizes are arriving faster than the
+                // process takes them; the next one supersedes this one.
+                Some(Do::Kube(tx)) => {
+                    let _ = tx.try_send((cols, rows));
                 }
                 None => shared.fail(
                     Some(sub),
