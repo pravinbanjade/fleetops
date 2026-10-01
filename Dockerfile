@@ -54,6 +54,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=fleetops-cargo-regist
 # The data directory, owned by distroless's nonroot user (65532).
 RUN mkdir -p /data
 
+# The bare binary, for release downloads:
+#   docker buildx build --target binary --output type=local,dest=out .
+FROM scratch AS binary
+COPY --from=build /fleetops /fleetops
+
 FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /fleetops /fleetops
 COPY --from=build --chown=65532:65532 /data /data

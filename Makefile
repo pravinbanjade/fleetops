@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker test-web e2e lint fmt build image image-smoke openapi
+.PHONY: dev dev-server dev-web web test test-docker test-web e2e rss-bench lint fmt build image image-smoke openapi
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -40,6 +40,11 @@ e2e: build
 	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
 		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
 		pnpm -C web exec playwright test
+
+# The idle memory target: a release build managing 50 containers on the
+# current docker context's daemon must stay under 50 MiB of RSS.
+rss-bench: build
+	scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops
 
 lint:
 	cargo fmt --all --check
