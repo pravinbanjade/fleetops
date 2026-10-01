@@ -107,6 +107,9 @@ fn config(
         ca: None,
         log: "warn".into(),
         server_silence: Duration::from_secs(45),
+        kube: false,
+        key_secret: None,
+        kube_upstream: None,
     }
 }
 

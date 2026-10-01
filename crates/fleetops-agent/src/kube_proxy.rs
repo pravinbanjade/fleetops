@@ -151,6 +151,46 @@ impl KubeProxy {
         })
     }
 
+    /// One request of the agent's own (its key Secret), with its token.
+    pub async fn api(
+        &self,
+        method: hyper::Method,
+        path: &str,
+        content_type: Option<&str>,
+        body: Vec<u8>,
+    ) -> io::Result<(StatusCode, Bytes)> {
+        let other = |e: &dyn std::fmt::Display| io::Error::other(e.to_string());
+        let uri = format!("{}{path}", self.up.base.to_string().trim_end_matches('/'));
+        let token = self.token.read().unwrap().clone();
+        let mut b = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .header(header::ACCEPT, "application/json");
+        if let Some(ct) = content_type {
+            b = b.header(header::CONTENT_TYPE, ct);
+        }
+        let req = b
+            .body(
+                Full::new(Bytes::from(body))
+                    .map_err(|never| match never {})
+                    .boxed(),
+            )
+            .map_err(|e| other(&e))?;
+        let resp = tokio::time::timeout(Duration::from_secs(10), self.client.request(req))
+            .await
+            .map_err(|_| other(&"the kube-apiserver did not answer within 10s"))?
+            .map_err(|e| other(&e))?;
+        let status = resp.status();
+        let bytes = resp
+            .into_body()
+            .collect()
+            .await
+            .map_err(|e| other(&e))?
+            .to_bytes();
+        Ok((status, bytes))
+    }
+
     /// Serves one tunnel stream: HTTP/1.1 requests, keep-alive, upgrades.
     pub async fn serve(self: Arc<Self>, stream: StreamHandle) -> Result<(), hyper::Error> {
         let svc = hyper::service::service_fn(move |req| {
