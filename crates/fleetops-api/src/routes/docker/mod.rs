@@ -38,6 +38,9 @@ pub async fn ctx(
 ) -> ApiResult<EnvCtx> {
     let env = s.envs.get(env_name)?;
     authorize(&user.user, Some(env.id()), action)?;
+    if env.kind().is_kube() {
+        return Err(crate::routes::kube::wrong_kind(env_name, env.kind()).into());
+    }
     let ops = env
         .docker()
         .ok_or_else(|| Error::EnvUnavailable(format!("environment '{env_name}' is unreachable")))?;

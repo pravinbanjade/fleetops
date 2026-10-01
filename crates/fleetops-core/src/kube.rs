@@ -18,7 +18,9 @@ pub const YAML_CAP: usize = 1 << 20;
 /// Shown in place of every Secret value.
 pub const MASK: &str = "••••";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum KubeKind {
     Namespaces,
@@ -121,7 +123,7 @@ impl FromStr for KubeKind {
 /// The status dot's colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
-pub enum Health {
+pub enum RowHealth {
     Ok,
     Warn,
     Bad,
@@ -137,7 +139,7 @@ pub struct KubeRow {
     pub created: i64,
     /// e.g. "Running", "2/3", "Complete".
     pub status: String,
-    pub health: Health,
+    pub health: RowHealth,
     /// Kind-specific: ready, restarts, node, type, ports, hosts…
     pub columns: BTreeMap<String, String>,
 }

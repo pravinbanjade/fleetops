@@ -4,9 +4,6 @@ use common::*;
 use fleetops_core::env::{Credential, EnvKind};
 use serde_json::json;
 
-/// A token kubeconfig for a cluster nobody listens on.
-pub const KUBECONFIG: &str = "apiVersion: v1\nkind: Config\ncurrent-context: dev\nclusters:\n- name: dev\n  cluster: {server: 'https://127.0.0.1:1'}\ncontexts:\n- name: dev\n  context: {cluster: dev, user: dev}\n- name: other\n  context: {cluster: dev, user: dev}\nusers:\n- name: dev\n  user: {token: very-secret-token}\n";
-
 fn post(path: &str, body: serde_json::Value, s: &Session) -> axum::http::Request<axum::body::Body> {
     let mut r = req("POST", path, Some(body), Some(s));
     r.headers_mut()
