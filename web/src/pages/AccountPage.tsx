@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/errors";
 import { formatTime } from "@/lib/format";
 import { FormError } from "./AuthLayout";
+import { UserAvatar } from "@/components/UserAvatar";
 
 export function AccountPage() {
   const { user } = useSession();
@@ -18,7 +19,12 @@ export function AccountPage() {
     <div className="grid max-w-3xl gap-4 p-6">
       <h1 className="text-2xl font-semibold">Account</h1>
       <p className="text-sm text-muted-foreground">
-        Signed in as <span className="font-medium text-foreground">{user.username}</span> ({user.role})
+        <span className="inline-flex items-center gap-2">
+          <UserAvatar name={user.username} size="sm" />
+          <span>
+            Signed in as <span className="font-medium text-foreground">{user.username}</span> ({user.role})
+          </span>
+        </span>
       </p>
       <PasswordCard />
       <SessionsCard />

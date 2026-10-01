@@ -23,6 +23,78 @@ async fn system_info_and_df() {
 }
 
 #[tokio::test]
+async fn recent_events_come_from_docker_since_the_requested_time() {
+    let app = app().await;
+    let s = app.with_local().await;
+    let now = fleetops_core::now_unix();
+    app.fake.state.lock().unwrap().past_events = vec![
+        fake_event("die", "c1", now - 7200),
+        fake_event("die", "c2", now - 60),
+        fake_event("start", "c2", now - 59),
+    ];
+    let r = app
+        .send(req(
+            "GET",
+            &format!("/api/v1/envs/local/events?since={}", now - 120),
+            None,
+            Some(&s),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let got: Vec<(&str, &str)> = r
+        .json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| (e["action"].as_str().unwrap(), e["id"].as_str().unwrap()))
+        .collect();
+    assert_eq!(got, [("die", "c2"), ("start", "c2")]);
+}
+
+#[tokio::test]
+async fn recent_events_look_back_at_most_an_hour() {
+    let app = app().await;
+    let s = app.with_local().await;
+    let now = fleetops_core::now_unix();
+    app.fake.state.lock().unwrap().past_events = vec![
+        fake_event("die", "old", now - 7200),
+        fake_event("die", "recent", now - 3000),
+    ];
+    let r = app
+        .send(req(
+            "GET",
+            "/api/v1/envs/local/events?since=0",
+            None,
+            Some(&s),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.json.as_array().unwrap().len(), 1);
+    assert_eq!(r.json[0]["id"], "recent");
+}
+
+#[tokio::test]
+async fn recent_events_need_a_session() {
+    let app = app().await;
+    app.with_local().await;
+    let r = app
+        .send(req("GET", "/api/v1/envs/local/events?since=0", None, None))
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+}
+
+fn fake_event(action: &str, id: &str, time: i64) -> fleetops_core::streams::DockerEvent {
+    fleetops_core::streams::DockerEvent {
+        kind: "container".into(),
+        action: action.into(),
+        id: id.into(),
+        name: Some(format!("{id}-name")),
+        attributes: Default::default(),
+        time,
+    }
+}
+
+#[tokio::test]
 async fn images_routes() {
     let app = app().await;
     let s = app.with_local().await;

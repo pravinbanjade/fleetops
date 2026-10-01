@@ -103,6 +103,20 @@ fn build_json(b: bollard::models::BuildInfo) -> Result<Value> {
     Ok(Value::Object(v))
 }
 
+fn to_event(m: bollard::models::EventMessage) -> DockerEvent {
+    let actor = m.actor.unwrap_or_default();
+    let attributes: std::collections::BTreeMap<String, String> =
+        actor.attributes.unwrap_or_default().into_iter().collect();
+    DockerEvent {
+        kind: m.typ.map(|t| t.to_string()).unwrap_or_default(),
+        action: m.action.unwrap_or_default(),
+        id: actor.id.unwrap_or_default(),
+        name: attributes_name(&attributes),
+        attributes,
+        time: m.time.unwrap_or_default(),
+    }
+}
+
 /// A tar holding just `Dockerfile`.
 fn dockerfile_tar(dockerfile: &[u8]) -> Result<Vec<u8>> {
     let mut b = tar::Builder::new(Vec::new());
@@ -125,21 +139,29 @@ impl StreamOps for LocalDocker {
             since: Some(now_unix().to_string()),
             ..Default::default()
         };
-        let s = self.client.events(Some(opts)).map(|r| {
-            let m = r.map_err(map_err)?;
-            let actor = m.actor.unwrap_or_default();
-            let attributes: std::collections::BTreeMap<String, String> =
-                actor.attributes.unwrap_or_default().into_iter().collect();
-            Ok(DockerEvent {
-                kind: m.typ.map(|t| t.to_string()).unwrap_or_default(),
-                action: m.action.unwrap_or_default(),
-                id: actor.id.unwrap_or_default(),
-                name: attributes_name(&attributes),
-                attributes,
-                time: m.time.unwrap_or_default(),
-            })
-        });
+        let s = self
+            .client
+            .events(Some(opts))
+            .map(|r| r.map(to_event).map_err(map_err));
         Box::pin(s)
+    }
+
+    async fn recent_events(&self, since: i64) -> Result<Vec<DockerEvent>> {
+        // With `until`, Docker replays what it holds and ends the stream once
+        // that time has passed. Times are whole seconds, so `until` is the next
+        // second: this second's events are included, at the cost of a wait of
+        // under a second.
+        let opts = EventsOptions {
+            since: Some(since.to_string()),
+            until: Some((now_unix() + 1).to_string()),
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        let mut s = self.client.events(Some(opts));
+        while let Some(m) = s.next().await {
+            out.push(to_event(m.map_err(map_err)?));
+        }
+        Ok(out)
     }
 
     fn stats(&self, id: &str) -> BoxStream<fleetops_core::streams::StatsSample> {

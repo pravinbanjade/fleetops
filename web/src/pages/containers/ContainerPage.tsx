@@ -1,5 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import {
+  Activity,
+  Braces,
+  Copy,
+  FolderTree,
+  HardDrive,
+  Info,
+  PencilLine,
+  ScrollText,
+  SlidersHorizontal,
+  SquareTerminal,
+  Trash2,
+  Variable,
+  Waypoints,
+} from "lucide-react";
 import { lazy, Suspense, useState, type FormEvent } from "react";
 import { containerQuery, keys } from "@/api/queries";
 import { containerAction, renameContainer } from "@/api/gen/sdk.gen";
@@ -17,7 +32,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { joinArgs } from "@/lib/args";
 import { errorMessage } from "@/lib/errors";
-import { shortId } from "@/lib/format";
+import { formatAgo, shortId } from "@/lib/format";
 import { isSecretKey, maskEnv, splitEnv } from "@/lib/secrets";
 import { FormError } from "@/pages/AuthLayout";
 import { ACTIONS, actionsFor, RemoveDialog } from "./actions";
@@ -50,22 +65,28 @@ export function ContainerPage() {
     <Page
       title={
         <span className="flex items-center gap-3">
-          {name} <StateBadge state={c.State.Health?.Status ?? c.State.Status} />
+          <span className="truncate">{name}</span> <StateBadge state={c.State.Health?.Status ?? c.State.Status} />
+        </span>
+      }
+      meta={
+        <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="truncate">{c.Config.Image}</span>
+          <code className="text-xs">{shortId(c.Id)}</code>
+          {c.State.Running && c.State.StartedAt && (
+            <span>Up since {formatAgo(Math.floor(new Date(c.State.StartedAt).getTime() / 1000))}</span>
+          )}
         </span>
       }
       actions={<ContainerActions env={env} c={c} name={name} />}
     >
       <Tabs value={tab} onValueChange={(t) => void navigate({ search: { tab: t as ContainerTab }, replace: true })}>
         <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="inspect">Inspect</TabsTrigger>
-          <TabsTrigger value="env">Env</TabsTrigger>
-          <TabsTrigger value="mounts">Mounts</TabsTrigger>
-          <TabsTrigger value="networks">Networks</TabsTrigger>
-          <TabsTrigger value="stats">Stats</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
-          <TabsTrigger value="terminal">Terminal</TabsTrigger>
-          <TabsTrigger value="files">Files</TabsTrigger>
+          {TABS.map(([value, label, Icon]) => (
+            <TabsTrigger key={value} value={value}>
+              <Icon aria-hidden strokeWidth={1.75} />
+              {label}
+            </TabsTrigger>
+          ))}
         </TabsList>
         <TabsContent value="overview">
           <Overview c={c} />
@@ -103,6 +124,18 @@ export function ContainerPage() {
   );
 }
 
+const TABS: [ContainerTab, string, typeof Info][] = [
+  ["overview", "Overview", Info],
+  ["inspect", "Inspect", Braces],
+  ["env", "Env", Variable],
+  ["mounts", "Mounts", HardDrive],
+  ["networks", "Networks", Waypoints],
+  ["stats", "Stats", Activity],
+  ["logs", "Logs", ScrollText],
+  ["terminal", "Terminal", SquareTerminal],
+  ["files", "Files", FolderTree],
+];
+
 function ContainerActions({ env, c, name }: { env: string; c: ContainerInspect; name: string }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -114,25 +147,45 @@ function ContainerActions({ env, c, name }: { env: string; c: ContainerInspect; 
   });
   return (
     <>
-      {actionsFor(c.State.Status).map((a) => (
-        <Button key={a} variant="outline" disabled={act.isPending} onClick={() => act.mutate(a)}>
-          {ACTIONS.find((x) => x.action === a)!.label}
-        </Button>
-      ))}
+      <div role="group" aria-label="Lifecycle" className="flex overflow-hidden rounded-md border border-input bg-card shadow-[0_1px_1px_oklch(0_0_0/0.04)]">
+        {actionsFor(c.State.Status).map((a) => {
+          const x = ACTIONS.find((y) => y.action === a)!;
+          return (
+            <Button
+              key={a}
+              variant="ghost"
+              className="rounded-none border-l border-input text-foreground first:border-l-0"
+              disabled={act.isPending}
+              onClick={() => act.mutate(a)}
+            >
+              <x.icon />
+              {x.label}
+            </Button>
+          );
+        })}
+      </div>
       <Button variant="outline" onClick={() => setRenaming(true)}>
+        <PencilLine />
         Rename
       </Button>
       <Button variant="outline" asChild>
         <Link to="/envs/$env/containers/$id/edit" params={{ env, id: c.Id }}>
+          <SlidersHorizontal />
           Edit
         </Link>
       </Button>
       <Button variant="outline" asChild>
         <Link to="/envs/$env/containers/new" params={{ env }} search={{ from: c.Id }}>
+          <Copy />
           Duplicate
         </Link>
       </Button>
-      <Button variant="destructive" onClick={() => setRemoving(true)}>
+      <Button
+        variant="outline"
+        className="text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+        onClick={() => setRemoving(true)}
+      >
+        <Trash2 />
         Remove
       </Button>
       {renaming && <RenameDialog env={env} id={c.Id} name={name} onClose={() => setRenaming(false)} />}
@@ -214,7 +267,7 @@ function Overview({ c }: { c: ContainerInspect }) {
         ]}
       />
       <section className="grid gap-2">
-        <h2 className="font-medium">Labels</h2>
+        <h2 className="text-sm font-semibold">Labels</h2>
         {labels.length === 0 ? (
           <p className="text-sm text-muted-foreground">No labels.</p>
         ) : (

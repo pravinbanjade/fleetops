@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { formatTime } from "@/lib/format";
 import { FormDialog } from "./FormDialog";
+import { UserAvatar } from "@/components/UserAvatar";
 
 type Dialog = { kind: "add" } | { kind: "password" | "role" | "delete"; user: User } | null;
 
@@ -30,7 +31,8 @@ export function UsersPage() {
     col.accessor("username", {
       header: "Username",
       cell: (c) => (
-        <span className="font-medium">
+        <span className="flex items-center gap-2.5 font-medium">
+          <UserAvatar name={c.getValue()} />
           {c.getValue()}
           {c.row.original.id === me.id && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
         </span>

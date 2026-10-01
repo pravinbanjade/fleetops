@@ -8,16 +8,30 @@ const H = 20;
  * of the scale; values above it (and gaps, as null) are drawn clipped or
  * skipped rather than rescaling the line.
  */
-export function Sparkline({ values, max, label }: { values: (number | null)[]; max: number; label: string }) {
+export function Sparkline({
+  values,
+  max,
+  label,
+  width = W,
+  height = H,
+}: {
+  values: (number | null)[];
+  max: number;
+  label: string;
+  width?: number;
+  height?: number;
+}) {
   const recent = values.slice(-POINTS);
-  const step = W / (POINTS - 1);
+  const step = width / (POINTS - 1);
   const offset = POINTS - recent.length;
   const points = recent
-    .map((v, i) => (v === null ? null : `${((offset + i) * step).toFixed(1)},${(H - (Math.min(v, max) / max) * (H - 2) - 1).toFixed(1)}`))
+    .map((v, i) => (v === null ? null : `${((offset + i) * step).toFixed(1)},${(height - (Math.min(v, max) / max) * (height - 2) - 1).toFixed(1)}`))
     .filter((p) => p !== null)
     .join(" ");
   return (
-    <svg role="img" aria-label={label} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="text-primary/70">
+    <svg role="img" aria-label={label} width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="text-foreground/75">
+      {/* The minute's full window, so a short history reads as recent, not as a stub. */}
+      <line x1={0} x2={width} y1={height - 1} y2={height - 1} stroke="currentColor" strokeOpacity={0.18} strokeWidth={1} />
       {points && <polyline points={points} fill="none" stroke="currentColor" strokeWidth={1.25} strokeLinejoin="round" />}
     </svg>
   );

@@ -7,9 +7,10 @@ const KEY = "fleetops-theme";
 export function readTheme(): Theme {
   try {
     const t = localStorage.getItem(KEY);
-    return t === "light" || t === "dark" ? t : "system";
+    // Dark first: an operator who never chose sees the dark bay.
+    return t === "light" || t === "dark" || t === "system" ? t : "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 
@@ -40,8 +41,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setTheme = (t: Theme) => {
     try {
-      if (t === "system") localStorage.removeItem(KEY);
-      else localStorage.setItem(KEY, t);
+      localStorage.setItem(KEY, t);
     } catch {
       // Storage may be unavailable (private mode); the choice lasts for this tab.
     }

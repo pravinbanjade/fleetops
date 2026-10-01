@@ -1,13 +1,13 @@
-import { Boxes, Database, Layers, LayoutDashboard, Network, Rows3, ScrollText, Server, Users } from "lucide-react";
+import { Container, FileStack, Gauge, HardDrive, Layers, ScrollText, Server, Users, Waypoints } from "lucide-react";
 
 /** The environment-scoped pages, in sidebar order. */
 export const NAV = [
-  { to: "/envs/$env", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/envs/$env/containers", label: "Containers", icon: Boxes },
-  { to: "/envs/$env/images", label: "Images", icon: Layers },
-  { to: "/envs/$env/volumes", label: "Volumes", icon: Database },
-  { to: "/envs/$env/networks", label: "Networks", icon: Network },
-  { to: "/envs/$env/compose", label: "Compose", icon: Rows3 },
+  { to: "/envs/$env", label: "Dashboard", icon: Gauge, key: "d" },
+  { to: "/envs/$env/containers", label: "Containers", icon: Container, key: "c" },
+  { to: "/envs/$env/images", label: "Images", icon: Layers, key: "i" },
+  { to: "/envs/$env/volumes", label: "Volumes", icon: HardDrive, key: "v" },
+  { to: "/envs/$env/networks", label: "Networks", icon: Waypoints, key: "n" },
+  { to: "/envs/$env/compose", label: "Compose", icon: FileStack, key: "p" },
 ] as const;
 
 /** Administration pages, shown to admins. */

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { getRouteApi, Link } from "@tanstack/react-router";
+import { ArrowUpRight, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { containersQuery, keys } from "@/api/queries";
@@ -8,20 +9,40 @@ import type { ContainerSummary } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
-import { Sparkline } from "@/components/Sparkline";
-import { StateBadge } from "@/components/StateBadge";
-import { useInView } from "@/components/useInView";
+import { ContainerState, stateTone } from "@/components/StateBadge";
+import { needsAttention, shownState } from "@/lib/health";
 import { Button } from "@/components/ui/button";
 import { bulkMessage, runBulk } from "@/lib/bulk";
-import { formatAgo, formatBytes, formatPercent, shortId } from "@/lib/format";
+import { formatAgo, formatBytes, shortId } from "@/lib/format";
 import { portLinks } from "@/lib/ports";
-import { useContainerStats } from "@/live/LiveProvider";
+import { Usage } from "@/components/Usage";
 import { ACTIONS, RemoveDialog } from "./actions";
 
+const route = getRouteApi("/authed/shell/envs/$env/containers");
 const col = columns<ContainerSummary>();
+
+const RANK = { fail: 0, wait: 1, run: 2, idle: 3 } as const;
+const BAYS = [
+  { id: "attention", label: "Needs attention" },
+  { id: "transitional", label: "Changing" },
+  { id: "running", label: "Running" },
+  { id: "stopped", label: "Stopped" },
+];
+
+/** Where a container sits in the rack: the ones that need someone first. */
+function urgency(c: ContainerSummary): number {
+  return needsAttention(c) ? 0 : RANK[stateTone(shownState(c))];
+}
 
 function containerColumns(env: string): Column<ContainerSummary>[] {
   return [
+    // The holder leads the strip, and the rack sorts by urgency: failed,
+    // then transitional, then running, then stopped.
+    col.accessor("state", {
+      header: "State",
+      cell: (c) => <ContainerState container={c.row.original} />,
+      sortFn: (a, b) => urgency(a.original) - urgency(b.original),
+    }),
     col.accessor("name", {
       header: "Name",
       enableHiding: false,
@@ -29,7 +50,7 @@ function containerColumns(env: string): Column<ContainerSummary>[] {
         <Link
           to="/envs/$env/containers/$id"
           params={{ env, id: c.row.original.id }}
-          className="font-medium hover:underline"
+          className="font-semibold hover:underline"
         >
           {c.getValue()}
         </Link>
@@ -39,13 +60,15 @@ function containerColumns(env: string): Column<ContainerSummary>[] {
       header: "Image",
       // An image with no tag left is listed by its digest.
       cell: (c) => (
-        <span className="block max-w-64 truncate">
+        <span className="block max-w-64 truncate text-muted-foreground">
           {c.getValue().startsWith("sha256:") ? shortId(c.getValue()) : c.getValue()}
         </span>
       ),
     }),
-    col.accessor("state", { header: "State", cell: (c) => <StateBadge state={c.getValue()} /> }),
-    col.accessor("status", { header: "Status" }),
+    col.accessor("status", {
+      header: "Status",
+      cell: (c) => <span className="text-muted-foreground">{c.getValue()}</span>,
+    }),
     col.accessor((c) => c.ports.map((p) => `${p.public_port ?? ""} ${p.private_port}`).join(" "), {
       id: "ports",
       header: "Ports",
@@ -63,51 +86,24 @@ function containerColumns(env: string): Column<ContainerSummary>[] {
   ];
 }
 
-/**
- * Live CPU or memory for a running container: the latest value and a
- * sparkline of the last minute. Only rows on screen subscribe; the CPU and
- * memory cells of one row share a subscription.
- */
-function Usage({ env, container, kind }: { env: string; container: ContainerSummary; kind: "cpu" | "memory" }) {
-  const [ref, inView] = useInView<HTMLDivElement>();
-  const points = useContainerStats(env, container.id, container.state === "running" && inView);
-  const last = points.at(-1);
-  if (!last) {
-    return (
-      <div ref={ref} className="text-muted-foreground">
-        —
-      </div>
-    );
-  }
-  if (kind === "cpu") {
-    const values = points.map((p) => p.cpu_percent);
-    return (
-      <div ref={ref} className="flex items-center gap-2 tabular-nums">
-        <Sparkline values={values} max={Math.max(100, ...values)} label={`CPU of ${container.name}`} />
-        <span className="w-12 text-right">{formatPercent(last.cpu_percent)}</span>
-      </div>
-    );
-  }
-  const values = points.map((p) => p.memory_used);
-  return (
-    <div ref={ref} className="flex items-center gap-2 tabular-nums" title={`Limit ${formatBytes(last.memory_limit)}`}>
-      <Sparkline values={values} max={Math.max(...values) * 1.2 || 1} label={`Memory of ${container.name}`} />
-      <span className="w-16 text-right">{formatBytes(last.memory_used)}</span>
-    </div>
-  );
-}
-
 function Ports({ container }: { container: ContainerSummary }) {
   const links = portLinks(container.ports, window.location.hostname);
   return (
     <span className="flex flex-wrap gap-x-2">
       {links.map((l) =>
         l.href ? (
-          <a key={l.label} href={l.href} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+          <a
+            key={l.label}
+            href={l.href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-0.5 font-mono text-xs underline decoration-border hover:decoration-primary"
+          >
             {l.label}
+            <ArrowUpRight aria-hidden className="size-3 text-muted-foreground" />
           </a>
         ) : (
-          <span key={l.label} className="text-muted-foreground">
+          <span key={l.label} className="font-mono text-xs text-muted-foreground">
             {l.label}
           </span>
         ),
@@ -117,7 +113,8 @@ function Ports({ container }: { container: ContainerSummary }) {
 }
 
 export function ContainersPage() {
-  const { env } = useParams({ from: "/authed/shell/envs/$env/containers" });
+  const { env } = route.useParams();
+  const { q } = route.useSearch();
   const qc = useQueryClient();
   const list = useQuery(containersQuery(env));
   const [cols] = useState(() => containerColumns(env));
@@ -143,10 +140,12 @@ export function ContainersPage() {
       actions={
         <>
           <Button variant="outline" onClick={() => setPruning(true)}>
+            <Trash2 />
             Prune
           </Button>
           <Button asChild>
             <Link to="/envs/$env/containers/new" params={{ env }}>
+              <Plus />
               Create container
             </Link>
           </Button>
@@ -160,8 +159,11 @@ export function ContainersPage() {
         columns={cols}
         getRowId={(c) => c.id}
         empty="No containers in this environment."
-        initialSorting={[{ id: "name", desc: false }]}
+        initialSorting={[{ id: "state", desc: false }, { id: "name", desc: false }]}
         initialHidden={["compose"]}
+        initialFilter={q}
+        bays={{ column: "state", of: (c) => BAYS[urgency(c)] }}
+        phoneColumns={["state", "name", "status"]}
         selectable
         actions={(selected, clear) => (
           <>
@@ -173,10 +175,12 @@ export function ContainersPage() {
                 disabled={bulk.isPending}
                 onClick={() => bulk.mutate({ items: selected, action: a }, { onSuccess: clear })}
               >
+                <a.icon />
                 {a.label}
               </Button>
             ))}
             <Button variant="destructive" size="sm" onClick={() => setRemoving(selected)}>
+              <Trash2 />
               Remove
             </Button>
           </>

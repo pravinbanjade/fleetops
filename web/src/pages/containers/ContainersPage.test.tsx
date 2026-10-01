@@ -20,6 +20,15 @@ const rows = (screen: typeof import("@testing-library/react").screen) =>
   within(screen.getByRole("table", { name: "Containers" })).getAllByRole("row").slice(1);
 
 describe("containers list", () => {
+  it("starts filtered when linked with ?q=", async () => {
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: LIST } });
+    const { screen } = renderApp("/envs/local/containers?q=exited");
+    const filter = await screen.findByRole("searchbox", { name: "Filter containers" });
+    expect(filter).toHaveValue("exited");
+    await waitFor(() => expect(rows(screen)).toHaveLength(1));
+    expect(rows(screen)[0]).toHaveTextContent("db");
+  });
+
   it("lists containers with state, ports and age", async () => {
     mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: LIST } });
     const { screen } = renderApp("/envs/local/containers");
@@ -28,8 +37,19 @@ describe("containers list", () => {
     expect(within(web).getByText("running")).toBeInTheDocument();
     expect(within(web).getByRole("link", { name: "8080→80" })).toHaveAttribute("href", "http://localhost:8080");
     expect(within(web).getByText("2 hours ago")).toBeInTheDocument();
-    // Sorted by name: db first.
-    expect(rows(screen)[0]).toHaveTextContent("db");
+    // Racked by urgency, then name: the running web before the cleanly exited db.
+    expect(rows(screen)[0]).toHaveTextContent("web");
+  });
+
+  it("racks containers into bays by urgency", async () => {
+    const crashed = container({ id: "c3", name: "job", state: "exited", status: "Exited (1) 1 minute ago" });
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: [...LIST, crashed] } });
+    const { screen } = renderApp("/envs/local/containers");
+    await waitFor(() => expect(rows(screen)).toHaveLength(3));
+    const table = screen.getByRole("table", { name: "Containers" });
+    const bays = within(table).getAllByRole("rowgroup").map((g) => g.getAttribute("aria-label")).filter(Boolean);
+    expect(bays).toEqual(["Needs attention", "Running", "Stopped"]);
+    expect(within(within(table).getByRole("rowgroup", { name: "Needs attention" })).getByText("job")).toBeInTheDocument();
   });
 
   it("stops the selected containers and reports a failure by name", async () => {
