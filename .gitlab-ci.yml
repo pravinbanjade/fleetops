@@ -137,7 +137,7 @@ rss:
 
 # Both platforms, to prove they build (the result stays in the registry
 # cache), then the runner's own platform again, loaded to smoke-test.
-image:
+images:
   extends: [.test, .buildx]
   script:
     - >
