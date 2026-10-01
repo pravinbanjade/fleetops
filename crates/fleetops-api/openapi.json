@@ -2858,6 +2858,53 @@
         ]
       }
     },
+    "/api/v1/kube/contexts": {
+      "post": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "List a kubeconfig's contexts without saving it",
+        "operationId": "kubeContexts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubeconfigText"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Context names and the current one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeContexts"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/openapi.json": {
       "get": {
         "tags": [
@@ -3746,18 +3793,36 @@
           "kind"
         ],
         "properties": {
+          "context": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "kube-config: the context to use; default the current one."
+          },
           "kind": {
             "$ref": "#/components/schemas/EnvKind"
           },
+          "kubeconfig": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "kube-config: the kubeconfig, stored encrypted and never returned."
+          },
           "name": {
             "type": "string"
+          },
+          "skip_check": {
+            "type": "boolean",
+            "description": "kube-config: save without checking that the cluster answers."
           },
           "url": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The Docker URL of a local environment; agent environments take none."
+            "description": "The Docker URL of a local environment; other kinds take none."
           }
         }
       },
@@ -4113,6 +4178,17 @@
                     "$ref": "#/components/schemas/AgentView"
                   }
                 ]
+              },
+              "kube": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/KubeconfigSummary",
+                    "description": "What may be shown of a stored kubeconfig (kube-config environments)."
+                  }
+                ]
               }
             }
           }
@@ -4279,6 +4355,26 @@
           }
         }
       },
+      "KubeContexts": {
+        "type": "object",
+        "required": [
+          "contexts"
+        ],
+        "properties": {
+          "contexts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "current": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "KubeVersion": {
         "type": "object",
         "required": [
@@ -4302,6 +4398,37 @@
             "minimum": 0
           },
           "platform": {
+            "type": "string"
+          }
+        }
+      },
+      "KubeconfigSummary": {
+        "type": "object",
+        "description": "What may be shown about a stored kubeconfig.",
+        "required": [
+          "server",
+          "context",
+          "user_kind"
+        ],
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          },
+          "user_kind": {
+            "$ref": "#/components/schemas/UserKind"
+          }
+        }
+      },
+      "KubeconfigText": {
+        "type": "object",
+        "required": [
+          "kubeconfig"
+        ],
+        "properties": {
+          "kubeconfig": {
             "type": "string"
           }
         }
@@ -4969,11 +5096,27 @@
       "UpdateEnv": {
         "type": "object",
         "properties": {
+          "context": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kubeconfig": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "kube-config: a replacement kubeconfig."
+          },
           "name": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "skip_check": {
+            "type": "boolean"
           },
           "url": {
             "type": [
@@ -5033,6 +5176,13 @@
             "type": "string"
           }
         }
+      },
+      "UserKind": {
+        "type": "string",
+        "enum": [
+          "token",
+          "cert"
+        ]
       },
       "VolumeSpec": {
         "type": "object",

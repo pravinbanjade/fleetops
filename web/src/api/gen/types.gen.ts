@@ -199,10 +199,22 @@ export type CreateBody = ContainerSpec & {
 };
 
 export type CreateEnv = {
+    /**
+     * kube-config: the context to use; default the current one.
+     */
+    context?: string | null;
     kind: EnvKind;
+    /**
+     * kube-config: the kubeconfig, stored encrypted and never returned.
+     */
+    kubeconfig?: string | null;
     name: string;
     /**
-     * The Docker URL of a local environment; agent environments take none.
+     * kube-config: save without checking that the cluster answers.
+     */
+    skip_check?: boolean;
+    /**
+     * The Docker URL of a local environment; other kinds take none.
      */
     url?: string | null;
 };
@@ -322,6 +334,7 @@ export type EnvVersion = (EngineVersion & {
  */
 export type EnvView = EnvironmentRecord & {
     agent?: null | AgentView;
+    kube?: null | KubeconfigSummary;
 };
 
 export type EnvironmentRecord = {
@@ -386,11 +399,29 @@ export type ImageSummary = {
     size: number;
 };
 
+export type KubeContexts = {
+    contexts: Array<string>;
+    current?: string | null;
+};
+
 export type KubeVersion = {
     git_version: string;
     nodes: number;
     nodes_ready: number;
     platform: string;
+};
+
+/**
+ * What may be shown about a stored kubeconfig.
+ */
+export type KubeconfigSummary = {
+    context: string;
+    server: string;
+    user_kind: UserKind;
+};
+
+export type KubeconfigText = {
+    kubeconfig: string;
 };
 
 export type LogLine = {
@@ -590,7 +621,13 @@ export type TaskStatus = 'running' | 'succeeded' | 'failed';
 export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task';
 
 export type UpdateEnv = {
+    context?: string | null;
+    /**
+     * kube-config: a replacement kubeconfig.
+     */
+    kubeconfig?: string | null;
     name?: string | null;
+    skip_check?: boolean;
     url?: string | null;
 };
 
@@ -606,6 +643,8 @@ export type User = {
     updated_at: number;
     username: string;
 };
+
+export type UserKind = 'token' | 'cert';
 
 export type VolumeSpec = {
     driver?: string | null;
@@ -2353,6 +2392,31 @@ export type GetHealthResponses = {
 };
 
 export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
+
+export type KubeContextsData = {
+    body: KubeconfigText;
+    path?: never;
+    query?: never;
+    url: '/api/v1/kube/contexts';
+};
+
+export type KubeContextsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type KubeContextsError = KubeContextsErrors[keyof KubeContextsErrors];
+
+export type KubeContextsResponses = {
+    /**
+     * Context names and the current one
+     */
+    200: KubeContexts;
+};
+
+export type KubeContextsResponse = KubeContextsResponses[keyof KubeContextsResponses];
 
 export type GetOpenApiData = {
     body?: never;

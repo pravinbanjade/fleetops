@@ -3,6 +3,7 @@
 
 mod axum_io;
 pub mod connect;
+pub mod manifest;
 
 use crate::{auth::token::generate_token, ws::hub::StatusChange, AppState};
 use fleetops_store::{AgentRecord, EnvironmentRecord};
@@ -77,6 +78,8 @@ pub struct EnvView {
     #[serde(flatten)]
     pub env: EnvironmentRecord,
     pub agent: Option<AgentView>,
+    /// What may be shown of a stored kubeconfig (kube-config environments).
+    pub kube: Option<fleetops_core::env::KubeconfigSummary>,
 }
 
 /// A newly created environment; an agent one carries its enrollment once.
@@ -85,6 +88,18 @@ pub struct CreatedEnv {
     #[serde(flatten)]
     pub env: EnvironmentRecord,
     pub enrollment: Option<Enrollment>,
+}
+
+/// The enrollment command for an agent environment of `kind`.
+pub fn command_for(
+    kind: fleetops_core::env::EnvKind,
+    server_url: &str,
+    join_token: &str,
+) -> String {
+    match kind {
+        fleetops_core::env::EnvKind::KubeAgent => manifest::command(server_url, join_token),
+        _ => enrollment_command(server_url, join_token),
+    }
 }
 
 /// Announces environment `env_id`'s current status to every websocket.
