@@ -31,6 +31,8 @@ pub struct ApiConfig {
     pub ws_ping_interval: Duration,
     /// Messages buffered per websocket subscription (spec default 1024).
     pub ws_queue_capacity: usize,
+    /// How often the server pings each agent; two unanswered pings end the session.
+    pub agent_ping_interval: Duration,
 }
 
 impl Default for ApiConfig {
@@ -42,6 +44,7 @@ impl Default for ApiConfig {
             ws_session_check: Duration::from_secs(30),
             ws_ping_interval: Duration::from_secs(30),
             ws_queue_capacity: crate::ws::queue::QUEUE_CAPACITY,
+            agent_ping_interval: Duration::from_secs(15),
         }
     }
 }
@@ -55,6 +58,11 @@ pub struct AppState {
     pub envs: Arc<EnvRegistry>,
     pub hubs: Arc<Hubs>,
     pub tasks: Arc<TaskManager>,
+    /// Live agent sessions, shared with the env factory.
+    pub agents: Arc<fleetops_tunnel::registry::Registry>,
+    /// When each environment's last `agent.disconnect` was audited, so a
+    /// flapping agent writes one row per five minutes.
+    pub agent_disconnects: Arc<std::sync::Mutex<std::collections::HashMap<i64, Instant>>>,
 }
 
 impl AppState {
@@ -69,6 +77,15 @@ impl AppState {
             envs: Arc::new(EnvRegistry::new(factory)),
             hubs: Arc::new(Hubs::default()),
             tasks: Arc::new(TaskManager::default()),
+            agents: Arc::default(),
+            agent_disconnects: Arc::default(),
         }
+    }
+
+    /// Shares `agents` with the env factory, so agent environments see the
+    /// sessions the connect handler registers.
+    pub fn with_agents(mut self, agents: Arc<fleetops_tunnel::registry::Registry>) -> Self {
+        self.agents = agents;
+        self
     }
 }

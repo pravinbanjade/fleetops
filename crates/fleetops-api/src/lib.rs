@@ -1,6 +1,7 @@
 //! HTTP API for fleetops. `app()` builds the complete router; the server
 //! crate supplies the static-file router and sets `IsTls` per listener.
 
+pub mod agents;
 pub mod auth;
 pub mod authz;
 pub mod compose;
@@ -17,6 +18,7 @@ pub mod ws;
 
 use axum::{middleware::from_fn, Router};
 
+pub use auth::token::hash_token as auth_token_hash;
 pub use error::{ApiError, ApiResult};
 pub use state::{ApiConfig, AppState};
 

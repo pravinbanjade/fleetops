@@ -64,6 +64,15 @@ fn status_json(s: &EnvStatus) -> Value {
     serde_json::to_value(s).unwrap_or(Value::Null)
 }
 
+/// Sleeps out a reconnect backoff, or less if the environment says its
+/// reachability changed (an agent reconnected).
+async fn backoff_sleep(env: &Arc<dyn Environment>, d: Duration) {
+    tokio::select! {
+        _ = tokio::time::sleep(d) => {}
+        _ = env.wait_change() => {}
+    }
+}
+
 /// Keeps one events stream open while anyone listens, reconnecting with
 /// exponential backoff and announcing up/down transitions.
 async fn run_events(
@@ -94,7 +103,7 @@ async fn run_events(
                     up = false;
                     announce(&current);
                 }
-                tokio::time::sleep(backoff).await;
+                backoff_sleep(&env, backoff).await;
                 backoff = (backoff * 2).min(BACKOFF_MAX);
                 continue;
             }
@@ -135,7 +144,7 @@ async fn run_events(
             });
         }
         if tx.receiver_count() > 0 {
-            tokio::time::sleep(backoff).await;
+            backoff_sleep(&env, backoff).await;
             backoff = (backoff * 2).min(BACKOFF_MAX);
         }
     }

@@ -7,11 +7,21 @@
 # every list page's API once (as a browser session would on first visit),
 # lets it settle, then samples the process's resident set size.
 #
-# Usage: scripts/rss-bench.sh [binary]    (default target/release/fleetops)
-# Environment: COUNT (default 50), LIMIT_MIB (default 50), SETTLE (seconds, default 10)
+# Then it enrolls $AGENTS fleetops-agent processes against the same daemon
+# and checks the server stays under LIMIT_MIB + 1 MiB per agent and one idle
+# agent under AGENT_LIMIT_MIB.
+#
+# Usage: scripts/rss-bench.sh [binary] [agent binary]
+#        (defaults target/release/fleetops, target/release/fleetops-agent)
+# Environment: COUNT (default 50), LIMIT_MIB (default 50), SETTLE (seconds, default 10),
+#              AGENTS (default 10, 0 skips the agent phase), AGENT_LIMIT_MIB (default 15)
 set -eu
 
 bin=${1:-target/release/fleetops}
+agent_bin=${2:-target/release/fleetops-agent}
+agents=${AGENTS:-10}
+agent_limit_mib=${AGENT_LIMIT_MIB:-15}
+agent_pids=
 count=${COUNT:-50}
 limit_mib=${LIMIT_MIB:-50}
 settle=${SETTLE:-10}
@@ -22,6 +32,7 @@ log=$(mktemp)
 pid=
 
 cleanup() {
+  for a in $agent_pids; do kill "$a" 2>/dev/null || true; done
   [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
   ids=$(docker ps -aq --filter "label=$label")
   [ -z "$ids" ] || docker rm -f $ids >/dev/null 2>&1 || true
@@ -59,9 +70,10 @@ until curl -fsS "$base/api/v1/health" >/dev/null 2>&1; do
   sleep 1
 done
 
-curl -fsS -c "$jar" -H 'content-type: application/json' -H "Origin: $base" \
-  -d '{"username":"admin","password":"rss-bench-password-1"}' "$base/api/v1/auth/setup" >/dev/null ||
-  fail "first-run setup failed"
+csrf=$(curl -fsS -c "$jar" -H 'content-type: application/json' -H "Origin: $base" \
+  -d '{"username":"admin","password":"rss-bench-password-1"}' "$base/api/v1/auth/setup" |
+  sed -n 's/.*"csrf_token":"\([^"]*\)".*/\1/p')
+[ -n "$csrf" ] || fail "first-run setup failed"
 
 for path in info status df containers images volumes networks events; do
   curl -fsS -b "$jar" "$base/api/v1/envs/local/$path" >/dev/null || fail "GET /envs/local/$path failed"
@@ -72,15 +84,59 @@ seen=$(curl -fsS -b "$jar" "$base/api/v1/envs/local/containers" | grep -o "fleet
 
 sleep "$settle"
 
-# The highest of three samples, a second apart. ps reports KiB.
-max=0
-for _ in 1 2 3; do
-  kib=$(ps -o rss= -p "$pid" | tr -d ' ')
-  [ -n "$kib" ] || fail "the server exited"
-  [ "$kib" -gt "$max" ] && max=$kib
-  sleep 1
-done
+# The highest of three samples of process $1, a second apart. ps reports KiB.
+peak_rss() {
+  peak=0
+  for _ in 1 2 3; do
+    kib=$(ps -o rss= -p "$1" | tr -d ' ')
+    [ -n "$kib" ] || fail "process $1 exited"
+    [ "$kib" -gt "$peak" ] && peak=$kib
+    sleep 1
+  done
+  echo "$peak"
+}
+to_mib() { awk "BEGIN { printf \"%.1f\", $1 / 1024 }"; }
 
-mib=$(awk "BEGIN { printf \"%.1f\", $max / 1024 }")
+max=$(peak_rss "$pid")
+mib=$(to_mib "$max")
 echo "rss-bench: idle RSS ${mib} MiB with $count containers (limit ${limit_mib} MiB)"
 [ "$max" -le $((limit_mib * 1024)) ] || fail "idle RSS ${mib} MiB is over the ${limit_mib} MiB target"
+
+[ "$agents" -gt 0 ] || exit 0
+[ -x "$agent_bin" ] || fail "no agent binary at $agent_bin (cargo build --release -p fleetops-agent)"
+docker_url=${DOCKER_HOST:-$(docker context inspect --format '{{.Endpoints.docker.Host}}')}
+i=0
+while [ "$i" -lt "$agents" ]; do
+  token=$(curl -fsS -b "$jar" -H 'content-type: application/json' -H "Origin: $base" -H "x-csrf-token: $csrf" \
+    -d "{\"name\":\"rss-agent-$i\",\"kind\":\"docker-agent\"}" "$base/api/v1/envs" |
+    sed -n 's/.*"join_token":"\([^"]*\)".*/\1/p')
+  [ -n "$token" ] || fail "could not create agent environment $i"
+  adata="$data/agent-$i"
+  mkdir -p "$adata"
+  "$agent_bin" --server "$base" --join-token "$token" --data "$adata" --docker "$docker_url" --log warn >>"$log" 2>&1 &
+  agent_pids="$agent_pids $!"
+  i=$((i + 1))
+done
+
+i=0
+until [ "$(curl -fsS -b "$jar" "$base/api/v1/envs" | grep -o '"connected":true' | wc -l | tr -d ' ')" -ge "$agents" ]; do
+  i=$((i + 1))
+  [ "$i" -lt 30 ] || fail "only some of $agents agents connected"
+  sleep 1
+done
+# Each agent environment answers through its tunnel.
+i=0
+while [ "$i" -lt "$agents" ]; do
+  curl -fsS -b "$jar" "$base/api/v1/envs/rss-agent-$i/containers" >/dev/null || fail "rss-agent-$i is not serving"
+  i=$((i + 1))
+done
+
+sleep "$settle"
+
+server_kib=$(peak_rss "$pid")
+first_agent=$(echo "$agent_pids" | awk '{ print $1 }')
+agent_kib=$(peak_rss "$first_agent")
+server_limit=$((limit_mib + agents))
+echo "rss-bench: server $(to_mib "$server_kib") MiB with $agents agents (limit $server_limit MiB); agent $(to_mib "$agent_kib") MiB (limit $agent_limit_mib MiB)"
+[ "$server_kib" -le $((server_limit * 1024)) ] || fail "server RSS is over $server_limit MiB with $agents agents"
+[ "$agent_kib" -le $((agent_limit_mib * 1024)) ] || fail "agent RSS is over $agent_limit_mib MiB"

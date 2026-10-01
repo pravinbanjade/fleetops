@@ -1,7 +1,7 @@
 name: Release
 
-# Pushing a tag vX.Y.Z publishes the multi-arch image to GHCR and a GitHub
-# release with static linux binaries. The tag must match the workspace
+# Pushing a tag vX.Y.Z publishes the multi-arch server and agent images to
+# GHCR and a GitHub release with static linux binaries of both. The tag must match the workspace
 # version in Cargo.toml.
 on:
   push:
@@ -13,6 +13,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/fleetops
+  AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/fleetops-agent
 
 jobs:
   release:
@@ -46,11 +47,31 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
+          target: server
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - id: meta-agent
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.AGENT_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-agent.outputs.tags }}
+          labels: ${{ steps.meta-agent.outputs.labels }}
+          cache-from: type=gha
 
       # The same build (cache hits), stopped at the bare-binary stage.
       - uses: docker/build-push-action@v7
@@ -61,6 +82,14 @@ jobs:
           outputs: type=local,dest=out
           cache-from: type=gha
 
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: agent-binary
+          platforms: linux/amd64,linux/arm64
+          outputs: type=local,dest=out-agent
+          cache-from: type=gha
+
       - name: Package the binaries
         run: |
           mkdir dist
@@ -68,6 +97,9 @@ jobs:
             name=fleetops-$GITHUB_REF_NAME-linux-$arch
             cp out/linux_$arch/fleetops "dist/$name"
             (cd dist && sha256sum "$name" > "$name.sha256")
+            agent=fleetops-agent-$GITHUB_REF_NAME-linux-$arch
+            cp out-agent/linux_$arch/fleetops-agent "dist/$agent"
+            (cd dist && sha256sum "$agent" > "$agent.sha256")
           done
 
       - name: Publish the GitHub release

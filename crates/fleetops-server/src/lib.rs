@@ -13,13 +13,12 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 pub async fn run(config: Config) -> anyhow::Result<()> {
     std::fs::create_dir_all(&config.data)?;
     let store = Store::open(&config.data.join("fleetops.db")).await?;
-    let state = AppState::new(
+    let state = build_state(
         store.clone(),
         ApiConfig {
             hsts: config.hsts,
             ..ApiConfig::default()
         },
-        Arc::new(DockerEnvFactory),
     );
     state.envs.load(&store).await?;
     if let Some(env) = bootstrap_local(&store, &state.envs, &config.docker_host).await? {
@@ -28,6 +27,19 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let app = fleetops_api::app(state, static_files::router());
     tokio::spawn(maintenance::run(store));
     serve(&config, app).await
+}
+
+/// The API state with the env factory wired in: one agent registry, shared
+/// by the factory (agent environments read sessions from it) and the
+/// connect endpoint (which registers them).
+pub fn build_state(store: Store, config: ApiConfig) -> AppState {
+    let agents = Arc::new(fleetops_tunnel::registry::Registry::default());
+    AppState::new(
+        store,
+        config,
+        Arc::new(DockerEnvFactory::new(agents.clone())),
+    )
+    .with_agents(agents)
 }
 
 async fn serve(config: &Config, app: Router) -> anyhow::Result<()> {
