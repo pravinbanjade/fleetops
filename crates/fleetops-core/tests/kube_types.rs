@@ -1,0 +1,46 @@
+use fleetops_core::env::Credential;
+use fleetops_core::kube::KubeKind;
+use fleetops_core::Error;
+
+#[test]
+fn every_kind_round_trips_through_its_path_name() {
+    assert_eq!(KubeKind::ALL.len(), 12);
+    for k in KubeKind::ALL {
+        assert_eq!(k.as_str().parse::<KubeKind>().unwrap(), k);
+        assert_eq!(serde_json::to_value(k).unwrap(), k.as_str());
+        assert_eq!(KubeKind::from_kind_name(k.kind_name()), Some(k));
+    }
+    assert_eq!(KubeKind::StatefulSets.as_str(), "statefulsets");
+    assert_eq!(KubeKind::ConfigMaps.kind_name(), "ConfigMap");
+}
+
+#[test]
+fn an_unknown_kind_is_not_found() {
+    assert!(matches!(
+        "replicasets".parse::<KubeKind>(),
+        Err(Error::NotFound(_))
+    ));
+}
+
+#[test]
+fn scope_and_actions_follow_the_spec() {
+    use KubeKind::*;
+    let cluster: Vec<_> = KubeKind::ALL
+        .into_iter()
+        .filter(|k| k.cluster_scoped())
+        .collect();
+    assert_eq!(cluster, [Namespaces, Nodes]);
+    let scalable: Vec<_> = KubeKind::ALL.into_iter().filter(|k| k.scalable()).collect();
+    assert_eq!(scalable, [Deployments, StatefulSets]);
+    let restartable: Vec<_> = KubeKind::ALL
+        .into_iter()
+        .filter(|k| k.restartable())
+        .collect();
+    assert_eq!(restartable, [Deployments, StatefulSets, DaemonSets]);
+}
+
+#[test]
+fn a_credential_never_prints_its_kubeconfig() {
+    let c = Credential::Kubeconfig("token: s3cret".into());
+    assert!(!format!("{c:?}").contains("s3cret"));
+}
