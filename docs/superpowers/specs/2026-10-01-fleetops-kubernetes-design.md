@@ -69,11 +69,15 @@ pub enum EnvVersion {
 
 This changes the wire shape of an environment's status. The OpenAPI document and the generated web types are regenerated in the same change.
 
-`EnvFactory::build` takes the stored record instead of loose fields, so a factory can read credentials:
+`EnvFactory::build` takes one spec value instead of loose fields, so a factory can read a credential:
 
 ```rust
-fn build(&self, rec: &EnvRecord, cred: Option<&EnvCredential>) -> Result<Arc<dyn Environment>>;
+pub enum Credential { Kubeconfig(String), Unreadable(String) }   // Unreadable: why it could not be decrypted
+pub struct EnvSpec { pub id: i64, pub name: String, pub kind: EnvKind, pub url: String, pub credential: Option<Credential> }
+fn build(&self, spec: &EnvSpec) -> Result<Arc<dyn Environment>>;
 ```
+
+`EnvRegistry::insert` and `replace` take the credential next to the record; `load` reads each environment's credential from the store. The store owns the cipher (§3.1), so it hands back decrypted credentials and the API never touches key material.
 
 ### 2.3 `fleetops-core::kube`
 
@@ -113,12 +117,19 @@ pub trait KubeOps: Send + Sync {
     async fn delete(&self, kind: KubeKind, ns: &str, name: &str) -> Result<()>;
     async fn scale(&self, kind: KubeKind, ns: &str, name: &str, replicas: u32) -> Result<()>;
     async fn restart(&self, kind: KubeKind, ns: &str, name: &str) -> Result<()>;
-    async fn logs(&self, ns: &str, pod: &str, opts: KubeLogOpts) -> Result<ByteStream>;
-    async fn exec(&self, ns: &str, pod: &str, opts: KubeExecOpts) -> Result<ExecIo>;
+    fn logs(&self, ns: &str, pod: &str, opts: &LogOptions) -> BoxStream<LogLine>;
+    async fn exec_start(&self, ns: &str, pod: &str, opts: &ExecOptions) -> Result<KubeExec>;
+}
+
+pub struct KubeExec {
+    pub output: BoxStream<Vec<u8>>,                 // raw TTY output, as Docker's ExecSession
+    pub input: mpsc::Sender<Vec<u8>>,               // dropping it closes stdin
+    pub resize: mpsc::Sender<(u16, u16)>,           // (cols, rows)
+    pub exit_code: oneshot::Receiver<Option<i64>>,  // resolves when the process ends
 }
 ```
 
-For cluster-scoped kinds, `ns` is ignored and passed as `"-"` in URLs. `scale` accepts Deployments and StatefulSets; `restart` accepts Deployments, StatefulSets and DaemonSets; other kinds return `Error::Invalid`. `ByteStream` and `ExecIo` reuse the stream types that `StreamOps` already uses for Docker logs and exec, so the API's WebSocket bridges are shared.
+For cluster-scoped kinds, `ns` is ignored and passed as `"-"` in URLs. `scale` accepts Deployments and StatefulSets; `restart` accepts Deployments, StatefulSets and DaemonSets; other kinds return `Error::Invalid`. `LogLine`, `LogOptions`, `ExecOptions` and `BoxStream` are the existing `fleetops_core::streams` types, so the WebSocket topics and the web's log and terminal views are shared with Docker. `LogOptions` and `ExecOptions` gain `container: Option<String>`, which Docker ignores.
 
 ### 2.4 `fleetops-kube`
 
@@ -143,7 +154,7 @@ Environments:
 
 ### 2.5 Agent: `--kube` mode
 
-`fleetops-agent` gains `--kube` (env `FLEETOPS_KUBE=1`), which conflicts with `--docker`. In kube mode:
+`fleetops-agent` gains `--kube` (env `FLEETOPS_AGENT_KUBE=true`), which conflicts with `--docker`. In kube mode:
 
 - Each inbound yamux stream is served as HTTP/1.1 with hyper's server side.
 - Only paths that start with `/api/` or `/apis/`, or that equal `/version`, are forwarded; anything else gets 403 from the agent.
@@ -158,7 +169,7 @@ Environments:
 - `File` — today's 0600 key file in `--data`.
 - `KubeSecret` — in kube mode without `--data`, the key is stored in Secret `fleetops-agent-key` in the agent's namespace (read from the downward API env `POD_NAMESPACE`). The agent creates it on first enrollment and updates it on re-enrollment.
 
-The join token comes from env `FLEETOPS_JOIN_TOKEN`, fed from a Secret in the manifest.
+The join token comes from env `FLEETOPS_AGENT_JOIN_TOKEN`, fed from a Secret in the manifest; the server URL from `FLEETOPS_AGENT_SERVER`.
 
 ### 2.6 Server side
 
@@ -184,6 +195,7 @@ For `kube-config` environments, `environments.url` holds the cluster's API serve
 
 ### 3.1 Server secret key (`fleetops-store::secrets`)
 
+- The `Store` holds the cipher: `Store::with_secret_key(key)`; `Store::in_memory()` uses a random key. `put_env_credential` encrypts and `env_credential` decrypts, so callers only see plaintext or `Credential::Unreadable`.
 - `FLEETOPS_SECRET_KEY`: 32 bytes, base64. If it is unset, the server uses `<data>/secret.key`, creating it with mode 0600 on first start and logging once that it did.
 - A malformed `FLEETOPS_SECRET_KEY` is a startup error.
 - AES-256-GCM with a random 96-bit nonce per encryption; the environment id is the associated data, so a ciphertext copied to another row fails to decrypt.
@@ -234,35 +246,38 @@ The README documents a read-only ClusterRole variant without the write verbs; ac
 
 ### 4.4 Liveness
 
-Kubeconfig environments: the existing hub calls `status()` with its backoff and publishes changes. Agent environments: sub-project 2's ping/pong and registry changes, unchanged.
+The WebSocket hub only watches environments that a client subscribed to Docker events on, so it never watches Kubernetes environments. The web polls `GET /envs/{env}/status` every 15 s for Kubernetes environments (Docker environments keep polling only while down), and the web's per-environment Docker event subscription skips Kubernetes kinds. Agent environments additionally publish `env_status` on connect and disconnect, as in sub-project 2.
 
 ## 5. API
 
 All routes are under `/api/v1/envs/{env}/k8s`. A Kubernetes route on a Docker environment, or a Docker route on a Kubernetes environment, returns 409 `wrong environment kind`. `{kind}` is the plural lowercase kind name; an unknown kind is a 404. `{ns}` is `-` for cluster-scoped kinds.
 
-| Method | Path | Role | Notes |
+| Method | Path | Action | Notes |
 |---|---|---|---|
-| GET | `/namespaces` | viewer | Names only, for the picker |
-| GET | `/{kind}?namespace=` | viewer | `KubeList`; no `namespace` means all namespaces |
-| GET | `/{kind}/{ns}/{name}` | viewer | `KubeObject` |
-| GET | `/{kind}/{ns}/{name}/events` | viewer | `KubeEvent[]`, newest first |
-| DELETE | `/{kind}/{ns}/{name}` | operator | Audited `k8s.delete` |
-| POST | `/{kind}/{ns}/{name}/scale` `{replicas}` | operator | Deployments, StatefulSets; audited `k8s.scale` |
-| POST | `/{kind}/{ns}/{name}/restart` | operator | Deployments, StatefulSets, DaemonSets; audited `k8s.restart` |
-| WS | `/pods/{ns}/{name}/logs?container=&follow=&tail=&timestamps=` | operator | Same framing as Docker logs |
-| WS | `/pods/{ns}/{name}/exec?container=&cmd=` | operator | Same terminal protocol as Docker exec, including resize; audited `k8s.exec` |
+| GET | `/namespaces` | KubeRead | Names only, for the picker |
+| GET | `/{kind}?namespace=` | KubeRead | `KubeList`; no `namespace` means all namespaces |
+| GET | `/{kind}/{ns}/{name}` | KubeRead | `KubeObject` |
+| GET | `/{kind}/{ns}/{name}/events` | KubeRead | `KubeEvent[]`, newest first |
+| DELETE | `/{kind}/{ns}/{name}` | KubeWrite | Audited `k8s.delete` |
+| POST | `/{kind}/{ns}/{name}/scale` `{replicas}` | KubeWrite | Deployments, StatefulSets; audited `k8s.scale` |
+| POST | `/{kind}/{ns}/{name}/restart` | KubeWrite | Deployments, StatefulSets, DaemonSets; audited `k8s.restart` |
 
-Plus, outside `/k8s`: `POST /envs/kube/contexts` (admin) from §4.1. Audit targets are `kind/ns/name` within the environment. Roles follow sub-project 1: logs and exec need operator, as they do for containers.
+Plus, outside `/k8s`: `POST /envs/kube/contexts` (EnvManage, so admin only) from §4.1.
+
+**Logs and exec** use the existing multiplexed WebSocket (`/api/v1/ws`), topics `logs` and `exec`, with `id = "<namespace>/<pod>"` and `opts.container`. The topic handlers dispatch on the environment: Kubernetes environments go to `KubeOps::logs` (KubeRead) and `KubeOps::exec_start` (KubeWrite, audited `k8s.exec` with the command). Frames, gap handling, binary terminal frames and `resize` are unchanged.
+
+**Roles.** FleetOps has two roles, admin and user. `authz::Action` gains `KubeRead` and `KubeWrite`, granted to both roles exactly like `DockerRead` and `DockerWrite`; per-environment RBAC is sub-project 5. Audit targets are `kind/ns/name` within the environment.
 
 Limits: a list stops at 5,000 rows (`truncated: true`), paging with `limit`/`continue` underneath; a YAML document over 1 MiB is cut with a note; requests to the cluster time out after 30 s, except logs and exec.
 
 ## 6. Web UI
 
-- The environment switcher lists all kinds. On a Kubernetes environment the sidebar shows: Overview, Workloads (tabs: Deployments, StatefulSets, DaemonSets, Jobs, CronJobs), Pods, Services, Ingresses, ConfigMaps, Secrets, Namespaces, Nodes.
+- The environment switcher lists all kinds and marks Kubernetes ones with an icon. On a Kubernetes environment the sidebar shows: Overview, Workloads (tabs: Deployments, StatefulSets, DaemonSets, Jobs, CronJobs), Pods, Services, Ingresses, ConfigMaps, Secrets, Namespaces, Nodes.
 - A namespace picker sits in the page header, defaults to "All namespaces", and is remembered for each environment in local storage.
 - **Overview:** Kubernetes version, platform, nodes ready of total, and pods by phase.
 - **Lists** reuse the existing table with kind-specific columns, for example Deployment: Ready, Up-to-date, Available, Age; Pod: Ready, Status, Restarts, Node, Age; Service: Type, Cluster IP, Ports, Age. They refresh every 5 s while the tab is visible. A 403 shows "No permission to list {kind} in {namespace}", not an empty table. A truncated list says so.
-- **Detail:** tabs Summary (row, conditions, owner chain as links), YAML (read-only, highlighted), Events. Pods add Logs (container picker, follow) and Terminal, reusing the existing components. Actions (scale with a number dialog, restart, delete with confirm) appear for operators and admins only.
+- **Detail:** tabs Summary (row, conditions, owner chain as links), YAML (read-only `<pre>` with copy, like the existing JSON view; no highlighting library), Events. Pods add Logs (container picker, follow) and Terminal, reusing the existing log view and terminal view. Actions: scale (number dialog), restart, delete (confirm).
+- **Navigation:** the sidebar picks its item list by the environment's kind; `/envs/{env}` shows the Kubernetes overview instead of the Docker dashboard for Kubernetes kinds. Docker routes under a Kubernetes environment redirect to its overview.
 - **Admin › Environments:** the kind radios gain "Kubernetes (kubeconfig)", with a kubeconfig textarea, a context picker filled from `/envs/kube/contexts`, and a "save without checking" box, and "Kubernetes (agent)", which shows the `kubectl apply` command in the existing enrollment dialog. The list shows the server, context and user kind for kubeconfig clusters.
 
 ## 7. Error handling
@@ -302,7 +317,7 @@ Limits: a list stops at 5,000 rows (`truncated: true`), paging with `limit`/`con
 
 ## 10. Build and delivery
 
-- New dependencies: `kube` (client, ws features), `k8s-openapi` (minimum supported Kubernetes 1.28), `aes-gcm`, and a maintained YAML serializer (`serde_yaml` is archived; the plan picks one). All pure Rust with rustls; the images stay distroless.
+- New dependencies: `kube` 4.2 (`client`, `rustls-tls`, `ring`, `ws`; no default features), `k8s-openapi` 0.28 with feature `v1_32` (minimum supported Kubernetes 1.32), `aes-gcm` 0.10, `serde-saphyr` (the YAML crate kube already uses), and `hyper-rustls` 0.27 for the agent's upstream TLS. All pure Rust with rustls and ring; the images stay distroless. kube 4.2 needs Rust 1.89, so the workspace `rust-version` moves from 1.86 to 1.89.
 - The agent image is unchanged apart from the new mode; the same image serves Docker and Kubernetes.
 - Makefile: `test-kube`, `agent-kube-smoke`. CI: the `kube` job. Release: no new artifacts.
 - README: a "Kubernetes clusters" section (both ways in, required permissions, the read-only variant, the secret key and backups), and the roadmap renumbered (3 Kubernetes, 4 Stacks + GitOps).
