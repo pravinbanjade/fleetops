@@ -54,6 +54,7 @@ kind-up:
 
 test-kube: kind-up
 	FLEETOPS_KUBE_IT=$(KUBE_IT) cargo test -p fleetops-kube --features kube-it --test kube_it -- --test-threads=4
+	FLEETOPS_KUBE_IT=$(KUBE_IT) FLEETOPS_IT_TUNNEL=1 cargo test -p fleetops-kube --features kube-it --test kube_it -- --test-threads=4
 
 rss-bench: build
 	cargo build --release -p fleetops-agent

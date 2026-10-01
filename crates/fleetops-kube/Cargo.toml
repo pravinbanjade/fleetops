@@ -10,6 +10,9 @@ kube-it = []
 
 [dependencies]
 fleetops-core.workspace = true
+async-trait.workspace = true
+futures-util = { workspace = true, features = ["io", "sink"] }
+tokio-util = { workspace = true, features = ["io"] }
 base64.workspace = true
 fleetops-tunnel.workspace = true
 hyper.workspace = true
