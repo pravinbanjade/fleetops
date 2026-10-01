@@ -9,7 +9,7 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 3).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is complete: the backend, the web UI, end-to-end tests, the container image and CI. Next is sub-project 2, the agent for managing more than one host.
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0: the backend, the web UI, end-to-end tests, the container image and CI. Next is sub-project 2, the agent for managing more than one host.
 
 ## Contents
 
@@ -90,6 +90,10 @@ On first start, FleetOps registers a `local` environment when it can reach the s
 
 > Access to the Docker socket is equivalent to root access on the host. Don't expose FleetOps to untrusted networks without TLS, and create the admin account right away.
 
+### Run a release
+
+Each release publishes `ghcr.io/pravinbanjade/fleetops:<version>` (and `latest`) for linux/amd64 and linux/arm64, and static linux binaries with SHA-256 checksums on the [releases page](https://github.com/pravinbanjade/fleetops/releases). Run the image with the `docker run` below, using `ghcr.io/pravinbanjade/fleetops:latest` in place of `fleetops:dev`.
+
 ### Run the container image
 
 `make image` builds `fleetops:dev` for linux/amd64 and linux/arm64: a static binary of about 17 MB on `distroless/static`, running as the non-root user `nonroot` (uid 65532). The build runs entirely inside Docker BuildKit, so it needs no Rust or Node toolchain on the host. Loading both platforms needs Docker's containerd image store; otherwise build one with `make image PLATFORMS=linux/amd64`.
@@ -139,6 +143,7 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 | `make test-docker` | Integration tests against the current docker context's daemon (`docker-it` feature) |
 | `make test-web` | Web typecheck, lint, vitest, and a check that the generated API client matches the OpenAPI document |
 | `make e2e` | `make build`, then the Playwright end-to-end test in Chromium against the current docker context's daemon |
+| `make rss-bench` | `make build`, then checks idle RSS stays under 50 MiB with 50 containers on the current docker context's daemon (`COUNT`, `LIMIT_MIB` override) |
 | `make lint` | `cargo fmt --check` and `clippy -D warnings` |
 | `make fmt` | `cargo fmt --all` |
 | `make web` | Builds the UI into `web/dist` |
@@ -153,7 +158,8 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 - **After changing the API,** run `make openapi` and commit both generated files. `cargo test` and `make test-web` fail until the committed document and client match the code.
 - **The integration tests** (`make test-docker`) create and remove their own labelled resources. Run them against a daemon where that's acceptable.
 - **The end-to-end test** (`make e2e`) starts the server on `127.0.0.1:9123` with an empty data directory (`web/e2e-data`). It pulls `busybox:1.37`, and creates and then removes one container named `fleetops-e2e-*`. It leaves the image in place. On failure, `pnpm -C web exec playwright show-trace` opens the trace saved under `web/test-results`.
-- **CI** (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull requests: `make lint test`, `make test-docker`, `make test-web`, `make e2e`, and the image build for both platforms followed by `make image-smoke`.
+- **CI** (`.github/workflows/ci.yml`) runs on pushes to `main` and on pull requests: `make lint test`, `make test-docker`, `make test-web`, `make e2e`, `make rss-bench`, and the image build for both platforms followed by `make image-smoke`.
+- **Releases** (`.github/workflows/release.yml`) run on a `vX.Y.Z` tag that matches the workspace version in `Cargo.toml`. They push the image to GHCR and publish the binaries to a GitHub release.
 - **TDD.** New behaviour starts with a failing test.
 
 ### Design documents
