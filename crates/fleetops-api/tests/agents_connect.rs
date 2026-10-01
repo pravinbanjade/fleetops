@@ -301,3 +301,39 @@ async fn flapping_agents_audit_one_disconnect_per_five_minutes() {
         .count();
     assert_eq!(n, 1);
 }
+
+#[tokio::test]
+async fn rotating_during_the_handshake_still_revokes_the_session() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let token = agent_env(&t, &admin, "web-01").await;
+    let base = base(&t).await;
+    let (a, key) = enroll(&base, &token).await;
+    drop(a);
+    eventually("unregistered", || t.state.agents.connected() == 0).await;
+
+    // The key passes the check at upgrade; the rotate lands before hello.
+    let mut b = TestAgent::connect(&base, &key).await.unwrap();
+    let r = t
+        .send(with_origin(req(
+            "POST",
+            "/api/v1/envs/web-01/agent/rotate",
+            None,
+            Some(&admin),
+        )))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    b.hello(PROTO_MAJOR).await;
+    loop {
+        match b.next().await {
+            Some(Msg::Welcome { .. }) => continue,
+            Some(Msg::Bye { reason }) => {
+                assert_eq!(reason, ByeReason::Revoked);
+                break;
+            }
+            other => panic!("expected bye(revoked), got {other:?}"),
+        }
+    }
+    b.closed().await;
+    eventually("not registered", || t.state.agents.connected() == 0).await;
+}

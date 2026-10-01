@@ -34,16 +34,18 @@ const HANDSHAKE: Duration = Duration::from_secs(10);
 const SEEN_EVERY: Duration = Duration::from_secs(60);
 /// At most one `agent.disconnect` audit row per environment per this long.
 const DISCONNECT_AUDIT_EVERY: Duration = Duration::from_secs(300);
+/// How long a bye may take to reach the agent before the session is dropped.
+const BYE_GRACE: Duration = Duration::from_secs(1);
 
 enum Credential {
     Join { env_id: i64, join_hash: String },
-    Key { env_id: i64 },
+    Key { env_id: i64, key_hash: String },
 }
 
 impl Credential {
     fn env_id(&self) -> i64 {
         match self {
-            Credential::Join { env_id, .. } | Credential::Key { env_id } => *env_id,
+            Credential::Join { env_id, .. } | Credential::Key { env_id, .. } => *env_id,
         }
     }
 }
@@ -64,7 +66,10 @@ async fn authenticate(s: &AppState, headers: &HeaderMap) -> Result<Credential, E
         }
     } else if bearer.starts_with("fk_") {
         if let Some(env_id) = s.store.agent_by_key(&hash).await? {
-            return Ok(Credential::Key { env_id });
+            return Ok(Credential::Key {
+                env_id,
+                key_hash: hash,
+            });
         }
     }
     Err(Error::Unauthorized(
@@ -171,9 +176,9 @@ async fn serve(
         Ok(h) => h,
         Err(reason) => return reason,
     };
-    let (env_id, join_hash) = match cred {
-        Credential::Join { env_id, join_hash } => (env_id, Some(join_hash)),
-        Credential::Key { env_id } => (env_id, None),
+    let (env_id, join_hash, mut key_hash) = match cred {
+        Credential::Join { env_id, join_hash } => (env_id, Some(join_hash), None),
+        Credential::Key { env_id, key_hash } => (env_id, None, Some(key_hash)),
     };
     let env = match s.store.get_environment(env_id).await {
         Ok(env) => env,
@@ -186,13 +191,7 @@ async fn serve(
             "agent v{} uses protocol {proto}; server needs {PROTO_MAJOR}",
             info.agent_version
         );
-        let _ = write_msg(
-            &mut c.tx,
-            &Msg::Bye {
-                reason: ByeReason::Incompatible,
-            },
-        )
-        .await;
+        say_bye(&mut c, session, ByeReason::Incompatible).await;
         let _ = s
             .store
             .record_agent_seen(
@@ -212,11 +211,13 @@ async fn serve(
     let agent_key = match join_hash {
         Some(join_hash) => {
             let key = new_agent_key();
-            match s
+            let hash = hash_token(&key);
+            let enrolled = s
                 .store
-                .enroll_agent(env_id, &join_hash, &hash_token(&key), now_unix())
-                .await
-            {
+                .enroll_agent(env_id, &join_hash, &hash, now_unix())
+                .await;
+            key_hash = Some(hash);
+            match enrolled {
                 Ok(true) => {}
                 Ok(false) => return "join token already used".into(),
                 Err(e) => return e.to_string(),
@@ -239,6 +240,15 @@ async fn serve(
     let id = s
         .agents
         .insert(env_id, session.clone(), info.clone(), bye_tx);
+    // The credential was checked before the upgrade; a rotate or delete
+    // since then found no session to revoke. Check again now that this one
+    // is registered: anything later is caught by `revoke`.
+    let key_hash = key_hash.expect("set for both credentials");
+    if s.store.agent_by_key(&key_hash).await.ok().flatten() != Some(env_id) {
+        s.agents.remove(env_id, id, "key revoked");
+        say_bye(&mut c, session, ByeReason::Revoked).await;
+        return "key revoked during the handshake".into();
+    }
     let _ = s
         .store
         .record_agent_seen(
@@ -279,6 +289,15 @@ async fn serve(
         .await;
     }
     reason
+}
+
+/// Sends a bye and gives it time to leave: closing the session drops it at
+/// once (which wakes every stream) and would discard unsent frames. The
+/// agent hangs up when it reads the bye; a peer that doesn't gets a second.
+async fn say_bye(c: &mut Control, session: &Session, reason: ByeReason) {
+    if write_msg(&mut c.tx, &Msg::Bye { reason }).await.is_ok() {
+        let _ = tokio::time::timeout(BYE_GRACE, session.closed()).await;
+    }
 }
 
 fn disconnect_audit_due(s: &AppState, env_id: i64) -> bool {
@@ -326,7 +345,7 @@ async fn control_loop(
                 Ok(None) | Err(_) => return "connection lost".into(),
             },
             Some(reason) = bye_rx.recv() => {
-                let _ = write_msg(&mut c.tx, &Msg::Bye { reason }).await;
+                say_bye(c, session, reason).await;
                 return match reason {
                     ByeReason::Replaced => "replaced by a newer connection".into(),
                     ByeReason::Revoked => "key revoked".into(),
