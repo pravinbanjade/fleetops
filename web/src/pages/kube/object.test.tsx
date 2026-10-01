@@ -82,3 +82,16 @@ describe("a Kubernetes object's page", () => {
     expect(last).toMatchObject({ env: "k", id: "apps/web-1", opts: { container: "side" } });
   });
 });
+
+describe("the scale dialog", () => {
+  it("refuses an empty count instead of scaling to zero", async () => {
+    const calls = mockFetch(routes);
+    renderApp("/envs/k/k8s/deployments/apps/web");
+    await userEvent.click(await screen.findByRole("button", { name: "Scale" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.clear(within(dialog).getByLabelText("Replicas"));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Scale" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "POST" && c.path.endsWith("/scale"))).toBe(false);
+  });
+});

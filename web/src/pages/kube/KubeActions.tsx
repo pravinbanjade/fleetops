@@ -27,7 +27,10 @@ export function KubeActions({ env, kind, ns, name, replicas }: { env: string; ki
   const label = KIND_LABEL[kind].replace(/s$/, "");
   return (
     <div className="flex gap-2">
-      {SCALABLE.includes(kind) && <Button variant="outline" size="sm" onClick={() => setOpen("scale")}>Scale</Button>}
+      {SCALABLE.includes(kind) && <Button variant="outline" size="sm" onClick={() => {
+            setCount(String(replicas ?? 1));
+            setOpen("scale");
+          }}>Scale</Button>}
       {RESTARTABLE.includes(kind) && <Button variant="outline" size="sm" onClick={() => setOpen("restart")}>Restart</Button>}
       <Button variant="outline" size="sm" onClick={() => setOpen("delete")}>Delete</Button>
       {open === "scale" && (
@@ -36,13 +39,17 @@ export function KubeActions({ env, kind, ns, name, replicas }: { env: string; ki
           submitLabel="Scale"
           onClose={() => setOpen(null)}
           onSubmit={async () => {
-            await scaleKube({ path, body: { replicas: Number(count) }, throwOnError: true });
+            const n = Number(count);
+            if (count.trim() === "" || !Number.isInteger(n) || n < 0) {
+              throw new Error("Replicas must be a whole number, 0 or more");
+            }
+            await scaleKube({ path, body: { replicas: n }, throwOnError: true });
             await refresh();
           }}
         >
           <label className="grid gap-1 text-sm">
             Replicas
-            <input type="number" min={0} className="h-9 rounded-md border px-2" value={count} onChange={(e) => setCount(e.target.value)} />
+            <input type="number" required min={0} step={1} className="h-9 rounded-md border px-2" value={count} onChange={(e) => setCount(e.target.value)} />
           </label>
         </FormDialog>
       )}
