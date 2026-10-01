@@ -7,6 +7,7 @@ rust-version.workspace = true
 [dependencies]
 fleetops-core.workspace = true
 fleetops-store.workspace = true
+fleetops-tunnel.workspace = true
 argon2.workspace = true
 axum.workspace = true
 futures-util.workspace = true

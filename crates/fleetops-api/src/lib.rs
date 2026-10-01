@@ -1,6 +1,7 @@
 //! HTTP API for fleetops. `app()` builds the complete router; the server
 //! crate supplies the static-file router and sets `IsTls` per listener.
 
+pub mod agents;
 pub mod auth;
 pub mod authz;
 pub mod compose;

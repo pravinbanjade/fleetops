@@ -55,6 +55,8 @@ pub struct AppState {
     pub envs: Arc<EnvRegistry>,
     pub hubs: Arc<Hubs>,
     pub tasks: Arc<TaskManager>,
+    /// Live agent sessions, shared with the env factory.
+    pub agents: Arc<fleetops_tunnel::registry::Registry>,
 }
 
 impl AppState {
@@ -69,6 +71,14 @@ impl AppState {
             envs: Arc::new(EnvRegistry::new(factory)),
             hubs: Arc::new(Hubs::default()),
             tasks: Arc::new(TaskManager::default()),
+            agents: Arc::default(),
         }
+    }
+
+    /// Shares `agents` with the env factory, so agent environments see the
+    /// sessions the connect handler registers.
+    pub fn with_agents(mut self, agents: Arc<fleetops_tunnel::registry::Registry>) -> Self {
+        self.agents = agents;
+        self
     }
 }

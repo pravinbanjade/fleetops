@@ -696,6 +696,7 @@ dependencies = [
  "axum",
  "fleetops-core",
  "fleetops-store",
+ "fleetops-tunnel",
  "futures-util",
  "hex",
  "http-body-util",

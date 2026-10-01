@@ -4,6 +4,16 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type AgentView = {
+    agent_version?: string | null;
+    connected: boolean;
+    enrolled: boolean;
+    host?: unknown;
+    join_expires_at?: number | null;
+    last_error?: string | null;
+    last_seen_at?: number | null;
+};
+
 export type AttachBody = {
     container: string;
     /**
@@ -191,7 +201,10 @@ export type CreateBody = ContainerSpec & {
 export type CreateEnv = {
     kind: EnvKind;
     name: string;
-    url: string;
+    /**
+     * The Docker URL of a local environment; agent environments take none.
+     */
+    url?: string | null;
 };
 
 export type CreateUser = {
@@ -202,6 +215,13 @@ export type CreateUser = {
 
 export type Created = {
     id: string;
+};
+
+/**
+ * A newly created environment; an agent one carries its enrollment once.
+ */
+export type CreatedEnv = EnvironmentRecord & {
+    enrollment?: null | Enrollment;
 };
 
 export type CreatedNetwork = {
@@ -264,6 +284,18 @@ export type EngineVersion = {
     version: string;
 };
 
+export type Enrollment = {
+    command: string;
+    /**
+     * Unix seconds.
+     */
+    expires_at: number;
+    /**
+     * Shown once. Valid for 15 minutes and for one agent.
+     */
+    join_token: string;
+};
+
 export type EntryKind = 'file' | 'dir' | 'symlink' | 'other';
 
 export type EnvKind = 'docker-local' | 'docker-agent';
@@ -274,6 +306,13 @@ export type EnvStatus = {
 } | {
     reason: string;
     state: 'down';
+};
+
+/**
+ * An environment as listed: agent environments carry their agent's state.
+ */
+export type EnvView = EnvironmentRecord & {
+    agent?: null | AgentView;
 };
 
 export type EnvironmentRecord = {
@@ -821,9 +860,9 @@ export type ListEnvsError = ListEnvsErrors[keyof ListEnvsErrors];
 
 export type ListEnvsResponses = {
     /**
-     * All environments
+     * All environments; agent environments include their agent's state
      */
-    200: Array<EnvironmentRecord>;
+    200: Array<EnvView>;
 };
 
 export type ListEnvsResponse = ListEnvsResponses[keyof ListEnvsResponses];
@@ -846,9 +885,9 @@ export type CreateEnvError = CreateEnvErrors[keyof CreateEnvErrors];
 
 export type CreateEnvResponses = {
     /**
-     * Created
+     * Created; an agent environment includes its one-time enrollment
      */
-    201: EnvironmentRecord;
+    201: CreatedEnv;
 };
 
 export type CreateEnvResponse = CreateEnvResponses[keyof CreateEnvResponses];
@@ -912,6 +951,36 @@ export type UpdateEnvResponses = {
 };
 
 export type UpdateEnvResponse = UpdateEnvResponses[keyof UpdateEnvResponses];
+
+export type RotateAgentData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/agent/rotate';
+};
+
+export type RotateAgentErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RotateAgentError = RotateAgentErrors[keyof RotateAgentErrors];
+
+export type RotateAgentResponses = {
+    /**
+     * The new one-time enrollment
+     */
+    200: Enrollment;
+};
+
+export type RotateAgentResponse = RotateAgentResponses[keyof RotateAgentResponses];
 
 export type ListComposeProjectsData = {
     body?: never;
