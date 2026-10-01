@@ -694,6 +694,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "axum",
+ "bytes",
  "fleetops-core",
  "fleetops-store",
  "fleetops-tunnel",

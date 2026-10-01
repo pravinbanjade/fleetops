@@ -32,6 +32,7 @@ pub fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(users::update, users::remove))
         .routes(routes!(audit_log::list))
         .routes(routes!(crate::ws::handler))
+        .routes(routes!(crate::agents::connect::handler))
         .routes(routes!(tasks::get))
         .merge(env_routes())
         .fallback(not_found)

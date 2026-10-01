@@ -603,6 +603,43 @@ export type VolumeSummary = {
     name: string;
 };
 
+export type AgentConnectData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/agent/connect';
+};
+
+export type AgentConnectErrors = {
+    /**
+     * Missing, unknown or expired credential
+     */
+    401: ErrorBody;
+    /**
+     * Plain HTTP from a non-loopback address
+     */
+    403: ErrorBody;
+    /**
+     * Too many failed attempts
+     */
+    429: ErrorBody;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type AgentConnectError = AgentConnectErrors[keyof AgentConnectErrors];
+
+export type AgentConnectResponses = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type AgentConnectResponse = AgentConnectResponses[keyof AgentConnectResponses];
+
 export type ListAuditData = {
     body?: never;
     path?: never;
