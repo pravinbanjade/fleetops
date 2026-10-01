@@ -258,6 +258,7 @@ describe("Kubernetes environments", () => {
     const { screen } = renderApp("/admin/envs");
     await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
     const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Kubernetes" }));
     await userEvent.click(within(dialog).getByRole("radio", { name: /kubeconfig/i }));
     expect(within(dialog).queryByLabelText("Docker URL")).not.toBeInTheDocument();
     await userEvent.type(within(dialog).getByLabelText("Name"), "k");
@@ -286,6 +287,7 @@ describe("Kubernetes environments", () => {
     const { screen } = renderApp("/admin/envs");
     await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
     const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Kubernetes" }));
     await userEvent.click(within(dialog).getByRole("radio", { name: /kubeconfig/i }));
     await userEvent.type(within(dialog).getByLabelText("Name"), "k");
     await userEvent.click(within(dialog).getByLabelText("Kubeconfig"));
@@ -307,6 +309,7 @@ describe("Kubernetes environments", () => {
     const { screen } = renderApp("/admin/envs");
     await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
     const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Kubernetes" }));
     await userEvent.click(within(dialog).getByRole("radio", { name: /in-cluster agent/i }));
     await userEvent.type(within(dialog).getByLabelText("Name"), "k8s-01");
     await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));

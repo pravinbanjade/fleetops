@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { CircleCheck, Container, ShipWheel, type LucideIcon } from "lucide-react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
 import { envsQuery, keys } from "@/api/queries";
 import { createEnv, deleteEnv, kubeContexts, rotateAgent, updateEnv } from "@/api/gen/sdk.gen";
@@ -25,12 +26,33 @@ const isAgent = (e: EnvView) => e.kind === "docker-agent" || e.kind === "kube-ag
 /** An enrollment with the kind of environment it enrolls. */
 type Pending = { enrollment: Enrollment; kind: EnvKind };
 
-const KINDS: [EnvKind, string][] = [
-  ["docker-local", "Local socket or Docker API URL"],
-  ["docker-agent", "Agent on a remote host"],
-  ["kube-config", "Kubernetes cluster (kubeconfig)"],
-  ["kube-agent", "Kubernetes cluster (in-cluster agent)"],
+type Platform = "docker" | "kube";
+
+/** The two things an environment can be, each with the ways FleetOps reaches it (the first is the default). */
+const PLATFORMS: { id: Platform; label: string; hint: string; icon: LucideIcon; kinds: [EnvKind, string][] }[] = [
+  {
+    id: "docker",
+    label: "Docker",
+    hint: "An engine on this server or a remote host",
+    icon: Container,
+    kinds: [
+      ["docker-local", "Socket or API URL"],
+      ["docker-agent", "Agent on a remote host"],
+    ],
+  },
+  {
+    id: "kube",
+    label: "Kubernetes",
+    hint: "A cluster, through its API or an agent inside it",
+    icon: ShipWheel,
+    kinds: [
+      ["kube-config", "Paste a kubeconfig"],
+      ["kube-agent", "In-cluster agent"],
+    ],
+  },
 ];
+
+const platformOf = (k: EnvKind): Platform => (k.startsWith("kube") ? "kube" : "docker");
 
 const DESCRIPTIONS: Record<EnvKind, string> = {
   "docker-local": "A Docker engine this server can reach: a unix socket, or tcp:// / http(s):// for an engine exposing its API.",
@@ -182,7 +204,7 @@ function EnvForm({
   return (
     <FormDialog
       title={env ? `Edit ${env.name}` : "Add environment"}
-      description={DESCRIPTIONS[kind]}
+      description={env ? DESCRIPTIONS[kind] : "Pick what FleetOps manages and how it reaches it."}
       submitLabel={env ? "Save" : "Add"}
       onClose={onClose}
       onSubmit={async () => {
@@ -210,17 +232,7 @@ function EnvForm({
         await onDone();
       }}
     >
-      {!env && (
-        <fieldset className="grid gap-2">
-          <legend className="mb-2 text-sm font-medium">Kind</legend>
-          {KINDS.map(([k, label]) => (
-            <label key={k} className="flex items-center gap-2 text-sm">
-              <input type="radio" name="env-kind" checked={kind === k} onChange={() => setKind(k)} />
-              {label}
-            </label>
-          ))}
-        </fieldset>
-      )}
+      {!env && <KindPicker kind={kind} onChange={setKind} />}
       <div className="grid gap-2">
         <Label htmlFor="env-name">Name</Label>
         <Input id="env-name" required value={name} onChange={(e) => setName(e.target.value)} />
@@ -276,5 +288,75 @@ function EnvForm({
         </>
       )}
     </FormDialog>
+  );
+}
+
+/** Platform cards, then the connection method within the chosen platform, then what that method means. */
+function KindPicker({ kind, onChange }: { kind: EnvKind; onChange: (k: EnvKind) => void }) {
+  const id = useId();
+  const platform = PLATFORMS.find((p) => p.id === platformOf(kind))!;
+  return (
+    <div className="grid gap-3">
+      <fieldset className="grid grid-cols-2 gap-3">
+        <legend className="sr-only">Platform</legend>
+        {PLATFORMS.map((p) => {
+          const on = p.id === platform.id;
+          const Icon = p.icon;
+          return (
+            <label
+              key={p.id}
+              className={
+                "relative grid cursor-pointer gap-3 rounded-lg border p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
+                (on ? "border-primary bg-cord-soft" : "bg-background/40 hover:bg-accent")
+              }
+            >
+              <input
+                type="radio"
+                name="env-platform"
+                className="sr-only"
+                checked={on}
+                onChange={() => onChange(p.kinds[0][0])}
+                aria-labelledby={`${id}-${p.id}`}
+                aria-describedby={`${id}-${p.id}-hint`}
+              />
+              <span
+                className={
+                  "grid size-9 place-items-center rounded-md border " + (on ? "border-primary/40 text-primary" : "text-muted-foreground")
+                }
+              >
+                <Icon className="size-5" aria-hidden />
+              </span>
+              <span className="grid gap-0.5">
+                <span id={`${id}-${p.id}`} className="text-sm font-semibold">
+                  {p.label}
+                </span>
+                <span id={`${id}-${p.id}-hint`} className="text-xs text-muted-foreground">
+                  {p.hint}
+                </span>
+              </span>
+              {on && <CircleCheck className="absolute top-3 right-3 size-4 text-primary" aria-hidden />}
+            </label>
+          );
+        })}
+      </fieldset>
+      <fieldset className="grid gap-2">
+        <legend className="mb-2 text-sm font-medium">Connect with</legend>
+        <div className="grid grid-cols-2 gap-1 rounded-md border bg-background/40 p-1">
+          {platform.kinds.map(([k, label]) => (
+            <label
+              key={k}
+              className={
+                "flex h-8 cursor-pointer items-center justify-center rounded-sm px-2 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
+                (kind === k ? "bg-cord-soft font-medium text-foreground shadow-[inset_0_0_0_1px_var(--primary)]" : "text-muted-foreground hover:bg-accent hover:text-foreground")
+              }
+            >
+              <input type="radio" name="env-kind" className="sr-only" checked={kind === k} onChange={() => onChange(k)} />
+              {label}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">{DESCRIPTIONS[kind]}</p>
+      </fieldset>
+    </div>
   );
 }

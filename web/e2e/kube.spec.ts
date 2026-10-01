@@ -33,6 +33,7 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
     await page.goto("/admin/envs");
     await page.getByRole("button", { name: "Add environment" }).click();
     const dialog = page.getByRole("dialog");
+    await dialog.getByRole("radio", { name: "Kubernetes" }).check();
     await dialog.getByRole("radio", { name: /kubeconfig/i }).check();
     await dialog.getByLabel("Name").fill(ENV);
     await dialog.getByLabel("Kubeconfig", { exact: true }).fill(kubeconfig);

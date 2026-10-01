@@ -8,6 +8,7 @@ import { containerAction, pruneContainers } from "@/api/gen/sdk.gen";
 import type { ContainerSummary } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
+import { ImageRef } from "@/components/ImageRef";
 import { Page } from "@/components/Page";
 import { ContainerState, stateTone } from "@/components/StateBadge";
 import { needsAttention, shownState } from "@/lib/health";
@@ -50,7 +51,7 @@ function containerColumns(env: string): Column<ContainerSummary>[] {
         <Link
           to="/envs/$env/containers/$id"
           params={{ env, id: c.row.original.id }}
-          className="font-semibold hover:underline"
+          className="font-ident font-medium hover:underline"
         >
           {c.getValue()}
         </Link>
@@ -60,8 +61,12 @@ function containerColumns(env: string): Column<ContainerSummary>[] {
       header: "Image",
       // An image with no tag left is listed by its digest.
       cell: (c) => (
-        <span className="block max-w-64 truncate text-muted-foreground">
-          {c.getValue().startsWith("sha256:") ? shortId(c.getValue()) : c.getValue()}
+        <span className="block max-w-64 truncate">
+          {c.getValue().startsWith("sha256:") ? (
+            <code className="font-ident text-muted-foreground">{shortId(c.getValue())}</code>
+          ) : (
+            <ImageRef value={c.getValue()} />
+          )}
         </span>
       ),
     }),

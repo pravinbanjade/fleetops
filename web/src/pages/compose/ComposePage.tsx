@@ -98,7 +98,9 @@ function ProjectCard({ env, project }: { env: string; project: ComposeProject })
         </div>
       </CardHeader>
       <CardContent className="grid gap-3 text-sm">
-        <div className="text-muted-foreground">Services: {project.services.join(", ")}</div>
+        <div className="text-muted-foreground">
+          Services: <span className="font-ident">{project.services.join(", ")}</span>
+        </div>
         <ul className="font-strip overflow-hidden rounded-md border" aria-label={`Containers of ${project.name}`}>
           {members.map((c) => (
             <li
@@ -106,7 +108,7 @@ function ProjectCard({ env, project }: { env: string; project: ComposeProject })
               className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 border-b px-3 py-2 last:border-b-0 sm:grid-cols-[auto_minmax(0,18rem)_minmax(0,1fr)]"
             >
               <ContainerState container={c} />
-              <Link to="/envs/$env/containers/$id" params={{ env, id: c.id }} className="truncate font-semibold hover:underline">
+              <Link to="/envs/$env/containers/$id" params={{ env, id: c.id }} className="truncate font-ident font-medium hover:underline">
                 {c.name}
               </Link>
               <span className="col-start-2 truncate text-muted-foreground sm:col-start-auto">{c.status}</span>

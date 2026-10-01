@@ -28,6 +28,7 @@ import {
 } from "@/api/queries";
 import type { ContainerSummary, DockerEvent, NetworkSummary } from "@/api/gen/types.gen";
 import { useSession } from "@/auth/session";
+import { ImageRef } from "@/components/ImageRef";
 import { Page } from "@/components/Page";
 import { Sparkline } from "@/components/Sparkline";
 import { ContainerState, StateBadge, stateTone } from "@/components/StateBadge";
@@ -209,7 +210,7 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
                 to="/envs/$env/containers/$id"
                 params={{ env, id: c.id }}
                 search={{ tab: "logs" }}
-                className="truncate font-semibold hover:underline focus-visible:outline-none"
+                className="truncate font-ident font-medium hover:underline focus-visible:outline-none"
               >
                 {c.name}
               </Link>
@@ -288,11 +289,13 @@ function RunningBay({ env, list }: { env: string; list: ContainerSummary[] }) {
               data-strip
               to="/envs/$env/containers/$id"
               params={{ env, id: c.id }}
-              className="truncate font-semibold hover:underline focus-visible:outline-none"
+              className="truncate font-ident font-medium hover:underline focus-visible:outline-none"
             >
               {c.name}
             </Link>
-            <span className="hidden truncate text-muted-foreground @3xl:block">{c.image}</span>
+            <span className="hidden truncate @3xl:block">
+              <ImageRef value={c.image} />
+            </span>
             <Usage env={env} container={c} kind="cpu" />
             <span className="hidden @md:block">
               <Usage env={env} container={c} kind="memory" />
@@ -458,9 +461,9 @@ function EventsSection({ env, q }: { env: string; q: UseQueryResult<DockerEvent[
 function EventSubject({ env, e }: { env: string; e: DockerEvent }) {
   // Container and image IDs are shortened; a volume or network is named by its ID.
   const name = e.name ?? (/^(sha256:)?[0-9a-f]{64}$/.test(e.id) ? e.id.replace(/^sha256:/, "").slice(0, 12) : e.id);
-  if (e.kind !== "container" || e.action === "destroy") return <>{name}</>;
+  if (e.kind !== "container" || e.action === "destroy") return <span className="font-ident">{name}</span>;
   return (
-    <Link to="/envs/$env/containers/$id" params={{ env, id: e.id }} className="text-foreground hover:underline">
+    <Link to="/envs/$env/containers/$id" params={{ env, id: e.id }} className="font-ident text-foreground hover:underline">
       {name}
     </Link>
   );
@@ -573,7 +576,7 @@ function NetworksSection({ env, q }: { env: string; q: UseQueryResult<NetworkSum
               <Link
                 to="/envs/$env/networks/$id"
                 params={{ env, id: n.id }}
-                className={cn("truncate font-semibold hover:underline", BUILT_IN.has(n.name) && "font-medium text-muted-foreground")}
+                className={cn("truncate font-ident font-medium hover:underline", BUILT_IN.has(n.name) && "text-muted-foreground")}
               >
                 {n.name}
               </Link>

@@ -24,13 +24,17 @@ function kindColumns(env: string, kind: KubeKind) {
         <Link
           to="/envs/$env/k8s/$kind/$ns/$name"
           params={{ env, kind, ns: c.row.original.namespace ?? "-", name: c.getValue() }}
-          className="font-medium hover:underline"
+          className="font-ident font-medium hover:underline"
         >
           {c.getValue()}
         </Link>
       ),
     }),
-    ...(scoped ? [col.accessor((r) => r.namespace ?? "", { id: "namespace", header: "Namespace" })] : []),
+    ...(scoped ? [col.accessor((r) => r.namespace ?? "", {
+            id: "namespace",
+            header: "Namespace",
+            cell: (c) => <span className="font-ident text-muted-foreground">{c.getValue()}</span>,
+          })] : []),
     col.accessor("status", {
       header: STATUS_HEADER[kind] ?? "Status",
       cell: (c) => <KubeHealth health={c.row.original.health} label={c.getValue()} />,

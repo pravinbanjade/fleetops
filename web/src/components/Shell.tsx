@@ -267,7 +267,7 @@ export function EnvTag({ name, size = "md" }: { name: string; size?: "sm" | "md"
       aria-hidden
       style={{ "--env-h": envHue(name) } as CSSProperties}
       className={cn(
-        "font-strip inline-flex shrink-0 items-center justify-center rounded-xs bg-[oklch(0.5_0.14_var(--env-h))] font-bold text-white",
+        "font-holder inline-flex shrink-0 items-center justify-center rounded-xs bg-[oklch(0.5_0.14_var(--env-h))] font-bold text-white",
         size === "sm" ? "size-5 text-[9px]" : "size-7 text-[11px]",
       )}
     >
