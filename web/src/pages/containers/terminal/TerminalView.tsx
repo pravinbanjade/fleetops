@@ -38,7 +38,7 @@ interface Props {
   env: string;
   id: string;
   /** Command and user; the size comes from the terminal. */
-  opts: Pick<ExecOptions, "cmd" | "user">;
+  opts: Pick<ExecOptions, "cmd" | "user" | "container">;
   onStarted(): void;
   onEnd(end: SessionEnd): void;
 }
