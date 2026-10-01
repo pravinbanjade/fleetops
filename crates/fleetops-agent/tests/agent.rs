@@ -83,6 +83,7 @@ async fn agent_env(store: &Store) -> (i64, String) {
     let env = store
         .create_agent_environment(
             "web-01",
+            fleetops_core::env::EnvKind::DockerAgent,
             &hash,
             fleetops_core::now_unix() + 900,
             fleetops_core::now_unix(),
@@ -106,6 +107,9 @@ fn config(
         ca: None,
         log: "warn".into(),
         server_silence: Duration::from_secs(45),
+        kube: false,
+        key_secret: None,
+        kube_upstream: None,
     }
 }
 
@@ -128,7 +132,9 @@ async fn the_agent_enrolls_and_its_environment_comes_up() {
     assert!(data.join("agent.key").exists());
     let env = srv.state.envs.get("web-01").unwrap();
     match env.status().await {
-        fleetops_core::env::EnvStatus::Up { version } => assert_eq!(version.version, "27.0.0"),
+        fleetops_core::env::EnvStatus::Up {
+            version: fleetops_core::env::EnvVersion::Docker(version),
+        } => assert_eq!(version.version, "27.0.0"),
         other => panic!("{other:?}"),
     }
     assert!(store.get_agent(env_id).await.unwrap().unwrap().enrolled);

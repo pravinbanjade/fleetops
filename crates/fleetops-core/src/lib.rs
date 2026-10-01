@@ -3,6 +3,7 @@
 pub mod docker;
 pub mod env;
 pub mod error;
+pub mod kube;
 pub mod recreate;
 pub mod streams;
 pub mod user;

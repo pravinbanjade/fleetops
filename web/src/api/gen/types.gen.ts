@@ -199,10 +199,22 @@ export type CreateBody = ContainerSpec & {
 };
 
 export type CreateEnv = {
+    /**
+     * kube-config: the context to use; default the current one.
+     */
+    context?: string | null;
     kind: EnvKind;
+    /**
+     * kube-config: the kubeconfig, stored encrypted and never returned.
+     */
+    kubeconfig?: string | null;
     name: string;
     /**
-     * The Docker URL of a local environment; agent environments take none.
+     * kube-config: save without checking that the cluster answers.
+     */
+    skip_check?: boolean;
+    /**
+     * The Docker URL of a local environment; other kinds take none.
      */
     url?: string | null;
 };
@@ -298,21 +310,31 @@ export type Enrollment = {
 
 export type EntryKind = 'file' | 'dir' | 'symlink' | 'other';
 
-export type EnvKind = 'docker-local' | 'docker-agent';
+export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent';
 
 export type EnvStatus = {
     state: 'up';
-    version: EngineVersion;
+    version: EnvVersion;
 } | {
     reason: string;
     state: 'down';
 };
 
 /**
+ * What an up environment reports about itself.
+ */
+export type EnvVersion = (EngineVersion & {
+    kind: 'docker';
+}) | (KubeVersion & {
+    kind: 'kube';
+});
+
+/**
  * An environment as listed: agent environments carry their agent's state.
  */
 export type EnvView = EnvironmentRecord & {
     agent?: null | AgentView;
+    kube?: null | KubeconfigSummary;
 };
 
 export type EnvironmentRecord = {
@@ -346,6 +368,11 @@ export type ExecOptions = {
      */
     cmd?: Array<string> | null;
     cols?: number;
+    /**
+     * Kubernetes only: the container; `None` is the pod's first. Docker
+     * ignores it.
+     */
+    container?: string | null;
     rows?: number;
     user?: string | null;
 };
@@ -372,6 +399,116 @@ export type ImageSummary = {
     size: number;
 };
 
+export type KubeCondition = {
+    message?: string | null;
+    reason?: string | null;
+    status: string;
+    type: string;
+};
+
+export type KubeContexts = {
+    contexts: Array<string>;
+    current?: string | null;
+};
+
+export type KubeEvent = {
+    count: number;
+    /**
+     * Unix seconds.
+     */
+    last_seen?: number | null;
+    message: string;
+    reason: string;
+    source?: string | null;
+    /**
+     * "Normal" or "Warning".
+     */
+    type: string;
+};
+
+export type KubeKind = 'namespaces' | 'nodes' | 'deployments' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs' | 'pods' | 'services' | 'ingresses' | 'configmaps' | 'secrets';
+
+export type KubeList = {
+    rows: Array<KubeRow>;
+    /**
+     * More objects exist than `LIST_CAP`.
+     */
+    truncated: boolean;
+};
+
+export type KubeObject = {
+    conditions: Array<KubeCondition>;
+    /**
+     * Pods only: container names, first is the default.
+     */
+    containers: Array<string>;
+    /**
+     * Nearest first: Pod → ReplicaSet → Deployment.
+     */
+    owners: Array<KubeRef>;
+    row: KubeRow;
+    /**
+     * `managedFields` stripped; Secret values masked.
+     */
+    yaml: string;
+};
+
+/**
+ * An owner, e.g. a Pod's ReplicaSet. `link` is set when FleetOps has a
+ * page for the owner's kind.
+ */
+export type KubeRef = {
+    kind: string;
+    link?: null | KubeKind;
+    name: string;
+};
+
+/**
+ * One object in a list: common fields plus columns that depend on its kind.
+ */
+export type KubeRow = {
+    /**
+     * Kind-specific: ready, restarts, node, type, ports, hosts…
+     */
+    columns: {
+        [key: string]: string;
+    };
+    /**
+     * Unix seconds.
+     */
+    created: number;
+    health: RowHealth;
+    name: string;
+    namespace?: string | null;
+    /**
+     * e.g. "Running", "2/3", "Complete".
+     */
+    status: string;
+};
+
+export type KubeVersion = {
+    git_version: string;
+    /**
+     * `None` when the credentials may not list nodes.
+     */
+    nodes?: number | null;
+    nodes_ready?: number | null;
+    platform: string;
+};
+
+/**
+ * What may be shown about a stored kubeconfig.
+ */
+export type KubeconfigSummary = {
+    context: string;
+    server: string;
+    user_kind: UserKind;
+};
+
+export type KubeconfigText = {
+    kubeconfig: string;
+};
+
 export type LogLine = {
     stream: LogStream;
     /**
@@ -382,6 +519,11 @@ export type LogLine = {
 };
 
 export type LogOptions = {
+    /**
+     * Kubernetes only: the container; `None` is the pod's first. Docker
+     * ignores it.
+     */
+    container?: string | null;
     follow?: boolean;
     /**
      * Unix seconds.
@@ -465,6 +607,15 @@ export type RecreateResult = {
 };
 
 export type Role = 'admin' | 'user';
+
+/**
+ * The status dot's colour.
+ */
+export type RowHealth = 'ok' | 'warn' | 'bad' | 'unknown';
+
+export type ScaleBody = {
+    replicas: number;
+};
 
 /**
  * A text frame from the server, as the builders below write it. Exec
@@ -564,7 +715,13 @@ export type TaskStatus = 'running' | 'succeeded' | 'failed';
 export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task';
 
 export type UpdateEnv = {
+    context?: string | null;
+    /**
+     * kube-config: a replacement kubeconfig.
+     */
+    kubeconfig?: string | null;
     name?: string | null;
+    skip_check?: boolean;
     url?: string | null;
 };
 
@@ -580,6 +737,8 @@ export type User = {
     updated_at: number;
     username: string;
 };
+
+export type UserKind = 'token' | 'cert';
 
 export type VolumeSpec = {
     driver?: string | null;
@@ -1876,6 +2035,210 @@ export type GetEngineInfoResponses = {
 
 export type GetEngineInfoResponse = GetEngineInfoResponses[keyof GetEngineInfoResponses];
 
+export type ListKubeData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Plural lowercase kind, e.g. `deployments`.
+         */
+        kind: string;
+    };
+    query?: {
+        /**
+         * Omit for all namespaces.
+         */
+        namespace?: string;
+    };
+    url: '/api/v1/envs/{env}/k8s/{kind}';
+};
+
+export type ListKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListKubeError = ListKubeErrors[keyof ListKubeErrors];
+
+export type ListKubeResponses = {
+    /**
+     * Rows
+     */
+    200: KubeList;
+};
+
+export type ListKubeResponse = ListKubeResponses[keyof ListKubeResponses];
+
+export type DeleteKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}';
+};
+
+export type DeleteKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteKubeError = DeleteKubeErrors[keyof DeleteKubeErrors];
+
+export type DeleteKubeResponses = {
+    /**
+     * Deleted
+     */
+    204: void;
+};
+
+export type DeleteKubeResponse = DeleteKubeResponses[keyof DeleteKubeResponses];
+
+export type GetKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}';
+};
+
+export type GetKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetKubeError = GetKubeErrors[keyof GetKubeErrors];
+
+export type GetKubeResponses = {
+    /**
+     * The object
+     */
+    200: KubeObject;
+};
+
+export type GetKubeResponse = GetKubeResponses[keyof GetKubeResponses];
+
+export type KubeEventsData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/events';
+};
+
+export type KubeEventsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type KubeEventsError = KubeEventsErrors[keyof KubeEventsErrors];
+
+export type KubeEventsResponses = {
+    /**
+     * Events
+     */
+    200: Array<KubeEvent>;
+};
+
+export type KubeEventsResponse = KubeEventsResponses[keyof KubeEventsResponses];
+
+export type RestartKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/restart';
+};
+
+export type RestartKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RestartKubeError = RestartKubeErrors[keyof RestartKubeErrors];
+
+export type RestartKubeResponses = {
+    /**
+     * Restarted
+     */
+    204: void;
+};
+
+export type RestartKubeResponse = RestartKubeResponses[keyof RestartKubeResponses];
+
+export type ScaleKubeData = {
+    body: ScaleBody;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/scale';
+};
+
+export type ScaleKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ScaleKubeError = ScaleKubeErrors[keyof ScaleKubeErrors];
+
+export type ScaleKubeResponses = {
+    /**
+     * Scaled
+     */
+    204: void;
+};
+
+export type ScaleKubeResponse = ScaleKubeResponses[keyof ScaleKubeResponses];
+
 export type ListNetworksData = {
     body?: never;
     path: {
@@ -2327,6 +2690,31 @@ export type GetHealthResponses = {
 };
 
 export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];
+
+export type KubeContextsData = {
+    body: KubeconfigText;
+    path?: never;
+    query?: never;
+    url: '/api/v1/kube/contexts';
+};
+
+export type KubeContextsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type KubeContextsError = KubeContextsErrors[keyof KubeContextsErrors];
+
+export type KubeContextsResponses = {
+    /**
+     * Context names and the current one
+     */
+    200: KubeContexts;
+};
+
+export type KubeContextsResponse = KubeContextsResponses[keyof KubeContextsResponses];
 
 export type GetOpenApiData = {
     body?: never;

@@ -1,4 +1,5 @@
 pub mod config;
+pub mod factory;
 pub mod maintenance;
 pub mod static_files;
 pub mod tls;
@@ -6,13 +7,11 @@ pub mod tls;
 use axum::{Extension, Router};
 use config::Config;
 use fleetops_api::{envs::bootstrap_local, ApiConfig, AppState, IsTls};
-use fleetops_docker::DockerEnvFactory;
 use fleetops_store::Store;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
-    std::fs::create_dir_all(&config.data)?;
-    let store = Store::open(&config.data.join("fleetops.db")).await?;
+    let store = open_store(&config).await?;
     let state = build_state(
         store.clone(),
         ApiConfig {
@@ -37,9 +36,29 @@ pub fn build_state(store: Store, config: ApiConfig) -> AppState {
     AppState::new(
         store,
         config,
-        Arc::new(DockerEnvFactory::new(agents.clone())),
+        Arc::new(factory::Factory::new(agents.clone())),
     )
     .with_agents(agents)
+}
+
+/// Opens the database with the secret key from FLEETOPS_SECRET_KEY, or
+/// from <data>/secret.key (created on first start).
+pub async fn open_store(config: &Config) -> anyhow::Result<Store> {
+    std::fs::create_dir_all(&config.data)?;
+    let key = match &config.secret_key {
+        Some(text) => fleetops_store::secrets::SecretKey::from_base64(text)?,
+        None => {
+            let path = config.data.join("secret.key");
+            let (key, created) = fleetops_store::secrets::SecretKey::load_or_create(&path)?;
+            if created {
+                tracing::info!(path = %path.display(), "created the secret key; back it up with the database");
+            }
+            key
+        }
+    };
+    Ok(Store::open(&config.data.join("fleetops.db"))
+        .await?
+        .with_secret_key(&key))
 }
 
 async fn serve(config: &Config, app: Router) -> anyhow::Result<()> {

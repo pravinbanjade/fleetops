@@ -14,3 +14,8 @@ export function envInitials(name: string): string {
   const s = parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2);
   return s.toUpperCase();
 }
+
+/** Kubernetes environment kinds start with "kube-". */
+export function isKube(kind: string | undefined): boolean {
+  return !!kind && kind.startsWith("kube-");
+}

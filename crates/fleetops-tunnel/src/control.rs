@@ -16,8 +16,29 @@ pub struct HostInfo {
     pub hostname: String,
     pub os: String,
     pub arch: String,
-    /// The Docker endpoint the agent forwards to.
+    /// What the agent forwards to: a Docker URL, or "kubernetes".
     pub docker: String,
+    #[serde(default)]
+    pub serves: Serves,
+}
+
+/// What the agent forwards streams to. Agents before sub-project 3 send
+/// no value and serve Docker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Serves {
+    #[default]
+    Docker,
+    Kube,
+}
+
+impl Serves {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Serves::Docker => "docker",
+            Serves::Kube => "kube",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

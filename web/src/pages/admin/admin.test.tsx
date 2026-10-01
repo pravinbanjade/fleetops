@@ -201,7 +201,7 @@ describe("agent environments", () => {
     const { screen } = renderApp("/admin/envs");
     await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
     const dialog = await screen.findByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("radio", { name: /agent/i }));
+    await userEvent.click(within(dialog).getByRole("radio", { name: /agent on a remote host/i }));
     expect(within(dialog).queryByLabelText("Docker URL")).not.toBeInTheDocument();
     await userEvent.type(within(dialog).getByLabelText("Name"), "web-01");
     await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
@@ -243,5 +243,87 @@ describe("agent environments", () => {
     await userEvent.click(within(row(screen, "web-01")).getByRole("button", { name: "Edit" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByLabelText("Docker URL")).not.toBeInTheDocument();
+  });
+});
+
+describe("Kubernetes environments", () => {
+  const KUBECONFIG = "apiVersion: v1\nkind: Config\ncontexts: [{name: dev}, {name: prod}]\n";
+
+  it("adds a kubeconfig cluster after picking its context", async () => {
+    const calls = mockFetch({
+      ...routes,
+      "POST /api/v1/kube/contexts": { json: { contexts: ["dev", "prod"], current: "dev" } },
+      "POST /api/v1/envs": { status: 201, json: { id: 9, name: "k", kind: "kube-config", url: "https://k:6443", created_at: 1, updated_at: 1, enrollment: null } },
+    });
+    const { screen } = renderApp("/admin/envs");
+    await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: /kubeconfig/i }));
+    expect(within(dialog).queryByLabelText("Docker URL")).not.toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText("Name"), "k");
+    await userEvent.click(within(dialog).getByLabelText("Kubeconfig"));
+    await userEvent.paste(KUBECONFIG);
+    await userEvent.tab();
+    const ctx = await within(dialog).findByRole("combobox", { name: "Context" });
+    expect(ctx).toHaveValue("dev");
+    await userEvent.selectOptions(ctx, "prod");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/v1/envs")?.body).toEqual({
+      name: "k", kind: "kube-config", kubeconfig: KUBECONFIG, context: "prod", skip_check: false,
+    });
+  });
+
+  it("shows an unreachable cluster's error inline and can save without the check", async () => {
+    let attempt = 0;
+    const calls = mockFetch({
+      ...routes,
+      "POST /api/v1/kube/contexts": { json: { contexts: ["dev"], current: "dev" } },
+      "POST /api/v1/envs": () =>
+        ++attempt === 1
+          ? json(400, { code: "invalid", message: "invalid input: cannot reach cluster: timed out", request_id: null })
+          : json(201, { id: 9, name: "k", kind: "kube-config", url: "https://k", created_at: 1, updated_at: 1, enrollment: null }),
+    });
+    const { screen } = renderApp("/admin/envs");
+    await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: /kubeconfig/i }));
+    await userEvent.type(within(dialog).getByLabelText("Name"), "k");
+    await userEvent.click(within(dialog).getByLabelText("Kubeconfig"));
+    await userEvent.paste(KUBECONFIG);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    expect(await within(dialog).findByText(/cannot reach cluster/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /without checking/i }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    const posts = calls.filter((c) => c.method === "POST" && c.path === "/api/v1/envs");
+    expect(posts[1].body).toMatchObject({ skip_check: true });
+  });
+
+  it("adds an agent cluster and shows the kubectl command", async () => {
+    mockFetch({
+      ...routes,
+      "POST /api/v1/envs": { status: 201, json: { id: 9, name: "k8s-01", kind: "kube-agent", url: "agent://9", created_at: 1, updated_at: 1,
+        enrollment: { join_token: "fj_abc", expires_at: Math.floor(Date.now() / 1000) + 900, command: "kubectl apply -f - <<'EOF'\n…\nEOF\n" } } },
+    });
+    const { screen } = renderApp("/admin/envs");
+    await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: /in-cluster agent/i }));
+    await userEvent.type(within(dialog).getByLabelText("Name"), "k8s-01");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    const shown = await screen.findByRole("dialog", { name: /run this against the cluster/i });
+    expect(within(shown).getByText(/kubectl apply/)).toBeInTheDocument();
+  });
+
+  it("lists a kubeconfig cluster's server and context", async () => {
+    mockFetch({
+      ...routes,
+      "GET /api/v1/envs": { json: [{ id: 9, name: "cluster-1", kind: "kube-config", url: "https://k:6443", created_at: 1, updated_at: 1, agent: null,
+        kube: { server: "https://k:6443", context: "prod", user_kind: "token" } }] },
+    });
+    const { screen } = renderApp("/admin/envs");
+    await screen.findByText("cluster-1");
+    const r = row(screen, "cluster-1");
+    expect(within(r).getByText(/prod/)).toBeInTheDocument();
+    expect(within(r).getByText(/token/)).toBeInTheDocument();
   });
 });

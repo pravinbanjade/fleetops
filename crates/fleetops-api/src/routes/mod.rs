@@ -2,6 +2,7 @@ pub mod audit_log;
 pub mod auth;
 pub mod docker;
 pub mod envs;
+pub(crate) mod kube;
 pub mod tasks;
 pub mod users;
 
@@ -47,6 +48,7 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(envs::update, envs::remove))
         .routes(routes!(envs::status))
         .routes(routes!(envs::rotate_agent))
+        .routes(routes!(envs::kube_contexts))
         .routes(routes!(system::info))
         .routes(routes!(system::disk_usage))
         .routes(routes!(system::recent_events))
@@ -79,6 +81,11 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(n::disconnect))
         .routes(routes!(compose::list))
         .routes(routes!(compose::action))
+        .routes(routes!(kube::list))
+        .routes(routes!(kube::get, kube::delete))
+        .routes(routes!(kube::events))
+        .routes(routes!(kube::scale))
+        .routes(routes!(kube::restart))
 }
 
 #[derive(Serialize, ToSchema)]

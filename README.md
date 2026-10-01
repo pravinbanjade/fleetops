@@ -7,9 +7,9 @@ What sets it apart:
 - **One small binary.** It starts fast and uses little memory. The target is under 50 MB of RSS when idle, on a host with about 50 containers.
 - **No paid tiers.** Features such as RBAC, SSO, GitOps and audit are free. They arrive across the roadmap below.
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
-- **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 3).
+- **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 4).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Next is sub-project 3, stacks and GitOps.
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent. Next is sub-project 4, stacks and GitOps.
 
 ## Contents
 
@@ -126,6 +126,25 @@ The container reaches the socket through the group that owns it, which `--group-
 
 The agent must reach the server over HTTPS (start the server with `--tls-bind`). Plain HTTP is accepted only from the same machine. For a self-signed certificate, mount it into the agent and pass `--ca /ca.pem`. Agent flags: `--server`, `--join-token` (first start only), `--data` (default `/data`), `--docker` (default `unix:///var/run/docker.sock`), `--ca`, `--log`; each has a `FLEETOPS_AGENT_*` variable.
 
+### Add a Kubernetes cluster
+
+There are two ways in, both under **Admin → Environments → Add environment**:
+
+- **Kubernetes cluster (kubeconfig).** Paste a kubeconfig and pick a context. Its user must authenticate with a bearer token (a ServiceAccount token works well) or a client certificate, and every certificate and key must be inline (`*-data`). `exec` plugins such as `aws eks get-token` and `auth-provider` users are refused: the server image has no CLIs. The server checks that the cluster answers before saving, unless you tick **Save without checking**. The kubeconfig is stored encrypted and never shown again.
+- **Kubernetes cluster (in-cluster agent).** You get a `kubectl apply` command. Run it with a context for the target cluster. It installs `fleetops-agent --kube` in the `fleetops` namespace. The agent dials out to this server, so the cluster needs no inbound access, and the server never holds the cluster's credentials. The agent keeps its key in the Secret `fleetops-agent-key`. Rotating the key gives a new command; re-applying it restarts the agent with the new join token.
+
+The agent's ClusterRole grants:
+- `get`, `list` and `watch` on namespaces, nodes, pods, services, configmaps, secrets, events, deployments, statefulsets, daemonsets, jobs, cronjobs and ingresses;
+- `delete` on the namespaced ones;
+- `patch` on deployments, statefulsets and daemonsets and their `scale` subresources;
+- `get` on `pods/log`, and `create` on `pods/exec`.
+
+For a read-only agent, remove the `delete` and `patch` verbs, the `pods/exec` rule and the `*/scale` rule from the ClusterRole before applying. Actions then fail with the cluster's 403 reason.
+
+What you can do: browse the 12 common kinds in one namespace or all of them. Open an object to see a summary, its YAML (`managedFields` stripped) and its events. Follow pod logs and open a pod terminal. Scale, restart or delete objects. Secret values are never shown, including the copy kubectl keeps in the `last-applied-configuration` annotation. Lists refresh every 5 s; watch streams, YAML apply and Helm come later.
+
+**The secret key.** Stored kubeconfigs are sealed with AES-256-GCM. The key is `FLEETOPS_SECRET_KEY` (32 bytes, base64), or `<data>/secret.key`, which is created on first start. Back it up with `fleetops.db`. Without it, stored kubeconfigs cannot be read; such environments show *credential cannot be decrypted; re-enter the kubeconfig*.
+
 ## Configuration
 
 Configuration comes from CLI flags or environment variables. There is no config file.
@@ -138,6 +157,7 @@ Configuration comes from CLI flags or environment variables. There is no config 
 | `--tls-cert` / `--tls-key` | `FLEETOPS_TLS_CERT` / `FLEETOPS_TLS_KEY` | unset | PEM certificate and key; pass both or neither. When unset, a self-signed certificate is generated and saved in the data directory |
 | `--hsts` | `FLEETOPS_HSTS` | off | Send HSTS on HTTPS responses. Enable it only when no client uses the plain HTTP listener, because browsers apply HSTS per host, not per port |
 | `--docker-host` | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker endpoint for the `local` environment |
+| `--secret-key` | `FLEETOPS_SECRET_KEY` | unset (`<data>/secret.key`) | 32 bytes, base64: seals stored kubeconfigs. Back it up with the database |
 | `--log-level` | `FLEETOPS_LOG` | `info` | `tracing` filter, for example `fleetops_api=debug,info` |
 | `--openapi` | — | — | Print the OpenAPI document to stdout and exit |
 
@@ -158,7 +178,10 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 | `make test-docker` | Integration tests against the current docker context's daemon (`docker-it` feature); the Docker suite runs a second time through an agent tunnel |
 | `make test-web` | Web typecheck, lint, vitest, and a check that the generated API client matches the OpenAPI document |
 | `make e2e` | `make build` and the agent, then the Playwright end-to-end tests in Chromium against the current docker context's daemon |
-| `make rss-bench` | `make build`, then checks idle RSS stays under 50 MiB with 50 containers, under 50 MiB + 1 MiB per agent with 10 agents, and under 15 MiB per agent (`COUNT`, `LIMIT_MIB`, `AGENTS`, `AGENT_LIMIT_MIB` override) |
+| `make rss-bench` | `make build`, then checks idle RSS stays under 50 MiB with 50 containers, under 50 MiB + 1 MiB per agent with 10 agents, and under 15 MiB per agent (`COUNT`, `LIMIT_MIB`, `AGENTS`, `AGENT_LIMIT_MIB` override). With `KUBE_IT_RSS=target/kube-it`, it also checks the server stays within that limit + 5 MiB with 5 kubeconfig clusters being listed |
+| `make test-kube` | Creates or reuses the `kind` cluster `fleetops-test` (`brew install kind`), then runs the Kubernetes suite through a kubeconfig and again through the agent tunnel |
+| `make e2e-kube` | The Playwright Kubernetes test against that cluster |
+| `make agent-kube-smoke` | Loads `$(AGENT_IMAGE)` into the cluster, runs `$(IMAGE)` on kind's network, applies the generated manifest, and checks that the cluster environment comes up |
 | `make lint` | `cargo fmt --check` and `clippy -D warnings` |
 | `make fmt` | `cargo fmt --all` |
 | `make web` | Builds the UI into `web/dist` |
@@ -185,7 +208,8 @@ Design documents live in `docs/superpowers/`:
 
 - `specs/2026-09-29-fleetops-core-docker-design.md` is the sub-project 1 design and the authority for behaviour.
 - `specs/2026-10-01-fleetops-agent-multihost-design.md` is the sub-project 2 (agent) design.
-- `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), and one for sub-project 2.
+- `specs/2026-10-01-fleetops-kubernetes-design.md` is the sub-project 3 (Kubernetes) design.
+- `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), one for sub-project 2, and one for sub-project 3.
 
 ## Architecture
 
@@ -204,7 +228,7 @@ fleetops/
 └─ docs/superpowers/     specs and plans
 ```
 
-- **Environments.** Every Docker route is scoped to an environment (`/envs/{env}/…`). Handlers resolve the environment through an `EnvRegistry` and call the `DockerOps` trait. They never call bollard directly. Local environments use `LocalDocker` on a socket; agent environments (`docker-agent`) use the same `LocalDocker` over a tunnel. Kubernetes (sub-project 4) will add another kind without changes to the handlers.
+- **Environments.** Every Docker route is scoped to an environment (`/envs/{env}/…`). Handlers resolve the environment through an `EnvRegistry` and call the `DockerOps` trait. They never call bollard directly. Local environments use `LocalDocker` on a socket; agent environments (`docker-agent`) use the same `LocalDocker` over a tunnel. Kubernetes environments (`kube-config`, `kube-agent`) implement `KubeOps` instead, on kube-rs, either from a stored kubeconfig or over the same tunnel to an in-cluster agent; their routes live under `/envs/{env}/k8s/…`, and pod logs and exec use the same websocket topics as containers.
 - **Request pipeline.** Each request passes through: session auth → CSRF check (mutations only) → resolve the environment → `authorize(user, env, action)` → Docker operation → audit entry → response. `authorize` lives in `fleetops-api::authz`, so fine-grained RBAC (sub-project 5) can replace its body without touching handlers.
 - **Agent tunnel.** Each agent opens one WebSocket to `/api/v1/agent/connect` and runs a yamux session over it. The agent's first stream carries a small JSON control protocol (hello, welcome, ping, bye). Every other stream is opened by the server and is a raw connection to the host's Docker socket: bollard runs over a custom transport whose connector opens a stream, so hijacked exec and streamed logs need nothing special. Each stream has its own 256 KiB flow-control window, so a slow reader stalls only its own stream.
 - **Real time.** A per-environment hub shares one Docker events stream among all browser tabs. Stats streams are reference-counted per container.
@@ -255,8 +279,8 @@ The full protocol is in section 5.2 of the spec.
 |---|---|---|
 | **1** | **Core + local Docker** (done) | Server, embedded UI, auth, environments, full Docker resource management, real-time channel |
 | **2** | **Agent + multi-host** (done) | Rust agent that dials out to the server over a multiplexed websocket tunnel |
-| 3 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
-| 4 | Kubernetes | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec, Helm |
+| **3** | **Kubernetes** (first slice done) | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec. Later slices: YAML apply, watch streams, Helm |
+| 4 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
 | 5 | Teams & enterprise (free) | Per-environment RBAC, OIDC/SSO, LDAP, API tokens, backup and restore |
 
 Progress on sub-project 1:

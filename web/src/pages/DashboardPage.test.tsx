@@ -302,7 +302,7 @@ describe("dashboard when the environment is down", () => {
 
   it("recovers when the environment comes back up", async () => {
     let up = false;
-    const UP = { state: "up", version: { version: "29.5.2", api_version: "1.52", os: "linux", arch: "arm64" } };
+    const UP = { state: "up", version: { kind: "docker", version: "29.5.2", api_version: "1.52", os: "linux", arch: "arm64" } };
     mockFetch({
       ...loggedIn,
       "GET /api/v1/envs/local/status": () => json(200, up ? UP : { state: "down", reason: "socket not found" }),

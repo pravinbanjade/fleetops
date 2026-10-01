@@ -12,25 +12,72 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Json,
 };
-use fleetops_core::env::{validate_env_name, validate_env_url, EnvKind, EnvStatus};
+use fleetops_core::env::{validate_env_name, validate_env_url, Credential, EnvKind, EnvStatus};
 use fleetops_core::{now_unix, Error};
+use fleetops_kube::kubeconfig;
 use fleetops_store::EnvironmentRecord;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateEnv {
     pub name: String,
     pub kind: EnvKind,
-    /// The Docker URL of a local environment; agent environments take none.
+    /// The Docker URL of a local environment; other kinds take none.
     #[serde(default)]
     pub url: Option<String>,
+    /// kube-config: the kubeconfig, stored encrypted and never returned.
+    #[serde(default)]
+    pub kubeconfig: Option<String>,
+    /// kube-config: the context to use; default the current one.
+    #[serde(default)]
+    pub context: Option<String>,
+    /// kube-config: save without checking that the cluster answers.
+    #[serde(default)]
+    pub skip_check: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateEnv {
     pub name: Option<String>,
     pub url: Option<String>,
+    /// kube-config: a replacement kubeconfig.
+    #[serde(default)]
+    pub kubeconfig: Option<String>,
+    #[serde(default)]
+    pub context: Option<String>,
+    #[serde(default)]
+    pub skip_check: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct KubeconfigText {
+    pub kubeconfig: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct KubeContexts {
+    pub contexts: Vec<String>,
+    pub current: Option<String>,
+}
+
+/// Validates and minifies a kubeconfig, then checks the cluster answers
+/// unless told not to. Runs before the mutation lock: the check can take
+/// seconds.
+async fn prepare_kubeconfig(
+    text: &str,
+    context: Option<&str>,
+    skip_check: bool,
+) -> ApiResult<kubeconfig::Prepared> {
+    let p = kubeconfig::prepare(text, context)?;
+    if !skip_check {
+        kubeconfig::check(&p.yaml).await?;
+    }
+    Ok(p)
+}
+
+fn summary_json(p: &kubeconfig::Prepared) -> serde_json::Value {
+    serde_json::to_value(&p.summary).expect("summary serialises")
 }
 
 /// The URL agents should dial: the origin the admin's browser used.
@@ -51,6 +98,7 @@ async fn new_enrollment(
     s: &AppState,
     headers: &HeaderMap,
     env_id: i64,
+    kind: EnvKind,
     rotate: bool,
 ) -> ApiResult<Enrollment> {
     let server = server_url(headers)?;
@@ -61,7 +109,7 @@ async fn new_enrollment(
             .rotate_agent(env_id, &hash_token(&token), expires_at)
             .await?;
     }
-    let command = agents::enrollment_command(&server, &token);
+    let command = agents::command_for(kind, &server, &token);
     Ok(Enrollment {
         join_token: token,
         expires_at,
@@ -86,6 +134,7 @@ pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<
         .into_iter()
         .map(|a| (a.environment_id, a))
         .collect();
+    let summaries = s.store.env_credential_summaries().await?;
     let views = s
         .store
         .list_environments()
@@ -95,7 +144,10 @@ pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<
             let agent = agents
                 .remove(&env.id)
                 .map(|a| AgentView::new(a, s.agents.get(env.id).is_some()));
-            EnvView { env, agent }
+            let kube = summaries
+                .get(&env.id)
+                .and_then(|v| serde_json::from_value(v.clone()).ok());
+            EnvView { env, agent, kube }
         })
         .collect();
     Ok(Json(views))
@@ -118,8 +170,28 @@ pub async fn create(
 ) -> ApiResult<(StatusCode, Json<CreatedEnv>)> {
     authorize(&cu.user, None, Action::EnvManage)?;
     validate_env_name(&body.name)?;
+    if body.kind.is_kube() && body.url.is_some() {
+        return Err(Error::Invalid(
+            "a Kubernetes environment takes no URL; paste a kubeconfig".into(),
+        )
+        .into());
+    }
+    let prepared = match (body.kind, &body.kubeconfig) {
+        (EnvKind::KubeConfig, Some(text)) => {
+            Some(prepare_kubeconfig(text, body.context.as_deref(), body.skip_check).await?)
+        }
+        (EnvKind::KubeConfig, None) => {
+            return Err(Error::Invalid("a kubeconfig is required".into()).into())
+        }
+        (_, Some(_)) => {
+            return Err(
+                Error::Invalid("only a kube-config environment takes a kubeconfig".into()).into(),
+            )
+        }
+        (_, None) => None,
+    };
     let _guard = s.envs.lock_mutations().await;
-    let (rec, enrollment) = match body.kind {
+    let (rec, enrollment, credential) = match body.kind {
         EnvKind::DockerLocal => {
             let url = body
                 .url
@@ -129,9 +201,9 @@ pub async fn create(
                 .store
                 .create_environment(&body.name, body.kind.as_str(), &url, now_unix())
                 .await?;
-            (rec, None)
+            (rec, None, None)
         }
-        EnvKind::DockerAgent => {
+        EnvKind::DockerAgent | EnvKind::KubeAgent => {
             if body.url.is_some() {
                 return Err(Error::Invalid("an agent environment takes no URL".into()).into());
             }
@@ -140,18 +212,40 @@ pub async fn create(
             let expires_at = now_unix() + agents::JOIN_TTL_SECS;
             let rec = s
                 .store
-                .create_agent_environment(&body.name, &hash_token(&token), expires_at, now_unix())
+                .create_agent_environment(
+                    &body.name,
+                    body.kind,
+                    &hash_token(&token),
+                    expires_at,
+                    now_unix(),
+                )
                 .await?;
-            let command = agents::enrollment_command(&server, &token);
+            let command = agents::command_for(body.kind, &server, &token);
             let enrollment = Enrollment {
                 join_token: token,
                 expires_at,
                 command,
             };
-            (rec, Some(enrollment))
+            (rec, Some(enrollment), None)
+        }
+        EnvKind::KubeConfig => {
+            let p = prepared.expect("checked above");
+            let rec = s
+                .store
+                .create_environment_with_credential(
+                    &body.name,
+                    body.kind.as_str(),
+                    &p.summary.server,
+                    "kubeconfig",
+                    &p.yaml,
+                    &summary_json(&p),
+                    now_unix(),
+                )
+                .await?;
+            (rec, None, Some(Credential::Kubeconfig(p.yaml)))
         }
     };
-    s.envs.insert(&rec)?;
+    s.envs.insert(&rec, credential)?;
     audit(
         &s,
         Some(cu.user.id),
@@ -192,22 +286,56 @@ pub async fn update(
     ApiJson(body): ApiJson<UpdateEnv>,
 ) -> ApiResult<Json<EnvironmentRecord>> {
     authorize(&cu.user, None, Action::EnvManage)?;
-    let _guard = s.envs.lock_mutations().await;
-    let current = find(&s, &name).await?;
-    if current.kind == EnvKind::DockerAgent.as_str() && body.url.is_some() {
+    let kind: EnvKind = find(&s, &name).await?.kind.parse()?;
+    if body.url.is_some() && kind == EnvKind::DockerAgent {
         return Err(Error::Invalid("an agent environment's URL cannot be changed".into()).into());
     }
+    if body.url.is_some() && kind.is_kube() {
+        return Err(Error::Invalid(
+            "a Kubernetes environment's URL comes from its kubeconfig".into(),
+        )
+        .into());
+    }
+    if body.kubeconfig.is_some() && kind != EnvKind::KubeConfig {
+        return Err(
+            Error::Invalid("only a kube-config environment takes a kubeconfig".into()).into(),
+        );
+    }
+    let prepared = match &body.kubeconfig {
+        Some(t) => Some(prepare_kubeconfig(t, body.context.as_deref(), body.skip_check).await?),
+        None => None,
+    };
+    let _guard = s.envs.lock_mutations().await;
+    let current = find(&s, &name).await?;
     let new_name = body.name.unwrap_or(current.name.clone());
-    let new_url = body.url.unwrap_or(current.url.clone());
+    let new_url = match &prepared {
+        Some(p) => p.summary.server.clone(),
+        None => body.url.unwrap_or(current.url.clone()),
+    };
     validate_env_name(&new_name)?;
-    if new_url != current.url {
+    if prepared.is_none() && new_url != current.url {
         validate_env_url(&new_url)?;
+    }
+    if let Some(p) = &prepared {
+        s.store
+            .put_env_credential(
+                current.id,
+                "kubeconfig",
+                &p.yaml,
+                &summary_json(p),
+                now_unix(),
+            )
+            .await?;
     }
     let rec = s
         .store
         .update_environment(current.id, &new_name, &new_url, now_unix())
         .await?;
-    s.envs.replace(&current.name, &rec)?;
+    let credential = match prepared {
+        Some(p) => Some(Credential::Kubeconfig(p.yaml)),
+        None => s.store.env_credential(rec.id).await?,
+    };
+    s.envs.replace(&current.name, &rec, credential)?;
     audit(
         &s,
         Some(cu.user.id),
@@ -289,10 +417,11 @@ pub async fn rotate_agent(
     authorize(&cu.user, None, Action::EnvManage)?;
     let _guard = s.envs.lock_mutations().await;
     let current = find(&s, &name).await?;
-    if current.kind != EnvKind::DockerAgent.as_str() {
+    let kind: EnvKind = current.kind.parse()?;
+    if !matches!(kind, EnvKind::DockerAgent | EnvKind::KubeAgent) {
         return Err(Error::Invalid(format!("'{name}' is not an agent environment")).into());
     }
-    let enrollment = new_enrollment(&s, &headers, current.id, true).await?;
+    let enrollment = new_enrollment(&s, &headers, current.id, kind, true).await?;
     s.agents.revoke(current.id);
     audit(
         &s,
@@ -304,4 +433,26 @@ pub async fn rotate_agent(
     )
     .await;
     Ok(Json(enrollment))
+}
+
+#[utoipa::path(
+    post,
+    path = "/kube/contexts",
+    operation_id = "kubeContexts",
+    tag = "environments",
+    summary = "List a kubeconfig's contexts without saving it",
+    request_body = KubeconfigText,
+    responses((status = 200, description = "Context names and the current one", body = KubeContexts))
+)]
+pub async fn kube_contexts(
+    State(_s): State<AppState>,
+    cu: CurrentUser,
+    ApiJson(body): ApiJson<KubeconfigText>,
+) -> ApiResult<Json<KubeContexts>> {
+    authorize(&cu.user, None, Action::EnvManage)?;
+    let c = kubeconfig::contexts(&body.kubeconfig)?;
+    Ok(Json(KubeContexts {
+        contexts: c.contexts,
+        current: c.current,
+    }))
 }

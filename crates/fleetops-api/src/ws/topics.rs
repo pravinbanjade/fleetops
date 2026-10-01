@@ -2,7 +2,7 @@
 //! needs, starts a producer task that fills the subscription's queue, and
 //! returns the subscription.
 
-use super::conn::{ExecCtl, Sub};
+use super::conn::{ExecCtl, Resize, Sub};
 use super::protocol::{self, encode_binary, Out};
 use super::queue::{Policy, SubQueue};
 use crate::{
@@ -13,7 +13,7 @@ use crate::{
 };
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
-use fleetops_core::streams::{ExecOptions, LogOptions};
+use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions};
 use fleetops_core::{now_unix, Error, Result, Role};
 use fleetops_store::NewAudit;
 use futures_util::StreamExt;
@@ -64,10 +64,34 @@ fn docker_for(
     let name = required(env, "env")?;
     let env = s.envs.get(name)?;
     authorize(&cu.user, Some(env.id()), action)?;
+    if env.kind().is_kube() {
+        return Err(crate::routes::kube::wrong_kind(name, env.kind()));
+    }
     let ops = env
         .docker()
         .ok_or_else(|| Error::EnvUnavailable(format!("environment '{name}' is unreachable")))?;
     Ok((env, ops))
+}
+
+/// `<namespace>/<pod>`, the id of a pod on the logs and exec topics.
+fn pod_id(id: &Option<String>) -> Result<(String, String)> {
+    let id = required(id, "id")?;
+    match id.split_once('/') {
+        Some((ns, pod)) if !pod.contains('/') => {
+            crate::routes::kube::check_namespace(ns)?;
+            crate::routes::kube::check_name(pod)?;
+            Ok((ns.into(), pod.into()))
+        }
+        _ => Err(Error::Invalid(
+            "a Kubernetes pod id is <namespace>/<pod>".into(),
+        )),
+    }
+}
+
+fn is_kube_env(s: &AppState, env: &Option<String>) -> bool {
+    env.as_deref()
+        .and_then(|n| s.envs.get(n).ok())
+        .is_some_and(|e| e.kind().is_kube())
 }
 
 /// Docker events for the environment, optionally only those whose actor id
@@ -145,7 +169,8 @@ pub(super) async fn stats(c: &Ctx<'_>, env: Option<String>, id: Option<String>) 
     })
 }
 
-/// Container `id`'s logs as batches of lines, at most every `LOG_FLUSH`.
+/// A container's or pod's logs as batches of lines, at most every
+/// `LOG_FLUSH`. On a Kubernetes environment `id` is `<namespace>/<pod>`.
 pub(super) async fn logs(
     c: &Ctx<'_>,
     env: Option<String>,
@@ -153,13 +178,31 @@ pub(super) async fn logs(
     opts_v: Value,
 ) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (_, ops) = docker_for(s, cu, &env, Action::DockerRead)?;
-    let id = required(&id, "id")?;
     let o: LogOptions = opts(opts_v)?;
-    let mut lines = ops.logs(id, &o);
+    let lines = if is_kube_env(s, &env) {
+        let (_, ops) =
+            crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead)?;
+        let (ns, pod) = pod_id(&id)?;
+        ops.logs(&ns, &pod, &o)
+    } else {
+        let (_, ops) = docker_for(s, cu, &env, Action::DockerRead)?;
+        ops.logs(required(&id, "id")?, &o)
+    };
     let q = c.queue(Policy::Gap);
-    let qq = q.clone();
-    let task = tokio::spawn(async move {
+    let task = pump_logs(q.clone(), sub, lines);
+    Ok(Sub {
+        queue: q,
+        task: task.abort_handle(),
+        exec: None,
+    })
+}
+
+fn pump_logs(
+    qq: Arc<SubQueue>,
+    sub: u32,
+    mut lines: BoxStream<LogLine>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
         loop {
             let first = match lines.next().await {
                 Some(Ok(l)) => l,
@@ -193,11 +236,6 @@ pub(super) async fn logs(
                 return qq.finish(last);
             }
         }
-    });
-    Ok(Sub {
-        queue: q,
-        task: task.abort_handle(),
-        exec: None,
     })
 }
 
@@ -209,6 +247,9 @@ pub(super) async fn exec(
     id: Option<String>,
     opts_v: Value,
 ) -> Result<Sub> {
+    if is_kube_env(c.s, &env) {
+        return kube_exec(c, env, id, opts_v).await;
+    }
     let (s, cu, sub) = (c.s, c.cu, c.sub);
     let (env, ops) = docker_for(s, cu, &env, Action::DockerWrite)?;
     let id = required(&id, "id")?.to_string();
@@ -247,10 +288,86 @@ pub(super) async fn exec(
         task: task.abort_handle(),
         exec: Some(ExecCtl {
             input: session.input,
-            exec_id: session.exec_id,
-            ops,
+            resize: Resize::Docker {
+                ops,
+                exec_id: session.exec_id,
+            },
         }),
     })
+}
+
+/// A TTY in a pod's container. Ends with `exited` when the output ends;
+/// the exit code is whatever the process reported within a second.
+async fn kube_exec(
+    c: &Ctx<'_>,
+    env: Option<String>,
+    id: Option<String>,
+    opts_v: Value,
+) -> Result<Sub> {
+    let (s, cu, sub) = (c.s, c.cu, c.sub);
+    let (env, ops) =
+        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeWrite)?;
+    let (ns, pod) = pod_id(&id)?;
+    let o: ExecOptions = opts(opts_v)?;
+    let session = ops.exec_start(&ns, &pod, &o).await;
+    let failure = session.as_ref().err().map(|e| e.to_string());
+    audit_kube_exec(s, cu, env.id(), &format!("pods/{ns}/{pod}"), &o, failure).await;
+    let session = session?;
+    let q = c.queue(Policy::Block);
+    let qq = q.clone();
+    let mut output = session.output;
+    let exit = session.exit_code;
+    let task = tokio::spawn(async move {
+        while let Some(chunk) = output.next().await {
+            let Ok(bytes) = chunk else { break };
+            if !qq.push_wait(Out::Binary(encode_binary(sub, &bytes))).await {
+                return;
+            }
+        }
+        let code = tokio::time::timeout(Duration::from_secs(1), exit)
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .flatten();
+        qq.finish(protocol::end(sub, "exited", json!({ "exit_code": code })));
+    });
+    Ok(Sub {
+        queue: q,
+        task: task.abort_handle(),
+        exec: Some(ExecCtl {
+            input: session.input,
+            resize: Resize::Kube(session.resize),
+        }),
+    })
+}
+
+async fn audit_kube_exec(
+    s: &AppState,
+    cu: &CurrentUser,
+    env_id: i64,
+    target: &str,
+    o: &ExecOptions,
+    failure: Option<String>,
+) {
+    let (result, mut detail) = match failure {
+        None => ("success", json!({})),
+        Some(e) => ("failure", json!({ "error": e })),
+    };
+    detail["cmd"] = json!(o.command());
+    detail["container"] = json!(o.container);
+    let entry = NewAudit {
+        ts: now_unix(),
+        user_id: Some(cu.user.id),
+        environment_id: Some(env_id),
+        action: "k8s.exec",
+        target_type: Some("k8s"),
+        target_id: Some(target),
+        result,
+        detail: Some(detail),
+    };
+    if let Err(e) = s.store.insert_audit(&entry).await {
+        tracing::error!(error = %e, "failed to write audit log");
+    }
 }
 
 /// A background task's progress: everything so far, then live, then `end`.

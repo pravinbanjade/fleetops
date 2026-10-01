@@ -2123,6 +2123,419 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/{kind}": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "List objects of one kind",
+        "operationId": "listKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "Plural lowercase kind, e.g. `deployments`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "description": "Omit for all namespaces.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "One object: summary, masked YAML, conditions, owners",
+        "operationId": "getKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeObject"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Delete an object (background propagation)",
+        "operationId": "deleteKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/events": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "An object's events, newest first",
+        "operationId": "kubeEvents",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KubeEvent"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/restart": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Rollout restart a Deployment, StatefulSet or DaemonSet",
+        "operationId": "restartKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Restarted"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/scale": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Set a Deployment's or StatefulSet's replicas",
+        "operationId": "scaleKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScaleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Scaled"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/networks": {
       "get": {
         "tags": [
@@ -2855,6 +3268,53 @@
         },
         "security": [
           {}
+        ]
+      }
+    },
+    "/api/v1/kube/contexts": {
+      "post": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "List a kubeconfig's contexts without saving it",
+        "operationId": "kubeContexts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubeconfigText"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Context names and the current one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeContexts"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
         ]
       }
     },
@@ -3746,18 +4206,36 @@
           "kind"
         ],
         "properties": {
+          "context": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "kube-config: the context to use; default the current one."
+          },
           "kind": {
             "$ref": "#/components/schemas/EnvKind"
           },
+          "kubeconfig": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "kube-config: the kubeconfig, stored encrypted and never returned."
+          },
           "name": {
             "type": "string"
+          },
+          "skip_check": {
+            "type": "boolean",
+            "description": "kube-config: save without checking that the cluster answers."
           },
           "url": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The Docker URL of a local environment; agent environments take none."
+            "description": "The Docker URL of a local environment; other kinds take none."
           }
         }
       },
@@ -4004,7 +4482,9 @@
         "type": "string",
         "enum": [
           "docker-local",
-          "docker-agent"
+          "docker-agent",
+          "kube-config",
+          "kube-agent"
         ]
       },
       "EnvStatus": {
@@ -4023,7 +4503,7 @@
                 ]
               },
               "version": {
-                "$ref": "#/components/schemas/EngineVersion"
+                "$ref": "#/components/schemas/EnvVersion"
               }
             }
           },
@@ -4047,6 +4527,53 @@
           }
         ]
       },
+      "EnvVersion": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EngineVersion"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "docker"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KubeVersion"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "kube"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "description": "What an up environment reports about itself."
+      },
       "EnvView": {
         "allOf": [
           {
@@ -4062,6 +4589,17 @@
                   },
                   {
                     "$ref": "#/components/schemas/AgentView"
+                  }
+                ]
+              },
+              "kube": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/KubeconfigSummary",
+                    "description": "What may be shown of a stored kubeconfig (kube-config environments)."
                   }
                 ]
               }
@@ -4148,6 +4686,14 @@
             "default": 80,
             "minimum": 0
           },
+          "container": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Kubernetes only: the container; `None` is the pod's first. Docker\nignores it.",
+            "default": null
+          },
           "rows": {
             "type": "integer",
             "format": "int32",
@@ -4222,6 +4768,300 @@
           }
         }
       },
+      "KubeCondition": {
+        "type": "object",
+        "required": [
+          "type",
+          "status"
+        ],
+        "properties": {
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "KubeContexts": {
+        "type": "object",
+        "required": [
+          "contexts"
+        ],
+        "properties": {
+          "contexts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "current": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "KubeEvent": {
+        "type": "object",
+        "required": [
+          "type",
+          "reason",
+          "message",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "last_seen": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds."
+          },
+          "message": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "\"Normal\" or \"Warning\"."
+          }
+        }
+      },
+      "KubeKind": {
+        "type": "string",
+        "enum": [
+          "namespaces",
+          "nodes",
+          "deployments",
+          "statefulsets",
+          "daemonsets",
+          "jobs",
+          "cronjobs",
+          "pods",
+          "services",
+          "ingresses",
+          "configmaps",
+          "secrets"
+        ]
+      },
+      "KubeList": {
+        "type": "object",
+        "required": [
+          "rows",
+          "truncated"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KubeRow"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "More objects exist than `LIST_CAP`."
+          }
+        }
+      },
+      "KubeObject": {
+        "type": "object",
+        "required": [
+          "row",
+          "yaml",
+          "conditions",
+          "owners",
+          "containers"
+        ],
+        "properties": {
+          "conditions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KubeCondition"
+            }
+          },
+          "containers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Pods only: container names, first is the default."
+          },
+          "owners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KubeRef"
+            },
+            "description": "Nearest first: Pod → ReplicaSet → Deployment."
+          },
+          "row": {
+            "$ref": "#/components/schemas/KubeRow"
+          },
+          "yaml": {
+            "type": "string",
+            "description": "`managedFields` stripped; Secret values masked."
+          }
+        }
+      },
+      "KubeRef": {
+        "type": "object",
+        "description": "An owner, e.g. a Pod's ReplicaSet. `link` is set when FleetOps has a\npage for the owner's kind.",
+        "required": [
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "link": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/KubeKind"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "KubeRow": {
+        "type": "object",
+        "description": "One object in a list: common fields plus columns that depend on its kind.",
+        "required": [
+          "name",
+          "created",
+          "status",
+          "health",
+          "columns"
+        ],
+        "properties": {
+          "columns": {
+            "type": "object",
+            "description": "Kind-specific: ready, restarts, node, type, ports, hosts…",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "created": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds."
+          },
+          "health": {
+            "$ref": "#/components/schemas/RowHealth"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "e.g. \"Running\", \"2/3\", \"Complete\"."
+          }
+        }
+      },
+      "KubeVersion": {
+        "type": "object",
+        "required": [
+          "git_version",
+          "platform"
+        ],
+        "properties": {
+          "git_version": {
+            "type": "string"
+          },
+          "nodes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`None` when the credentials may not list nodes.",
+            "minimum": 0
+          },
+          "nodes_ready": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "platform": {
+            "type": "string"
+          }
+        }
+      },
+      "KubeconfigSummary": {
+        "type": "object",
+        "description": "What may be shown about a stored kubeconfig.",
+        "required": [
+          "server",
+          "context",
+          "user_kind"
+        ],
+        "properties": {
+          "context": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string"
+          },
+          "user_kind": {
+            "$ref": "#/components/schemas/UserKind"
+          }
+        }
+      },
+      "KubeconfigText": {
+        "type": "object",
+        "required": [
+          "kubeconfig"
+        ],
+        "properties": {
+          "kubeconfig": {
+            "type": "string"
+          }
+        }
+      },
       "LogLine": {
         "type": "object",
         "required": [
@@ -4241,6 +5081,14 @@
       "LogOptions": {
         "type": "object",
         "properties": {
+          "container": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Kubernetes only: the container; `None` is the pod's first. Docker\nignores it.",
+            "default": null
+          },
           "follow": {
             "type": "boolean",
             "default": true
@@ -4512,6 +5360,29 @@
           "admin",
           "user"
         ]
+      },
+      "RowHealth": {
+        "type": "string",
+        "description": "The status dot's colour.",
+        "enum": [
+          "ok",
+          "warn",
+          "bad",
+          "unknown"
+        ]
+      },
+      "ScaleBody": {
+        "type": "object",
+        "required": [
+          "replicas"
+        ],
+        "properties": {
+          "replicas": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "ServerMsg": {
         "oneOf": [
@@ -4877,11 +5748,27 @@
       "UpdateEnv": {
         "type": "object",
         "properties": {
+          "context": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kubeconfig": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "kube-config: a replacement kubeconfig."
+          },
           "name": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "skip_check": {
+            "type": "boolean"
           },
           "url": {
             "type": [
@@ -4941,6 +5828,13 @@
             "type": "string"
           }
         }
+      },
+      "UserKind": {
+        "type": "string",
+        "enum": [
+          "token",
+          "cert"
+        ]
       },
       "VolumeSpec": {
         "type": "object",
@@ -5067,6 +5961,10 @@
     {
       "name": "compose",
       "description": "Compose projects, grouped by label"
+    },
+    {
+      "name": "kubernetes",
+      "description": "Objects in Kubernetes environments"
     },
     {
       "name": "tasks",
