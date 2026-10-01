@@ -388,13 +388,13 @@
         "operationId": "listEnvs",
         "responses": {
           "200": {
-            "description": "All environments",
+            "description": "All environments; agent environments include their agent's state",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/EnvironmentRecord"
+                    "$ref": "#/components/schemas/EnvView"
                   }
                 }
               }
@@ -435,11 +435,11 @@
         },
         "responses": {
           "201": {
-            "description": "Created",
+            "description": "Created; an agent environment includes its one-time enrollment",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentRecord"
+                  "$ref": "#/components/schemas/CreatedEnv"
                 }
               }
             }
@@ -537,6 +537,54 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EnvironmentRecord"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/agent/rotate": {
+      "post": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Revoke an agent's key and issue a new join command",
+        "operationId": "rotateAgent",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new one-time enrollment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrollment"
                 }
               }
             }
@@ -3045,6 +3093,48 @@
   },
   "components": {
     "schemas": {
+      "AgentView": {
+        "type": "object",
+        "required": [
+          "connected",
+          "enrolled"
+        ],
+        "properties": {
+          "agent_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "enrolled": {
+            "type": "boolean"
+          },
+          "host": {},
+          "join_expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_seen_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
       "AttachBody": {
         "type": "object",
         "required": [
@@ -3594,8 +3684,7 @@
         "type": "object",
         "required": [
           "name",
-          "kind",
-          "url"
+          "kind"
         ],
         "properties": {
           "kind": {
@@ -3605,7 +3694,11 @@
             "type": "string"
           },
           "url": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Docker URL of a local environment; agent environments take none."
           }
         }
       },
@@ -3638,6 +3731,29 @@
             "type": "string"
           }
         }
+      },
+      "CreatedEnv": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EnvironmentRecord"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "enrollment": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Enrollment"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "A newly created environment; an agent one carries its enrollment once."
       },
       "CreatedNetwork": {
         "type": "object",
@@ -3794,6 +3910,28 @@
           }
         }
       },
+      "Enrollment": {
+        "type": "object",
+        "required": [
+          "join_token",
+          "expires_at",
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds."
+          },
+          "join_token": {
+            "type": "string",
+            "description": "Shown once. Valid for 15 minutes and for one agent."
+          }
+        }
+      },
       "EntryKind": {
         "type": "string",
         "enum": [
@@ -3849,6 +3987,29 @@
             }
           }
         ]
+      },
+      "EnvView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EnvironmentRecord"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "agent": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/AgentView"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "An environment as listed: agent environments carry their agent's state."
       },
       "EnvironmentRecord": {
         "type": "object",

@@ -45,6 +45,7 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(envs::list, envs::create))
         .routes(routes!(envs::update, envs::remove))
         .routes(routes!(envs::status))
+        .routes(routes!(envs::rotate_agent))
         .routes(routes!(system::info))
         .routes(routes!(system::disk_usage))
         .routes(routes!(system::recent_events))
