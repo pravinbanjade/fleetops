@@ -7,6 +7,7 @@ mod error;
 pub mod files;
 mod resources;
 mod streams;
+mod tunnel;
 
 pub use env::{DockerEnvFactory, LocalDockerEnv};
 

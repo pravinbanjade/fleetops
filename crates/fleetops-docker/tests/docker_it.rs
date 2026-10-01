@@ -38,7 +38,19 @@ async fn docker() -> LocalDocker {
     while let Some(step) = pull.next().await {
         step.expect("pull alpine:3.20");
     }
-    LocalDocker::connect(&host()).unwrap()
+    connect()
+}
+
+/// With FLEETOPS_IT_TUNNEL=1 every test talks to Docker through an
+/// in-memory agent tunnel instead of the socket (sub-project 2, spec §9).
+fn connect() -> LocalDocker {
+    if std::env::var_os("FLEETOPS_IT_TUNNEL").is_some() {
+        let target = fleetops_tunnel::Target::parse(&host()).expect("DOCKER_HOST");
+        let session = fleetops_tunnel::testing::loopback(target);
+        LocalDocker::through(std::sync::Arc::new(session)).unwrap()
+    } else {
+        LocalDocker::connect(&host()).unwrap()
+    }
 }
 
 fn sleeper(name: &str) -> ContainerSpec {

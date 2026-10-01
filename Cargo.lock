@@ -734,12 +734,16 @@ dependencies = [
  "async-trait",
  "bollard",
  "fleetops-core",
+ "fleetops-tunnel",
  "futures-util",
+ "hyper",
+ "hyper-util",
  "serde",
  "serde_json",
  "tar",
  "tempfile",
  "tokio",
+ "tower-service",
 ]
 
 [[package]]

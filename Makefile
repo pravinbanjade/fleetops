@@ -24,10 +24,13 @@ test-web:
 	pnpm -C web test
 	pnpm -C web check:api
 
-# Integration tests against the Docker daemon of the current docker context.
+# Integration tests against the Docker daemon of the current docker context;
+# the Docker suite runs twice, the second time through an agent tunnel.
 test-docker:
 	DOCKER_HOST=$$(docker context inspect --format '{{.Endpoints.docker.Host}}') \
-		sh -c 'cargo test -p fleetops-docker --features docker-it --test docker_it && cargo test -p fleetops-server --features docker-it --test live'
+		sh -c 'cargo test -p fleetops-docker --features docker-it --test docker_it && \
+		FLEETOPS_IT_TUNNEL=1 cargo test -p fleetops-docker --features docker-it --test docker_it && \
+		cargo test -p fleetops-server --features docker-it --test live'
 
 # The Playwright end-to-end test: a release build with the UI embedded,
 # driven in Chromium against the current docker context's daemon. It pulls
