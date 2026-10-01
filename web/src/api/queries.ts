@@ -20,6 +20,8 @@ import {
   listEnvs,
   listImages,
   listKube,
+  getKube,
+  kubeEvents,
   listNetworks,
   listSessions,
   listUsers,
@@ -132,6 +134,20 @@ export const kubeListQuery = (env: string, kind: KubeKind, ns?: string) =>
     queryFn: async () => (await listKube({ path: { env, kind }, query: ns ? { namespace: ns } : {} })).data,
     refetchInterval: KUBE_LIST_POLL_MS,
     retry: (failures, err) => !(err instanceof ApiError && err.status === 403) && failures < 1,
+  });
+
+export const kubeObjectQuery = (env: string, kind: KubeKind, ns: string, name: string) =>
+  queryOptions({
+    queryKey: keys.kubeObject(env, kind, ns, name),
+    queryFn: async () => (await getKube({ path: { env, kind, ns, name } })).data,
+    retry: retryUnlessGone,
+  });
+
+export const kubeEventsQuery = (env: string, kind: KubeKind, ns: string, name: string) =>
+  queryOptions({
+    queryKey: [...keys.kubeObject(env, kind, ns, name), "events"] as const,
+    queryFn: async () => (await kubeEvents({ path: { env, kind, ns, name } })).data,
+    refetchInterval: KUBE_LIST_POLL_MS,
   });
 
 export const infoQuery = (env: string) =>

@@ -17,6 +17,7 @@ import { TaskProvider } from "@/live/TaskProvider";
 import { LoginPage } from "@/pages/LoginPage";
 import { NoEnvironmentsPage, NotFoundPage } from "@/pages/misc";
 import { CONTAINER_TABS, type ContainerTab } from "@/pages/containers/tabs";
+import { KUBE_TABS, type KubeTab } from "@/pages/kube/tabs";
 import { SetupPage } from "@/pages/SetupPage";
 
 export interface RouterContext {
@@ -137,7 +138,8 @@ const kubeListRoute = createRoute({
 const kubeObjectRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "k8s/$kind/$ns/$name",
-  component: lazyRouteComponent(() => import("@/pages/kube/KubeListPage"), "KubeListPage"),
+  validateSearch: (s: Record<string, unknown>): { tab?: KubeTab } => ({ tab: KUBE_TABS.find((t) => t === s.tab) }),
+  component: lazyRouteComponent(() => import("@/pages/kube/KubeObjectPage"), "KubeObjectPage"),
 });
 
 const containersRoute = createRoute({

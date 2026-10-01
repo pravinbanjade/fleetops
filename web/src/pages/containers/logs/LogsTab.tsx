@@ -38,14 +38,17 @@ export function LogsTab({
   name,
   running,
   startedAt,
+  container,
 }: {
   env: string;
   id: string;
   name: string;
   running: boolean;
   startedAt?: string;
+  /** Kubernetes only: the pod's container. */
+  container?: string;
 }) {
-  const [query, setQuery] = useState<LogQuery>(DEFAULT_QUERY);
+  const [query, setQuery] = useState<LogQuery>(() => (container ? { ...DEFAULT_QUERY, container } : DEFAULT_QUERY));
   const [since, setSince] = useState("");
   const [timestamps, setTimestamps] = useState(false);
   const [wrap, setWrap] = useState(false);

@@ -11,6 +11,8 @@ export interface LogQuery {
   since: number | null;
   stdout: boolean;
   stderr: boolean;
+  /** Kubernetes only: the pod's container; absent is its first. */
+  container?: string;
 }
 
 export const DEFAULT_QUERY: LogQuery = { tail: 1000, since: null, stdout: true, stderr: true };
