@@ -31,7 +31,34 @@ export function useNamespace(env: string): [string | undefined, (ns?: string) =>
 }
 
 export function NamespacePicker({ env, value, onChange }: { env: string; value?: string; onChange: (ns?: string) => void }) {
-  const { data } = useQuery(kubeListQuery(env, "namespaces"));
+  const { data, isError } = useQuery(kubeListQuery(env, "namespaces"));
+  const [typed, setTyped] = useState(value ?? "");
+  // Credentials scoped to one namespace often may not list namespaces: let
+  // the user name the one they can read instead.
+  if (isError) {
+    return (
+      <form
+        className="flex items-center gap-2 text-sm"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onChange(typed.trim() || undefined);
+        }}
+      >
+        <label htmlFor={`ns-${env}`} className="text-muted-foreground">
+          Namespace
+        </label>
+        <input
+          id={`ns-${env}`}
+          aria-label="Namespace"
+          placeholder="All namespaces"
+          className="h-8 w-40 rounded-md border bg-background px-2"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          onBlur={() => onChange(typed.trim() || undefined)}
+        />
+      </form>
+    );
+  }
   const names = (data?.rows ?? []).map((r) => r.name);
   return (
     <label className="flex items-center gap-2 text-sm">
@@ -44,7 +71,9 @@ export function NamespacePicker({ env, value, onChange }: { env: string; value?:
       >
         <option value="">All namespaces</option>
         {names.map((n) => (
-          <option key={n} value={n}>{n}</option>
+          <option key={n} value={n}>
+            {n}
+          </option>
         ))}
       </select>
     </label>

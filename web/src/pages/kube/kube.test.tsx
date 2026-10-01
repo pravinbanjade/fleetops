@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { kubeRoutes, loggedIn, renderApp } from "@/test/app";
@@ -86,5 +86,20 @@ describe("a cluster whose credentials cannot list nodes", () => {
     });
     renderApp("/envs/k");
     expect(await screen.findByText("Not visible to these credentials")).toBeInTheDocument();
+  });
+});
+
+describe("credentials that cannot list namespaces", () => {
+  it("let the user type the namespace to show", async () => {
+    const calls = mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      "GET /api/v1/envs/k/k8s/namespaces": { status: 403, json: { code: "forbidden", message: "namespaces is forbidden", request_id: null } },
+    });
+    renderApp("/envs/k/k8s/pods");
+    const input = await screen.findByRole("textbox", { name: "Namespace" });
+    await userEvent.type(input, "apps{Enter}");
+    await screen.findByRole("table", { name: "Pods" });
+    await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/envs/k/k8s/pods?namespace=apps")).toBe(true));
   });
 });
