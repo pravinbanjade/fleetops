@@ -57,3 +57,17 @@ fn wire_names_are_snake_case() {
         serde_json::json!({"type": "bye", "reason": "incompatible"})
     );
 }
+
+#[test]
+fn a_hello_from_an_older_agent_serves_docker() {
+    use fleetops_tunnel::control::{HostInfo, Serves};
+    let old =
+        r#"{"hostname":"h","os":"linux","arch":"x86_64","docker":"unix:///var/run/docker.sock"}"#;
+    let h: HostInfo = serde_json::from_str(old).unwrap();
+    assert_eq!(h.serves, Serves::Docker);
+    let kube = HostInfo {
+        serves: Serves::Kube,
+        ..HostInfo::default()
+    };
+    assert_eq!(serde_json::to_value(&kube).unwrap()["serves"], "kube");
+}

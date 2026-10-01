@@ -83,6 +83,7 @@ async fn agent_env(store: &Store) -> (i64, String) {
     let env = store
         .create_agent_environment(
             "web-01",
+            fleetops_core::env::EnvKind::DockerAgent,
             &hash,
             fleetops_core::now_unix() + 900,
             fleetops_core::now_unix(),

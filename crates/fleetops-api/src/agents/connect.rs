@@ -13,9 +13,10 @@ use axum::{
     http::{header::AUTHORIZATION, HeaderMap},
     response::{IntoResponse, Response},
 };
+use fleetops_core::env::EnvKind;
 use fleetops_core::{now_unix, Error};
 use fleetops_tunnel::{
-    control::{read_msg, write_msg, ByeReason, Msg, PROTO_MAJOR},
+    control::{read_msg, write_msg, ByeReason, Msg, Serves, PROTO_MAJOR},
     registry::AgentInfo,
     ws::MAX_WS_MESSAGE,
     Role, Session, StreamHandle,
@@ -190,6 +191,32 @@ async fn serve(
         let reason = format!(
             "agent v{} uses protocol {proto}; server needs {PROTO_MAJOR}",
             info.agent_version
+        );
+        say_bye(&mut c, session, ByeReason::Incompatible).await;
+        let _ = s
+            .store
+            .record_agent_seen(
+                env_id,
+                now_unix(),
+                Some(&info.agent_version),
+                host_json.as_deref(),
+                Some(&reason),
+            )
+            .await;
+        s.agents.set_offline_reason(env_id, &reason);
+        audit(s, None, "agent.reject", "environment", &env.name, "failure").await;
+        return reason;
+    }
+
+    let expects = match env.kind.parse::<EnvKind>() {
+        Ok(EnvKind::KubeAgent) => Serves::Kube,
+        _ => Serves::Docker,
+    };
+    if info.host.serves != expects {
+        let reason = format!(
+            "agent serves {}; this environment expects {}",
+            info.host.serves.as_str(),
+            expects.as_str()
         );
         say_bye(&mut c, session, ByeReason::Incompatible).await;
         let _ = s

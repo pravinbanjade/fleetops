@@ -337,3 +337,69 @@ async fn rotating_during_the_handshake_still_revokes_the_session() {
     b.closed().await;
     eventually("not registered", || t.state.agents.connected() == 0).await;
 }
+
+/// A kube-agent environment made directly in the store; returns its join token.
+async fn kube_agent_env(t: &TestApp, name: &str) -> String {
+    let token = fleetops_api::agents::new_join_token();
+    let now = fleetops_core::now_unix();
+    let rec = t
+        .store
+        .create_agent_environment(
+            name,
+            fleetops_core::env::EnvKind::KubeAgent,
+            &fleetops_api::auth_token_hash(&token),
+            now + 900,
+            now,
+        )
+        .await
+        .unwrap();
+    t.state.envs.insert(&rec, None).unwrap();
+    token
+}
+
+#[tokio::test]
+async fn a_docker_agent_on_a_kube_environment_is_refused_with_the_reason() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let token = kube_agent_env(&t, "k8s-01").await;
+    let mut a = TestAgent::connect(&base(&t).await, &token).await.unwrap();
+    a.hello(PROTO_MAJOR).await;
+    assert_eq!(
+        a.next().await,
+        Some(Msg::Bye {
+            reason: ByeReason::Incompatible
+        })
+    );
+    // The session closes after the reason is stored.
+    a.closed().await;
+    let list = t.send(req("GET", "/api/v1/envs", None, Some(&admin))).await;
+    let env = list
+        .json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "k8s-01")
+        .unwrap();
+    assert_eq!(
+        env["agent"]["last_error"],
+        "agent serves docker; this environment expects kube"
+    );
+}
+
+#[tokio::test]
+async fn a_kube_agent_on_a_kube_environment_is_welcomed() {
+    let t = app().await;
+    let _admin = t.setup_admin().await;
+    let token = kube_agent_env(&t, "k8s-01").await;
+    let mut a = TestAgent::connect(&base(&t).await, &token).await.unwrap();
+    a.hello_serving(PROTO_MAJOR, fleetops_tunnel::control::Serves::Kube)
+        .await;
+    match a.welcome().await {
+        Msg::Welcome {
+            agent_key: Some(_),
+            env_name,
+            ..
+        } => assert_eq!(env_name, "k8s-01"),
+        m => panic!("{m:?}"),
+    }
+}
