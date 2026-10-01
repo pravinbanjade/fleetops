@@ -25,6 +25,8 @@ clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
 hex = "0.4"
 http-body-util = "0.1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 jsonschema = { version = "0.58", default-features = false }
 mime_guess = "2"
 rand = "0.8"
@@ -43,6 +45,7 @@ tokio-tungstenite = "0.29"
 tokio-util = { version = "0.7", features = ["compat"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.5", features = ["util"] }
+tower-service = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 utoipa = "5.5"
