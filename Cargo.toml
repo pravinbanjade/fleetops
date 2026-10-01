@@ -12,11 +12,13 @@ fleetops-core = { path = "crates/fleetops-core" }
 fleetops-store = { path = "crates/fleetops-store" }
 fleetops-api = { path = "crates/fleetops-api" }
 fleetops-docker = { path = "crates/fleetops-docker" }
+fleetops-tunnel = { path = "crates/fleetops-tunnel" }
 
 anyhow = "1"
 argon2 = { version = "0.5", features = ["std"] }
 async-trait = "0.1"
 bollard = "0.21"
+bytes = "1"
 axum = { version = "0.8", features = ["ws", "multipart"] }
 axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
 clap = { version = "4", features = ["derive", "env"] }
@@ -38,6 +40,7 @@ tar = "0.4"
 tempfile = "3"
 thiserror = "2"
 tokio-tungstenite = "0.29"
+tokio-util = { version = "0.7", features = ["compat"] }
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.5", features = ["util"] }
 tracing = "0.1"
@@ -45,6 +48,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 utoipa = "5.5"
 utoipa-axum = "0.2"
 uuid = { version = "1", features = ["v4"] }
+yamux = "0.14"
 
 # Release binaries ship without debug symbols (the image is about 20 MB).
 [profile.release]
