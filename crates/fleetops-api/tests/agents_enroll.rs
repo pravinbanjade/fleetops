@@ -36,10 +36,7 @@ async fn creating_an_agent_environment_returns_a_one_time_command() {
     let cmd = r.json["enrollment"]["command"].as_str().unwrap();
     assert!(cmd.contains(&format!("--server {ORIGIN}")), "{cmd}");
     // Re-running the command on a host (after a rotate) replaces the old agent.
-    assert!(
-        cmd.starts_with("docker rm -f fleetops-agent"),
-        "{cmd}"
-    );
+    assert!(cmd.starts_with("docker rm -f fleetops-agent"), "{cmd}");
     assert!(cmd.contains(&format!("--join-token {token}")), "{cmd}");
     assert!(
         cmd.contains(&format!(
