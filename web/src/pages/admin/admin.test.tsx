@@ -162,3 +162,86 @@ describe("environments", () => {
     await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
   });
 });
+
+describe("agent environments", () => {
+  const AGENT = {
+    id: 2,
+    name: "web-01",
+    kind: "docker-agent",
+    url: "agent://2",
+    created_at: 0,
+    updated_at: 0,
+    agent: {
+      connected: false,
+      enrolled: true,
+      last_seen_at: Math.floor(Date.now() / 1000) - 600,
+      agent_version: "0.2.0",
+      host: { hostname: "web-01" },
+      last_error: null,
+      join_expires_at: null,
+    },
+  };
+  const LOCAL = { ...ENVS[0], agent: null };
+  const enrollment = (token: string) => ({
+    join_token: token,
+    expires_at: Math.floor(Date.now() / 1000) + 900,
+    command: `docker run … --join-token ${token}`,
+  });
+  const agentRoutes = {
+    ...routes,
+    "GET /api/v1/envs": { json: [LOCAL, AGENT] },
+    "GET /api/v1/envs/web-01/status": { json: { state: "down", reason: "agent offline: connection lost" } },
+  };
+
+  it("adds an agent environment and shows its one-time command", async () => {
+    const calls = mockFetch({
+      ...agentRoutes,
+      "POST /api/v1/envs": { status: 201, json: { ...AGENT, agent: undefined, enrollment: enrollment("fj_abc") } },
+    });
+    const { screen } = renderApp("/admin/envs");
+    await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: /agent/i }));
+    expect(within(dialog).queryByLabelText("Docker URL")).not.toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText("Name"), "web-01");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "web-01", kind: "docker-agent" });
+    const shown = await screen.findByRole("dialog", { name: /run this on the remote host/i });
+    expect(within(shown).getByText(/--join-token fj_abc/)).toBeInTheDocument();
+    expect(within(shown).getByRole("button", { name: /copy/i })).toBeInTheDocument();
+    expect(within(shown).getByText(/expires in 1[45] min/i)).toBeInTheDocument();
+    await userEvent.click(within(shown).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("shows agent state and offers rotate only for agents", async () => {
+    mockFetch(agentRoutes);
+    const { screen } = renderApp("/admin/envs");
+    await waitFor(() => expect(row(screen, "web-01")).toBeTruthy());
+    expect(row(screen, "web-01")).toHaveTextContent("0.2.0");
+    expect(row(screen, "web-01")).toHaveTextContent("last seen 10 minutes ago");
+    expect(within(row(screen, "web-01")).getByRole("button", { name: "Rotate key" })).toBeInTheDocument();
+    expect(within(row(screen, "local")).queryByRole("button", { name: "Rotate key" })).not.toBeInTheDocument();
+  });
+
+  it("rotating asks first, then shows the new command", async () => {
+    const calls = mockFetch({ ...agentRoutes, "POST /api/v1/envs/web-01/agent/rotate": { json: enrollment("fj_new") } });
+    const { screen } = renderApp("/admin/envs");
+    await waitFor(() => expect(row(screen, "web-01")).toBeTruthy());
+    await userEvent.click(within(row(screen, "web-01")).getByRole("button", { name: "Rotate key" }));
+    const confirm = await screen.findByRole("dialog");
+    expect(confirm).toHaveTextContent(/disconnects the running agent/i);
+    await userEvent.click(within(confirm).getByRole("button", { name: "Rotate" }));
+    expect(await screen.findByText(/--join-token fj_new/)).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "POST" && c.path.endsWith("/agent/rotate"))).toBe(true);
+  });
+
+  it("an agent's URL is not editable", async () => {
+    mockFetch(agentRoutes);
+    const { screen } = renderApp("/admin/envs");
+    await waitFor(() => expect(row(screen, "web-01")).toBeTruthy());
+    await userEvent.click(within(row(screen, "web-01")).getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByLabelText("Docker URL")).not.toBeInTheDocument();
+  });
+});
