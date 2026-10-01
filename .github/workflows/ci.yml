@@ -75,6 +75,22 @@ jobs:
             web/test-results/
           retention-days: 7
 
+  rss:
+    name: Idle memory (50 containers, under 50 MiB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: make rss-bench
+
   image:
     name: Container image (amd64 and arm64)
     runs-on: ubuntu-latest
