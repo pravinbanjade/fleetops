@@ -266,7 +266,7 @@ export type EngineVersion = {
 
 export type EntryKind = 'file' | 'dir' | 'symlink' | 'other';
 
-export type EnvKind = 'docker-local';
+export type EnvKind = 'docker-local' | 'docker-agent';
 
 export type EnvStatus = {
     state: 'up';
