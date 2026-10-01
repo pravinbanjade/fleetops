@@ -40,11 +40,17 @@ impl TestAgent {
     }
 
     pub async fn hello(&mut self, proto: u16) {
+        self.hello_serving(proto, fleetops_tunnel::control::Serves::Docker)
+            .await
+    }
+
+    pub async fn hello_serving(&mut self, proto: u16, serves: fleetops_tunnel::control::Serves) {
         let host = HostInfo {
             hostname: "test-host".into(),
             os: "linux".into(),
             arch: "x86_64".into(),
             docker: "unix:///var/run/docker.sock".into(),
+            serves,
         };
         write_msg(
             &mut self.tx,

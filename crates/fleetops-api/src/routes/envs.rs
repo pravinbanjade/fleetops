@@ -140,7 +140,13 @@ pub async fn create(
             let expires_at = now_unix() + agents::JOIN_TTL_SECS;
             let rec = s
                 .store
-                .create_agent_environment(&body.name, &hash_token(&token), expires_at, now_unix())
+                .create_agent_environment(
+                    &body.name,
+                    EnvKind::DockerAgent,
+                    &hash_token(&token),
+                    expires_at,
+                    now_unix(),
+                )
                 .await?;
             let command = agents::enrollment_command(&server, &token);
             let enrollment = Enrollment {

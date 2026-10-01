@@ -28,6 +28,7 @@ fn host_info(docker: &str) -> HostInfo {
         os: std::env::consts::OS.into(),
         arch: std::env::consts::ARCH.into(),
         docker: docker.into(),
+        serves: fleetops_tunnel::control::Serves::Docker,
     }
 }
 
