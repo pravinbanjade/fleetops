@@ -86,6 +86,9 @@ impl EnvFactory for DockerEnvFactory {
     fn build(&self, id: i64, name: &str, kind: EnvKind, url: &str) -> Result<Arc<dyn Environment>> {
         match kind {
             EnvKind::DockerLocal => Ok(Arc::new(LocalDockerEnv::new(id, name, url))),
+            EnvKind::DockerAgent => Err(fleetops_core::Error::Invalid(
+                "agent environments need the agent registry".into(),
+            )),
         }
     }
 }
