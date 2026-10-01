@@ -5,82 +5,17 @@
 use crate::LocalDocker;
 use bollard::{BollardRequest, Docker, API_DEFAULT_VERSION};
 use fleetops_core::{Error, Result};
-use fleetops_tunnel::{StreamHandle, StreamOpener};
-use hyper::Uri;
+use fleetops_tunnel::{http::TunnelConnector, StreamOpener};
 use hyper_util::{
-    client::legacy::{
-        connect::{Connected, Connection},
-        Client,
-    },
-    rt::{TokioExecutor, TokioIo, TokioTimer},
+    client::legacy::Client,
+    rt::{TokioExecutor, TokioTimer},
 };
-use std::{
-    future::Future,
-    io,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 /// Seconds bollard waits for response headers (its own default).
 const REQUEST_TIMEOUT_SECS: u64 = 120;
 /// Idle pooled streams close after this (spec §2.4).
 const POOL_IDLE: Duration = Duration::from_secs(30);
-
-#[derive(Clone)]
-struct TunnelConnector(Arc<dyn StreamOpener>);
-
-impl tower_service::Service<Uri> for TunnelConnector {
-    type Response = TunnelIo;
-    type Error = io::Error;
-    type Future = Pin<Box<dyn Future<Output = io::Result<TunnelIo>> + Send>>;
-
-    fn poll_ready(&mut self, _: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, _: Uri) -> Self::Future {
-        let opener = self.0.clone();
-        Box::pin(async move { Ok(TunnelIo(TokioIo::new(opener.open().await?))) })
-    }
-}
-
-struct TunnelIo(TokioIo<StreamHandle>);
-
-impl Connection for TunnelIo {
-    fn connected(&self) -> Connected {
-        Connected::new()
-    }
-}
-
-impl hyper::rt::Read for TunnelIo {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: hyper::rt::ReadBufCursor<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.0).poll_read(cx, buf)
-    }
-}
-
-impl hyper::rt::Write for TunnelIo {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.0).poll_write(cx, buf)
-    }
-
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.0).poll_flush(cx)
-    }
-
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.0).poll_shutdown(cx)
-    }
-}
 
 impl LocalDocker {
     /// A client for the Docker endpoint at the far end of an agent tunnel.
@@ -89,7 +24,7 @@ impl LocalDocker {
             Client::builder(TokioExecutor::new())
                 .pool_idle_timeout(POOL_IDLE)
                 .pool_timer(TokioTimer::new())
-                .build(TunnelConnector(opener)),
+                .build(TunnelConnector::new(opener)),
         );
         let client = Docker::connect_with_custom_transport(
             move |req: BollardRequest| {

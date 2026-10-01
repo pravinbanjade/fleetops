@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: Namespace
+metadata: { name: fleetops-it }
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: fleetops-it, namespace: fleetops-it }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: fleetops-it }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cluster-admin }
+subjects: [{ kind: ServiceAccount, name: fleetops-it, namespace: fleetops-it }]
+---
+# Can read pods in fleetops-it only: lists elsewhere are 403.
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: fleetops-it-narrow, namespace: fleetops-it }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: pods-read, namespace: fleetops-it }
+rules: [{ apiGroups: [""], resources: [pods], verbs: [get, list] }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: narrow-pods-read, namespace: fleetops-it }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: pods-read }
+subjects: [{ kind: ServiceAccount, name: fleetops-it-narrow, namespace: fleetops-it }]
+---
+# Two containers; `main` is first, so it is the default for logs and exec.
+apiVersion: v1
+kind: Pod
+metadata: { name: ticker, namespace: fleetops-it, labels: { app: ticker } }
+spec:
+  terminationGracePeriodSeconds: 1
+  containers:
+    - name: main
+      image: busybox:1.37
+      imagePullPolicy: IfNotPresent
+      command: [sh, -c, 'i=0; while true; do echo "tick $i"; i=$((i+1)); sleep 1; done']
+    - name: side
+      image: busybox:1.37
+      imagePullPolicy: IfNotPresent
+      command: [sh, -c, 'while true; do echo side; sleep 5; done']
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: web, namespace: fleetops-it }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: web } }
+  template:
+    metadata: { labels: { app: web } }
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - name: web
+          image: busybox:1.37
+          imagePullPolicy: IfNotPresent
+          command: [sh, -c, 'while true; do echo serving; sleep 10; done']
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: db, namespace: fleetops-it }
+spec:
+  replicas: 1
+  serviceName: db
+  selector: { matchLabels: { app: db } }
+  template:
+    metadata: { labels: { app: db } }
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - { name: db, image: busybox:1.37, imagePullPolicy: IfNotPresent, command: [sleep, "3600"] }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: { name: agentd, namespace: fleetops-it }
+spec:
+  selector: { matchLabels: { app: agentd } }
+  template:
+    metadata: { labels: { app: agentd } }
+    spec:
+      terminationGracePeriodSeconds: 1
+      containers:
+        - { name: agentd, image: busybox:1.37, imagePullPolicy: IfNotPresent, command: [sleep, "3600"] }
+---
+apiVersion: batch/v1
+kind: Job
+metadata: { name: once, namespace: fleetops-it }
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - { name: once, image: busybox:1.37, imagePullPolicy: IfNotPresent, command: [echo, done] }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: nightly, namespace: fleetops-it }
+spec:
+  schedule: "0 3 * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - { name: nightly, image: busybox:1.37, imagePullPolicy: IfNotPresent, command: [echo, nightly] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web, namespace: fleetops-it }
+spec:
+  selector: { app: web }
+  ports: [{ name: http, port: 80, targetPort: 8080 }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: web, namespace: fleetops-it }
+spec:
+  rules:
+    - host: web.example.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: web, port: { number: 80 } } }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: settings, namespace: fleetops-it }
+data: { mode: production }
+---
+# Applied with `kubectl apply`, so its last-applied annotation holds the value.
+apiVersion: v1
+kind: Secret
+metadata: { name: creds, namespace: fleetops-it }
+stringData: { password: hunter2-do-not-leak }
