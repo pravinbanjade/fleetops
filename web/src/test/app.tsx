@@ -15,7 +15,7 @@ export const loggedIn = {
   "GET /api/v1/auth/status": { json: { setup_required: false, setup_open: false } },
   "GET /api/v1/auth/me": { json: ADMIN },
   "GET /api/v1/envs": { json: ENVS },
-  "GET /api/v1/envs/local/status": { json: { state: "up", version: { version: "29.5.2", api_version: "1.52", os: "linux", arch: "arm64" } } },
+  "GET /api/v1/envs/local/status": { json: { state: "up", version: { kind: "docker", version: "29.5.2", api_version: "1.52", os: "linux", arch: "arm64" } } },
   "GET /api/v1/envs/local/info": { json: {} },
   "GET /api/v1/envs/local/df": { json: {} },
   "GET /api/v1/envs/local/volumes": { json: [] },

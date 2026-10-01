@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use fleetops_core::docker::*;
-use fleetops_core::env::{EnvFactory, EnvKind, EnvStatus, Environment};
+use fleetops_core::env::{EnvFactory, EnvKind, EnvSpec, EnvStatus, EnvVersion, Environment};
 use fleetops_core::{Error, Result};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -32,6 +32,8 @@ pub struct FakeDocker {
     pub release_pulls: Arc<Notify>,
     /// Notified to say reachability changed (Environment::wait_change).
     pub changed: Notify,
+    /// Every spec the factory was asked to build, oldest first.
+    pub built: Mutex<Vec<EnvSpec>>,
 }
 
 fn not_found(kind: &str, id: &str) -> Error {
@@ -59,6 +61,11 @@ pub fn summary(id: &str, name: &str, state: &str, project: Option<&str>) -> Cont
 }
 
 impl FakeDocker {
+    /// The specs built so far.
+    pub fn built(&self) -> Vec<EnvSpec> {
+        self.built.lock().unwrap().clone()
+    }
+
     pub fn new() -> Arc<Self> {
         let f = FakeDocker::default();
         f.reachable.store(true, Ordering::SeqCst);
@@ -380,7 +387,7 @@ impl Environment for FakeEnv {
     async fn status(&self) -> EnvStatus {
         if self.docker.reachable.load(Ordering::SeqCst) {
             EnvStatus::Up {
-                version: self.docker.version().await.unwrap(),
+                version: EnvVersion::Docker(self.docker.version().await.unwrap()),
             }
         } else {
             EnvStatus::Down {
@@ -403,16 +410,11 @@ impl Environment for FakeEnv {
 pub struct FakeFactory(pub Arc<FakeDocker>);
 
 impl EnvFactory for FakeFactory {
-    fn build(
-        &self,
-        id: i64,
-        name: &str,
-        _kind: EnvKind,
-        _url: &str,
-    ) -> Result<Arc<dyn Environment>> {
+    fn build(&self, spec: &EnvSpec) -> Result<Arc<dyn Environment>> {
+        self.0.built.lock().unwrap().push(spec.clone());
         Ok(Arc::new(FakeEnv {
-            id,
-            name: name.into(),
+            id: spec.id,
+            name: spec.name.clone(),
             docker: self.0.clone(),
         }))
     }

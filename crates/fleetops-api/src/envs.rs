@@ -1,6 +1,6 @@
 //! Live environments, keyed by name, built from the `environments` table.
 
-use fleetops_core::env::{EnvFactory, EnvKind, EnvStatus, Environment};
+use fleetops_core::env::{Credential, EnvFactory, EnvKind, EnvSpec, EnvStatus, Environment};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::{EnvironmentRecord, Store};
 use std::{
@@ -25,18 +25,33 @@ impl EnvRegistry {
         }
     }
 
-    /// Builds every stored environment. Called once at startup.
+    /// Builds every stored environment, each with its credential. Called
+    /// once at startup.
     pub async fn load(&self, store: &Store) -> Result<()> {
         for rec in store.list_environments().await? {
-            self.insert(&rec)?;
+            let credential = store.env_credential(rec.id).await?;
+            self.insert(&rec, credential)?;
         }
         Ok(())
     }
 
+    fn spec(rec: &EnvironmentRecord, credential: Option<Credential>) -> Result<EnvSpec> {
+        Ok(EnvSpec {
+            id: rec.id,
+            name: rec.name.clone(),
+            kind: rec.kind.parse()?,
+            url: rec.url.clone(),
+            credential,
+        })
+    }
+
     /// Adds or replaces the live environment for `rec`.
-    pub fn insert(&self, rec: &EnvironmentRecord) -> Result<Arc<dyn Environment>> {
-        let kind: EnvKind = rec.kind.parse()?;
-        let env = self.factory.build(rec.id, &rec.name, kind, &rec.url)?;
+    pub fn insert(
+        &self,
+        rec: &EnvironmentRecord,
+        credential: Option<Credential>,
+    ) -> Result<Arc<dyn Environment>> {
+        let env = self.factory.build(&Self::spec(rec, credential)?)?;
         self.envs
             .write()
             .unwrap()
@@ -52,9 +67,13 @@ impl EnvRegistry {
 
     /// Swaps the entry `old_name` for `rec` in one step, so requests never
     /// see a moment with neither entry.
-    pub fn replace(&self, old_name: &str, rec: &EnvironmentRecord) -> Result<Arc<dyn Environment>> {
-        let kind: EnvKind = rec.kind.parse()?;
-        let env = self.factory.build(rec.id, &rec.name, kind, &rec.url)?;
+    pub fn replace(
+        &self,
+        old_name: &str,
+        rec: &EnvironmentRecord,
+        credential: Option<Credential>,
+    ) -> Result<Arc<dyn Environment>> {
+        let env = self.factory.build(&Self::spec(rec, credential)?)?;
         let mut envs = self.envs.write().unwrap();
         envs.remove(old_name);
         envs.insert(rec.name.clone(), env.clone());
@@ -88,9 +107,13 @@ pub async fn bootstrap_local(
     if !store.list_environments().await?.is_empty() {
         return Ok(None);
     }
-    let probe = registry
-        .factory
-        .build(0, LOCAL_ENV_NAME, EnvKind::DockerLocal, url)?;
+    let probe = registry.factory.build(&EnvSpec {
+        id: 0,
+        name: LOCAL_ENV_NAME.into(),
+        kind: EnvKind::DockerLocal,
+        url: url.into(),
+        credential: None,
+    })?;
     match probe.status().await {
         EnvStatus::Up { .. } => {
             let rec = store
@@ -101,7 +124,7 @@ pub async fn bootstrap_local(
                     now_unix(),
                 )
                 .await?;
-            registry.insert(&rec)?;
+            registry.insert(&rec, None)?;
             Ok(Some(rec))
         }
         EnvStatus::Down { reason } => {

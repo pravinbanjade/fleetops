@@ -71,6 +71,9 @@ pub struct LogOptions {
     pub timestamps: bool,
     pub stdout: bool,
     pub stderr: bool,
+    /// Kubernetes only: the container; `None` is the pod's first. Docker
+    /// ignores it.
+    pub container: Option<String>,
 }
 
 impl Default for LogOptions {
@@ -82,6 +85,7 @@ impl Default for LogOptions {
             timestamps: false,
             stdout: true,
             stderr: true,
+            container: None,
         }
     }
 }
@@ -94,6 +98,9 @@ pub struct ExecOptions {
     pub user: Option<String>,
     pub cols: u16,
     pub rows: u16,
+    /// Kubernetes only: the container; `None` is the pod's first. Docker
+    /// ignores it.
+    pub container: Option<String>,
 }
 
 impl Default for ExecOptions {
@@ -103,6 +110,7 @@ impl Default for ExecOptions {
             user: None,
             cols: 80,
             rows: 24,
+            container: None,
         }
     }
 }

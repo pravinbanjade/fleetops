@@ -159,7 +159,7 @@ fn text(out: protocol::Out) -> Value {
 fn websocket_messages_match_their_schemas() {
     let task = json!({"id": "t1", "kind": "image.pull", "env": "local", "target": "nginx:latest",
         "status": "succeeded", "error": null, "created_at": 1, "finished_at": 2});
-    let up = json!({"state": "up", "version": {"version": "27", "api_version": "1.47", "os": "linux", "arch": "arm64"}});
+    let up = json!({"state": "up", "version": {"kind": "docker", "version": "27", "api_version": "1.47", "os": "linux", "arch": "arm64"}});
     let server = [
         protocol::data(1, json!({"kind": "container"})),
         protocol::gap(1, 12),
