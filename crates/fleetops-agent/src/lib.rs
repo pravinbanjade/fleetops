@@ -5,6 +5,7 @@ pub mod backoff;
 pub mod config;
 pub mod creds;
 mod dial;
+pub mod kube_proxy;
 mod session;
 
 pub use config::Config;

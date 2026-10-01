@@ -1,0 +1,24 @@
+[package]
+name = "fleetops-kube"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+# The cluster suite: `make test-kube`.
+kube-it = []
+
+[dependencies]
+fleetops-core.workspace = true
+fleetops-tunnel.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+k8s-openapi.workspace = true
+kube.workspace = true
+tower.workspace = true
+
+[dev-dependencies]
+fleetops-agent = { path = "../fleetops-agent" }
+futures-util = { workspace = true, features = ["io", "sink"] }
+rustls.workspace = true
+tokio.workspace = true

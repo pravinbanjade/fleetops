@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi
+.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -47,6 +47,14 @@ e2e: build
 # The idle memory targets: a release build managing 50 containers on the
 # current docker context's daemon stays under 50 MiB of RSS, plus 1 MiB per
 # agent with 10 agents connected; one idle agent stays under 15 MiB.
+KUBE_IT ?= $(CURDIR)/target/kube-it
+
+kind-up:
+	scripts/kind-up.sh $(KUBE_IT)
+
+test-kube: kind-up
+	FLEETOPS_KUBE_IT=$(KUBE_IT) cargo test -p fleetops-kube --features kube-it --test kube_it -- --test-threads=4
+
 rss-bench: build
 	cargo build --release -p fleetops-agent
 	scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
