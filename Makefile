@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker test-web e2e rss-bench lint fmt build image image-smoke openapi
+.PHONY: dev dev-server dev-web web test test-docker test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -24,24 +24,33 @@ test-web:
 	pnpm -C web test
 	pnpm -C web check:api
 
-# Integration tests against the Docker daemon of the current docker context.
+# Integration tests against the Docker daemon of the current docker context;
+# the Docker suite runs twice, the second time through an agent tunnel.
 test-docker:
 	DOCKER_HOST=$$(docker context inspect --format '{{.Endpoints.docker.Host}}') \
-		sh -c 'cargo test -p fleetops-docker --features docker-it --test docker_it && cargo test -p fleetops-server --features docker-it --test live'
+		sh -c 'cargo test -p fleetops-docker --features docker-it --test docker_it && \
+		FLEETOPS_IT_TUNNEL=1 cargo test -p fleetops-docker --features docker-it --test docker_it && \
+		cargo test -p fleetops-server --features docker-it --test live'
 
 # The Playwright end-to-end test: a release build with the UI embedded,
 # driven in Chromium against the current docker context's daemon. It pulls
-# busybox and creates (then removes) one container named fleetops-e2e-*.
+# busybox and creates (then removes) containers named fleetops-e2e-*; the
+# second spec enrolls a real fleetops-agent against the same daemon.
 e2e: build
+	cargo build --release -p fleetops-agent
 	pnpm -C web exec playwright install chromium
 	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
 		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
+		FLEETOPS_AGENT_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops-agent \
 		pnpm -C web exec playwright test
 
-# The idle memory target: a release build managing 50 containers on the
-# current docker context's daemon must stay under 50 MiB of RSS.
+# The idle memory targets: a release build managing 50 containers on the
+# current docker context's daemon stays under 50 MiB of RSS, plus 1 MiB per
+# agent with 10 agents connected; one idle agent stays under 15 MiB.
 rss-bench: build
-	scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops
+	cargo build --release -p fleetops-agent
+	scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
+		$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops-agent
 
 lint:
 	cargo fmt --all --check
@@ -73,9 +82,20 @@ IMAGE ?= fleetops:dev
 PLATFORMS ?= linux/amd64,linux/arm64
 
 image:
-	docker buildx build --platform $(PLATFORMS) --tag $(IMAGE) --load .
+	docker buildx build --platform $(PLATFORMS) --target server --tag $(IMAGE) --load .
+
+# The agent image, from the same build as the server's.
+AGENT_IMAGE ?= fleetops-agent:dev
+
+image-agent:
+	docker buildx build --platform $(PLATFORMS) --target agent --tag $(AGENT_IMAGE) --load .
 
 # Runs $(IMAGE) against the local daemon's socket and checks that it
 # serves the UI and reaches Docker as its non-root user.
 image-smoke:
 	scripts/image-smoke.sh $(IMAGE)
+
+# Runs $(IMAGE) and $(AGENT_IMAGE) together on the local daemon and checks
+# that the agent enrolls and its environment reaches Docker.
+agent-smoke:
+	scripts/agent-smoke.sh $(IMAGE) $(AGENT_IMAGE)

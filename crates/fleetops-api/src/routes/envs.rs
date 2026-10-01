@@ -1,14 +1,19 @@
+use crate::agents::{self, AgentView, CreatedEnv, Enrollment, EnvView};
 use crate::openapi::EnvParam;
 use crate::{
-    auth::extract::CurrentUser,
+    auth::{extract::CurrentUser, token::hash_token},
     authz::{authorize, Action},
     extract::{ApiJson, ApiPath},
     routes::audit,
     ApiResult, AppState,
 };
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    Json,
+};
 use fleetops_core::env::{validate_env_name, validate_env_url, EnvKind, EnvStatus};
-use fleetops_core::now_unix;
+use fleetops_core::{now_unix, Error};
 use fleetops_store::EnvironmentRecord;
 use serde::Deserialize;
 use utoipa::ToSchema;
@@ -17,7 +22,9 @@ use utoipa::ToSchema;
 pub struct CreateEnv {
     pub name: String,
     pub kind: EnvKind,
-    pub url: String,
+    /// The Docker URL of a local environment; agent environments take none.
+    #[serde(default)]
+    pub url: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -26,20 +33,72 @@ pub struct UpdateEnv {
     pub url: Option<String>,
 }
 
+/// The URL agents should dial: the origin the admin's browser used.
+fn server_url(headers: &HeaderMap) -> ApiResult<String> {
+    headers
+        .get(axum::http::header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .filter(|o| o.starts_with("https://") || o.starts_with("http://"))
+        .map(str::to_string)
+        .ok_or_else(|| {
+            Error::Invalid("an Origin header is needed to build the agent command".into()).into()
+        })
+}
+
+/// A fresh join token for `env_id`, stored as its only credential when
+/// `rotate` is set, with the command that uses it.
+async fn new_enrollment(
+    s: &AppState,
+    headers: &HeaderMap,
+    env_id: i64,
+    rotate: bool,
+) -> ApiResult<Enrollment> {
+    let server = server_url(headers)?;
+    let token = agents::new_join_token();
+    let expires_at = now_unix() + agents::JOIN_TTL_SECS;
+    if rotate {
+        s.store
+            .rotate_agent(env_id, &hash_token(&token), expires_at)
+            .await?;
+    }
+    let command = agents::enrollment_command(&server, &token);
+    Ok(Enrollment {
+        join_token: token,
+        expires_at,
+        command,
+    })
+}
+
 #[utoipa::path(
     get,
     path = "/envs",
     operation_id = "listEnvs",
     tag = "environments",
     summary = "List environments",
-    responses((status = 200, description = "All environments", body = Vec<EnvironmentRecord>))
+    responses((status = 200, description = "All environments; agent environments include their agent's state", body = Vec<EnvView>))
 )]
-pub async fn list(
-    State(s): State<AppState>,
-    cu: CurrentUser,
-) -> ApiResult<Json<Vec<EnvironmentRecord>>> {
+pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<Vec<EnvView>>> {
     authorize(&cu.user, None, Action::EnvRead)?;
-    Ok(Json(s.store.list_environments().await?))
+    let mut agents: std::collections::HashMap<i64, _> = s
+        .store
+        .list_agents()
+        .await?
+        .into_iter()
+        .map(|a| (a.environment_id, a))
+        .collect();
+    let views = s
+        .store
+        .list_environments()
+        .await?
+        .into_iter()
+        .map(|env| {
+            let agent = agents
+                .remove(&env.id)
+                .map(|a| AgentView::new(a, s.agents.get(env.id).is_some()));
+            EnvView { env, agent }
+        })
+        .collect();
+    Ok(Json(views))
 }
 
 #[utoipa::path(
@@ -49,21 +108,49 @@ pub async fn list(
     tag = "environments",
     summary = "Add an environment",
     request_body = CreateEnv,
-    responses((status = 201, description = "Created", body = EnvironmentRecord))
+    responses((status = 201, description = "Created; an agent environment includes its one-time enrollment", body = CreatedEnv))
 )]
 pub async fn create(
     State(s): State<AppState>,
     cu: CurrentUser,
+    headers: HeaderMap,
     ApiJson(body): ApiJson<CreateEnv>,
-) -> ApiResult<(StatusCode, Json<EnvironmentRecord>)> {
+) -> ApiResult<(StatusCode, Json<CreatedEnv>)> {
     authorize(&cu.user, None, Action::EnvManage)?;
     validate_env_name(&body.name)?;
-    validate_env_url(&body.url)?;
     let _guard = s.envs.lock_mutations().await;
-    let rec = s
-        .store
-        .create_environment(&body.name, body.kind.as_str(), &body.url, now_unix())
-        .await?;
+    let (rec, enrollment) = match body.kind {
+        EnvKind::DockerLocal => {
+            let url = body
+                .url
+                .ok_or_else(|| Error::Invalid("a local environment needs a Docker URL".into()))?;
+            validate_env_url(&url)?;
+            let rec = s
+                .store
+                .create_environment(&body.name, body.kind.as_str(), &url, now_unix())
+                .await?;
+            (rec, None)
+        }
+        EnvKind::DockerAgent => {
+            if body.url.is_some() {
+                return Err(Error::Invalid("an agent environment takes no URL".into()).into());
+            }
+            let server = server_url(&headers)?;
+            let token = agents::new_join_token();
+            let expires_at = now_unix() + agents::JOIN_TTL_SECS;
+            let rec = s
+                .store
+                .create_agent_environment(&body.name, &hash_token(&token), expires_at, now_unix())
+                .await?;
+            let command = agents::enrollment_command(&server, &token);
+            let enrollment = Enrollment {
+                join_token: token,
+                expires_at,
+                command,
+            };
+            (rec, Some(enrollment))
+        }
+    };
     s.envs.insert(&rec)?;
     audit(
         &s,
@@ -74,7 +161,13 @@ pub async fn create(
         "success",
     )
     .await;
-    Ok((StatusCode::CREATED, Json(rec)))
+    Ok((
+        StatusCode::CREATED,
+        Json(CreatedEnv {
+            env: rec,
+            enrollment,
+        }),
+    ))
 }
 
 async fn find(s: &AppState, name: &str) -> ApiResult<EnvironmentRecord> {
@@ -101,10 +194,15 @@ pub async fn update(
     authorize(&cu.user, None, Action::EnvManage)?;
     let _guard = s.envs.lock_mutations().await;
     let current = find(&s, &name).await?;
+    if current.kind == EnvKind::DockerAgent.as_str() && body.url.is_some() {
+        return Err(Error::Invalid("an agent environment's URL cannot be changed".into()).into());
+    }
     let new_name = body.name.unwrap_or(current.name.clone());
     let new_url = body.url.unwrap_or(current.url.clone());
     validate_env_name(&new_name)?;
-    validate_env_url(&new_url)?;
+    if new_url != current.url {
+        validate_env_url(&new_url)?;
+    }
     let rec = s
         .store
         .update_environment(current.id, &new_name, &new_url, now_unix())
@@ -141,6 +239,7 @@ pub async fn remove(
     let current = find(&s, &name).await?;
     s.store.delete_environment(current.id).await?;
     s.envs.remove(&current.name);
+    s.agents.revoke(current.id);
     audit(
         &s,
         Some(cu.user.id),
@@ -170,4 +269,39 @@ pub async fn status(
     let env = s.envs.get(&name)?;
     authorize(&cu.user, Some(env.id()), Action::EnvRead)?;
     Ok(Json(env.status().await))
+}
+
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/agent/rotate",
+    operation_id = "rotateAgent",
+    tag = "environments",
+    summary = "Revoke an agent's key and issue a new join command",
+    params(EnvParam),
+    responses((status = 200, description = "The new one-time enrollment", body = Enrollment))
+)]
+pub async fn rotate_agent(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    headers: HeaderMap,
+    ApiPath(name): ApiPath<String>,
+) -> ApiResult<Json<Enrollment>> {
+    authorize(&cu.user, None, Action::EnvManage)?;
+    let _guard = s.envs.lock_mutations().await;
+    let current = find(&s, &name).await?;
+    if current.kind != EnvKind::DockerAgent.as_str() {
+        return Err(Error::Invalid(format!("'{name}' is not an agent environment")).into());
+    }
+    let enrollment = new_enrollment(&s, &headers, current.id, true).await?;
+    s.agents.revoke(current.id);
+    audit(
+        &s,
+        Some(cu.user.id),
+        "agent.rotate",
+        "environment",
+        &current.name,
+        "success",
+    )
+    .await;
+    Ok(Json(enrollment))
 }

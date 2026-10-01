@@ -143,3 +143,31 @@ async fn quick_restart_is_announced_even_when_status_never_fails() {
         assert_eq!(up["status"]["state"], "up", "round {round}");
     }
 }
+
+#[tokio::test]
+async fn a_reachability_change_cuts_the_reconnect_backoff_short() {
+    let t = app_with(fleetops_api::ApiConfig {
+        ws_backoff: std::time::Duration::from_secs(20),
+        ..ws_config()
+    })
+    .await;
+    let admin = t.with_local().await;
+    let mut ws = Ws::open(t.serve().await, &admin).await;
+    ws.send(ws_sub(1, "events", None, Value::Null)).await;
+    eventually("events stream", || t.fake.open_event_streams() == 1).await;
+    t.fake.reachable.store(false, Ordering::SeqCst);
+    t.fake.end_event_streams();
+    let down = ws.until(|v| v["type"] == "env_status").await;
+    assert_eq!(down["status"]["state"], "down");
+
+    // Back, and the environment says so: no 20 s wait.
+    t.fake.reachable.store(true, Ordering::SeqCst);
+    t.fake.changed.notify_waiters();
+    let up = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        ws.until(|v| v["type"] == "env_status"),
+    )
+    .await
+    .expect("the backoff was not cut short");
+    assert_eq!(up["status"]["state"], "up");
+}

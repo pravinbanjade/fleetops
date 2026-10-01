@@ -49,8 +49,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=fleetops-cargo-regist
     # them makes cargo rebuild this checkout's crates (dependencies stay
     # cached) instead of reusing another checkout's newer build.
     find crates -type f -exec touch {} + && \
-    cargo zigbuild --locked --release -p fleetops-server --target "$target" && \
-    cp "target/$target/release/fleetops" /fleetops
+    cargo zigbuild --locked --release -p fleetops-server -p fleetops-agent --target "$target" && \
+    cp "target/$target/release/fleetops" /fleetops && \
+    cp "target/$target/release/fleetops-agent" /fleetops-agent
 # The data directory, owned by distroless's nonroot user (65532).
 RUN mkdir -p /data
 
@@ -59,7 +60,21 @@ RUN mkdir -p /data
 FROM scratch AS binary
 COPY --from=build /fleetops /fleetops
 
-FROM gcr.io/distroless/static-debian13:nonroot
+# The bare agent binary, for release downloads.
+FROM scratch AS agent-binary
+COPY --from=build /fleetops-agent /fleetops-agent
+
+# The agent image: dials out to a FleetOps server and serves this host's
+# Docker socket. Build it with `make image-agent`.
+FROM gcr.io/distroless/static-debian13:nonroot AS agent
+COPY --from=build /fleetops-agent /fleetops-agent
+COPY --from=build --chown=65532:65532 /data /data
+VOLUME /data
+USER nonroot
+ENTRYPOINT ["/fleetops-agent"]
+
+# The server image, and the default target.
+FROM gcr.io/distroless/static-debian13:nonroot AS server
 COPY --from=build /fleetops /fleetops
 COPY --from=build --chown=65532:65532 /data /data
 VOLUME /data

@@ -10,13 +10,17 @@ docker-it = []
 
 [dependencies]
 fleetops-core.workspace = true
+fleetops-tunnel.workspace = true
 async-trait.workspace = true
 bollard.workspace = true
 futures-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tar.workspace = true
 tokio.workspace = true
+tower-service.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
