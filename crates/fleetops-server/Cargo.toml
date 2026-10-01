@@ -18,6 +18,7 @@ fleetops-store.workspace = true
 fleetops-api.workspace = true
 fleetops-docker.workspace = true
 fleetops-tunnel.workspace = true
+fleetops-kube.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 axum-server.workspace = true

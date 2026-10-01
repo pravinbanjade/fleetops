@@ -262,3 +262,28 @@ async fn a_narrow_token_gets_the_rbac_reason() {
         other => panic!("expected forbidden, got {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn a_kubeconfig_environment_is_up_with_its_nodes() {
+    use fleetops_core::env::{Credential, EnvFactory, EnvKind, EnvSpec, EnvStatus, EnvVersion};
+    let p = fleetops_kube::kubeconfig::prepare(&common::read("kubeconfig"), None).unwrap();
+    let f = fleetops_kube::env::KubeEnvFactory::new(Default::default());
+    let env = f
+        .build(&EnvSpec {
+            id: 9,
+            name: "kind".into(),
+            kind: EnvKind::KubeConfig,
+            url: p.summary.server.clone(),
+            credential: Some(Credential::Kubeconfig(p.yaml)),
+        })
+        .unwrap();
+    match env.status().await {
+        EnvStatus::Up {
+            version: EnvVersion::Kube(v),
+        } => {
+            assert!(v.nodes >= 1 && v.nodes_ready >= 1, "{v:?}");
+            assert!(v.git_version.starts_with('v'));
+        }
+        other => panic!("{other:?}"),
+    }
+}
