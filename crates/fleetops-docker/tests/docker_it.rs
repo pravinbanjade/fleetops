@@ -73,7 +73,7 @@ fn sleeper(name: &str) -> ContainerSpec {
 
 #[tokio::test]
 async fn environment_status_is_up() {
-    let env = DockerEnvFactory
+    let env = DockerEnvFactory::default()
         .build(1, "local", EnvKind::DockerLocal, &host())
         .unwrap();
     match env.status().await {
@@ -409,7 +409,7 @@ async fn daemon_loss_mid_session_is_unavailable_then_recovers() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("docker.sock");
     let proxy = socket_proxy(sock.clone());
-    let env = DockerEnvFactory
+    let env = DockerEnvFactory::default()
         .build(
             1,
             "flaky",

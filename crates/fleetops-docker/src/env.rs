@@ -80,15 +80,29 @@ impl Environment for LocalDockerEnv {
     }
 }
 
-pub struct DockerEnvFactory;
+/// Builds local and agent environments. Agent environments read their
+/// live sessions from `agents`, which the server shares with the connect
+/// handler.
+#[derive(Default)]
+pub struct DockerEnvFactory {
+    agents: Arc<fleetops_tunnel::registry::Registry>,
+}
+
+impl DockerEnvFactory {
+    pub fn new(agents: Arc<fleetops_tunnel::registry::Registry>) -> Self {
+        Self { agents }
+    }
+}
 
 impl EnvFactory for DockerEnvFactory {
     fn build(&self, id: i64, name: &str, kind: EnvKind, url: &str) -> Result<Arc<dyn Environment>> {
         match kind {
             EnvKind::DockerLocal => Ok(Arc::new(LocalDockerEnv::new(id, name, url))),
-            EnvKind::DockerAgent => Err(fleetops_core::Error::Invalid(
-                "agent environments need the agent registry".into(),
-            )),
+            EnvKind::DockerAgent => Ok(Arc::new(crate::AgentDockerEnv::new(
+                id,
+                name,
+                self.agents.clone(),
+            ))),
         }
     }
 }
@@ -98,7 +112,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_socket_is_down_not_an_error() {
-        let env = DockerEnvFactory
+        let env = DockerEnvFactory::default()
             .build(
                 1,
                 "local",

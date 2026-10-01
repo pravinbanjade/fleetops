@@ -19,7 +19,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             hsts: config.hsts,
             ..ApiConfig::default()
         },
-        Arc::new(DockerEnvFactory),
+        Arc::new(DockerEnvFactory::default()),
     );
     state.envs.load(&store).await?;
     if let Some(env) = bootstrap_local(&store, &state.envs, &config.docker_host).await? {

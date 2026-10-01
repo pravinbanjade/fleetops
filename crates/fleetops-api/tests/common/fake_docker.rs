@@ -30,6 +30,8 @@ pub struct FakeDocker {
     pub streams: Mutex<FakeStreams>,
     pub hold_pulls: AtomicBool,
     pub release_pulls: Arc<Notify>,
+    /// Notified to say reachability changed (Environment::wait_change).
+    pub changed: Notify,
 }
 
 fn not_found(kind: &str, id: &str) -> Error {
@@ -385,6 +387,9 @@ impl Environment for FakeEnv {
                 reason: "fake is unreachable".into(),
             }
         }
+    }
+    async fn wait_change(&self) {
+        self.docker.changed.notified().await
     }
     fn docker(&self) -> Option<Arc<dyn DockerOps>> {
         self.docker
