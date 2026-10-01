@@ -11,6 +11,7 @@ import {
 import { ApiError } from "@/api/client";
 import { authStatusQuery, envsQuery, meQuery } from "@/api/queries";
 import { Shell } from "@/components/Shell";
+import { isKube } from "@/lib/env";
 import { LiveProvider } from "@/live/LiveProvider";
 import { TaskProvider } from "@/live/TaskProvider";
 import { LoginPage } from "@/pages/LoginPage";
@@ -107,13 +108,36 @@ const shellRoute = createRoute({
 export const envRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/envs/$env",
+  // A Kubernetes environment has no Docker pages and a Docker one no
+  // Kubernetes pages: an old link or a changed kind lands on the home page.
+  beforeLoad: async ({ context, params, location }) => {
+    const envs = await context.queryClient.ensureQueryData(envsQuery);
+    const env = envs.find((e) => e.name === params.env);
+    if (!env) return;
+    const rest = location.pathname.slice(`/envs/${encodeURIComponent(params.env)}`.length);
+    const home = rest === "" || rest === "/";
+    const kubePage = rest.startsWith("/k8s/");
+    if (!home && kubePage !== isKube(env.kind)) throw redirect({ to: "/envs/$env", params: { env: params.env } });
+  },
   component: Outlet,
 });
 
 const dashboardRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "/",
-  component: lazyRouteComponent(() => import("@/pages/DashboardPage"), "DashboardPage"),
+  component: lazyRouteComponent(() => import("@/pages/EnvHome"), "EnvHome"),
+});
+
+const kubeListRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "k8s/$kind",
+  component: lazyRouteComponent(() => import("@/pages/kube/KubeListPage"), "KubeListPage"),
+});
+
+const kubeObjectRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "k8s/$kind/$ns/$name",
+  component: lazyRouteComponent(() => import("@/pages/kube/KubeListPage"), "KubeListPage"),
 });
 
 const containersRoute = createRoute({
@@ -247,6 +271,8 @@ const routeTree = rootRoute.addChildren([
         networksRoute,
         networkRoute,
         composeRoute,
+        kubeListRoute,
+        kubeObjectRoute,
       ]),
       adminRoute.addChildren([usersRoute, envsAdminRoute, auditRoute]),
       accountRoute,

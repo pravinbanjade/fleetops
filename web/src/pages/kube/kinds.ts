@@ -1,0 +1,37 @@
+import type { KubeKind } from "@/api/gen/types.gen";
+
+export const KUBE_KINDS: readonly KubeKind[] = [
+  "namespaces", "nodes", "deployments", "statefulsets", "daemonsets", "jobs", "cronjobs",
+  "pods", "services", "ingresses", "configmaps", "secrets",
+];
+export const WORKLOADS: readonly KubeKind[] = ["deployments", "statefulsets", "daemonsets", "jobs", "cronjobs"];
+export const CLUSTER_SCOPED: readonly KubeKind[] = ["namespaces", "nodes"];
+export const SCALABLE: readonly KubeKind[] = ["deployments", "statefulsets"];
+export const RESTARTABLE: readonly KubeKind[] = ["deployments", "statefulsets", "daemonsets"];
+
+export const KIND_LABEL: Record<KubeKind, string> = {
+  namespaces: "Namespaces", nodes: "Nodes", deployments: "Deployments", statefulsets: "StatefulSets",
+  daemonsets: "DaemonSets", jobs: "Jobs", cronjobs: "CronJobs", pods: "Pods", services: "Services",
+  ingresses: "Ingresses", configmaps: "ConfigMaps", secrets: "Secrets",
+};
+
+/** Kind-specific columns: [key in KubeRow.columns, header]. */
+export const KIND_COLUMNS: Record<KubeKind, [string, string][]> = {
+  namespaces: [],
+  nodes: [["roles", "Roles"], ["version", "Version"], ["internal_ip", "Internal IP"]],
+  deployments: [["ready", "Ready"], ["up_to_date", "Up-to-date"], ["available", "Available"]],
+  statefulsets: [["ready", "Ready"]],
+  daemonsets: [["desired", "Desired"], ["current", "Current"], ["ready", "Ready"], ["available", "Available"]],
+  jobs: [["completions", "Completions"]],
+  cronjobs: [["schedule", "Schedule"], ["active", "Active"], ["last_schedule", "Last schedule"]],
+  pods: [["ready", "Ready"], ["restarts", "Restarts"], ["node", "Node"], ["ip", "IP"]],
+  services: [["cluster_ip", "Cluster IP"], ["external_ip", "External IP"], ["ports", "Ports"]],
+  ingresses: [["class", "Class"], ["hosts", "Hosts"], ["address", "Address"]],
+  configmaps: [["keys", "Keys"]],
+  secrets: [["keys", "Keys"]],
+};
+
+/** What the status column shows, by kind. */
+export const STATUS_HEADER: Partial<Record<KubeKind, string>> = { services: "Type", secrets: "Type", configmaps: "Data" };
+
+export const asKind = (s: string): KubeKind | undefined => KUBE_KINDS.find((k) => k === s);
