@@ -296,3 +296,29 @@ async fn a_namespace_scoped_token_still_reports_a_version() {
     assert!(v.git_version.starts_with('v'));
     assert_eq!((v.nodes, v.nodes_ready), (None, None));
 }
+
+/// A one-context token kubeconfig for the kind cluster.
+fn token_kubeconfig(token: &str) -> String {
+    use base64::Engine;
+    let ca = base64::engine::general_purpose::STANDARD
+        .encode(std::fs::read(common::dir().join("ca.crt")).unwrap());
+    format!(
+        "apiVersion: v1\nkind: Config\ncurrent-context: t\nclusters:\n- name: t\n  cluster: {{server: '{}', certificate-authority-data: '{ca}'}}\ncontexts:\n- name: t\n  context: {{cluster: t, user: t}}\nusers:\n- name: t\n  user: {{token: '{token}'}}\n",
+        common::read("server")
+    )
+}
+
+#[tokio::test]
+async fn the_create_check_rejects_bad_credentials() {
+    let good = fleetops_kube::kubeconfig::prepare(&token_kubeconfig(&common::read("token")), None)
+        .unwrap();
+    fleetops_kube::kubeconfig::check(&good.yaml).await.unwrap();
+    // /version answers anonymously, so only an authenticated call catches this.
+    let bad =
+        fleetops_kube::kubeconfig::prepare(&token_kubeconfig("not-a-real-token"), None).unwrap();
+    let e = fleetops_kube::kubeconfig::check(&bad.yaml)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("credentials rejected"), "{e}");
+}

@@ -226,6 +226,9 @@ pub async fn check(yaml: &str) -> Result<()> {
         .map_err(|e| invalid(format!("cannot reach cluster: {e}")))?;
     match tokio::time::timeout(CHECK_TIMEOUT, client.apiserver_version()).await {
         Ok(Ok(_)) => Ok(()),
+        Ok(Err(kube::Error::Api(s))) if s.code == 401 => Err(invalid(
+            "cannot reach cluster: credentials rejected (401): check the token or client certificate",
+        )),
         Ok(Err(e)) => Err(invalid(format!("cannot reach cluster: {e}"))),
         Err(_) => Err(invalid(format!(
             "cannot reach cluster: no answer within {}s",
