@@ -117,3 +117,34 @@ mod tests {
         assert!(validate_env_url("agent://42").is_err());
     }
 }
+/// A stored secret an environment is built from, already decrypted by
+/// the store. `Unreadable` carries why it could not be decrypted.
+#[derive(Clone, PartialEq, Eq)]
+pub enum Credential {
+    Kubeconfig(String),
+    Unreadable(String),
+}
+
+impl std::fmt::Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Credential::Kubeconfig(_) => f.write_str("Kubeconfig(<redacted>)"),
+            Credential::Unreadable(why) => write!(f, "Unreadable({why:?})"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum UserKind {
+    Token,
+    Cert,
+}
+
+/// What may be shown about a stored kubeconfig.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct KubeconfigSummary {
+    pub server: String,
+    pub context: String,
+    pub user_kind: UserKind,
+}
