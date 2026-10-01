@@ -1,7 +1,7 @@
 # FleetOps — Sub-project 2: Agent + Multi-host
 
 - **Date:** 2026-10-01
-- **Status:** Draft for review
+- **Status:** Implemented
 - **Builds on:** [Sub-project 1 spec](./2026-09-29-fleetops-core-docker-design.md)
 
 ## 1. Intent

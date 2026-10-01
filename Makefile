@@ -34,17 +34,23 @@ test-docker:
 
 # The Playwright end-to-end test: a release build with the UI embedded,
 # driven in Chromium against the current docker context's daemon. It pulls
-# busybox and creates (then removes) one container named fleetops-e2e-*.
+# busybox and creates (then removes) containers named fleetops-e2e-*; the
+# second spec enrolls a real fleetops-agent against the same daemon.
 e2e: build
+	cargo build --release -p fleetops-agent
 	pnpm -C web exec playwright install chromium
 	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
 		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
+		FLEETOPS_AGENT_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops-agent \
 		pnpm -C web exec playwright test
 
-# The idle memory target: a release build managing 50 containers on the
-# current docker context's daemon must stay under 50 MiB of RSS.
+# The idle memory targets: a release build managing 50 containers on the
+# current docker context's daemon stays under 50 MiB of RSS, plus 1 MiB per
+# agent with 10 agents connected; one idle agent stays under 15 MiB.
 rss-bench: build
-	scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops
+	cargo build --release -p fleetops-agent
+	scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
+		$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops-agent
 
 lint:
 	cargo fmt --all --check
