@@ -488,8 +488,11 @@ export type KubeRow = {
 
 export type KubeVersion = {
     git_version: string;
-    nodes: number;
-    nodes_ready: number;
+    /**
+     * `None` when the credentials may not list nodes.
+     */
+    nodes?: number | null;
+    nodes_ready?: number | null;
     platform: string;
 };
 

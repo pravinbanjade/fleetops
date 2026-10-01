@@ -165,7 +165,13 @@ fn stream_err(e: std::io::Error) -> Error {
 impl KubeOps for KubeClient {
     async fn version(&self) -> Result<KubeVersion> {
         let info = timed(self.client.apiserver_version()).await?;
-        let (nodes, nodes_ready) = self.node_counts().await?;
+        // Namespace-scoped credentials may not list nodes; the cluster is
+        // up all the same.
+        let (nodes, nodes_ready) = match self.node_counts().await {
+            Ok((n, r)) => (Some(n), Some(r)),
+            Err(Error::Forbidden(_)) => (None, None),
+            Err(e) => return Err(e),
+        };
         Ok(KubeVersion {
             git_version: info.git_version,
             platform: info.platform,

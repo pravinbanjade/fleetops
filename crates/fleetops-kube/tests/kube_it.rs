@@ -281,9 +281,18 @@ async fn a_kubeconfig_environment_is_up_with_its_nodes() {
         EnvStatus::Up {
             version: EnvVersion::Kube(v),
         } => {
-            assert!(v.nodes >= 1 && v.nodes_ready >= 1, "{v:?}");
+            assert!(v.nodes >= Some(1) && v.nodes_ready >= Some(1), "{v:?}");
             assert!(v.git_version.starts_with('v'));
         }
         other => panic!("{other:?}"),
     }
+}
+
+#[tokio::test]
+async fn a_namespace_scoped_token_still_reports_a_version() {
+    // The narrow ServiceAccount cannot list nodes; the cluster is still up.
+    let ops = fleetops_kube::KubeClient::new(common::tunnel_client_with("narrow-token"));
+    let v = ops.version().await.unwrap();
+    assert!(v.git_version.starts_with('v'));
+    assert_eq!((v.nodes, v.nodes_ready), (None, None));
 }

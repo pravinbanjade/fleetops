@@ -115,8 +115,8 @@ impl KubeOps for FakeKube {
         Ok(KubeVersion {
             git_version: "v1.32.0".into(),
             platform: "linux/amd64".into(),
-            nodes: 3,
-            nodes_ready: 3,
+            nodes: Some(3),
+            nodes_ready: Some(3),
         })
     }
     async fn list(&self, kind: KubeKind, ns: Option<&str>) -> Result<KubeList> {

@@ -74,3 +74,17 @@ describe("Kubernetes environments", () => {
     expect(subs).toEqual([]);
   });
 });
+
+describe("a cluster whose credentials cannot list nodes", () => {
+  it("is up and says the node count is not visible", async () => {
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      "GET /api/v1/envs/k/status": {
+        json: { state: "up", version: { kind: "kube", git_version: "v1.32.0", platform: "linux/amd64", nodes: null, nodes_ready: null } },
+      },
+    });
+    renderApp("/envs/k");
+    expect(await screen.findByText("Not visible to these credentials")).toBeInTheDocument();
+  });
+});

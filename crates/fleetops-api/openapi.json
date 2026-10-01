@@ -5003,21 +5003,26 @@
         "type": "object",
         "required": [
           "git_version",
-          "platform",
-          "nodes",
-          "nodes_ready"
+          "platform"
         ],
         "properties": {
           "git_version": {
             "type": "string"
           },
           "nodes": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
+            "description": "`None` when the credentials may not list nodes.",
             "minimum": 0
           },
           "nodes_ready": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "minimum": 0
           },
