@@ -19,6 +19,45 @@ use serde::Deserialize;
 use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 
+/// An RFC 1123 DNS subdomain: what Kubernetes allows for object names.
+/// Anything else is refused before it can be spliced into an apiserver URL
+/// (an encoded `/` or `?` would reach a different object).
+fn is_dns_subdomain(s: &str) -> bool {
+    let b = s.as_bytes();
+    !b.is_empty()
+        && b.len() <= 253
+        && b.iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-' || *c == b'.')
+        && b[0].is_ascii_alphanumeric()
+        && b[b.len() - 1].is_ascii_alphanumeric()
+}
+
+/// An RFC 1123 DNS label: what Kubernetes allows for namespace names.
+fn is_dns_label(s: &str) -> bool {
+    s.len() <= 63 && !s.contains('.') && is_dns_subdomain(s)
+}
+
+pub(crate) fn check_name(name: &str) -> Result<()> {
+    if is_dns_subdomain(name) {
+        Ok(())
+    } else {
+        Err(Error::Invalid(format!(
+            "'{name}' is not a Kubernetes object name"
+        )))
+    }
+}
+
+/// A namespace, or `-` for cluster-scoped kinds.
+pub(crate) fn check_namespace(ns: &str) -> Result<()> {
+    if ns == "-" || is_dns_label(ns) {
+        Ok(())
+    } else {
+        Err(Error::Invalid(format!(
+            "'{ns}' is not a Kubernetes namespace"
+        )))
+    }
+}
+
 pub(crate) fn wrong_kind(name: &str, kind: EnvKind) -> Error {
     Error::Conflict(format!(
         "wrong environment kind: '{name}' is {}",
@@ -79,6 +118,22 @@ fn kind(s: &str) -> Result<KubeKind> {
     s.parse()
 }
 
+impl KindPath {
+    fn checked(&self) -> Result<KubeKind> {
+        kind(&self.kind)
+    }
+}
+
+impl ObjectPath {
+    /// The kind, with the namespace and name checked.
+    fn checked(&self) -> Result<KubeKind> {
+        let k = kind(&self.kind)?;
+        check_namespace(&self.ns)?;
+        check_name(&self.name)?;
+        Ok(k)
+    }
+}
+
 async fn audit(
     s: &AppState,
     cu: &CurrentUser,
@@ -118,12 +173,13 @@ pub async fn list(
     ApiPath(p): ApiPath<KindPath>,
     Query(q): Query<ListQuery>,
 ) -> ApiResult<Json<KubeList>> {
-    let k = kind(&p.kind)?;
+    let k = p.checked()?;
+    let ns = q.namespace.as_deref().filter(|n| !n.is_empty());
+    if let Some(ns) = ns {
+        check_namespace(ns)?;
+    }
     let (_, ops) = kube_for(&s, &cu, &p.env, Action::KubeRead)?;
-    Ok(Json(
-        ops.list(k, q.namespace.as_deref().filter(|n| !n.is_empty()))
-            .await?,
-    ))
+    Ok(Json(ops.list(k, ns).await?))
 }
 
 #[utoipa::path(get, path = "/envs/{env}/k8s/{kind}/{ns}/{name}", operation_id = "getKube", tag = "kubernetes",
@@ -134,7 +190,7 @@ pub async fn get(
     cu: CurrentUser,
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<KubeObject>> {
-    let k = kind(&p.kind)?;
+    let k = p.checked()?;
     let (_, ops) = kube_for(&s, &cu, &p.env, Action::KubeRead)?;
     Ok(Json(ops.get(k, &p.ns, &p.name).await?))
 }
@@ -147,7 +203,7 @@ pub async fn events(
     cu: CurrentUser,
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<Vec<KubeEvent>>> {
-    let k = kind(&p.kind)?;
+    let k = p.checked()?;
     let (_, ops) = kube_for(&s, &cu, &p.env, Action::KubeRead)?;
     Ok(Json(ops.events(k, &p.ns, &p.name).await?))
 }
@@ -164,7 +220,7 @@ pub async fn delete(
     cu: CurrentUser,
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<StatusCode> {
-    let k = kind(&p.kind)?;
+    let k = p.checked()?;
     let (env, ops) = kube_for(&s, &cu, &p.env, Action::KubeWrite)?;
     let r = ops.delete(k, &p.ns, &p.name).await;
     audit(&s, &cu, env.id(), "k8s.delete", &target(k, &p), &r).await;
@@ -181,7 +237,7 @@ pub async fn scale(
     ApiPath(p): ApiPath<ObjectPath>,
     ApiJson(body): ApiJson<ScaleBody>,
 ) -> ApiResult<StatusCode> {
-    let k = kind(&p.kind)?;
+    let k = p.checked()?;
     if !k.scalable() {
         return Err(Error::Invalid(format!("{} cannot be scaled", k.as_str())).into());
     }
@@ -200,7 +256,7 @@ pub async fn restart(
     cu: CurrentUser,
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<StatusCode> {
-    let k = kind(&p.kind)?;
+    let k = p.checked()?;
     if !k.restartable() {
         return Err(Error::Invalid(format!("{} cannot be restarted", k.as_str())).into());
     }

@@ -273,3 +273,39 @@ async fn ordinary_users_can_read_and_act() {
         .await;
     assert_eq!(s.status, 204);
 }
+
+#[tokio::test]
+async fn names_and_namespaces_must_be_kubernetes_names() {
+    let (t, admin) = kube_app().await;
+    // An encoded slash or query would be spliced into the apiserver URL and
+    // reach a different object (a Secret, read through the ConfigMap route).
+    for path in [
+        "/api/v1/envs/k/k8s/configmaps/default%2Fsecrets%2Fdb%3Fx%3D/y",
+        "/api/v1/envs/k/k8s/configmaps/apps/web%2F..%2Fx",
+        "/api/v1/envs/k/k8s/pods/Apps/web-1",
+        "/api/v1/envs/k/k8s/pods?namespace=apps%2Fsecrets",
+    ] {
+        let r = t.send(req("GET", path, None, Some(&admin))).await;
+        assert_eq!(r.status, 400, "{path}: {:?}", r.json);
+    }
+    let d = t
+        .send(req(
+            "DELETE",
+            "/api/v1/envs/k/k8s/pods/apps%2Fx/web-1",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(d.status, 400);
+    assert!(t.fake.kube.calls().iter().all(|c| !c.starts_with("delete")));
+    // The cluster-scoped placeholder still works.
+    let n = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/nodes/-/n1",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(n.status, 200);
+}

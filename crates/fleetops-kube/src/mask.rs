@@ -11,11 +11,15 @@ const LAST_APPLIED: &str = "kubectl.kubernetes.io/last-applied-configuration";
 const CUT_NOTE: &str = "\n# … cut at 1 MiB\n";
 
 pub fn yaml(kind: KubeKind, obj: &DynamicObject) -> String {
+    // Masked by what the apiserver returned too, not only by what was asked
+    // for: a Secret must never render unmasked.
+    let secret =
+        kind == KubeKind::Secrets || obj.types.as_ref().is_some_and(|t| t.kind == "Secret");
     let mut v = typed_json(kind, obj);
     if let Some(meta) = v.get_mut("metadata").and_then(Value::as_object_mut) {
         meta.remove("managedFields");
     }
-    if kind == KubeKind::Secrets {
+    if secret {
         for field in ["data", "stringData"] {
             if let Some(map) = v.get_mut(field).and_then(Value::as_object_mut) {
                 for val in map.values_mut() {
@@ -88,6 +92,16 @@ mod tests {
         let y = yaml(KubeKind::Secrets, &o);
         assert!(!y.contains("hunter2"), "{y}");
         assert!(y.contains("team"), "{y}");
+    }
+
+    #[test]
+    fn a_secret_is_masked_whatever_kind_was_asked_for() {
+        let o = obj(
+            json!({"kind": "Secret", "apiVersion": "v1", "metadata": {"name": "s"},
+            "data": {"password": "aHVudGVyMg=="}}),
+        );
+        let y = yaml(KubeKind::ConfigMaps, &o);
+        assert!(!y.contains("aHVudGVyMg=="), "{y}");
     }
 
     #[test]
