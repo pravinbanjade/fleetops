@@ -3,7 +3,7 @@
 //! Unknown, so one odd object never fails a whole list.
 
 use crate::kinds::typed_json;
-use fleetops_core::kube::{Health, KubeCondition, KubeKind, KubeRef, KubeRow};
+use fleetops_core::kube::{KubeCondition, KubeKind, KubeRef, KubeRow, RowHealth};
 use k8s_openapi::api::{
     apps::v1::{DaemonSet, Deployment, StatefulSet},
     batch::v1::{CronJob, Job},
@@ -25,13 +25,13 @@ fn cols<const N: usize>(pairs: [(&str, String); N]) -> Cols {
 }
 
 /// `ready` of `want`, with the health that implies.
-fn replicas(ready: i32, want: i32) -> (String, Health) {
+fn replicas(ready: i32, want: i32) -> (String, RowHealth) {
     let h = if ready >= want {
-        Health::Ok
+        RowHealth::Ok
     } else if ready > 0 {
-        Health::Warn
+        RowHealth::Warn
     } else {
-        Health::Bad
+        RowHealth::Bad
     };
     (format!("{ready}/{want}"), h)
 }
@@ -51,7 +51,7 @@ pub fn row(kind: KubeKind, obj: &DynamicObject) -> KubeRow {
             .map(|t| t.0.as_second())
             .unwrap_or(0),
         status: String::new(),
-        health: Health::Unknown,
+        health: RowHealth::Unknown,
         columns: Cols::new(),
     };
     let summary = match kind {
@@ -82,7 +82,7 @@ pub fn row(kind: KubeKind, obj: &DynamicObject) -> KubeRow {
     }
 }
 
-type Summary = (String, Health, Cols);
+type Summary = (String, RowHealth, Cols);
 
 fn namespace(n: Namespace) -> Summary {
     let phase = n
@@ -90,9 +90,9 @@ fn namespace(n: Namespace) -> Summary {
         .and_then(|s| s.phase)
         .unwrap_or_else(|| "Active".into());
     let h = if phase == "Active" {
-        Health::Ok
+        RowHealth::Ok
     } else {
-        Health::Warn
+        RowHealth::Warn
     };
     (phase, h, Cols::new())
 }
@@ -126,9 +126,9 @@ fn node(n: Node) -> Summary {
         .map(|i| i.kubelet_version)
         .unwrap_or_default();
     let (s, h) = if ready {
-        ("Ready", Health::Ok)
+        ("Ready", RowHealth::Ok)
     } else {
-        ("NotReady", Health::Bad)
+        ("NotReady", RowHealth::Bad)
     };
     (
         s.into(),
@@ -147,7 +147,7 @@ fn deployment(d: Deployment) -> Summary {
     let available = st.available_replicas.unwrap_or(0);
     let (ready, h) = replicas(st.ready_replicas.unwrap_or(0), want);
     let h = if want == 0 {
-        Health::Ok
+        RowHealth::Ok
     } else {
         replicas(available, want).1.min_with(h)
     };
@@ -165,7 +165,7 @@ fn deployment(d: Deployment) -> Summary {
 fn statefulset(s: StatefulSet) -> Summary {
     let want = s.spec.and_then(|s| s.replicas).unwrap_or(1);
     let (ready, h) = replicas(s.status.and_then(|s| s.ready_replicas).unwrap_or(0), want);
-    let h = if want == 0 { Health::Ok } else { h };
+    let h = if want == 0 { RowHealth::Ok } else { h };
     (ready.clone(), h, cols([("ready", ready)]))
 }
 
@@ -194,11 +194,11 @@ fn job(j: Job) -> Summary {
             .any(|c| c.type_ == t && c.status == "True")
     };
     let (s, h) = if done("Complete") {
-        ("Complete", Health::Ok)
+        ("Complete", RowHealth::Ok)
     } else if done("Failed") {
-        ("Failed", Health::Bad)
+        ("Failed", RowHealth::Bad)
     } else {
-        ("Running", Health::Ok)
+        ("Running", RowHealth::Ok)
     };
     (
         s.into(),
@@ -223,7 +223,7 @@ fn cronjob(c: CronJob) -> Summary {
     };
     (
         s.into(),
-        Health::Ok,
+        RowHealth::Ok,
         cols([
             ("schedule", spec.schedule),
             ("active", active.to_string()),
@@ -259,15 +259,15 @@ fn pod(p: Pod) -> Summary {
     });
     let phase = st.phase.unwrap_or_else(|| "Pending".into());
     let (status, health) = if terminating {
-        ("Terminating".to_string(), Health::Warn)
+        ("Terminating".to_string(), RowHealth::Warn)
     } else if let Some(r) = reason.filter(|r| r != "Completed") {
-        (r, Health::Bad)
+        (r, RowHealth::Bad)
     } else {
         let h = match phase.as_str() {
-            "Running" if ready == want => Health::Ok,
-            "Succeeded" => Health::Ok,
-            "Failed" => Health::Bad,
-            _ => Health::Warn,
+            "Running" if ready == want => RowHealth::Ok,
+            "Succeeded" => RowHealth::Ok,
+            "Failed" => RowHealth::Bad,
+            _ => RowHealth::Warn,
         };
         (phase, h)
     };
@@ -301,7 +301,7 @@ fn service(s: Service) -> Summary {
         .collect();
     (
         spec.type_.unwrap_or_else(|| "ClusterIP".into()),
-        Health::Ok,
+        RowHealth::Ok,
         cols([
             ("cluster_ip", spec.cluster_ip.unwrap_or_default()),
             ("external_ip", external.join(", ")),
@@ -333,7 +333,7 @@ fn ingress(i: Ingress) -> Summary {
         } else {
             hosts.clone()
         },
-        Health::Ok,
+        RowHealth::Ok,
         cols([
             ("class", spec.ingress_class_name.unwrap_or_default()),
             ("hosts", hosts),
@@ -346,7 +346,7 @@ fn configmap(c: ConfigMap) -> Summary {
     let n = c.data.map(|d| d.len()).unwrap_or(0) + c.binary_data.map(|d| d.len()).unwrap_or(0);
     (
         format!("{n} keys"),
-        Health::Ok,
+        RowHealth::Ok,
         cols([("keys", n.to_string())]),
     )
 }
@@ -355,23 +355,23 @@ fn secret(s: Secret) -> Summary {
     let n = s.data.map(|d| d.len()).unwrap_or(0);
     (
         s.type_.unwrap_or_else(|| "Opaque".into()),
-        Health::Ok,
+        RowHealth::Ok,
         cols([("keys", n.to_string())]),
     )
 }
 
 trait Worst {
-    fn min_with(self, other: Health) -> Health;
+    fn min_with(self, other: RowHealth) -> RowHealth;
 }
 
-impl Worst for Health {
+impl Worst for RowHealth {
     /// The worse of two healths.
-    fn min_with(self, other: Health) -> Health {
-        let rank = |h: Health| match h {
-            Health::Bad => 0,
-            Health::Warn => 1,
-            Health::Unknown => 2,
-            Health::Ok => 3,
+    fn min_with(self, other: RowHealth) -> RowHealth {
+        let rank = |h: RowHealth| match h {
+            RowHealth::Bad => 0,
+            RowHealth::Warn => 1,
+            RowHealth::Unknown => 2,
+            RowHealth::Ok => 3,
         };
         if rank(self) <= rank(other) {
             self

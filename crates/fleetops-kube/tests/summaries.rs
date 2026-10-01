@@ -1,4 +1,4 @@
-use fleetops_core::kube::{Health, KubeKind};
+use fleetops_core::kube::{KubeKind, RowHealth};
 use fleetops_kube::summaries::{containers, owners, row};
 use kube::api::DynamicObject;
 use serde_json::json;
@@ -24,7 +24,7 @@ fn a_partly_available_deployment_is_a_warning() {
     );
     assert_eq!(r.created, 1_790_812_800);
     assert_eq!(r.status, "1/3");
-    assert_eq!(r.health, Health::Warn);
+    assert_eq!(r.health, RowHealth::Warn);
     assert_eq!(r.columns["ready"], "1/3");
     assert_eq!(r.columns["up_to_date"], "3");
     assert_eq!(r.columns["available"], "1");
@@ -40,7 +40,7 @@ fn a_crash_looping_pod_shows_its_reason_and_restarts() {
     );
     let r = row(KubeKind::Pods, &p);
     assert_eq!(r.status, "CrashLoopBackOff");
-    assert_eq!(r.health, Health::Bad);
+    assert_eq!(r.health, RowHealth::Bad);
     assert_eq!(r.columns["ready"], "1/2");
     assert_eq!(r.columns["restarts"], "5");
     assert_eq!(r.columns["node"], "n1");
@@ -55,7 +55,7 @@ fn a_ready_running_pod_is_ok() {
             {"name": "a", "ready": true, "restartCount": 0, "image": "x", "imageID": "", "state": {"running": {}}}]}}),
     );
     let r = row(KubeKind::Pods, &p);
-    assert_eq!((r.status.as_str(), r.health), ("Running", Health::Ok));
+    assert_eq!((r.status.as_str(), r.health), ("Running", RowHealth::Ok));
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn nodes_jobs_and_secrets_summarise() {
         "machineID": "", "operatingSystem": "", "osImage": "", "systemUUID": ""}}}),
     );
     let r = row(KubeKind::Nodes, &n);
-    assert_eq!((r.status.as_str(), r.health), ("Ready", Health::Ok));
+    assert_eq!((r.status.as_str(), r.health), ("Ready", RowHealth::Ok));
     assert_eq!(r.namespace, None);
     assert_eq!(r.columns["roles"], "control-plane");
     assert_eq!(r.columns["version"], "v1.32.0");
@@ -89,7 +89,7 @@ fn nodes_jobs_and_secrets_summarise() {
         "conditions": [{"type": "Complete", "status": "True"}]}}),
     );
     let r = row(KubeKind::Jobs, &j);
-    assert_eq!((r.status.as_str(), r.health), ("Complete", Health::Ok));
+    assert_eq!((r.status.as_str(), r.health), ("Complete", RowHealth::Ok));
     assert_eq!(r.columns["completions"], "1/1");
 
     let s = obj(
@@ -104,7 +104,7 @@ fn nodes_jobs_and_secrets_summarise() {
 fn an_unparseable_object_still_gets_a_row() {
     let d = obj(json!({"metadata": meta("odd"), "spec": {"replicas": "three"}}));
     let r = row(KubeKind::Deployments, &d);
-    assert_eq!((r.name.as_str(), r.health), ("odd", Health::Unknown));
+    assert_eq!((r.name.as_str(), r.health), ("odd", RowHealth::Unknown));
 }
 
 #[test]

@@ -34,6 +34,8 @@ pub struct FakeDocker {
     pub changed: Notify,
     /// Every spec the factory was asked to build, oldest first.
     pub built: Mutex<Vec<EnvSpec>>,
+    /// The cluster behind every Kubernetes environment the factory builds.
+    pub kube: Arc<super::fake_kube::FakeKube>,
 }
 
 fn not_found(kind: &str, id: &str) -> Error {
@@ -412,6 +414,14 @@ pub struct FakeFactory(pub Arc<FakeDocker>);
 impl EnvFactory for FakeFactory {
     fn build(&self, spec: &EnvSpec) -> Result<Arc<dyn Environment>> {
         self.0.built.lock().unwrap().push(spec.clone());
+        if spec.kind.is_kube() {
+            return Ok(Arc::new(super::fake_kube::FakeKubeEnv {
+                id: spec.id,
+                name: spec.name.clone(),
+                kind: spec.kind,
+                kube: self.0.kube.clone(),
+            }));
+        }
         Ok(Arc::new(FakeEnv {
             id: spec.id,
             name: spec.name.clone(),

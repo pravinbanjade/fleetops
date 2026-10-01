@@ -2123,6 +2123,419 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/{kind}": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "List objects of one kind",
+        "operationId": "listKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "Plural lowercase kind, e.g. `deployments`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "description": "Omit for all namespaces.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "One object: summary, masked YAML, conditions, owners",
+        "operationId": "getKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The object",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeObject"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Delete an object (background propagation)",
+        "operationId": "deleteKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/events": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "An object's events, newest first",
+        "operationId": "kubeEvents",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KubeEvent"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/restart": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Rollout restart a Deployment, StatefulSet or DaemonSet",
+        "operationId": "restartKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Restarted"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/scale": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Set a Deployment's or StatefulSet's replicas",
+        "operationId": "scaleKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScaleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Scaled"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/networks": {
       "get": {
         "tags": [
@@ -4355,6 +4768,33 @@
           }
         }
       },
+      "KubeCondition": {
+        "type": "object",
+        "required": [
+          "type",
+          "status"
+        ],
+        "properties": {
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
       "KubeContexts": {
         "type": "object",
         "required": [
@@ -4372,6 +4812,190 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "KubeEvent": {
+        "type": "object",
+        "required": [
+          "type",
+          "reason",
+          "message",
+          "count"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "last_seen": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix seconds."
+          },
+          "message": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "description": "\"Normal\" or \"Warning\"."
+          }
+        }
+      },
+      "KubeKind": {
+        "type": "string",
+        "enum": [
+          "namespaces",
+          "nodes",
+          "deployments",
+          "statefulsets",
+          "daemonsets",
+          "jobs",
+          "cronjobs",
+          "pods",
+          "services",
+          "ingresses",
+          "configmaps",
+          "secrets"
+        ]
+      },
+      "KubeList": {
+        "type": "object",
+        "required": [
+          "rows",
+          "truncated"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KubeRow"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "More objects exist than `LIST_CAP`."
+          }
+        }
+      },
+      "KubeObject": {
+        "type": "object",
+        "required": [
+          "row",
+          "yaml",
+          "conditions",
+          "owners",
+          "containers"
+        ],
+        "properties": {
+          "conditions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KubeCondition"
+            }
+          },
+          "containers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Pods only: container names, first is the default."
+          },
+          "owners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KubeRef"
+            },
+            "description": "Nearest first: Pod → ReplicaSet → Deployment."
+          },
+          "row": {
+            "$ref": "#/components/schemas/KubeRow"
+          },
+          "yaml": {
+            "type": "string",
+            "description": "`managedFields` stripped; Secret values masked."
+          }
+        }
+      },
+      "KubeRef": {
+        "type": "object",
+        "description": "An owner, e.g. a Pod's ReplicaSet. `link` is set when FleetOps has a\npage for the owner's kind.",
+        "required": [
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "link": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/KubeKind"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "KubeRow": {
+        "type": "object",
+        "description": "One object in a list: common fields plus columns that depend on its kind.",
+        "required": [
+          "name",
+          "created",
+          "status",
+          "health",
+          "columns"
+        ],
+        "properties": {
+          "columns": {
+            "type": "object",
+            "description": "Kind-specific: ready, restarts, node, type, ports, hosts…",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "created": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds."
+          },
+          "health": {
+            "$ref": "#/components/schemas/RowHealth"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "e.g. \"Running\", \"2/3\", \"Complete\"."
           }
         }
       },
@@ -4731,6 +5355,29 @@
           "admin",
           "user"
         ]
+      },
+      "RowHealth": {
+        "type": "string",
+        "description": "The status dot's colour.",
+        "enum": [
+          "ok",
+          "warn",
+          "bad",
+          "unknown"
+        ]
+      },
+      "ScaleBody": {
+        "type": "object",
+        "required": [
+          "replicas"
+        ],
+        "properties": {
+          "replicas": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "ServerMsg": {
         "oneOf": [
@@ -5309,6 +5956,10 @@
     {
       "name": "compose",
       "description": "Compose projects, grouped by label"
+    },
+    {
+      "name": "kubernetes",
+      "description": "Objects in Kubernetes environments"
     },
     {
       "name": "tasks",

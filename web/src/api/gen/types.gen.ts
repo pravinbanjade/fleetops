@@ -399,9 +399,91 @@ export type ImageSummary = {
     size: number;
 };
 
+export type KubeCondition = {
+    message?: string | null;
+    reason?: string | null;
+    status: string;
+    type: string;
+};
+
 export type KubeContexts = {
     contexts: Array<string>;
     current?: string | null;
+};
+
+export type KubeEvent = {
+    count: number;
+    /**
+     * Unix seconds.
+     */
+    last_seen?: number | null;
+    message: string;
+    reason: string;
+    source?: string | null;
+    /**
+     * "Normal" or "Warning".
+     */
+    type: string;
+};
+
+export type KubeKind = 'namespaces' | 'nodes' | 'deployments' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs' | 'pods' | 'services' | 'ingresses' | 'configmaps' | 'secrets';
+
+export type KubeList = {
+    rows: Array<KubeRow>;
+    /**
+     * More objects exist than `LIST_CAP`.
+     */
+    truncated: boolean;
+};
+
+export type KubeObject = {
+    conditions: Array<KubeCondition>;
+    /**
+     * Pods only: container names, first is the default.
+     */
+    containers: Array<string>;
+    /**
+     * Nearest first: Pod → ReplicaSet → Deployment.
+     */
+    owners: Array<KubeRef>;
+    row: KubeRow;
+    /**
+     * `managedFields` stripped; Secret values masked.
+     */
+    yaml: string;
+};
+
+/**
+ * An owner, e.g. a Pod's ReplicaSet. `link` is set when FleetOps has a
+ * page for the owner's kind.
+ */
+export type KubeRef = {
+    kind: string;
+    link?: null | KubeKind;
+    name: string;
+};
+
+/**
+ * One object in a list: common fields plus columns that depend on its kind.
+ */
+export type KubeRow = {
+    /**
+     * Kind-specific: ready, restarts, node, type, ports, hosts…
+     */
+    columns: {
+        [key: string]: string;
+    };
+    /**
+     * Unix seconds.
+     */
+    created: number;
+    health: RowHealth;
+    name: string;
+    namespace?: string | null;
+    /**
+     * e.g. "Running", "2/3", "Complete".
+     */
+    status: string;
 };
 
 export type KubeVersion = {
@@ -522,6 +604,15 @@ export type RecreateResult = {
 };
 
 export type Role = 'admin' | 'user';
+
+/**
+ * The status dot's colour.
+ */
+export type RowHealth = 'ok' | 'warn' | 'bad' | 'unknown';
+
+export type ScaleBody = {
+    replicas: number;
+};
 
 /**
  * A text frame from the server, as the builders below write it. Exec
@@ -1940,6 +2031,210 @@ export type GetEngineInfoResponses = {
 };
 
 export type GetEngineInfoResponse = GetEngineInfoResponses[keyof GetEngineInfoResponses];
+
+export type ListKubeData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Plural lowercase kind, e.g. `deployments`.
+         */
+        kind: string;
+    };
+    query?: {
+        /**
+         * Omit for all namespaces.
+         */
+        namespace?: string;
+    };
+    url: '/api/v1/envs/{env}/k8s/{kind}';
+};
+
+export type ListKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListKubeError = ListKubeErrors[keyof ListKubeErrors];
+
+export type ListKubeResponses = {
+    /**
+     * Rows
+     */
+    200: KubeList;
+};
+
+export type ListKubeResponse = ListKubeResponses[keyof ListKubeResponses];
+
+export type DeleteKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}';
+};
+
+export type DeleteKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteKubeError = DeleteKubeErrors[keyof DeleteKubeErrors];
+
+export type DeleteKubeResponses = {
+    /**
+     * Deleted
+     */
+    204: void;
+};
+
+export type DeleteKubeResponse = DeleteKubeResponses[keyof DeleteKubeResponses];
+
+export type GetKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}';
+};
+
+export type GetKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetKubeError = GetKubeErrors[keyof GetKubeErrors];
+
+export type GetKubeResponses = {
+    /**
+     * The object
+     */
+    200: KubeObject;
+};
+
+export type GetKubeResponse = GetKubeResponses[keyof GetKubeResponses];
+
+export type KubeEventsData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/events';
+};
+
+export type KubeEventsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type KubeEventsError = KubeEventsErrors[keyof KubeEventsErrors];
+
+export type KubeEventsResponses = {
+    /**
+     * Events
+     */
+    200: Array<KubeEvent>;
+};
+
+export type KubeEventsResponse = KubeEventsResponses[keyof KubeEventsResponses];
+
+export type RestartKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/restart';
+};
+
+export type RestartKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RestartKubeError = RestartKubeErrors[keyof RestartKubeErrors];
+
+export type RestartKubeResponses = {
+    /**
+     * Restarted
+     */
+    204: void;
+};
+
+export type RestartKubeResponse = RestartKubeResponses[keyof RestartKubeResponses];
+
+export type ScaleKubeData = {
+    body: ScaleBody;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/scale';
+};
+
+export type ScaleKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ScaleKubeError = ScaleKubeErrors[keyof ScaleKubeErrors];
+
+export type ScaleKubeResponses = {
+    /**
+     * Scaled
+     */
+    204: void;
+};
+
+export type ScaleKubeResponse = ScaleKubeResponses[keyof ScaleKubeResponses];
 
 export type ListNetworksData = {
     body?: never;
