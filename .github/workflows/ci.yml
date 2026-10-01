@@ -92,7 +92,7 @@ jobs:
       - run: make rss-bench
 
   image:
-    name: Container image (amd64 and arm64)
+    name: Container images (amd64 and arm64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -101,15 +101,32 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
+          target: server
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      # The runner's own platform again (a cache hit), loaded to smoke-test.
       - uses: docker/build-push-action@v7
         with:
           context: .
+          target: agent
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+      # The runner's own platform again (cache hits), loaded to smoke-test.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: server
           platforms: linux/amd64
           load: true
           tags: fleetops:ci
           cache-from: type=gha
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: agent
+          platforms: linux/amd64
+          load: true
+          tags: fleetops-agent:ci
+          cache-from: type=gha
       - run: make image-smoke IMAGE=fleetops:ci
+      - run: make agent-smoke IMAGE=fleetops:ci AGENT_IMAGE=fleetops-agent:ci

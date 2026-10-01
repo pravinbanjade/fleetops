@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker test-web e2e rss-bench lint fmt build image image-smoke openapi
+.PHONY: dev dev-server dev-web web test test-docker test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -76,9 +76,20 @@ IMAGE ?= fleetops:dev
 PLATFORMS ?= linux/amd64,linux/arm64
 
 image:
-	docker buildx build --platform $(PLATFORMS) --tag $(IMAGE) --load .
+	docker buildx build --platform $(PLATFORMS) --target server --tag $(IMAGE) --load .
+
+# The agent image, from the same build as the server's.
+AGENT_IMAGE ?= fleetops-agent:dev
+
+image-agent:
+	docker buildx build --platform $(PLATFORMS) --target agent --tag $(AGENT_IMAGE) --load .
 
 # Runs $(IMAGE) against the local daemon's socket and checks that it
 # serves the UI and reaches Docker as its non-root user.
 image-smoke:
 	scripts/image-smoke.sh $(IMAGE)
+
+# Runs $(IMAGE) and $(AGENT_IMAGE) together on the local daemon and checks
+# that the agent enrolls and its environment reaches Docker.
+agent-smoke:
+	scripts/agent-smoke.sh $(IMAGE) $(AGENT_IMAGE)
