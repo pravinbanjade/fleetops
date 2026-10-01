@@ -77,7 +77,9 @@ fn docker_for(
 fn pod_id(id: &Option<String>) -> Result<(String, String)> {
     let id = required(id, "id")?;
     match id.split_once('/') {
-        Some((ns, pod)) if !ns.is_empty() && !pod.is_empty() && !pod.contains('/') => {
+        Some((ns, pod)) if !pod.contains('/') => {
+            crate::routes::kube::check_namespace(ns)?;
+            crate::routes::kube::check_name(pod)?;
             Ok((ns.into(), pod.into()))
         }
         _ => Err(Error::Invalid(

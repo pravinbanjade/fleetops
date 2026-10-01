@@ -119,3 +119,12 @@ async fn docker_topics_on_a_kube_environment_are_refused() {
     let e = ws.until(|m| m["type"] == "error").await;
     assert_eq!(e["code"], "conflict");
 }
+
+#[tokio::test]
+async fn a_kube_pod_id_must_be_kubernetes_names() {
+    let (_t, _admin, mut ws) = kube_ws().await;
+    ws.send(json!({"op": "sub", "sub": 1, "topic": "logs", "env": "k", "id": "apps/web-1?x=y"}))
+        .await;
+    let e = ws.until(|m| m["type"] == "error").await;
+    assert_eq!(e["code"], "invalid");
+}
