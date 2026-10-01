@@ -146,9 +146,11 @@ async fn quick_restart_is_announced_even_when_status_never_fails() {
 
 #[tokio::test]
 async fn a_reachability_change_cuts_the_reconnect_backoff_short() {
-    let mut config = ws_config();
-    config.ws_backoff = std::time::Duration::from_secs(20);
-    let t = app_with(config).await;
+    let t = app_with(fleetops_api::ApiConfig {
+        ws_backoff: std::time::Duration::from_secs(20),
+        ..ws_config()
+    })
+    .await;
     let admin = t.with_local().await;
     let mut ws = Ws::open(t.serve().await, &admin).await;
     ws.send(ws_sub(1, "events", None, Value::Null)).await;

@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub mod agent;
 pub mod contract;
 pub mod fake_docker;
 

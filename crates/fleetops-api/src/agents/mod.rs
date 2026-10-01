@@ -1,6 +1,9 @@
 //! Agent environments: enrollment tokens, the docker run command, and the
 //! status updates the connect handler publishes (sub-project 2).
 
+mod axum_io;
+pub mod connect;
+
 use crate::{auth::token::generate_token, ws::hub::StatusChange, AppState};
 use fleetops_store::{AgentRecord, EnvironmentRecord};
 use serde::Serialize;

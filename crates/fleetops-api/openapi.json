@@ -9,6 +9,65 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/v1/agent/connect": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Agent tunnel (WebSocket upgrade, Bearer fj_… or fk_…). Not for browsers.",
+        "operationId": "agentConnect",
+        "responses": {
+          "101": {
+            "description": "Tunnel open"
+          },
+          "401": {
+            "description": "Missing, unknown or expired credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Plain HTTP from a non-loopback address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many failed attempts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/audit": {
       "get": {
         "tags": [
