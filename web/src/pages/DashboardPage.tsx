@@ -26,7 +26,7 @@ import {
   recentEventsQuery,
   volumesQuery,
 } from "@/api/queries";
-import type { ContainerSummary, DockerEvent } from "@/api/gen/types.gen";
+import type { ContainerSummary, DockerEvent, NetworkSummary } from "@/api/gen/types.gen";
 import { useSession } from "@/auth/session";
 import { Page } from "@/components/Page";
 import { Sparkline } from "@/components/Sparkline";
@@ -80,22 +80,27 @@ export function DashboardPage() {
       actions={shown(info) && <HostSection env={env} info={info} containers={containers.data} />}
     >
       {down !== null && <Unavailable reason={down} />}
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <div className="grid min-w-0 gap-5">
+      {/* Two columns on one grid: the board on the left (what needs attention,
+          what runs, what just happened) and disk usage on the right. Both
+          start on the same line; each ends where its content does. */}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <div className="grid min-w-0 content-start gap-5">
           {shown(containers) && <StatusSection env={env} q={containers} />}
           {containers.data && <RunningBay env={env} list={containers.data} />}
-        </div>
-        <div className="grid min-w-0 gap-5 md:grid-cols-2 xl:grid-cols-1">
           {shown(events) && <EventsSection env={env} q={events} />}
-          <div className="grid content-start gap-5">
-            {shown(df) && <DiskSection env={env} q={df} />}
-            <Inventory
-              env={env}
-              images={info.data?.Images}
-              volumes={volumes.data?.length}
-              networks={networks.data?.length}
-            />
-          </div>
+        </div>
+        <div className="grid min-w-0 content-start gap-5">
+          {shown(df) && (
+            <DiskSection env={env} q={df}>
+              <Inventory
+                env={env}
+                images={info.data?.Images}
+                volumes={volumes.data?.length}
+                networks={networks.data?.length}
+              />
+            </DiskSection>
+          )}
+          {shown(networks) && <NetworksSection env={env} q={networks} />}
         </div>
       </div>
     </Page>
@@ -173,13 +178,15 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
         ? "Nothing needs attention"
         : `${attention.length} ${attention.length === 1 ? "container needs" : "containers need"} attention`;
   const Icon = attention.length ? TriangleAlert : CircleCheck;
+  // One panel: the headline answers the first question, the strips name the
+  // containers behind it, and the footer counts the whole environment.
   return (
-    <section aria-labelledby={id} className="grid gap-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <section aria-labelledby={id} className="overflow-hidden rounded-lg border bg-card">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b px-4 py-2.5">
         {list.length > 0 && (
-          <Icon aria-hidden className={cn("size-5", attention.length ? "text-state-fail" : "text-state-run")} />
+          <Icon aria-hidden className={cn("size-4.5", attention.length ? "text-state-fail" : "text-state-run")} />
         )}
-        <h2 id={id} className="font-callsign text-lg font-semibold">
+        <h2 id={id} className="font-callsign text-base font-semibold">
           {headline}
         </h2>
         {attention.length > 1 && (
@@ -190,11 +197,11 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
         )}
       </div>
       {attention.length > 0 && (
-        <ul aria-label="Needs attention" onKeyDown={walk} className="overflow-hidden rounded-lg border bg-card">
+        <ul aria-label="Needs attention" onKeyDown={walk} className="border-b">
           {attention.map((c) => (
             <li
               key={c.id}
-              className="font-strip grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b px-3 py-2.5 text-sm last:border-b-0 has-[a:focus-visible]:bg-cord-soft sm:grid-cols-[auto_minmax(0,14rem)_minmax(0,1fr)_auto]"
+              className="font-strip grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 text-sm last:border-b-0 has-[a:focus-visible]:bg-cord-soft sm:grid-cols-[auto_minmax(0,16rem)_minmax(0,1fr)_auto]"
             >
               <ContainerState container={c} />
               <Link
@@ -216,7 +223,7 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
         </ul>
       )}
       {list.length > 0 && (
-        <div className="grid gap-2 rounded-lg border bg-card p-3">
+        <div className="grid gap-2.5 bg-muted/25 px-4 py-3">
           <div aria-hidden className="flex h-1.5 gap-px overflow-hidden rounded-full bg-muted">
             {counts.map(([state, n]) => (
               <span
@@ -226,7 +233,7 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
               />
             ))}
           </div>
-          <ul aria-label="Containers by state" className="flex flex-wrap gap-1.5">
+          <ul aria-label="Containers by state" className="-mx-1.5 flex flex-wrap gap-1">
             {counts.map(([state, n]) => (
               <li key={state}>
                 <Link
@@ -242,6 +249,7 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
           </ul>
         </div>
       )}
+      {list.length === 0 && <p className="px-4 py-3 text-sm text-muted-foreground">Containers appear here as soon as Docker reports them.</p>}
     </section>
   );
 }
@@ -268,13 +276,14 @@ function RunningBay({ env, list }: { env: string; list: ContainerSummary[] }) {
       }
       flush
     >
-      <ul aria-label="Running containers" onKeyDown={walk} className="font-strip text-sm">
+      {/* The strip drops fields by the bay's own width, not the window's. */}
+      <ul aria-label="Running containers" onKeyDown={walk} className="font-strip @container text-sm">
         {shownList.map((c) => (
           <li
             key={c.id}
-            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b px-4 py-2 last:border-b-0 has-[a:focus-visible]:bg-cord-soft sm:grid-cols-[auto_minmax(10rem,1fr)_minmax(0,10rem)_auto_auto]"
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b px-4 py-2 last:border-b-0 has-[a:focus-visible]:bg-cord-soft @md:grid-cols-[minmax(0,1fr)_8.5rem_9.5rem] @xl:grid-cols-[auto_minmax(0,1fr)_8.5rem_9.5rem] @3xl:grid-cols-[auto_minmax(10rem,18rem)_minmax(0,1fr)_8.5rem_9.5rem]"
           >
-            <ContainerState container={c} className="hidden sm:inline-flex" />
+            <ContainerState container={c} className="hidden @xl:inline-flex" />
             <Link
               data-strip
               to="/envs/$env/containers/$id"
@@ -283,9 +292,9 @@ function RunningBay({ env, list }: { env: string; list: ContainerSummary[] }) {
             >
               {c.name}
             </Link>
-            <span className="hidden truncate text-muted-foreground sm:block">{c.image}</span>
+            <span className="hidden truncate text-muted-foreground @3xl:block">{c.image}</span>
             <Usage env={env} container={c} kind="cpu" />
-            <span className="hidden sm:block">
+            <span className="hidden @md:block">
               <Usage env={env} container={c} kind="memory" />
             </span>
           </li>
@@ -312,7 +321,7 @@ function HostSection({
   const cpuSeries = cpus ? usage.cpu.map((v) => v / cpus) : [];
   const mem = usage.memory.at(-1);
   return (
-    <section aria-label="Host" className="flex min-w-0 flex-wrap items-stretch gap-2">
+    <section aria-label="Host" className="grid w-full min-w-0 grid-cols-2 gap-2 sm:w-auto xl:w-[24rem]">
       {info.error && !i ? (
         <InlineError error={info.error} />
       ) : running.length === 0 ? (
@@ -376,7 +385,7 @@ function Readout({
     <div
       role="group"
       aria-label={label}
-      className="font-strip grid w-[15.5rem] gap-1 rounded-lg border bg-card px-3 py-2"
+      className="font-strip grid min-w-0 gap-1 rounded-lg border bg-card px-3 py-2 sm:w-[12rem] xl:w-auto"
     >
       <div className="flex items-center justify-between gap-3">
         <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -403,7 +412,12 @@ function Readout({
 
 function EventsSection({ env, q }: { env: string; q: UseQueryResult<DockerEvent[]> }) {
   return (
-    <Section title="Recent events" icon={History} aside={`Last ${RECENT_EVENTS_WINDOW / 60} minutes`} flush>
+    <Section
+      title="Recent events"
+      icon={History}
+      aside={`Last ${RECENT_EVENTS_WINDOW / 60} minutes`}
+      flush
+    >
       {q.isPending ? (
         <div className="p-4">
           <Loading label="Loading recent events" lines={4} />
@@ -459,7 +473,7 @@ const DISK: { key: keyof DiskSummary; label: string; to?: "/envs/$env/images" | 
   { key: "buildCache", label: "Build cache" },
 ];
 
-function DiskSection({ env, q }: { env: string; q: UseQueryResult<unknown> }) {
+function DiskSection({ env, q, children }: { env: string; q: UseQueryResult<unknown>; children?: ReactNode }) {
   const df = q.data ? summarizeDiskUsage(q.data as Parameters<typeof summarizeDiskUsage>[0]) : null;
   const total = df ? DISK.reduce((n, d) => n + df[d.key].size, 0) : 0;
   return (
@@ -469,12 +483,13 @@ function DiskSection({ env, q }: { env: string; q: UseQueryResult<unknown> }) {
       ) : !df ? (
         <InlineError error={q.error} />
       ) : (
-        <ul aria-label="Disk usage" className="grid gap-3 text-sm">
+        <ul aria-label="Disk usage" className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-1">
           {DISK.map((d) => (
             <DiskRow key={d.key} env={env} label={d.label} to={d.to} usage={df[d.key]} total={total} />
           ))}
         </ul>
       )}
+      {children}
     </Section>
   );
 }
@@ -494,7 +509,7 @@ function DiskRow({
 }) {
   const share = total > 0 ? usage.size / total : 0;
   return (
-    <li aria-label={label} className="grid gap-1">
+    <li aria-label={label} className="grid gap-1.5">
       <div className="flex items-baseline justify-between gap-3">
         {to ? (
           <Link to={to} params={{ env }} className="font-medium hover:underline">
@@ -515,6 +530,66 @@ function DiskRow({
   );
 }
 
+/** Networks shown on the board before "all networks" takes over. */
+const NETWORKS_SHOWN = 6;
+/** Docker's own networks, listed after the ones someone made. */
+const BUILT_IN = new Set(["bridge", "host", "none"]);
+
+/** The environment's networks: name, driver and subnet, the user's own first. */
+function NetworksSection({ env, q }: { env: string; q: UseQueryResult<NetworkSummary[]> }) {
+  const list = [...(q.data ?? [])].sort(
+    (a, b) => Number(BUILT_IN.has(a.name)) - Number(BUILT_IN.has(b.name)) || a.name.localeCompare(b.name),
+  );
+  const more = list.length > NETWORKS_SHOWN;
+  return (
+    <Section
+      title="Networks"
+      icon={Waypoints}
+      aside={
+        more ? (
+          <Link to="/envs/$env/networks" params={{ env }} className="hover:text-foreground hover:underline">
+            All {list.length}
+          </Link>
+        ) : q.data ? (
+          `${list.length}`
+        ) : undefined
+      }
+      flush
+    >
+      {q.isPending ? (
+        <div className="p-4">
+          <Loading label="Loading networks" lines={3} />
+        </div>
+      ) : q.error ? (
+        <div className="p-4">
+          <InlineError error={q.error} />
+        </div>
+      ) : list.length === 0 ? (
+        <p className="p-4 text-sm text-muted-foreground">No networks.</p>
+      ) : (
+        <ul aria-label="Networks" className="font-strip text-sm">
+          {list.slice(0, NETWORKS_SHOWN).map((n) => (
+            <li key={n.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 border-b px-4 py-2 last:border-b-0">
+              <Link
+                to="/envs/$env/networks/$id"
+                params={{ env, id: n.id }}
+                className={cn("truncate font-semibold hover:underline", BUILT_IN.has(n.name) && "font-medium text-muted-foreground")}
+              >
+                {n.name}
+              </Link>
+              <span className="text-xs text-muted-foreground">
+                {n.driver}
+                {n.internal && " · internal"}
+              </span>
+              {n.subnet && <code className="col-span-2 truncate text-xs text-muted-foreground">{n.subnet}</code>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
 function Inventory({
   env,
   images,
@@ -532,13 +607,13 @@ function Inventory({
     [networks, "network", "/envs/$env/networks", Waypoints],
   ];
   return (
-    <nav aria-label="Other resources" className="grid overflow-hidden rounded-lg border bg-card text-sm">
+    <nav aria-label="Other resources" className="-mx-4 mt-4 -mb-4 grid grid-cols-3 border-t text-sm">
       {items.map(([n, noun, to, Icon]) => (
         <Link
           key={noun}
           to={to}
           params={{ env }}
-          className="flex items-center gap-2.5 border-b px-4 py-2.5 text-muted-foreground transition-colors last:border-b-0 hover:bg-accent hover:text-foreground"
+          className="flex items-center justify-center gap-2 border-l px-2 py-2.5 text-muted-foreground transition-colors first:border-l-0 hover:bg-accent hover:text-foreground"
         >
           <Icon aria-hidden className="size-4" strokeWidth={1.75} />
           <span>
