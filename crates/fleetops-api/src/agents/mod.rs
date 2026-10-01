@@ -22,10 +22,13 @@ pub fn new_agent_key() -> String {
 }
 
 /// The command an admin pastes on the remote host. The image tag is pinned
-/// to this server's version.
+/// to this server's version. It replaces an agent already running there,
+/// so the same command works after a key rotation; the agent itself falls
+/// back to the join token when its stored key is rejected.
 pub fn enrollment_command(server_url: &str, join_token: &str) -> String {
     format!(
-        "docker run -d --name fleetops-agent --restart unless-stopped \\\n  \
+        "docker rm -f fleetops-agent 2>/dev/null; \\\n\
+         docker run -d --name fleetops-agent --restart unless-stopped \\\n  \
          -v fleetops-agent:/data -v /var/run/docker.sock:/var/run/docker.sock \\\n  \
          --group-add \"$(stat -c %g /var/run/docker.sock)\" \\\n  \
          {AGENT_IMAGE}:{} \\\n  \

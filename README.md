@@ -245,7 +245,7 @@ The full protocol is in section 5.2 of the spec.
 - **Secret masking is display-only.** The API returns values unredacted, and anyone with access can reveal them.
 - **Agents.** Join tokens last 15 minutes and work once; the server stores only SHA-256 hashes of tokens and keys. Agent credentials open the tunnel and nothing else. Failed agent connects are rate-limited per address. Agents must use HTTPS unless they connect from the same machine.
 - **Trust.** A compromised server is root on every agent host, as it already is on its local socket. Treat the server like the hosts it manages.
-- **Reverse proxies.** Pass WebSocket upgrades through to `/api/v1/agent/connect`, and keep idle timeouts above 30 s (the server pings agents every 15 s).
+- **Reverse proxies.** Agents need TLS all the way to FleetOps: the server does not trust `X-Forwarded-Proto`, so a proxy that terminates TLS and forwards plain HTTP gets `403` for agents unless it runs on the same machine (a loopback peer). Either re-encrypt to `--tls-bind`, or pass TLS through (TCP mode). Pass WebSocket upgrades through to `/api/v1/agent/connect`, and keep idle timeouts above 30 s (the server pings agents every 15 s).
 - **No telemetry.** FleetOps does not phone home.
 - **Container image.** It runs as a non-root user on `distroless/static`, with no shell. Docker access comes only from the socket group you grant with `--group-add`.
 
