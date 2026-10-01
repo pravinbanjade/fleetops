@@ -3806,7 +3806,8 @@
       "EnvKind": {
         "type": "string",
         "enum": [
-          "docker-local"
+          "docker-local",
+          "docker-agent"
         ]
       },
       "EnvStatus": {
