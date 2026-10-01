@@ -4,6 +4,7 @@
 
 pub mod control;
 pub mod forward;
+pub mod registry;
 pub mod session;
 pub mod testing;
 pub mod ws;

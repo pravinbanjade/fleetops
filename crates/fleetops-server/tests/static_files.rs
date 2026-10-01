@@ -55,7 +55,7 @@ async fn full_app_serves_api_and_spa_with_security_headers() {
         AppState::new(
             store,
             ApiConfig::default(),
-            std::sync::Arc::new(fleetops_docker::DockerEnvFactory),
+            std::sync::Arc::new(fleetops_docker::DockerEnvFactory::default()),
         ),
         static_files::router(),
     );

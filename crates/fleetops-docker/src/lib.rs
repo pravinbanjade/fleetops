@@ -1,5 +1,6 @@
 //! bollard-backed implementation of fleetops's Docker traits.
 
+mod agent_env;
 mod containers;
 pub mod convert;
 mod env;
@@ -9,6 +10,7 @@ mod resources;
 mod streams;
 mod tunnel;
 
+pub use agent_env::AgentDockerEnv;
 pub use env::{DockerEnvFactory, LocalDockerEnv};
 
 use bollard::Docker;

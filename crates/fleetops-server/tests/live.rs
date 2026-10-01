@@ -56,7 +56,7 @@ async fn start() -> (Live, SocketAddr) {
     let state = AppState::new(
         store.clone(),
         ApiConfig::default(),
-        Arc::new(DockerEnvFactory),
+        Arc::new(DockerEnvFactory::default()),
     );
     bootstrap_local(&store, &state.envs, &host)
         .await
