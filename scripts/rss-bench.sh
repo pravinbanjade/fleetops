@@ -165,9 +165,26 @@ if [ -n "${KUBE_IT:-}" ] && [ "$kube_envs" -gt 0 ]; then
     done
     round=$((round + 1))
   done
+  # Three live watches per environment, held open while measuring.
+  cookie="fleetops_session=$(awk '$6 == "fleetops_session" {print $7}' "$jar")"
+  watch_envs=$(i=0; while [ "$i" -lt "$kube_envs" ]; do printf 'rss-kube-%s ' "$i"; i=$((i + 1)); done)
+  watch_out=$(mktemp)
+  # shellcheck disable=SC2086
+  node "$(dirname "$0")/kube-watch-load.mjs" "$base" "$cookie" 3 $watch_envs >"$watch_out" 2>&1 &
+  watch_pid=$!
+  tries=0
+  until grep -q ready "$watch_out"; do
+    kill -0 "$watch_pid" 2>/dev/null || fail "kube watches failed: $(cat "$watch_out")"
+    tries=$((tries + 1))
+    [ "$tries" -le 60 ] || fail "kube watches never all got their snapshots"
+    sleep 0.5
+  done
   sleep "$settle"
   kube_kib=$(peak_rss "$pid")
+  kill "$watch_pid" 2>/dev/null || true
+  wait "$watch_pid" 2>/dev/null || true
+  rm -f "$watch_out"
   kube_limit=$((limit_mib + agents + 5))
-  echo "rss-bench: server $(to_mib "$kube_kib") MiB with $agents agents and $kube_envs kube environments (limit $kube_limit MiB)"
+  echo "rss-bench: server $(to_mib "$kube_kib") MiB with $agents agents and $kube_envs kube environments x 3 watches (limit $kube_limit MiB)"
   [ "$kube_kib" -le $((kube_limit * 1024)) ] || fail "server RSS is over $kube_limit MiB with $kube_envs kube environments"
 fi
