@@ -3,7 +3,7 @@
 use crate::openapi::EnvParam;
 use crate::{
     auth::extract::CurrentUser,
-    authz::{authorize, Action},
+    authz::Action,
     extract::{ApiJson, ApiPath},
     ApiResult, AppState,
 };
@@ -17,7 +17,7 @@ use fleetops_core::kube::{
     ApplyAction, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeKind, KubeList, KubeObject,
     KubeOps, APPLY_MAX_BYTES,
 };
-use fleetops_core::{now_unix, Error, Result};
+use fleetops_core::{now_unix, Error, Grant, Result};
 use fleetops_store::NewAudit;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -69,22 +69,29 @@ pub(crate) fn wrong_kind(name: &str, kind: EnvKind) -> Error {
     ))
 }
 
-/// Resolves the environment, authorises, and returns its Kubernetes ops.
-pub(crate) fn kube_for(
+/// What a Kubernetes handler works with.
+pub(crate) struct KubeCtx {
+    pub env: Arc<dyn Environment>,
+    pub ops: Arc<dyn KubeOps>,
+    pub grant: Grant,
+}
+
+/// Resolves the environment, authorises, and returns its Kubernetes ops
+/// with the caller's grant.
+pub(crate) async fn kube_for(
     s: &AppState,
     cu: &CurrentUser,
     name: &str,
     action: Action,
-) -> Result<(Arc<dyn Environment>, Arc<dyn KubeOps>)> {
-    let env = s.envs.get(name)?;
-    authorize(&cu.user, Some(env.id()), action)?;
+) -> Result<KubeCtx> {
+    let (env, grant) = crate::authz::env_access(s, cu, name, action).await?;
     if !env.kind().is_kube() {
         return Err(wrong_kind(name, env.kind()));
     }
     let ops = env
         .kube()
         .ok_or_else(|| Error::EnvUnavailable(format!("environment '{name}' is unreachable")))?;
-    Ok((env, ops))
+    Ok(KubeCtx { env, ops, grant })
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -191,7 +198,7 @@ pub async fn list(
     if let Some(ns) = ns {
         check_namespace(ns)?;
     }
-    let (_, ops) = kube_for(&s, &cu, &p.env, Action::KubeRead)?;
+    let KubeCtx { ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
     Ok(Json(ops.list(k, ns).await?))
 }
 
@@ -204,7 +211,7 @@ pub async fn get(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<KubeObject>> {
     let k = p.checked()?;
-    let (_, ops) = kube_for(&s, &cu, &p.env, Action::KubeRead)?;
+    let KubeCtx { ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
     Ok(Json(ops.get(k, &p.ns, &p.name).await?))
 }
 
@@ -217,7 +224,7 @@ pub async fn events(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<Vec<KubeEvent>>> {
     let k = p.checked()?;
-    let (_, ops) = kube_for(&s, &cu, &p.env, Action::KubeRead)?;
+    let KubeCtx { ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
     Ok(Json(ops.events(k, &p.ns, &p.name).await?))
 }
 
@@ -234,7 +241,7 @@ pub async fn delete(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<StatusCode> {
     let k = p.checked()?;
-    let (env, ops) = kube_for(&s, &cu, &p.env, Action::KubeWrite)?;
+    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
     let r = ops.delete(k, &p.ns, &p.name).await;
     audit(&s, &cu, env.id(), "k8s.delete", &target(k, &p), &r).await;
     r?;
@@ -254,7 +261,7 @@ pub async fn scale(
     if !k.scalable() {
         return Err(Error::Invalid(format!("{} cannot be scaled", k.as_str())).into());
     }
-    let (env, ops) = kube_for(&s, &cu, &p.env, Action::KubeWrite)?;
+    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
     let r = ops.scale(k, &p.ns, &p.name, body.replicas).await;
     audit(&s, &cu, env.id(), "k8s.scale", &target(k, &p), &r).await;
     r?;
@@ -273,7 +280,7 @@ pub async fn restart(
     if !k.restartable() {
         return Err(Error::Invalid(format!("{} cannot be restarted", k.as_str())).into());
     }
-    let (env, ops) = kube_for(&s, &cu, &p.env, Action::KubeWrite)?;
+    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
     let r = ops.restart(k, &p.ns, &p.name).await;
     audit(&s, &cu, env.id(), "k8s.restart", &target(k, &p), &r).await;
     r?;
@@ -366,7 +373,7 @@ pub async fn editable(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<EditableObject>> {
     let k = p.checked()?;
-    let (_, ops) = kube_for(&s, &cu, &p.env, Action::KubeRead)?;
+    let KubeCtx { ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
     Ok(Json(ops.get_editable(k, &p.ns, &p.name).await?))
 }
 
@@ -389,7 +396,7 @@ pub async fn replace(
         )
         .into());
     }
-    let (env, ops) = kube_for(&s, &cu, &p.env, Action::KubeWrite)?;
+    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
     let r = ops
         .replace(
             k,
@@ -439,7 +446,7 @@ pub async fn apply(
         return Err(Error::Invalid("pick a namespace for documents that name none".into()).into());
     }
     check_namespace(&body.namespace)?;
-    let (env, ops) = kube_for(&s, &cu, &env_name, Action::KubeWrite)?;
+    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &env_name, Action::KubeWrite).await?;
     let mut results = ops
         .apply(&body.yaml, &body.namespace, mode(body.dry_run, body.force))
         .await?;
@@ -475,7 +482,7 @@ pub async fn templates(
     cu: CurrentUser,
     ApiPath(env_name): ApiPath<String>,
 ) -> ApiResult<Json<std::collections::BTreeMap<String, String>>> {
-    kube_for(&s, &cu, &env_name, Action::KubeRead)?;
+    kube_for(&s, &cu, &env_name, Action::KubeRead).await?;
     Ok(Json(
         KubeKind::ALL
             .into_iter()

@@ -4904,6 +4904,13 @@
           "kube-agent"
         ]
       },
+      "EnvRole": {
+        "type": "string",
+        "enum": [
+          "viewer",
+          "operator"
+        ]
+      },
       "EnvStatus": {
         "oneOf": [
           {
@@ -4999,6 +5006,17 @@
           {
             "type": "object",
             "properties": {
+              "access": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Grant",
+                    "description": "The caller's access here (admins: operator on the whole environment)."
+                  }
+                ]
+              },
               "agent": {
                 "oneOf": [
                   {
@@ -5123,6 +5141,29 @@
               "null"
             ],
             "default": null
+          }
+        }
+      },
+      "Grant": {
+        "type": "object",
+        "description": "One user's access to one environment.",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "namespaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "`None` is the whole environment; otherwise the only namespaces\n(Kubernetes) the grant covers.",
+            "uniqueItems": true
+          },
+          "role": {
+            "$ref": "#/components/schemas/EnvRole"
           }
         }
       },

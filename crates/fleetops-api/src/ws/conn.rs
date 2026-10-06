@@ -7,7 +7,6 @@ use super::queue::{Policy, SubQueue};
 use super::topics;
 use crate::{
     auth::{extract::CurrentUser, SESSION_IDLE_SECS, SESSION_TOUCH_SECS},
-    authz::{authorize, Action},
     AppState,
 };
 use axum::extract::ws::{Message, WebSocket};
@@ -125,7 +124,11 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
             }},
             change = status.recv() => match change {
                 Ok(c) => {
-                    if authorize(&cu.user, None, Action::EnvRead).is_ok() {
+                    let visible = match s.envs.get(&c.env) {
+                        Ok(env) => s.store.env_grant(cu.user.id, env.id()).await.ok().flatten().is_some(),
+                        Err(_) => false,
+                    };
+                    if visible {
                         shared.say(protocol::env_status(&c.env, &c.status));
                     }
                 }

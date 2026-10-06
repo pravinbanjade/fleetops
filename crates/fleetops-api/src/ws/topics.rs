@@ -7,7 +7,7 @@ use super::protocol::{self, encode_binary, Out};
 use super::queue::{Policy, SubQueue};
 use crate::{
     auth::extract::CurrentUser,
-    authz::{authorize, Action},
+    authz::Action,
     tasks::{TaskEvent, TaskStatus},
     AppState,
 };
@@ -56,15 +56,14 @@ fn opts<T: serde::de::DeserializeOwned + Default>(v: Value) -> Result<T> {
 }
 
 /// Resolves the environment, authorises, and returns its Docker ops.
-fn docker_for(
+async fn docker_for(
     s: &AppState,
     cu: &CurrentUser,
     env: &Option<String>,
     action: Action,
 ) -> Result<(Arc<dyn Environment>, Arc<dyn DockerOps>)> {
     let name = required(env, "env")?;
-    let env = s.envs.get(name)?;
-    authorize(&cu.user, Some(env.id()), action)?;
+    let (env, _) = crate::authz::env_access(s, cu, name, action).await?;
     if env.kind().is_kube() {
         return Err(crate::routes::kube::wrong_kind(name, env.kind()));
     }
@@ -99,7 +98,7 @@ fn is_kube_env(s: &AppState, env: &Option<String>) -> bool {
 /// or name is `id`. One shared Docker stream per environment.
 pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, _) = docker_for(s, cu, &env, Action::DockerRead)?;
+    let (env, _) = docker_for(s, cu, &env, Action::DockerRead).await?;
     let q = c.queue(Policy::DropOldest);
     let mut rx = s
         .hubs
@@ -140,7 +139,7 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
 /// Stats samples for container `id`, shared with every other subscriber.
 pub(super) async fn stats(c: &Ctx<'_>, env: Option<String>, id: Option<String>) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) = docker_for(s, cu, &env, Action::DockerRead)?;
+    let (env, ops) = docker_for(s, cu, &env, Action::DockerRead).await?;
     let id = required(&id, "id")?.to_string();
     let (handle, mut rx) = s.hubs.stats(&env).subscribe(ops, &id);
     let q = c.queue(Policy::DropOldest);
@@ -181,12 +180,12 @@ pub(super) async fn logs(
     let (s, cu, sub) = (c.s, c.cu, c.sub);
     let o: LogOptions = opts(opts_v)?;
     let lines = if is_kube_env(s, &env) {
-        let (_, ops) =
-            crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead)?;
+        let crate::routes::kube::KubeCtx { ops, .. } =
+            crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead).await?;
         let (ns, pod) = pod_id(&id)?;
         ops.logs(&ns, &pod, &o)
     } else {
-        let (_, ops) = docker_for(s, cu, &env, Action::DockerRead)?;
+        let (_, ops) = docker_for(s, cu, &env, Action::DockerRead).await?;
         ops.logs(required(&id, "id")?, &o)
     };
     let q = c.queue(Policy::Gap);
@@ -252,7 +251,7 @@ pub(super) async fn exec(
         return kube_exec(c, env, id, opts_v).await;
     }
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) = docker_for(s, cu, &env, Action::DockerWrite)?;
+    let (env, ops) = docker_for(s, cu, &env, Action::DockerWrite).await?;
     let id = required(&id, "id")?.to_string();
     let o: ExecOptions = opts(opts_v)?;
     let session = ops.exec_start(&id, &o).await;
@@ -306,8 +305,8 @@ async fn kube_exec(
     opts_v: Value,
 ) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) =
-        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeWrite)?;
+    let crate::routes::kube::KubeCtx { env, ops, .. } =
+        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeWrite).await?;
     let (ns, pod) = pod_id(&id)?;
     let o: ExecOptions = opts(opts_v)?;
     let session = ops.exec_start(&ns, &pod, &o).await;
@@ -394,8 +393,8 @@ pub(super) async fn kube_watch(
     id: Option<String>,
 ) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) =
-        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead)?;
+    let crate::routes::kube::KubeCtx { env, ops, .. } =
+        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead).await?;
     let (kind, ns) = watch_id(&id)?;
     let mut w = s
         .hubs

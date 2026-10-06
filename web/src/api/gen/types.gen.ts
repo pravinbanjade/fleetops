@@ -386,6 +386,8 @@ export type EntryKind = 'file' | 'dir' | 'symlink' | 'other';
 
 export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent';
 
+export type EnvRole = 'viewer' | 'operator';
+
 export type EnvStatus = {
     state: 'up';
     version: EnvVersion;
@@ -407,6 +409,7 @@ export type EnvVersion = (EngineVersion & {
  * An environment as listed: agent environments carry their agent's state.
  */
 export type EnvView = EnvironmentRecord & {
+    access?: null | Grant;
     agent?: null | AgentView;
     kube?: null | KubeconfigSummary;
 };
@@ -449,6 +452,18 @@ export type ExecOptions = {
     container?: string | null;
     rows?: number;
     user?: string | null;
+};
+
+/**
+ * One user's access to one environment.
+ */
+export type Grant = {
+    /**
+     * `None` is the whole environment; otherwise the only namespaces
+     * (Kubernetes) the grant covers.
+     */
+    namespaces?: Array<string> | null;
+    role: EnvRole;
 };
 
 export type Health = {

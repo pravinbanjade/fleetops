@@ -253,6 +253,7 @@ async fn an_unreachable_cluster_is_503_and_truncation_is_reported() {
 async fn ordinary_users_can_read_and_act() {
     let (t, admin) = kube_app().await;
     t.create_user(&admin, "bob", "bob-password-1", "user").await;
+    t.grant("bob", "k", "operator", None).await;
     let user = session_from(&t.login("bob", "bob-password-1").await);
     let r = t
         .send(req(

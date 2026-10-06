@@ -124,6 +124,7 @@ async fn users_can_read_but_not_manage_environments() {
     let app = app().await;
     let admin = app.with_local().await;
     app.create_user(&admin, "bob", "bob-password", "user").await;
+    app.grant("bob", "local", "viewer", None).await;
     let bob = session_from(&app.login("bob", "bob-password").await);
     assert_eq!(
         app.send(req("GET", "/api/v1/envs", None, Some(&bob)))

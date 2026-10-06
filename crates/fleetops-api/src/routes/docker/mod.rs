@@ -8,11 +8,7 @@ pub mod networks;
 pub mod system;
 pub mod volumes;
 
-use crate::{
-    auth::extract::CurrentUser,
-    authz::{authorize, Action},
-    ApiResult, AppState,
-};
+use crate::{auth::extract::CurrentUser, authz::Action, ApiResult, AppState};
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
 use fleetops_core::{now_unix, Error, Result};
@@ -36,8 +32,7 @@ pub async fn ctx(
     env_name: &str,
     action: Action,
 ) -> ApiResult<EnvCtx> {
-    let env = s.envs.get(env_name)?;
-    authorize(&user.user, Some(env.id()), action)?;
+    let (env, _) = crate::authz::env_access(s, &user, env_name, action).await?;
     if env.kind().is_kube() {
         return Err(crate::routes::kube::wrong_kind(env_name, env.kind()).into());
     }
