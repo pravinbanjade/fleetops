@@ -4,6 +4,17 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type AccessEntry = {
+    env_id: number;
+    env_kind: string;
+    env_name: string;
+    /**
+     * Null for the whole environment.
+     */
+    namespaces?: Array<string> | null;
+    role: EnvRole;
+};
+
 export type AgentView = {
     /**
      * kube-agent: the access level its manifest grants.
@@ -383,6 +394,13 @@ export type Enrollment = {
 };
 
 export type EntryKind = 'file' | 'dir' | 'symlink' | 'other';
+
+export type EnvAccessEntry = {
+    namespaces?: Array<string> | null;
+    role: EnvRole;
+    user_id: number;
+    username: string;
+};
 
 export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent';
 
@@ -766,6 +784,14 @@ export type SessionView = {
     ip?: string | null;
     last_seen_at: number;
     user_agent?: string | null;
+};
+
+export type SetAccess = {
+    /**
+     * Kubernetes only; omit for the whole environment.
+     */
+    namespaces?: Array<string> | null;
+    role: EnvRole;
 };
 
 /**
@@ -1274,6 +1300,36 @@ export type UpdateEnvResponses = {
 };
 
 export type UpdateEnvResponse = UpdateEnvResponses[keyof UpdateEnvResponses];
+
+export type ListEnvAccessData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/access';
+};
+
+export type ListEnvAccessErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListEnvAccessError = ListEnvAccessErrors[keyof ListEnvAccessErrors];
+
+export type ListEnvAccessResponses = {
+    /**
+     * Grants, by user
+     */
+    200: Array<EnvAccessEntry>;
+};
+
+export type ListEnvAccessResponse = ListEnvAccessResponses[keyof ListEnvAccessResponses];
 
 export type RotateAgentData = {
     body?: never;
@@ -3133,6 +3189,104 @@ export type UpdateUserResponses = {
 };
 
 export type UpdateUserResponse = UpdateUserResponses[keyof UpdateUserResponses];
+
+export type ListUserAccessData = {
+    body?: never;
+    path: {
+        /**
+         * User id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/users/{id}/access';
+};
+
+export type ListUserAccessErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListUserAccessError = ListUserAccessErrors[keyof ListUserAccessErrors];
+
+export type ListUserAccessResponses = {
+    /**
+     * Grants, by environment
+     */
+    200: Array<AccessEntry>;
+};
+
+export type ListUserAccessResponse = ListUserAccessResponses[keyof ListUserAccessResponses];
+
+export type RevokeUserAccessData = {
+    body?: never;
+    path: {
+        /**
+         * User id
+         */
+        id: number;
+        /**
+         * Environment id
+         */
+        env_id: number;
+    };
+    query?: never;
+    url: '/api/v1/users/{id}/access/{env_id}';
+};
+
+export type RevokeUserAccessErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RevokeUserAccessError = RevokeUserAccessErrors[keyof RevokeUserAccessErrors];
+
+export type RevokeUserAccessResponses = {
+    /**
+     * Revoked (or there was nothing to revoke)
+     */
+    204: void;
+};
+
+export type RevokeUserAccessResponse = RevokeUserAccessResponses[keyof RevokeUserAccessResponses];
+
+export type SetUserAccessData = {
+    body: SetAccess;
+    path: {
+        /**
+         * User id
+         */
+        id: number;
+        /**
+         * Environment id
+         */
+        env_id: number;
+    };
+    query?: never;
+    url: '/api/v1/users/{id}/access/{env_id}';
+};
+
+export type SetUserAccessErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type SetUserAccessError = SetUserAccessErrors[keyof SetUserAccessErrors];
+
+export type SetUserAccessResponses = {
+    /**
+     * The grant
+     */
+    200: AccessEntry;
+};
+
+export type SetUserAccessResponse = SetUserAccessResponses[keyof SetUserAccessResponses];
 
 export type OpenWebsocketData = {
     body?: never;

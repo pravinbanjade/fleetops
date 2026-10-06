@@ -619,6 +619,56 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/access": {
+      "get": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Who has access to an environment",
+        "operationId": "listEnvAccess",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grants, by user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EnvAccessEntry"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/agent/rotate": {
       "post": {
         "tags": [
@@ -3845,6 +3895,176 @@
         ]
       }
     },
+    "/api/v1/users/{id}/access": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "A user's environment grants",
+        "operationId": "listUserAccess",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grants, by environment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AccessEntry"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/{id}/access/{env_id}": {
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Grant or change a user's access to an environment",
+        "operationId": "setUserAccess",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "env_id",
+            "in": "path",
+            "description": "Environment id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAccess"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessEntry"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Revoke a user's access to an environment",
+        "operationId": "revokeUserAccess",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "env_id",
+            "in": "path",
+            "description": "Environment id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked (or there was nothing to revoke)"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/ws": {
       "get": {
         "tags": [
@@ -3877,6 +4097,40 @@
   },
   "components": {
     "schemas": {
+      "AccessEntry": {
+        "type": "object",
+        "required": [
+          "env_id",
+          "env_name",
+          "env_kind",
+          "role"
+        ],
+        "properties": {
+          "env_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "env_kind": {
+            "type": "string"
+          },
+          "env_name": {
+            "type": "string"
+          },
+          "namespaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Null for the whole environment."
+          },
+          "role": {
+            "$ref": "#/components/schemas/EnvRole"
+          }
+        }
+      },
       "AgentView": {
         "type": "object",
         "required": [
@@ -4894,6 +5148,35 @@
           "symlink",
           "other"
         ]
+      },
+      "EnvAccessEntry": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "username",
+          "role"
+        ],
+        "properties": {
+          "namespaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "role": {
+            "$ref": "#/components/schemas/EnvRole"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
       },
       "EnvKind": {
         "type": "string",
@@ -6097,6 +6380,27 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "SetAccess": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "namespaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Kubernetes only; omit for the whole environment."
+          },
+          "role": {
+            "$ref": "#/components/schemas/EnvRole"
           }
         }
       },
