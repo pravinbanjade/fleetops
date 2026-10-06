@@ -553,3 +553,35 @@ async fn reviewing_a_secret_value_change_says_it_changes() {
     assert_eq!(a[0].action, Some(ApplyAction::Configured), "{a:?}");
     secrets.delete(&name, &Default::default()).await.unwrap();
 }
+
+#[tokio::test]
+async fn a_limited_apply_sends_only_documents_in_its_namespaces() {
+    let ops = common::ops();
+    let name = uniq("limited");
+    let yaml = format!(
+        "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\n  namespace: {NS}\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\n  namespace: default\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: {name}\nrules: []\n"
+    );
+    let allowed: std::collections::BTreeSet<String> = [NS.to_string()].into();
+    let outside: Api<ConfigMap> = Api::namespaced(kube_client(), "default");
+    for mode in [ApplyMode::DryRun, ApplyMode::Commit { force: false }] {
+        let r = ops.apply(&yaml, NS, mode, Some(&allowed)).await.unwrap();
+        assert!(r[0].error.is_none(), "{:?}", r[0].error);
+        let e = r[1].error.as_ref().expect("refused");
+        assert_eq!(
+            (e.code.as_str(), e.message.as_str()),
+            ("forbidden", "namespace 'default' is not in your access")
+        );
+        assert_eq!(
+            r[2].error.as_ref().unwrap().message,
+            "cluster-scoped objects are outside your access"
+        );
+        assert!(
+            outside.get_opt(&name).await.unwrap().is_none(),
+            "a refused document is never sent"
+        );
+    }
+    let roles: Api<k8s_openapi::api::rbac::v1::ClusterRole> = Api::all(kube_client());
+    assert!(roles.get_opt(&name).await.unwrap().is_none());
+    let cms: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
+    cms.delete(&name, &Default::default()).await.unwrap();
+}
