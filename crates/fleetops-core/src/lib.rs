@@ -1,5 +1,6 @@
 //! Domain types shared by every fleetops crate. No I/O lives here.
 
+pub mod access;
 pub mod docker;
 pub mod env;
 pub mod error;
@@ -8,6 +9,7 @@ pub mod recreate;
 pub mod streams;
 pub mod user;
 
+pub use access::{EnvRole, Grant};
 pub use error::{Error, Result};
 pub use user::{validate_password, validate_username, Role, User};
 
