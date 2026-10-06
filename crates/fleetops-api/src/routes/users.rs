@@ -99,6 +99,7 @@ pub async fn update(
     let now = now_unix();
     if let Some(role) = body.role {
         s.store.set_user_role(id, role, now).await?;
+        s.hubs.access_changed(id);
     }
     if let Some(pw) = body.password {
         let hash = password::hash_password(pw).await?;

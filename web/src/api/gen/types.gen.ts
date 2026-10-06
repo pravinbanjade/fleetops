@@ -749,6 +749,8 @@ export type ServerMsg = {
     env: string;
     status: EnvStatus;
     type: 'env_status';
+} | {
+    type: 'access_changed';
 };
 
 export type SessionInfo = {

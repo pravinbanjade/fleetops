@@ -1,6 +1,9 @@
 //! `/api/v1/ws`: one multiplexed websocket per browser tab (spec §5.2).
 
 pub mod conn;
+/// Why a user's subscriptions end when their access changes.
+pub const ACCESS_CHANGED: &str = "your access changed";
+
 pub mod hub;
 pub mod protocol;
 pub mod queue;
