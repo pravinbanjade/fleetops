@@ -66,6 +66,15 @@ fn mask_values(v: &mut Value) {
 /// The object as the editor shows it: no `managedFields`, `status` or
 /// last-applied annotation, and a Secret's values masked.
 pub fn clean(v: &mut Value) {
+    strip(v);
+    if is_secret(v) {
+        mask_values(v);
+    }
+}
+
+/// `clean` without the masking: for comparing objects, where a changed
+/// Secret value must still count as a change. Never shown.
+pub fn strip(v: &mut Value) {
     if let Some(meta) = v.get_mut("metadata").and_then(Value::as_object_mut) {
         meta.remove("managedFields");
         if let Some(ann) = meta.get_mut("annotations").and_then(Value::as_object_mut) {
@@ -77,9 +86,6 @@ pub fn clean(v: &mut Value) {
     }
     if let Some(o) = v.as_object_mut() {
         o.remove("status");
-    }
-    if is_secret(v) {
-        mask_values(v);
     }
 }
 

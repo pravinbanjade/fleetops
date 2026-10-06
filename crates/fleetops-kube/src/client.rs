@@ -161,15 +161,7 @@ impl KubeClient {
         pp.dry_run = mode.dry_run();
         pp.force = mode.force();
         let out = timed(api.patch(&doc.name, &pp, &Patch::Apply(&doc.value))).await?;
-        let before = live.map(cleaned);
-        let after = cleaned(serde_json::to_value(out).unwrap_or_default());
-        let action = match &before {
-            None => ApplyAction::Created,
-            Some(b) if *b == after => ApplyAction::Unchanged,
-            Some(_) => ApplyAction::Configured,
-        };
-        let before = before.map(|b| crate::mask::to_yaml(&b)).transpose()?;
-        Ok((action, before, crate::mask::to_yaml(&after)?))
+        outcome(live, serde_json::to_value(out).unwrap_or_default())
     }
 
     /// The owner chain, nearest first. A ReplicaSet owner is followed one
@@ -205,6 +197,28 @@ impl KubeClient {
 fn cleaned(mut v: serde_json::Value) -> serde_json::Value {
     crate::mask::clean(&mut v);
     v
+}
+
+/// What a write did, judged on unmasked objects (a Secret whose values
+/// changed has identical masked forms), and the masked YAML to show.
+fn outcome(
+    before: Option<serde_json::Value>,
+    after: serde_json::Value,
+) -> Result<(ApplyAction, Option<String>, String)> {
+    let strip = |mut v: serde_json::Value| {
+        crate::mask::strip(&mut v);
+        v
+    };
+    let (before, after) = (before.map(strip), strip(after));
+    let action = match &before {
+        None => ApplyAction::Created,
+        Some(b) if *b == after => ApplyAction::Unchanged,
+        Some(_) => ApplyAction::Configured,
+    };
+    let before = before
+        .map(|b| crate::mask::to_yaml(&cleaned(b)))
+        .transpose()?;
+    Ok((action, before, crate::mask::to_yaml(&cleaned(after))?))
 }
 
 /// Runs one apiserver call with the request timeout and error mapping.
@@ -565,16 +579,12 @@ impl KubeOps for KubeClient {
             }
             r => r?,
         };
-        let before = cleaned(live);
-        let after = cleaned(serde_json::to_value(out).unwrap_or_default());
+        let (action, before, after) =
+            outcome(Some(live), serde_json::to_value(out).unwrap_or_default())?;
         let mut res = doc.result();
-        res.action = Some(if before == after {
-            ApplyAction::Unchanged
-        } else {
-            ApplyAction::Configured
-        });
-        res.before = Some(crate::mask::to_yaml(&before)?);
-        res.after = Some(crate::mask::to_yaml(&after)?);
+        res.action = Some(action);
+        res.before = before;
+        res.after = Some(after);
         Ok(res)
     }
 }
