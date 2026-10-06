@@ -216,6 +216,15 @@ describe("WsClient", () => {
     expect(onEnvStatus).toHaveBeenCalledWith("local", { state: "down", reason: "gone" });
   });
 
+  it("reports access_changed", () => {
+    const onAccessChanged = vi.fn();
+    client({ onAccessChanged });
+    const sock = FakeWebSocket.latest();
+    sock.open();
+    sock.receive({ type: "access_changed" });
+    expect(onAccessChanged).toHaveBeenCalledTimes(1);
+  });
+
   it("frames binary exec input and routes binary output by sub id", () => {
     const ws = client();
     const sock = FakeWebSocket.latest();
