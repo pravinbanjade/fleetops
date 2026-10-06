@@ -29,7 +29,7 @@ struct Row {
 
 fn grant(role: &str, namespaces: Option<&str>) -> Result<Grant> {
     let namespaces = namespaces
-        .map(|j| serde_json::from_str::<BTreeSet<String>>(j))
+        .map(serde_json::from_str::<BTreeSet<String>>)
         .transpose()
         .map_err(|e| Error::Internal(format!("bad namespaces in role_bindings: {e}")))?;
     Ok(Grant {
