@@ -13,10 +13,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { formatTime } from "@/lib/format";
+import { AccessDialog } from "./AccessDialog";
 import { FormDialog } from "./FormDialog";
 import { UserAvatar } from "@/components/UserAvatar";
 
-type Dialog = { kind: "add" } | { kind: "password" | "role" | "delete"; user: User } | null;
+type Dialog = { kind: "add" } | { kind: "password" | "role" | "delete" | "access"; user: User } | null;
 
 const col = columns<User>();
 
@@ -45,6 +46,11 @@ export function UsersPage() {
       header: () => <span className="sr-only">Actions</span>,
       cell: (c) => (
         <span className="flex justify-end gap-2">
+          {c.row.original.role !== "admin" && (
+            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "access", user: c.row.original })}>
+              Access
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "role", user: c.row.original })}>
             Change role
           </Button>
@@ -70,6 +76,7 @@ export function UsersPage() {
         initialSorting={[{ id: "username", desc: false }]}
       />
       {dialog?.kind === "add" && <AddUser onClose={close} onDone={refresh} />}
+      {dialog?.kind === "access" && <AccessDialog user={dialog.user} onClose={close} />}
       {dialog?.kind === "role" && <ChangeRole user={dialog.user} onClose={close} onDone={refresh} />}
       {dialog?.kind === "password" && <ResetPassword user={dialog.user} self={dialog.user.id === me.id} onClose={close} />}
       {dialog?.kind === "delete" && (
@@ -181,7 +188,7 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
     <div className="grid gap-2">
       <Label htmlFor="user-role">Role</Label>
       <NativeSelect id="user-role" value={value} onChange={(e) => onChange(e.target.value as Role)}>
-        <option value="user">user: manages Docker resources</option>
+        <option value="user">user: works in the environments granted under Access</option>
         <option value="admin">admin: also manages users and environments</option>
       </NativeSelect>
     </div>
