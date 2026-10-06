@@ -9,12 +9,13 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 4).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b). Next are slices 3c (RBAC) and 3d (Helm), then sub-project 4, stacks and GitOps.
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b) and per-environment roles (slice 3c). Next is slice 3d (Helm), then sub-project 4, stacks and GitOps.
 
 ## Contents
 
 - [Features](#features)
 - [Quick start](#quick-start)
+- [Access](#access)
 - [Configuration](#configuration)
 - [Development](#development)
 - [Architecture](#architecture)
@@ -153,6 +154,19 @@ Helm comes later.
 
 **The secret key.** Stored kubeconfigs are sealed with AES-256-GCM. The key is `FLEETOPS_SECRET_KEY` (32 bytes, base64), or `<data>/secret.key`, which is created on first start. Back it up with `fleetops.db`. Without it, stored kubeconfigs cannot be read; such environments show *credential cannot be decrypted; re-enter the kubeconfig*.
 
+## Access
+
+Admins manage users, environments and access, and can do everything everywhere. Every other account works only in the environments an admin grants it, from **Users → Access**:
+
+- **Viewer** reads everything the grant covers: lists, details, logs, stats, events and YAML.
+- **Operator** also changes it: start, stop, remove, pull, create, Compose actions, delete, scale, restart, edit and apply YAML, and terminals (a shell is a change).
+
+An environment a user has no role on does not exist for them: it is missing from their list and its URLs answer *not found*.
+
+**Namespaces.** A role on a Kubernetes environment can be limited to some namespaces. The user then sees and acts on objects in those namespaces only; *All namespaces* means all of theirs. Of the cluster-wide kinds they can read Nodes, and Namespaces in their list; they cannot change or apply anything cluster-wide. FleetOps enforces this boundary, not the cluster: the agent or kubeconfig keeps its own permissions. A namespace that is deleted stays in the grant, so recreating it restores access. An operator limited to some namespaces can still create pods there with any service account or host access the cluster allows, so give namespace-limited operators only namespaces whose cluster policies (Pod Security, RBAC) you trust.
+
+**Upgrading.** Existing non-admin accounts keep operator access to every environment that existed before the upgrade. A new environment is visible only to admins until access is granted. Refused actions are recorded in the audit log as *denied*.
+
 ## Configuration
 
 Configuration comes from CLI flags or environment variables. There is no config file.
@@ -289,10 +303,10 @@ The full protocol is in section 5.2 of the spec.
 | **1** | **Core + local Docker** (done) | Server, embedded UI, auth, environments, full Docker resource management, real-time channel |
 | **2** | **Agent + multi-host** (done) | Rust agent that dials out to the server over a multiplexed websocket tunnel |
 | **3** | **Kubernetes** (slices 3 and 3b done) | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec; live watch streams and YAML create, edit and apply (3b) |
-| 3c | RBAC | Per-environment roles for Docker and Kubernetes environments, with namespace scoping inside clusters |
+| **3c** | **RBAC** (done) | Per-environment viewer and operator roles for Docker and Kubernetes environments, with namespace scoping inside clusters |
 | 3d | Helm | Releases in Kubernetes environments |
 | 4 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
-| 5 | Teams & enterprise (free) | OIDC/SSO, LDAP, API tokens, backup and restore |
+| 5 | Teams & enterprise (free) | Teams, OIDC/SSO, LDAP, API tokens, backup and restore |
 
 Progress on sub-project 1:
 

@@ -7,7 +7,7 @@ use fleetops_core::env::{EnvKind, EnvStatus, EnvVersion, Environment};
 use fleetops_core::kube::*;
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions, LogStream};
 use fleetops_core::{Error, Result};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -24,6 +24,10 @@ pub struct ExecHandle {
     pub exit: oneshot::Sender<Option<i64>>,
 }
 
+/// One recorded write: what, the YAML, the mode, and the namespaces it
+/// was limited to.
+pub type Applied = (String, String, ApplyMode, Option<BTreeSet<String>>);
+
 #[derive(Default)]
 pub struct FakeKube {
     objects: Mutex<BTreeMap<(KubeKind, String, String), KubeObject>>,
@@ -35,7 +39,7 @@ pub struct FakeKube {
     pub log_opts: Mutex<Vec<LogOptions>>,
     execs: Mutex<Vec<ExecHandle>>,
     watches: Mutex<Vec<WatchTx>>,
-    pub applied: Mutex<Vec<(String, String, ApplyMode)>>,
+    pub applied: Mutex<Vec<Applied>>,
 }
 
 type WatchTx = (
@@ -267,11 +271,12 @@ impl KubeOps for FakeKube {
         yaml: &str,
         default_ns: &str,
         mode: ApplyMode,
+        allowed: Option<&BTreeSet<String>>,
     ) -> Result<Vec<ApplyResult>> {
         self.applied
             .lock()
             .unwrap()
-            .push(("apply".into(), yaml.into(), mode));
+            .push(("apply".into(), yaml.into(), mode, allowed.cloned()));
         let field = |doc: &str, key: &str| {
             doc.lines()
                 .find_map(|l| l.trim().strip_prefix(key))
@@ -285,19 +290,41 @@ impl KubeOps for FakeKube {
             .enumerate()
             .map(|(index, doc)| {
                 let kind = field(doc, "kind:");
-                let forbidden = kind == "ClusterRole";
+                let namespaced = !matches!(
+                    kind.as_str(),
+                    "Namespace"
+                        | "Node"
+                        | "ClusterRole"
+                        | "ClusterRoleBinding"
+                        | "CustomResourceDefinition"
+                );
+                let ns = Some(field(doc, "namespace:"))
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| default_ns.to_string());
+                // As the real client: refused before anything is sent.
+                let refused = fleetops_core::access::check_doc(
+                    allowed,
+                    namespaced,
+                    namespaced.then_some(ns.as_str()),
+                )
+                .err()
+                .map(|e| ApplyError::from(&e));
+                let error = refused.or_else(|| {
+                    (kind == "ClusterRole").then(|| ApplyError {
+                        code: "forbidden".into(),
+                        message: "clusterroles.rbac.authorization.k8s.io is forbidden".into(),
+                    })
+                });
+                let ok = error.is_none();
                 ApplyResult {
                     index,
                     api_version: field(doc, "apiVersion:"),
-                    namespace: (!forbidden).then(|| default_ns.to_string()),
+                    namespace: ok.then(|| ns.clone()),
                     name: field(doc, "name:"),
-                    action: (!forbidden).then_some(ApplyAction::Created),
+                    action: ok.then_some(ApplyAction::Created),
                     before: None,
-                    after: (!forbidden).then(|| doc.to_string()),
-                    error: forbidden.then(|| ApplyError {
-                        code: "forbidden".into(),
-                        message: "clusterroles.rbac.authorization.k8s.io is forbidden".into(),
-                    }),
+                    after: ok.then(|| doc.to_string()),
+                    error,
                     kind,
                 }
             })
@@ -320,6 +347,7 @@ impl KubeOps for FakeKube {
             format!("replace {}/{ns}/{name}", kind.as_str()),
             yaml.into(),
             mode,
+            None,
         ));
         Ok(ApplyResult {
             index: 0,

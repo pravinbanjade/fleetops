@@ -168,23 +168,58 @@ if [ -n "${KUBE_IT:-}" ] && [ "$kube_envs" -gt 0 ]; then
   # Three live watches per environment, held open while measuring.
   cookie="fleetops_session=$(awk '$6 == "fleetops_session" {print $7}' "$jar")"
   watch_envs=$(i=0; while [ "$i" -lt "$kube_envs" ]; do printf 'rss-kube-%s ' "$i"; i=$((i + 1)); done)
-  watch_out=$(mktemp)
-  # shellcheck disable=SC2086
-  node "$(dirname "$0")/kube-watch-load.mjs" "$base" "$cookie" 3 $watch_envs >"$watch_out" 2>&1 &
-  watch_pid=$!
-  tries=0
-  until grep -q ready "$watch_out"; do
-    kill -0 "$watch_pid" 2>/dev/null || fail "kube watches failed: $(cat "$watch_out")"
-    tries=$((tries + 1))
-    [ "$tries" -le 60 ] || fail "kube watches never all got their snapshots"
-    sleep 0.5
+  # The admin's watches, then the same watches from namespace-limited
+  # users: they share the admin's upstream watches and only filter.
+  limited=${LIMITED_USERS:-5}
+  cookies="$cookie"
+  u=0
+  while [ "$u" -lt "$limited" ]; do
+    uid=$(curl -fsS -b "$jar" -H 'content-type: application/json' -H "Origin: $base" -H "x-csrf-token: $csrf" \
+      -d "{\"username\":\"rss-ns-$u\",\"password\":\"rss-bench-password-1\",\"role\":\"user\"}" "$base/api/v1/users" |
+      sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+    [ -n "$uid" ] || fail "could not create limited user $u"
+    for envname in $watch_envs; do
+      env_id=$(curl -fsS -b "$jar" "$base/api/v1/envs" | python3 -c 'import json,sys; print(next(e["id"] for e in json.load(sys.stdin) if e["name"] == sys.argv[1]))' "$envname")
+      curl -fsS -X PUT -b "$jar" -H 'content-type: application/json' -H "Origin: $base" -H "x-csrf-token: $csrf" \
+        -d '{"role":"viewer","namespaces":["fleetops-it"]}' "$base/api/v1/users/$uid/access/$env_id" >/dev/null ||
+        fail "could not grant rss-ns-$u on $envname"
+    done
+    ujar=$(mktemp)
+    curl -fsS -c "$ujar" -H 'content-type: application/json' -H "Origin: $base" \
+      -d "{\"username\":\"rss-ns-$u\",\"password\":\"rss-bench-password-1\"}" "$base/api/v1/auth/login" >/dev/null ||
+      fail "rss-ns-$u could not log in"
+    cookies="$cookies|fleetops_session=$(awk '$6 == "fleetops_session" {print $7}' "$ujar")"
+    rm -f "$ujar"
+    u=$((u + 1))
+  done
+  watch_pids=""
+  watch_outs=""
+  IFS='|'
+  for c in $cookies; do
+    unset IFS
+    out=$(mktemp)
+    # shellcheck disable=SC2086
+    node "$(dirname "$0")/kube-watch-load.mjs" "$base" "$c" 3 $watch_envs >"$out" 2>&1 &
+    watch_pids="$watch_pids $!"
+    watch_outs="$watch_outs $out"
+    IFS='|'
+  done
+  unset IFS
+  for out in $watch_outs; do
+    tries=0
+    until grep -q ready "$out"; do
+      tries=$((tries + 1))
+      [ "$tries" -le 60 ] || fail "kube watches never all got their snapshots: $(cat "$out")"
+      sleep 0.5
+    done
   done
   sleep "$settle"
   kube_kib=$(peak_rss "$pid")
-  kill "$watch_pid" 2>/dev/null || true
-  wait "$watch_pid" 2>/dev/null || true
-  rm -f "$watch_out"
+  # shellcheck disable=SC2086
+  kill $watch_pids 2>/dev/null || true
+  # shellcheck disable=SC2086
+  rm -f $watch_outs
   kube_limit=$((limit_mib + agents + 5))
-  echo "rss-bench: server $(to_mib "$kube_kib") MiB with $agents agents and $kube_envs kube environments x 3 watches (limit $kube_limit MiB)"
+  echo "rss-bench: server $(to_mib "$kube_kib") MiB with $agents agents and $kube_envs kube environments x 3 watches, for the admin and $limited namespace-limited users (limit $kube_limit MiB)"
   [ "$kube_kib" -le $((kube_limit * 1024)) ] || fail "server RSS is over $kube_limit MiB with $kube_envs kube environments"
 fi

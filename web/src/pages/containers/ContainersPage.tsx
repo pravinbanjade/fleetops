@@ -12,6 +12,7 @@ import { ImageRef } from "@/components/ImageRef";
 import { Page } from "@/components/Page";
 import { ContainerState, stateTone } from "@/components/StateBadge";
 import { needsAttention, shownState } from "@/lib/health";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { bulkMessage, runBulk } from "@/lib/bulk";
 import { formatAgo, formatBytes, shortId } from "@/lib/format";
@@ -119,6 +120,7 @@ function Ports({ container }: { container: ContainerSummary }) {
 
 export function ContainersPage() {
   const { env } = route.useParams();
+  const { canWrite } = useEnvAccess(env);
   const { q } = route.useSearch();
   const qc = useQueryClient();
   const list = useQuery(containersQuery(env));
@@ -143,18 +145,20 @@ export function ContainersPage() {
     <Page
       title="Containers"
       actions={
-        <>
-          <Button variant="outline" onClick={() => setPruning(true)}>
-            <Trash2 />
-            Prune
-          </Button>
-          <Button asChild>
-            <Link to="/envs/$env/containers/new" params={{ env }}>
-              <Plus />
-              Create container
-            </Link>
-          </Button>
-        </>
+        canWrite && (
+          <>
+            <Button variant="outline" onClick={() => setPruning(true)}>
+              <Trash2 />
+              Prune
+            </Button>
+            <Button asChild>
+              <Link to="/envs/$env/containers/new" params={{ env }}>
+                <Plus />
+                Create container
+              </Link>
+            </Button>
+          </>
+        )
       }
     >
       <DataTable
@@ -169,27 +173,31 @@ export function ContainersPage() {
         initialFilter={q}
         bays={{ column: "state", of: (c) => BAYS[urgency(c)] }}
         phoneColumns={["state", "name", "status"]}
-        selectable
-        actions={(selected, clear) => (
-          <>
-            {ACTIONS.map((a) => (
-              <Button
-                key={a.action}
-                variant="outline"
-                size="sm"
-                disabled={bulk.isPending}
-                onClick={() => bulk.mutate({ items: selected, action: a }, { onSuccess: clear })}
-              >
-                <a.icon />
-                {a.label}
-              </Button>
-            ))}
-            <Button variant="destructive" size="sm" onClick={() => setRemoving(selected)}>
-              <Trash2 />
-              Remove
-            </Button>
-          </>
-        )}
+        selectable={canWrite}
+        actions={
+          canWrite
+            ? (selected, clear) => (
+                <>
+                  {ACTIONS.map((a) => (
+                    <Button
+                      key={a.action}
+                      variant="outline"
+                      size="sm"
+                      disabled={bulk.isPending}
+                      onClick={() => bulk.mutate({ items: selected, action: a }, { onSuccess: clear })}
+                    >
+                      <a.icon />
+                      {a.label}
+                    </Button>
+                  ))}
+                  <Button variant="destructive" size="sm" onClick={() => setRemoving(selected)}>
+                    <Trash2 />
+                    Remove
+                  </Button>
+                </>
+              )
+            : undefined
+        }
       />
       {removing && <RemoveDialog env={env} containers={removing} onDone={() => setRemoving(null)} />}
       <ConfirmDialog

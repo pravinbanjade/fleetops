@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { User } from "@/api/gen/types.gen";
 import { json, mockFetch } from "@/test/fetch";
-import { ADMIN, ENVS, loggedIn, renderApp } from "@/test/app";
+import { ADMIN, ENVS, KUBE_ENV, loggedIn, renderApp } from "@/test/app";
 
 const BOB: User = { id: 2, username: "bob", role: "user", created_at: 1_790_000_000, updated_at: 0 };
 const routes = { ...loggedIn, "GET /api/v1/users": { json: [ADMIN.user, BOB] } };
@@ -349,5 +349,70 @@ describe("Kubernetes environments", () => {
     const r = row(screen, "cluster-1");
     expect(within(r).getByText(/prod/)).toBeInTheDocument();
     expect(within(r).getByText(/token/)).toBeInTheDocument();
+  });
+});
+
+describe("access", () => {
+  it("grants a namespace-limited role from the Access dialog", async () => {
+    const calls = mockFetch({
+      ...routes,
+      "GET /api/v1/envs": { json: [...ENVS, KUBE_ENV] },
+      "GET /api/v1/users/2/access": { json: [] },
+      "PUT /api/v1/users/2/access/2": {
+        json: { env_id: 2, env_name: "k", env_kind: "kube-config", role: "operator", namespaces: ["team-a"] },
+      },
+    });
+    const { screen } = renderApp("/admin/users");
+    await waitFor(() => expect(row(screen, "bob")).toBeTruthy());
+    await userEvent.click(within(row(screen, "bob")).getByRole("button", { name: "Access" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.selectOptions(await within(dialog).findByLabelText("Role on k"), "operator");
+    await userEvent.click(within(dialog).getByLabelText("Entire cluster"));
+    await userEvent.type(within(dialog).getByLabelText("Namespaces on k"), "team-a{enter}");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(calls.filter((c) => c.method === "PUT").map((c) => [c.path, c.body])).toEqual([
+      ["/api/v1/users/2/access/2", { role: "operator", namespaces: ["team-a"] }],
+    ]);
+  });
+
+  it("revokes a grant by choosing None", async () => {
+    const calls = mockFetch({
+      ...routes,
+      "GET /api/v1/users/2/access": {
+        json: [{ env_id: 1, env_name: "local", env_kind: "docker-local", role: "viewer", namespaces: null }],
+      },
+      "DELETE /api/v1/users/2/access/1": { status: 204 },
+    });
+    const { screen } = renderApp("/admin/users");
+    await waitFor(() => expect(row(screen, "bob")).toBeTruthy());
+    await userEvent.click(within(row(screen, "bob")).getByRole("button", { name: "Access" }));
+    const dialog = await screen.findByRole("dialog");
+    const role = await within(dialog).findByLabelText("Role on local");
+    await waitFor(() => expect(role).toHaveValue("viewer"));
+    await userEvent.selectOptions(role, "none");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
+  });
+
+  it("has no Access button for admins", async () => {
+    mockFetch(routes);
+    const { screen } = renderApp("/admin/users");
+    await waitFor(() => expect(row(screen, "bob")).toBeTruthy());
+    expect(within(row(screen, "admin")).queryByRole("button", { name: "Access" })).toBeNull();
+    expect(within(row(screen, "bob")).getByRole("button", { name: "Access" })).toBeInTheDocument();
+  });
+
+  it("lists who can use an environment", async () => {
+    mockFetch({
+      ...routes,
+      "GET /api/v1/envs/local/access": { json: [{ user_id: 2, username: "bob", role: "viewer", namespaces: null }] },
+    });
+    const { screen } = renderApp("/admin/envs");
+    await waitFor(() => expect(row(screen, "local")).toBeTruthy());
+    await userEvent.click(within(row(screen, "local")).getByRole("button", { name: "Access" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("bob")).toBeInTheDocument();
+    expect(within(dialog).getByText("viewer")).toBeInTheDocument();
   });
 });

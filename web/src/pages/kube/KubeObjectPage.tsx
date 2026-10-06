@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { FileText, Info, ListTree, ScrollText, TerminalSquare } from "lucide-react";
 import { Fragment, lazy, Suspense, useState } from "react";
+import { useEnvAccess } from "@/api/access";
 import { keys, kubeEventsQuery, kubeObjectQuery } from "@/api/queries";
 import { useKubeWatch } from "@/live/kubeWatch";
 import { DetailError } from "@/components/Details";
@@ -23,6 +24,7 @@ export function KubeObjectPage() {
   const { tab = "summary" } = route.useSearch();
   const navigate = useNavigate();
   const kind = asKind(raw) ?? "pods";
+  const { canWrite } = useEnvAccess(env);
   const obj = useQuery(kubeObjectQuery(env, kind, ns, name));
   const events = useQuery({ ...kubeEventsQuery(env, kind, ns, name), enabled: tab === "events" });
   const [container, setContainer] = useState<string | undefined>();
@@ -57,7 +59,8 @@ export function KubeObjectPage() {
     ["summary", "Summary", Info],
     ["yaml", "YAML", FileText],
     ["events", "Events", ListTree],
-    ...(isPod ? ([["logs", "Logs", ScrollText], ["terminal", "Terminal", TerminalSquare]] as [KubeTab, string, typeof Info][]) : []),
+    ...(isPod ? ([["logs", "Logs", ScrollText]] as [KubeTab, string, typeof Info][]) : []),
+    ...(isPod && canWrite ? ([["terminal", "Terminal", TerminalSquare]] as [KubeTab, string, typeof Info][]) : []),
   ];
   return (
     <Page title={name} meta={o && <KubeHealth health={o.row.health} label={o.row.status} />} actions={o && <KubeActions env={env} kind={kind} ns={ns} name={name} replicas={replicas} />}>
@@ -144,11 +147,13 @@ export function KubeObjectPage() {
                 <LogsTab key={chosen} env={env} id={`${ns}/${name}`} name={name} running={o.row.status === "Running"} container={chosen} />
               </Suspense>
             </TabsContent>
-            <TabsContent value="terminal">
-              <Suspense fallback={null}>
-                <TerminalTab key={chosen} env={env} id={`${ns}/${name}`} running={o.row.status === "Running"} container={chosen} />
-              </Suspense>
-            </TabsContent>
+            {canWrite && (
+              <TabsContent value="terminal">
+                <Suspense fallback={null}>
+                  <TerminalTab key={chosen} env={env} id={`${ns}/${name}`} running={o.row.status === "Running"} container={chosen} />
+                </Suspense>
+              </TabsContent>
+            )}
           </>
         )}
       </Tabs>

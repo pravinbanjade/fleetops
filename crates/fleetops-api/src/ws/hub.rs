@@ -231,6 +231,8 @@ pub struct Hubs {
     events: Mutex<HashMap<EnvKey, Arc<EventHub>>>,
     stats: Mutex<HashMap<EnvKey, Arc<StatsHub>>>,
     status: Mutex<Option<broadcast::Sender<StatusChange>>>,
+    /// User ids whose access changed (spec §3.3).
+    access: Mutex<Option<broadcast::Sender<i64>>>,
     /// Shared Kubernetes watches (spec §2.4).
     pub kube_watches: Arc<crate::ws::watches::Watches>,
 }
@@ -249,6 +251,20 @@ impl Hubs {
         let mut map = self.stats.lock().unwrap();
         map.retain(|_, h| h.open() > 0);
         map.entry(key(env)).or_default().clone()
+    }
+
+    /// The bus that tells connections a user's access changed.
+    pub fn access(&self) -> broadcast::Sender<i64> {
+        self.access
+            .lock()
+            .unwrap()
+            .get_or_insert_with(|| broadcast::channel(64).0)
+            .clone()
+    }
+
+    /// Ends `user_id`'s subscriptions on every connection they have open.
+    pub fn access_changed(&self, user_id: i64) {
+        let _ = self.access().send(user_id);
     }
 
     /// The bus every connection listens on for `env_status`.

@@ -67,7 +67,8 @@ pub enum ServerMsg {
     Gap { sub: u32, dropped: u64 },
     /// The subscription is over. `reason` is `closed`, `ended`, `eof`,
     /// `exited` (with `exit_code`), `succeeded` or `failed` (with `task`),
-    /// or `error` (kube-watch, with `message`).
+    /// `error` (kube-watch, with `message`), or `access` (the user's access
+    /// changed, with `message`).
     End {
         sub: u32,
         reason: String,
@@ -84,6 +85,8 @@ pub enum ServerMsg {
     },
     /// An environment went up or down.
     EnvStatus { env: String, status: EnvStatus },
+    /// The user's access changed: what they can see may differ.
+    AccessChanged,
 }
 
 /// A frame ready to go out on the socket.
@@ -114,6 +117,10 @@ pub fn end(sub: u32, reason: &str, extra: Value) -> Out {
 /// `sub` is None for errors about a frame that named no valid subscription.
 pub fn error(sub: Option<u32>, code: &str, message: &str) -> Out {
     Out::Text(json!({"sub": sub, "type": "error", "code": code, "message": message}).to_string())
+}
+
+pub fn access_changed() -> Out {
+    Out::Text(json!({"type": "access_changed"}).to_string())
 }
 
 pub fn env_status(env: &str, status: &Value) -> Out {

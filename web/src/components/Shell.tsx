@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/rea
 import { Boxes, Check, ChevronsUpDown, LogOut, Menu, Monitor, Moon, RefreshCw, Settings2, Sun, X } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
+import { accessOf, useEnvAccess } from "@/api/access";
 import { envsQuery, envStatusQuery, meQuery } from "@/api/queries";
 import { useLogout } from "@/auth/session";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ export function Shell() {
   const setDrawer = (open: boolean) => setDrawerOn(open ? pathname : null);
   const { data: envs = [] } = useQuery(envsQuery);
   const kube = isKube(envs.find((e) => e.name === env)?.kind);
+  const { canWrite } = useEnvAccess(env);
   useGoKeys(env, kube);
   return (
     <div className="min-h-svh md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
@@ -64,7 +66,7 @@ export function Shell() {
         <TopBar env={env} kube={kube} onMenu={() => setDrawer(true)} />
         <ConnectionBanner />
         {env && !kube && <EnvLive env={env} />}
-        {env && kube && <ApplyYamlHost env={env} />}
+        {env && kube && canWrite && <ApplyYamlHost env={env} />}
         <Outlet />
       </main>
     </div>
@@ -192,6 +194,7 @@ function TopBar({ env, kube, onMenu }: { env?: string; kube: boolean; onMenu: ()
     [...items].reverse().find((n) => env && pathname.startsWith(navHref(n, env))) ??
     ADMIN_NAV.find((n) => pathname.startsWith(n.to));
   const SectionIcon = section?.icon;
+  const { canWrite } = useEnvAccess(env);
   return (
     <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur-md md:px-6">
       <EnvBand env={env} />
@@ -218,7 +221,7 @@ function TopBar({ env, kube, onMenu }: { env?: string; kube: boolean; onMenu: ()
         )}
       </nav>
       <div className="ml-auto flex items-center gap-3">
-        {env && kube && (
+        {env && kube && canWrite && (
           <Button variant="outline" size="sm" onClick={() => openApplyYaml(env)}>
             Apply YAML
           </Button>
@@ -317,6 +320,7 @@ function EnvSwitcher({ current, kube }: { current?: string; kube: boolean }) {
             <EnvTag name={e.name} size="sm" />
             {e.name}
             {isKube(e.kind) && <Boxes aria-label="Kubernetes" className="size-3.5 text-muted-foreground" />}
+            {accessOf(e).role === "viewer" && <span className="rounded border px-1 text-[10px] text-muted-foreground">Viewer</span>}
             {e.name === current && <Check className="ml-auto size-4 text-primary" />}
           </DropdownMenuItem>
         ))}

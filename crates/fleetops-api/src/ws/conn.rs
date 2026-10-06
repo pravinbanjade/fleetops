@@ -7,7 +7,6 @@ use super::queue::{Policy, SubQueue};
 use super::topics;
 use crate::{
     auth::{extract::CurrentUser, SESSION_IDLE_SECS, SESSION_TOUCH_SECS},
-    authz::{authorize, Action},
     AppState,
 };
 use axum::extract::ws::{Message, WebSocket};
@@ -50,6 +49,8 @@ pub(super) struct Sub {
     pub queue: Arc<SubQueue>,
     pub task: tokio::task::AbortHandle,
     pub exec: Option<ExecCtl>,
+    /// Survives an access change: not tied to an environment grant.
+    pub keep_on_access: bool,
 }
 
 impl Drop for Sub {
@@ -99,6 +100,7 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
     };
 
     let mut status = s.hubs.status().subscribe();
+    let mut access = s.hubs.access().subscribe();
     let mut check = tokio::time::interval(s.config.ws_session_check);
     check.tick().await;
     let ping_every = s.config.ws_ping_interval;
@@ -125,12 +127,44 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
             }},
             change = status.recv() => match change {
                 Ok(c) => {
-                    if authorize(&cu.user, None, Action::EnvRead).is_ok() {
+                    let visible = match s.envs.get(&c.env) {
+                        Ok(env) => s.store.env_grant(cu.user.id, env.id()).await.ok().flatten().is_some(),
+                        Err(_) => false,
+                    };
+                    if visible {
                         shared.say(protocol::env_status(&c.env, &c.status));
                     }
                 }
                 Err(RecvError::Lagged(_)) => {}
                 Err(RecvError::Closed) => {}
+            },
+            changed = access.recv() => {
+                let mine = match changed {
+                    Ok(uid) => uid == cu.user.id,
+                    // Missed some: assume one was ours.
+                    Err(RecvError::Lagged(_)) => true,
+                    Err(RecvError::Closed) => false,
+                };
+                if mine {
+                    // Dropped now, not when the writer drains them: a client
+                    // that is behind must not keep typing into a terminal.
+                    let ended: Vec<u32> = {
+                        let mut subs = shared.subs.lock().unwrap();
+                        let gone: Vec<u32> = subs.iter().filter(|(_, e)| !e.keep_on_access).map(|(sub, _)| *sub).collect();
+                        for sub in &gone {
+                            subs.remove(sub);
+                        }
+                        gone
+                    };
+                    for sub in ended {
+                        shared.say(protocol::end(
+                            sub,
+                            "access",
+                            serde_json::json!({ "message": super::ACCESS_CHANGED }),
+                        ));
+                    }
+                    shared.say(protocol::access_changed());
+                }
             },
             _ = ping.tick() => {
                 // Half-open sockets (a laptop that slept) never answer; drop

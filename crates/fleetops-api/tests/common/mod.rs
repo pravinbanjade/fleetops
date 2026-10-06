@@ -205,6 +205,30 @@ impl TestApp {
         admin
     }
 
+    /// Grants `username` a role on `env` straight through the store.
+    pub async fn grant(&self, username: &str, env: &str, role: &str, namespaces: Option<&[&str]>) {
+        let (user, _) = self
+            .store
+            .find_credentials(username)
+            .await
+            .unwrap()
+            .unwrap();
+        let env = self
+            .store
+            .list_environments()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|e| e.name == env)
+            .unwrap();
+        let ns: Option<std::collections::BTreeSet<String>> =
+            namespaces.map(|n| n.iter().map(|s| s.to_string()).collect());
+        self.store
+            .set_binding(user.id, env.id, role.parse().unwrap(), ns.as_ref(), 0)
+            .await
+            .unwrap();
+    }
+
     pub async fn create_user(
         &self,
         admin: &Session,

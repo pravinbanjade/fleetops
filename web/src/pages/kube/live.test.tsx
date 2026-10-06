@@ -46,6 +46,15 @@ describe("live Kubernetes pages", () => {
     await vi.waitFor(() => expect(sock.frames().filter((f) => f.topic === "kube-watch").length).toBe(2));
   });
 
+  it("subscribes again at once when the user's access changes", async () => {
+    mockFetch({ ...loggedIn, ...kubeRoutes });
+    renderApp("/envs/k/k8s/pods");
+    const { sock, sub } = await watchSub("pods/-");
+    act(() => sock.receive({ sub, type: "end", reason: "access", message: "your access changed" }));
+    await vi.waitFor(() => expect(sock.frames().filter((f) => f.topic === "kube-watch").length).toBe(2));
+    expect(screen.queryByText(/Live updates paused/)).not.toBeInTheDocument();
+  });
+
   it("marks an object page when the object is deleted", async () => {
     mockFetch({
       ...loggedIn,

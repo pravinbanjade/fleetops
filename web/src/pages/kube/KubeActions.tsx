@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
 import { deleteKube, restartKube, scaleKube } from "@/api/gen/sdk.gen";
 import type { KubeKind } from "@/api/gen/types.gen";
+import { useEnvAccess } from "@/api/access";
 import { keys } from "@/api/queries";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
 export function KubeActions({ env, kind, ns, name, replicas }: { env: string; kind: KubeKind; ns: string; name: string; replicas?: number }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { canWrite } = useEnvAccess(env);
   const [open, setOpen] = useState<"edit" | "scale" | "restart" | "delete" | null>(null);
   const [count, setCount] = useState(String(replicas ?? 1));
   const path = { env, kind, ns, name };
@@ -27,6 +29,7 @@ export function KubeActions({ env, kind, ns, name, replicas }: { env: string; ki
     },
   });
   const label = KIND_LABEL[kind].replace(/s$/, "");
+  if (!canWrite) return null;
   return (
     <div className="flex gap-2">
       <Button variant="outline" size="sm" onClick={() => setOpen("edit")}>Edit YAML</Button>
