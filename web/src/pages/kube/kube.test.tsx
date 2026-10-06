@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { kubeRoutes, loggedIn, renderApp } from "@/test/app";
+import { kubeRoutes, kubeRow, loggedIn, renderApp } from "@/test/app";
 import { mockFetch } from "@/test/fetch";
 
 describe("Kubernetes environments", () => {
@@ -101,5 +101,38 @@ describe("credentials that cannot list namespaces", () => {
     await userEvent.type(input, "apps{Enter}");
     await screen.findByRole("table", { name: "Pods" });
     await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/envs/k/k8s/pods?namespace=apps")).toBe(true));
+  });
+
+  it("opens Apply YAML from the top bar of a Kubernetes environment", async () => {
+    mockFetch({ ...loggedIn, ...kubeRoutes });
+    renderApp("/envs/k/k8s/pods");
+    await userEvent.click(await screen.findByRole("button", { name: "Apply YAML" }));
+    expect(await screen.findByRole("dialog", { name: "Apply YAML" })).toBeInTheDocument();
+  });
+
+  it("creates from a template on a list", async () => {
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      "GET /api/v1/envs/k/k8s/templates": { json: { deployments: "kind: Deployment\nmetadata:\n  namespace: NAMESPACE\n" } },
+      "GET /api/v1/envs/k/k8s/nodes": { json: { rows: [], truncated: false } },
+    });
+    renderApp("/envs/k/k8s/deployments");
+    await userEvent.click(await screen.findByRole("button", { name: "Create" }));
+    expect(await screen.findByRole("dialog", { name: "Create Deployment" })).toBeInTheDocument();
+  });
+
+  it("offers Edit YAML on an object page", async () => {
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      "GET /api/v1/envs/k/k8s/deployments/apps/web": {
+        json: { row: kubeRow("web", "apps"), yaml: "kind: Deployment\n", conditions: [], owners: [], containers: [] },
+      },
+      "GET /api/v1/envs/k/k8s/deployments/apps/web/edit": { json: { yaml: "kind: Deployment\n", resource_version: "1" } },
+    });
+    renderApp("/envs/k/k8s/deployments/apps/web");
+    await userEvent.click(await screen.findByRole("button", { name: "Edit YAML" }));
+    expect(await screen.findByRole("dialog", { name: "Edit web" })).toBeInTheDocument();
   });
 });
