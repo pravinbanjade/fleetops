@@ -42,9 +42,12 @@ COPY --from=docker /usr/local/bin/ /usr/local/bin/
 COPY --from=docker /usr/local/libexec/docker/cli-plugins /usr/local/libexec/docker/cli-plugins
 VOLUME /var/lib/docker
 
+# A stalled connection retries rather than waiting out curl's five-minute
+# default.
 RUN arch=$(dpkg --print-architecture) && \
-    curl -fsSLo /usr/local/bin/kind "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-${arch}" && \
-    curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${arch}/kubectl" && \
+    fetch() { curl -fsSL --connect-timeout 20 --retry 5 --retry-all-errors -o "$1" "$2"; } && \
+    fetch /usr/local/bin/kind "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-${arch}" && \
+    fetch /usr/local/bin/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${arch}/kubectl" && \
     chmod +x /usr/local/bin/kind /usr/local/bin/kubectl
 
 # Chromium's system libraries; the browser itself is cached per project.
