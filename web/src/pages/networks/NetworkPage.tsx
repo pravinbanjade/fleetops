@@ -7,6 +7,7 @@ import type { NetworkInspect } from "@/api/docker";
 import { Details, DetailError } from "@/components/Details";
 import { JsonView } from "@/components/JsonView";
 import { Page } from "@/components/Page";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,6 +18,7 @@ import { BUILTIN_NETWORKS, RemoveNetworksDialog } from "./dialogs";
 
 export function NetworkPage() {
   const { env, id } = useParams({ from: "/authed/shell/envs/$env/networks/$id" });
+  const { canWrite } = useEnvAccess(env);
   const navigate = useNavigate();
   const q = useQuery(networkQuery(env, id));
   const [removing, setRemoving] = useState(false);
@@ -33,6 +35,7 @@ export function NetworkPage() {
     <Page
       title={n.Name}
       actions={
+        canWrite &&
         !BUILTIN_NETWORKS.includes(n.Name) && (
           <Button variant="destructive" onClick={() => setRemoving(true)}>
             Remove
@@ -79,6 +82,7 @@ function Attached({ env, n }: { env: string; n: NetworkInspect }) {
   const attached = Object.entries(n.Containers ?? {});
   const others = (containers.data ?? []).filter((c) => !n.Containers?.[c.id]);
   const [pick, setPick] = useState("");
+  const { canWrite } = useEnvAccess(env);
   const refresh = () => qc.invalidateQueries({ queryKey: keys.networks(env) });
   const connect = useMutation({
     meta: { inline: true },
@@ -124,33 +128,37 @@ function Attached({ env, n }: { env: string; n: NetworkInspect }) {
                 <TableCell className="font-mono text-xs">{c.IPv4Address || "—"}</TableCell>
                 <TableCell className="font-mono text-xs">{c.MacAddress || "—"}</TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={disconnect.isPending}
-                    onClick={() => disconnect.mutate(cid)}
-                  >
-                    Disconnect
-                  </Button>
+                  {canWrite && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={disconnect.isPending}
+                      onClick={() => disconnect.mutate(cid)}
+                    >
+                      Disconnect
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       )}
-      <form onSubmit={submit} className="flex max-w-md items-center gap-2">
-        <NativeSelect aria-label="Container to connect" value={pick} onChange={(e) => setPick(e.target.value)}>
-          <option value="">Choose a container…</option>
-          {others.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </NativeSelect>
-        <Button type="submit" variant="outline" disabled={!pick || connect.isPending}>
-          Connect
-        </Button>
-      </form>
+      {canWrite && (
+        <form onSubmit={submit} className="flex max-w-md items-center gap-2">
+          <NativeSelect aria-label="Container to connect" value={pick} onChange={(e) => setPick(e.target.value)}>
+            <option value="">Choose a container…</option>
+            {others.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </NativeSelect>
+          <Button type="submit" variant="outline" disabled={!pick || connect.isPending}>
+            Connect
+          </Button>
+        </form>
+      )}
       <FormError message={error ? errorMessage(error) : null} />
     </section>
   );

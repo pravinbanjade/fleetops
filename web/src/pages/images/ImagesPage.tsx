@@ -7,6 +7,7 @@ import { columns, DataTable, type Column } from "@/components/DataTable";
 import { ImageRef } from "@/components/ImageRef";
 import { Page } from "@/components/Page";
 import { Badge } from "@/components/ui/badge";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { formatAgo, formatBytes, shortId } from "@/lib/format";
 import { imageName, PruneImagesDialog, RemoveImagesDialog } from "./dialogs";
@@ -52,6 +53,7 @@ function imageColumns(env: string): Column<ImageSummary>[] {
 
 export function ImagesPage() {
   const { env } = useParams({ from: "/authed/shell/envs/$env/images" });
+  const { canWrite } = useEnvAccess(env);
   const list = useQuery(imagesQuery(env));
   const [cols] = useState(() => imageColumns(env));
   const [removing, setRemoving] = useState<ImageSummary[] | null>(null);
@@ -62,15 +64,17 @@ export function ImagesPage() {
     <Page
       title="Images"
       actions={
-        <>
-          <Button variant="outline" onClick={() => setPruning(true)}>
-            Prune
-          </Button>
-          <Button variant="outline" onClick={() => setBuilding(true)}>
-            Build
-          </Button>
-          <Button onClick={() => setPulling(true)}>Pull</Button>
-        </>
+        canWrite && (
+          <>
+            <Button variant="outline" onClick={() => setPruning(true)}>
+              Prune
+            </Button>
+            <Button variant="outline" onClick={() => setBuilding(true)}>
+              Build
+            </Button>
+            <Button onClick={() => setPulling(true)}>Pull</Button>
+          </>
+        )
       }
     >
       <DataTable
@@ -81,19 +85,23 @@ export function ImagesPage() {
         getRowId={(i) => i.id}
         empty="No images in this environment."
         initialSorting={[{ id: "created", desc: true }]}
-        selectable
-        actions={(selected, clear) => (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => {
-              setRemoving(selected);
-              clear();
-            }}
-          >
-            Remove
-          </Button>
-        )}
+        selectable={canWrite}
+        actions={
+          canWrite
+            ? (selected, clear) => (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setRemoving(selected);
+                    clear();
+                  }}
+                >
+                  Remove
+                </Button>
+              )
+            : undefined
+        }
       />
       {removing && (
         <RemoveImagesDialog

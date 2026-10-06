@@ -5,6 +5,7 @@ import { containersQuery, volumesQuery } from "@/api/queries";
 import type { ContainerSummary, VolumeSummary } from "@/api/gen/types.gen";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { volumeUsers } from "@/lib/usage";
 import { CreateVolumeDialog, PruneVolumesDialog, RemoveVolumesDialog } from "./dialogs";
@@ -58,6 +59,7 @@ function volumeColumns(env: string): Column<Row>[] {
 
 export function VolumesPage() {
   const { env } = useParams({ from: "/authed/shell/envs/$env/volumes" });
+  const { canWrite } = useEnvAccess(env);
   const list = useQuery(volumesQuery(env));
   const containers = useQuery(containersQuery(env));
   const [cols] = useState(() => volumeColumns(env));
@@ -73,12 +75,14 @@ export function VolumesPage() {
     <Page
       title="Volumes"
       actions={
-        <>
-          <Button variant="outline" onClick={() => setPruning(true)}>
-            Prune
-          </Button>
-          <Button onClick={() => setCreating(true)}>Create volume</Button>
-        </>
+        canWrite && (
+          <>
+            <Button variant="outline" onClick={() => setPruning(true)}>
+              Prune
+            </Button>
+            <Button onClick={() => setCreating(true)}>Create volume</Button>
+          </>
+        )
       }
     >
       <DataTable
@@ -90,19 +94,23 @@ export function VolumesPage() {
         empty="No volumes in this environment."
         initialSorting={[{ id: "name", desc: false }]}
         initialHidden={["mountpoint"]}
-        selectable
-        actions={(selected, clear) => (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => {
-              setRemoving(selected.map((v) => v.name));
-              clear();
-            }}
-          >
-            Remove
-          </Button>
-        )}
+        selectable={canWrite}
+        actions={
+          canWrite
+            ? (selected, clear) => (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setRemoving(selected.map((v) => v.name));
+                    clear();
+                  }}
+                >
+                  Remove
+                </Button>
+              )
+            : undefined
+        }
       />
       {removing && <RemoveVolumesDialog env={env} names={removing} onDone={() => setRemoving(null)} />}
       {pruning && <PruneVolumesDialog env={env} onDone={() => setPruning(false)} />}
