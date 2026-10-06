@@ -32,7 +32,7 @@ hyper = { version = "1", features = ["client", "server", "http1"] }
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "tls12", "logging"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "server", "http1", "tokio"] }
 k8s-openapi = { version = "0.28", features = ["v1_32"] }
-kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "ring", "ws"] }
+kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "ring", "ws", "runtime"] }
 jsonschema = { version = "0.58", default-features = false }
 mime_guess = "2"
 rand = "0.8"
