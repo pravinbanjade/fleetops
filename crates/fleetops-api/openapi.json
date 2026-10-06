@@ -5388,7 +5388,7 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "A payload for subscription `sub`: a `DockerEvent`, a `StatsSample`,\nan array of `LogLine`s, or a task progress message.",
+            "description": "A payload for subscription `sub`: a `DockerEvent`, a `StatsSample`,\nan array of `LogLine`s, a task progress message, or a `WatchEvent`\n(kube-watch).",
             "required": [
               "sub",
               "data",
@@ -5438,7 +5438,7 @@
           },
           {
             "type": "object",
-            "description": "The subscription is over. `reason` is `closed`, `ended`, `eof`,\n`exited` (with `exit_code`), `succeeded` or `failed` (with `task`).",
+            "description": "The subscription is over. `reason` is `closed`, `ended`, `eof`,\n`exited` (with `exit_code`), `succeeded` or `failed` (with `task`),\nor `error` (kube-watch, with `message`).",
             "required": [
               "sub",
               "reason",
@@ -5451,6 +5451,12 @@
                   "null"
                 ],
                 "format": "int64"
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "reason": {
                 "type": "string"
@@ -5742,7 +5748,8 @@
           "stats",
           "logs",
           "exec",
-          "task"
+          "task",
+          "kube-watch"
         ]
       },
       "UpdateEnv": {
@@ -5910,6 +5917,108 @@
             "type": "string"
           }
         }
+      },
+      "WatchEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Every row, replacing what the client holds.",
+            "required": [
+              "rows",
+              "type"
+            ],
+            "properties": {
+              "rows": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/KubeRow"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "snapshot"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "row",
+              "type"
+            ],
+            "properties": {
+              "row": {
+                "$ref": "#/components/schemas/KubeRow"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "added"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "row",
+              "type"
+            ],
+            "properties": {
+              "row": {
+                "$ref": "#/components/schemas/KubeRow"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "modified"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "type"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "deleted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The upstream watch restarted; a `Snapshot` follows.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "resync"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One change to a watched list. A watch that fails for good ends its\nstream with `Err` instead."
       }
     },
     "securitySchemes": {
