@@ -9,6 +9,7 @@ pub mod kinds;
 pub mod kubeconfig;
 pub mod mask;
 pub mod summaries;
+pub mod templates;
 pub mod tunnel;
 pub mod watch;
 
