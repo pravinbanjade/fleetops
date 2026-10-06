@@ -4,8 +4,8 @@
 use crate::{errors, kinds::api_resource, mask, summaries};
 use async_trait::async_trait;
 use fleetops_core::kube::{
-    KubeEvent, KubeExec, KubeKind, KubeList, KubeObject, KubeOps, KubeRef, KubeVersion, LIST_CAP,
-    PAGE_SIZE,
+    ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeExec, KubeKind, KubeList, KubeObject,
+    KubeOps, KubeRef, KubeVersion, WatchEvent, LIST_CAP, PAGE_SIZE,
 };
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions, LogStream};
 use fleetops_core::{now_unix, Error, Result};
@@ -385,5 +385,41 @@ impl KubeOps for KubeClient {
             resize,
             exit_code: exit_rx,
         })
+    }
+
+    fn watch(&self, _kind: KubeKind, _ns: Option<&str>) -> BoxStream<WatchEvent> {
+        Box::pin(futures_util::stream::once(async {
+            Err(Error::Invalid("watching is not available yet".into()))
+        }))
+    }
+
+    async fn get_editable(
+        &self,
+        _kind: KubeKind,
+        _ns: &str,
+        _name: &str,
+    ) -> Result<EditableObject> {
+        Err(Error::Invalid("editing is not available yet".into()))
+    }
+
+    async fn apply(
+        &self,
+        _yaml: &str,
+        _default_ns: &str,
+        _mode: ApplyMode,
+    ) -> Result<Vec<ApplyResult>> {
+        Err(Error::Invalid("apply is not available yet".into()))
+    }
+
+    async fn replace(
+        &self,
+        _kind: KubeKind,
+        _ns: &str,
+        _name: &str,
+        _yaml: &str,
+        _rv: &str,
+        _mode: ApplyMode,
+    ) -> Result<ApplyResult> {
+        Err(Error::Invalid("editing is not available yet".into()))
     }
 }

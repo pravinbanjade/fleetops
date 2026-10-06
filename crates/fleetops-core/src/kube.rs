@@ -17,6 +17,12 @@ pub const PAGE_SIZE: u32 = 500;
 pub const YAML_CAP: usize = 1 << 20;
 /// Shown in place of every Secret value.
 pub const MASK: &str = "••••";
+/// Largest YAML accepted by apply and replace (spec §8).
+pub const APPLY_MAX_BYTES: usize = 1 << 20;
+/// Most documents in one apply (spec §8).
+pub const APPLY_MAX_DOCS: usize = 100;
+/// The field manager every FleetOps write uses.
+pub const FIELD_MANAGER: &str = "fleetops";
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, ToSchema,
@@ -215,6 +221,99 @@ pub struct KubeExec {
     pub exit_code: oneshot::Receiver<Option<i64>>,
 }
 
+/// One change to a watched list. A watch that fails for good ends its
+/// stream with `Err` instead.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum WatchEvent {
+    /// Every row, replacing what the client holds.
+    Snapshot {
+        rows: Vec<KubeRow>,
+    },
+    Added {
+        row: KubeRow,
+    },
+    Modified {
+        row: KubeRow,
+    },
+    Deleted {
+        namespace: Option<String>,
+        name: String,
+    },
+    /// The upstream watch restarted; a `Snapshot` follows.
+    Resync,
+}
+
+/// An object as the YAML editor opens it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct EditableObject {
+    /// `managedFields`, `status` and the last-applied annotation removed;
+    /// Secret values masked.
+    pub yaml: String,
+    /// Sent back with the edit; a newer version on the server is a conflict.
+    pub resource_version: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplyMode {
+    DryRun,
+    Commit { force: bool },
+}
+
+impl ApplyMode {
+    pub fn dry_run(self) -> bool {
+        matches!(self, ApplyMode::DryRun)
+    }
+
+    pub fn force(self) -> bool {
+        matches!(self, ApplyMode::Commit { force: true })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ApplyAction {
+    Created,
+    Configured,
+    Unchanged,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ApplyError {
+    /// An `ErrorBody` code: `conflict` for a field-manager conflict,
+    /// `forbidden`, `invalid`, `not_found`, `upstream`…
+    pub code: String,
+    /// Kubernetes' message, verbatim.
+    pub message: String,
+}
+
+impl From<&Error> for ApplyError {
+    fn from(e: &Error) -> Self {
+        Self {
+            code: e.code().into(),
+            message: e.detail(),
+        }
+    }
+}
+
+/// What happened to one document of an apply or edit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ApplyResult {
+    /// Position among the submitted non-empty documents, from 0.
+    pub index: usize,
+    pub api_version: String,
+    pub kind: String,
+    pub namespace: Option<String>,
+    pub name: String,
+    /// `None` when the document failed.
+    pub action: Option<ApplyAction>,
+    /// The live object before the write, cleaned and masked; `None` when created.
+    pub before: Option<String>,
+    /// The object as written (or as it would be, for a dry run).
+    pub after: Option<String>,
+    pub error: Option<ApplyError>,
+}
+
 #[async_trait]
 pub trait KubeOps: Send + Sync {
     async fn version(&self) -> Result<KubeVersion>;
@@ -228,4 +327,83 @@ pub trait KubeOps: Send + Sync {
     /// `opts.container` `None` means the pod's first container.
     fn logs(&self, ns: &str, pod: &str, opts: &LogOptions) -> BoxStream<LogLine>;
     async fn exec_start(&self, ns: &str, pod: &str, opts: &ExecOptions) -> Result<KubeExec>;
+    /// Rows of `kind`, live: a `Snapshot`, then changes. Ends with `Err`
+    /// when the watch cannot continue (spec §2.3).
+    fn watch(&self, kind: KubeKind, ns: Option<&str>) -> BoxStream<WatchEvent>;
+    async fn get_editable(&self, kind: KubeKind, ns: &str, name: &str) -> Result<EditableObject>;
+    /// Server-side apply of every document in `yaml`, in order. `Err` only
+    /// when nothing could be attempted; per-document failures are in the results.
+    async fn apply(
+        &self,
+        yaml: &str,
+        default_ns: &str,
+        mode: ApplyMode,
+    ) -> Result<Vec<ApplyResult>>;
+    /// Replaces one object, refusing with `Error::Conflict` when it changed
+    /// since `resource_version`.
+    async fn replace(
+        &self,
+        kind: KubeKind,
+        ns: &str,
+        name: &str,
+        yaml: &str,
+        resource_version: &str,
+        mode: ApplyMode,
+    ) -> Result<ApplyResult>;
+}
+
+#[cfg(test)]
+mod watch_and_apply_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn row(name: &str) -> KubeRow {
+        KubeRow {
+            name: name.into(),
+            namespace: Some("apps".into()),
+            created: 1,
+            status: "Running".into(),
+            health: RowHealth::Ok,
+            columns: Default::default(),
+        }
+    }
+
+    #[test]
+    fn watch_events_are_tagged_by_type() {
+        assert_eq!(
+            serde_json::to_value(WatchEvent::Snapshot {
+                rows: vec![row("a")]
+            })
+            .unwrap()["type"],
+            "snapshot"
+        );
+        assert_eq!(
+            serde_json::to_value(WatchEvent::Deleted {
+                namespace: Some("apps".into()),
+                name: "a".into()
+            })
+            .unwrap(),
+            json!({"type": "deleted", "namespace": "apps", "name": "a"})
+        );
+        assert_eq!(
+            serde_json::to_value(WatchEvent::Resync).unwrap(),
+            json!({"type": "resync"})
+        );
+    }
+
+    #[test]
+    fn apply_mode_says_whether_it_writes_and_forces() {
+        assert!(ApplyMode::DryRun.dry_run() && !ApplyMode::DryRun.force());
+        let c = ApplyMode::Commit { force: true };
+        assert!(!c.dry_run() && c.force());
+    }
+
+    #[test]
+    fn an_apply_error_keeps_the_code_and_the_bare_message() {
+        let e = ApplyError::from(&Error::Conflict(
+            "field manager kubectl owns .spec.replicas".into(),
+        ));
+        assert_eq!(e.code, "conflict");
+        assert_eq!(e.message, "field manager kubectl owns .spec.replicas");
+    }
 }
