@@ -7,6 +7,7 @@ import { Details, DetailError } from "@/components/Details";
 import { JsonView } from "@/components/JsonView";
 import { Masked } from "@/components/Masked";
 import { Page } from "@/components/Page";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +19,7 @@ import { imageName, RemoveImagesDialog, TagDialog } from "./dialogs";
 
 export function ImagePage() {
   const { env, id } = useParams({ from: "/authed/shell/envs/$env/images/$id" });
+  const { canWrite } = useEnvAccess(env);
   const navigate = useNavigate();
   const q = useQuery(imageQuery(env, id));
   const [tagging, setTagging] = useState(false);
@@ -35,14 +37,16 @@ export function ImagePage() {
     <Page
       title={name}
       actions={
-        <>
-          <Button variant="outline" onClick={() => setTagging(true)}>
-            Tag
-          </Button>
-          <Button variant="destructive" onClick={() => setRemoving(true)}>
-            Remove
-          </Button>
-        </>
+        canWrite && (
+          <>
+            <Button variant="outline" onClick={() => setTagging(true)}>
+              Tag
+            </Button>
+            <Button variant="destructive" onClick={() => setRemoving(true)}>
+              Remove
+            </Button>
+          </>
+        )
       }
     >
       <Tabs defaultValue="overview">

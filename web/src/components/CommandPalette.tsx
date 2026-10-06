@@ -3,6 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Container, FileUp, HardDrive, Layers, Play, RotateCw, Search, Server, Square, UserRound, Waypoints } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { accessOf } from "@/api/access";
 import { containersQuery, envsQuery, imagesQuery, keys, networksQuery, volumesQuery } from "@/api/queries";
 import { containerAction } from "@/api/gen/sdk.gen";
 import type { ContainerActionName, ContainerSummary } from "@/api/gen/types.gen";
@@ -130,7 +131,7 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
                 {n.label}
               </CommandItem>
             ))}
-          {on && isKube(envs.data?.find((x) => x.name === e)?.kind) && (
+          {on && isKube(envs.data?.find((x) => x.name === e)?.kind) && accessOf(envs.data?.find((x) => x.name === e)).canWrite && (
             <CommandItem value="Apply YAML" onSelect={() => go(async () => openApplyYaml(e))}>
               <FileUp />
               Apply YAML

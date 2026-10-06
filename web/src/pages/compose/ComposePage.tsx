@@ -9,6 +9,7 @@ import type { ComposeActionName, ComposeProject } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Page } from "@/components/Page";
 import { ContainerState, StateBadge } from "@/components/StateBadge";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { errorMessage } from "@/lib/errors";
@@ -55,6 +56,7 @@ function ProjectCard({ env, project }: { env: string; project: ComposeProject })
   const qc = useQueryClient();
   const containers = useQuery(containersQuery(env));
   const [downing, setDowning] = useState(false);
+  const { canWrite } = useEnvAccess(env);
   const members = (containers.data ?? []).filter((c) => c.compose_project === project.name);
   const run = async (action: ComposeActionName) => {
     const { data } = await composeAction({ path: { env, project: project.name, action } });
@@ -76,26 +78,28 @@ function ProjectCard({ env, project }: { env: string; project: ComposeProject })
             {project.running} of {project.containers} running
           </span>
         </CardTitle>
-        <div className="flex flex-wrap gap-2">
-          {(["start", "stop", "restart"] as const).map((a) => {
-            const Icon = ICON[a];
-            return (
-              <Button key={a} variant="outline" size="sm" disabled={act.isPending} onClick={() => act.mutate(a)}>
-                <Icon />
-                {a[0].toUpperCase() + a.slice(1)}
-              </Button>
-            );
-          })}
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => setDowning(true)}
-          >
-            <ArrowDownToLine />
-            Down
-          </Button>
-        </div>
+        {canWrite && (
+          <div className="flex flex-wrap gap-2">
+            {(["start", "stop", "restart"] as const).map((a) => {
+              const Icon = ICON[a];
+              return (
+                <Button key={a} variant="outline" size="sm" disabled={act.isPending} onClick={() => act.mutate(a)}>
+                  <Icon />
+                  {a[0].toUpperCase() + a.slice(1)}
+                </Button>
+              );
+            })}
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setDowning(true)}
+            >
+              <ArrowDownToLine />
+              Down
+            </Button>
+          </div>
+        )}
       </CardHeader>
       <CardContent className="grid gap-3 text-sm">
         <div className="text-muted-foreground">

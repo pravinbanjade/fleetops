@@ -24,6 +24,7 @@ import { Details, DetailError } from "@/components/Details";
 import { JsonView } from "@/components/JsonView";
 import { Page } from "@/components/Page";
 import { StateBadge } from "@/components/StateBadge";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,7 @@ const loading = <p className="text-sm text-muted-foreground">Loading…</p>;
 
 export function ContainerPage() {
   const { env, id } = useParams({ from: FROM });
+  const { canWrite } = useEnvAccess(env);
   const { tab = "overview", path = "/" } = useSearch({ from: FROM });
   const navigate = useNavigate({ from: "/envs/$env/containers/$id" });
   const q = useQuery(containerQuery(env, id));
@@ -77,11 +79,11 @@ export function ContainerPage() {
           )}
         </span>
       }
-      actions={<ContainerActions env={env} c={c} name={name} />}
+      actions={canWrite && <ContainerActions env={env} c={c} name={name} />}
     >
       <Tabs value={tab} onValueChange={(t) => void navigate({ search: { tab: t as ContainerTab }, replace: true })}>
         <TabsList>
-          {TABS.map(([value, label, Icon]) => (
+          {TABS.filter(([value]) => canWrite || value !== "terminal").map(([value, label, Icon]) => (
             <TabsTrigger key={value} value={value}>
               <Icon aria-hidden strokeWidth={1.75} />
               {label}
@@ -111,11 +113,13 @@ export function ContainerPage() {
         <TabsContent value="logs">
           <LogsTab env={env} id={id} name={name} running={c.State.Running === true} startedAt={c.State.StartedAt} />
         </TabsContent>
-        <TabsContent value="terminal">
-          <Suspense fallback={loading}>
-            <TerminalTab env={env} id={id} running={c.State.Running === true} />
-          </Suspense>
-        </TabsContent>
+        {canWrite && (
+          <TabsContent value="terminal">
+            <Suspense fallback={loading}>
+              <TerminalTab env={env} id={id} running={c.State.Running === true} />
+            </Suspense>
+          </TabsContent>
+        )}
         <TabsContent value="files">
           <FilesTab env={env} id={id} path={path} />
         </TabsContent>
