@@ -18,10 +18,12 @@ pub struct AgentRecord {
     pub host_info: Option<String>,
     /// Why the last connection was refused, when it was.
     pub last_error: Option<String>,
+    /// kube-agent: `read-only`, `standard` or `cluster-admin`.
+    pub access: Option<String>,
 }
 
 const AGENT_COLS: &str = "environment_id, key_hash IS NOT NULL AS enrolled, join_expires_at, \
-                          last_seen_at, agent_version, host_info, last_error";
+                          last_seen_at, agent_version, host_info, last_error, access";
 
 impl Store {
     pub async fn create_agent_environment(
