@@ -318,6 +318,7 @@ async fn users_can_manage_containers_unauthenticated_cannot() {
     let app = app().await;
     let admin = app.with_local().await;
     app.create_user(&admin, "bob", "bob-password", "user").await;
+    app.grant("bob", "local", "operator", None).await;
     let bob = session_from(&app.login("bob", "bob-password").await);
     let r = app
         .send(req(

@@ -199,6 +199,7 @@ async fn tasks_are_private_to_their_owner_and_admins() {
     let admin = t.with_local().await;
     t.create_user(&admin, "bob", "bob-password", "user").await;
     t.create_user(&admin, "eve", "eve-password", "user").await;
+    t.grant("bob", "local", "operator", None).await;
     let bob = session_from(&t.login("bob", "bob-password").await);
     let eve = session_from(&t.login("eve", "eve-password").await);
     let id = pull(&t, &bob, "alpine").await.json["task_id"]
