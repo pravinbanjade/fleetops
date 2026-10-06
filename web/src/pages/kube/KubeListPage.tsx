@@ -9,7 +9,9 @@ import { Page } from "@/components/Page";
 import { formatAgo } from "@/lib/format";
 import { KubeHealth } from "./KubeHealth";
 import { CLUSTER_SCOPED, KIND_COLUMNS, KIND_LABEL, STATUS_HEADER, WORKLOADS, asKind } from "./kinds";
+import { LivePaused } from "./LivePaused";
 import { NamespacePicker, useNamespace } from "./NamespacePicker";
+import { useKubeWatch } from "@/live/kubeWatch";
 
 const route = getRouteApi("/authed/shell/envs/$env/k8s/$kind");
 
@@ -50,6 +52,7 @@ export function KubeListPage() {
   const [ns, setNs] = useNamespace(env);
   const scoped = !CLUSTER_SCOPED.includes(kind);
   const list = useQuery(kubeListQuery(env, kind, scoped ? ns : undefined));
+  const live = useKubeWatch(env, kind, scoped ? ns : undefined);
   const cols = useMemo(() => kindColumns(env, kind), [env, kind]);
   const forbidden = list.error instanceof ApiError && list.error.status === 403;
   const where = ns ? `namespace ${ns}` : "all namespaces";
@@ -58,6 +61,7 @@ export function KubeListPage() {
       title={KIND_LABEL[kind]}
       actions={scoped ? <NamespacePicker env={env} value={ns} onChange={setNs} /> : undefined}
     >
+      {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}
       {WORKLOADS.includes(kind) && (
         <nav aria-label="Workload kinds" className="mb-3 flex flex-wrap gap-1">
           {WORKLOADS.map((k) => (

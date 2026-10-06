@@ -1,15 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { FileText, Info, ListTree, ScrollText, TerminalSquare } from "lucide-react";
 import { Fragment, lazy, Suspense, useState } from "react";
-import { kubeEventsQuery, kubeObjectQuery } from "@/api/queries";
+import { keys, kubeEventsQuery, kubeObjectQuery } from "@/api/queries";
+import { useKubeWatch } from "@/live/kubeWatch";
 import { DetailError } from "@/components/Details";
 import { Page } from "@/components/Page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAgo } from "@/lib/format";
 import { KubeActions } from "./KubeActions";
 import { KubeHealth } from "./KubeHealth";
-import { asKind, KIND_LABEL } from "./kinds";
+import { asKind, CLUSTER_SCOPED, KIND_LABEL } from "./kinds";
+import { LivePaused } from "./LivePaused";
 import type { KubeTab } from "./tabs";
 
 const LogsTab = lazy(() => import("@/pages/containers/logs/LogsTab").then((m) => ({ default: m.LogsTab })));
@@ -24,6 +26,17 @@ export function KubeObjectPage() {
   const obj = useQuery(kubeObjectQuery(env, kind, ns, name));
   const events = useQuery({ ...kubeEventsQuery(env, kind, ns, name), enabled: tab === "events" });
   const [container, setContainer] = useState<string | undefined>();
+  const qc = useQueryClient();
+  const [gone, setGone] = useState(false);
+  const live = useKubeWatch(env, kind, CLUSTER_SCOPED.includes(kind) ? undefined : ns, (ev) => {
+    if (ev.type === "snapshot") setGone(!ev.rows.some((r) => r.name === name));
+    if ((ev.type === "added" || ev.type === "modified") && ev.row.name === name) {
+      setGone(false);
+      // The events key extends this one, so an open Events tab refetches too.
+      void qc.invalidateQueries({ queryKey: keys.kubeObject(env, kind, ns, name) });
+    }
+    if (ev.type === "deleted" && ev.name === name) setGone(true);
+  });
   if (obj.error)
     return (
       <DetailError
@@ -48,6 +61,15 @@ export function KubeObjectPage() {
   ];
   return (
     <Page title={name} meta={o && <KubeHealth health={o.row.health} label={o.row.status} />} actions={o && <KubeActions env={env} kind={kind} ns={ns} name={name} replicas={replicas} />}>
+      {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}
+      {gone && (
+        <p role="status" className="mb-3 rounded-md border border-state-fail/40 bg-state-fail/10 px-3 py-2 text-sm">
+          This object was deleted.{" "}
+          <Link to="/envs/$env/k8s/$kind" params={{ env, kind }} className="underline">
+            Back to {KIND_LABEL[kind]}
+          </Link>
+        </p>
+      )}
       {o && (
         <div className="mb-3">
       {o.owners.length > 0 && (
