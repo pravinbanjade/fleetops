@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { setCsrfToken } from "@/api/client";
 import { keys } from "@/api/queries";
 import { login } from "@/api/gen/sdk.gen";
@@ -18,6 +18,10 @@ export function LoginPage() {
   const qc = useQueryClient();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  // The next user of this tab must not see the last one's cached data.
+  // Cleared here rather than on the way out, where it would refetch the
+  // pages still on screen, whose 401s would send the tab here again.
+  useEffect(() => qc.clear(), [qc]);
   const m = useMutation({
     mutationFn: async () => (await login({ body: { username, password } })).data,
     onSuccess: (session) => {

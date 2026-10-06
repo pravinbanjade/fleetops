@@ -30,9 +30,9 @@ export function safeRedirect(target: unknown): string | undefined {
 }
 
 /** The session, or null when there is none (a 401 from `/auth/me`). */
-async function session(qc: QueryClient) {
+async function session(qc: QueryClient, fresh = false) {
   try {
-    return await qc.ensureQueryData(meQuery);
+    return await (fresh ? qc.fetchQuery({ ...meQuery, staleTime: 0 }) : qc.ensureQueryData(meQuery));
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) return null;
     throw e;
@@ -65,7 +65,8 @@ const loginRoute = createRoute({
   beforeLoad: async ({ context, search }) => {
     const status = await context.queryClient.fetchQuery(authStatusQuery);
     if (status.setup_required) throw redirect({ to: "/setup" });
-    if (await session(context.queryClient)) throw redirect({ to: search.redirect ?? "/" });
+    // Asks the server: the cached session is the one that just ended.
+    if (await session(context.queryClient, true)) throw redirect({ to: search.redirect ?? "/" });
   },
   component: LoginPage,
 });

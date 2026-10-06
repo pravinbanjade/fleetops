@@ -26,12 +26,12 @@ export function createApp(history?: RouterHistory) {
   const queryClient = createQueryClient();
   const router = createAppRouter(queryClient, history);
   configureApi({
-    // The next user of this tab must not see this user's cached data.
+    // The login page clears the cache once this page is gone (see LoginPage).
     onUnauthorized: () => {
       setCsrfToken(undefined);
-      queryClient.clear();
-      const here = router.state.location.href;
-      void router.navigate({ to: "/login", search: { redirect: here } });
+      const here = router.state.location;
+      if (here.pathname === "/login") return;
+      void router.navigate({ to: "/login", search: { redirect: here.href } });
     },
   });
   return { queryClient, router };
