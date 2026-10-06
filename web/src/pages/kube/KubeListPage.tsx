@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { lazy, Suspense, useMemo, useState } from "react";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import type { KubeKind, KubeRow } from "@/api/gen/types.gen";
 import { ApiError } from "@/api/client";
@@ -52,6 +53,7 @@ export function KubeListPage() {
   const { env, kind: raw } = route.useParams();
   const kind = asKind(raw) ?? "pods";
   const [ns, setNs] = useNamespace(env);
+  const { canWrite } = useEnvAccess(env);
   const scoped = !CLUSTER_SCOPED.includes(kind);
   const live = useKubeWatch(env, kind, scoped ? ns : undefined);
   // Once the watch has its snapshot the cache follows the cluster; a REST
@@ -67,7 +69,7 @@ export function KubeListPage() {
       actions={
         <div className="flex items-center gap-2">
           {scoped && <NamespacePicker env={env} value={ns} onChange={setNs} />}
-          {kind !== "nodes" && (
+          {canWrite && kind !== "nodes" && (
             <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
               Create
             </Button>

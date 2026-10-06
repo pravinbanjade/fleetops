@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, Container, ShipWheel, type LucideIcon } from "lucide-react";
 import { useId, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { envsQuery, keys } from "@/api/queries";
+import { envAccessQuery, envsQuery, keys } from "@/api/queries";
 import { createEnv, deleteEnv, kubeContexts, rotateAgent, updateEnv } from "@/api/gen/sdk.gen";
 import type { Enrollment, EnvKind, EnvView, KubeAccess } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -10,6 +11,7 @@ import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
 import { EnvStatusBadge } from "@/components/Shell";
 import { Button } from "@/components/ui/button";
+import { Dialog as Modal, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/errors";
@@ -17,7 +19,7 @@ import { formatAgo } from "@/lib/format";
 import { AgentEnrollment } from "./AgentEnrollment";
 import { FormDialog } from "./FormDialog";
 
-type Dialog = { kind: "add" } | { kind: "edit" | "delete" | "rotate"; env: EnvView } | null;
+type Dialog = { kind: "add" } | { kind: "edit" | "delete" | "rotate" | "access"; env: EnvView } | null;
 
 const col = columns<EnvView>();
 
@@ -117,6 +119,9 @@ export function EnvironmentsPage() {
               Rotate key
             </Button>
           )}
+          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "access", env: c.row.original })}>
+            Access
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "edit", env: c.row.original })}>
             Edit
           </Button>
@@ -157,6 +162,7 @@ export function EnvironmentsPage() {
       {enrollment && (
         <AgentEnrollment enrollment={enrollment.enrollment} kind={enrollment.kind} onClose={() => setEnrollment(null)} />
       )}
+      {dialog?.kind === "access" && <EnvAccess env={dialog.env.name} onClose={close} />}
       {dialog?.kind === "delete" && (
         <ConfirmDialog
           open
@@ -384,5 +390,54 @@ function KindPicker({ kind, onChange }: { kind: EnvKind; onChange: (k: EnvKind) 
         <p className="text-xs text-muted-foreground">{DESCRIPTIONS[kind]}</p>
       </fieldset>
     </div>
+  );
+}
+
+/** Who may use `env`, read-only; grants are changed per user. */
+function EnvAccess({ env, onClose }: { env: string; onClose: () => void }) {
+  const q = useQuery(envAccessQuery(env));
+  return (
+    <Modal open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Access to {env}</DialogTitle>
+          <DialogDescription>
+            Admins have full access everywhere. Change a user&apos;s access from{" "}
+            <Link to="/admin/users" className="underline" onClick={onClose}>
+              Users
+            </Link>
+            .
+          </DialogDescription>
+        </DialogHeader>
+        {q.error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {errorMessage(q.error)}
+          </p>
+        ) : !q.data ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : q.data.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Only admins can use this environment.</p>
+        ) : (
+          <table aria-label={`Access to ${env}`} className="w-full text-sm">
+            <thead className="text-left text-muted-foreground">
+              <tr>
+                <th className="py-1 font-normal">User</th>
+                <th className="py-1 font-normal">Role</th>
+                <th className="py-1 font-normal">Namespaces</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.map((a) => (
+                <tr key={a.user_id} className="border-t">
+                  <td className="py-1.5 font-medium">{a.username}</td>
+                  <td className="py-1.5">{a.role}</td>
+                  <td className="py-1.5 font-mono text-xs">{a.namespaces ? a.namespaces.join(", ") : "Entire environment"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </DialogContent>
+    </Modal>
   );
 }

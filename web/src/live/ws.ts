@@ -54,6 +54,8 @@ export interface WsOptions {
   backoff?: (attempt: number) => number;
   onState?(state: ConnState): void;
   onEnvStatus?(env: string, status: EnvStatus): void;
+  /** The server says the user's access changed: what they can see may differ. */
+  onAccessChanged?(): void;
   /** Called after a reconnect, once every subscription has been sent again. */
   onReconnect?(): void;
   /**
@@ -215,6 +217,10 @@ export class WsClient {
       this.opts.onEnvStatus?.(msg.env, msg.status);
       return;
     }
+    if (msg.type === "access_changed") {
+      this.opts.onAccessChanged?.();
+      return;
+    }
     const sub = msg.sub;
     if (msg.type === "error" && sub == null && msg.code === "unauthorized") {
       this.close();
@@ -232,6 +238,13 @@ export class WsClient {
         active.handlers.onGap?.(msg.dropped);
         break;
       case "end":
+        // The user's access changed: ask again, as after a reconnect. A
+        // refusal then arrives as an error; a terminal is not restarted.
+        if (msg.reason === "access" && active.resubscribe) {
+          active.spec = active.handlers.onResubscribe?.() ?? active.spec;
+          this.sendSub(sub, active.spec);
+          break;
+        }
         this.subs.delete(sub);
         active.handlers.onEnd?.(msg);
         break;

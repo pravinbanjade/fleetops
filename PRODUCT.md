@@ -13,7 +13,7 @@ web
 Other roles exist in the product and are secondary:
 
 - **Admins** set up the server, users and environments.
-- **Operators and viewers** are the roles planned for per-environment RBAC in slice 3c.
+- **Operators and viewers** hold per-environment roles that an admin grants; on a Kubernetes environment the role can be limited to some namespaces.
 
 ## Product Purpose
 
@@ -50,7 +50,7 @@ The supporting differentiators, which must not be traded away lightly, are:
 - **Roadmap:**
   1. core and local Docker (done);
   2. agent and multi-host (done);
-  3. Kubernetes (done: core, live watches and YAML editing; next: 3c RBAC for Docker and Kubernetes with namespace scoping, 3d Helm);
+  3. Kubernetes (done: core, live watches and YAML editing, 3c per-environment RBAC with namespace scoping; next: 3d Helm);
   4. stacks and GitOps;
   5. teams and enterprise features (free).
 

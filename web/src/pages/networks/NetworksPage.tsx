@@ -6,6 +6,7 @@ import type { NetworkSummary } from "@/api/gen/types.gen";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
 import { Badge } from "@/components/ui/badge";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { CreateNetworkDialog, PruneNetworksDialog, RemoveNetworksDialog } from "./dialogs";
 
@@ -46,6 +47,7 @@ function networkColumns(env: string): Column<NetworkSummary>[] {
 
 export function NetworksPage() {
   const { env } = useParams({ from: "/authed/shell/envs/$env/networks" });
+  const { canWrite } = useEnvAccess(env);
   const list = useQuery(networksQuery(env));
   const [cols] = useState(() => networkColumns(env));
   const [removing, setRemoving] = useState<NetworkSummary[] | null>(null);
@@ -55,12 +57,14 @@ export function NetworksPage() {
     <Page
       title="Networks"
       actions={
-        <>
-          <Button variant="outline" onClick={() => setPruning(true)}>
-            Prune
-          </Button>
-          <Button onClick={() => setCreating(true)}>Create network</Button>
-        </>
+        canWrite && (
+          <>
+            <Button variant="outline" onClick={() => setPruning(true)}>
+              Prune
+            </Button>
+            <Button onClick={() => setCreating(true)}>Create network</Button>
+          </>
+        )
       }
     >
       <DataTable
@@ -71,19 +75,23 @@ export function NetworksPage() {
         getRowId={(n) => n.id}
         empty="No networks in this environment."
         initialSorting={[{ id: "name", desc: false }]}
-        selectable
-        actions={(selected, clear) => (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => {
-              setRemoving(selected);
-              clear();
-            }}
-          >
-            Remove
-          </Button>
-        )}
+        selectable={canWrite}
+        actions={
+          canWrite
+            ? (selected, clear) => (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => {
+                    setRemoving(selected);
+                    clear();
+                  }}
+                >
+                  Remove
+                </Button>
+              )
+            : undefined
+        }
       />
       {removing && (
         <RemoveNetworksDialog

@@ -118,6 +118,8 @@ pub struct EnvView {
     pub agent: Option<AgentView>,
     /// What may be shown of a stored kubeconfig (kube-config environments).
     pub kube: Option<fleetops_core::env::KubeconfigSummary>,
+    /// The caller's access here (admins: operator on the whole environment).
+    pub access: Option<fleetops_core::access::Grant>,
 }
 
 /// A newly created environment; an agent one carries its enrollment once.

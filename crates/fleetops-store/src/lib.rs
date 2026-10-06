@@ -1,6 +1,7 @@
 //! SQLite persistence for fleetops. All timestamps are unix seconds passed
 //! in by the caller so that behaviour is deterministic under test.
 
+mod access;
 mod agents;
 mod audit;
 mod credentials;
@@ -10,6 +11,7 @@ mod sessions;
 mod settings;
 mod users;
 
+pub use access::BindingRecord;
 pub use agents::AgentRecord;
 pub use audit::{AuditEntry, NewAudit};
 pub use environments::EnvironmentRecord;

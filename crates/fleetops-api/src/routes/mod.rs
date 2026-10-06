@@ -1,3 +1,4 @@
+pub mod access;
 pub mod audit_log;
 pub mod auth;
 pub mod docker;
@@ -31,6 +32,8 @@ pub fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(auth::change_password))
         .routes(routes!(users::list, users::create))
         .routes(routes!(users::update, users::remove))
+        .routes(routes!(access::list_user))
+        .routes(routes!(access::set, access::revoke))
         .routes(routes!(audit_log::list))
         .routes(routes!(crate::ws::handler))
         .routes(routes!(crate::agents::connect::handler))
@@ -47,6 +50,7 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(envs::list, envs::create))
         .routes(routes!(envs::update, envs::remove))
         .routes(routes!(envs::status))
+        .routes(routes!(access::list_env))
         .routes(routes!(envs::rotate_agent))
         .routes(routes!(envs::kube_contexts))
         .routes(routes!(system::info))

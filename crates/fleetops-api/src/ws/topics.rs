@@ -7,7 +7,7 @@ use super::protocol::{self, encode_binary, Out};
 use super::queue::{Policy, SubQueue};
 use crate::{
     auth::extract::CurrentUser,
-    authz::{authorize, Action},
+    authz::Action,
     tasks::{TaskEvent, TaskStatus},
     AppState,
 };
@@ -56,15 +56,14 @@ fn opts<T: serde::de::DeserializeOwned + Default>(v: Value) -> Result<T> {
 }
 
 /// Resolves the environment, authorises, and returns its Docker ops.
-fn docker_for(
+async fn docker_for(
     s: &AppState,
     cu: &CurrentUser,
     env: &Option<String>,
     action: Action,
 ) -> Result<(Arc<dyn Environment>, Arc<dyn DockerOps>)> {
     let name = required(env, "env")?;
-    let env = s.envs.get(name)?;
-    authorize(&cu.user, Some(env.id()), action)?;
+    let (env, _) = crate::authz::env_access(s, cu, name, action).await?;
     if env.kind().is_kube() {
         return Err(crate::routes::kube::wrong_kind(name, env.kind()));
     }
@@ -99,7 +98,7 @@ fn is_kube_env(s: &AppState, env: &Option<String>) -> bool {
 /// or name is `id`. One shared Docker stream per environment.
 pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, _) = docker_for(s, cu, &env, Action::DockerRead)?;
+    let (env, _) = docker_for(s, cu, &env, Action::DockerRead).await?;
     let q = c.queue(Policy::DropOldest);
     let mut rx = s
         .hubs
@@ -133,6 +132,7 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: None,
     })
 }
@@ -140,7 +140,7 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
 /// Stats samples for container `id`, shared with every other subscriber.
 pub(super) async fn stats(c: &Ctx<'_>, env: Option<String>, id: Option<String>) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) = docker_for(s, cu, &env, Action::DockerRead)?;
+    let (env, ops) = docker_for(s, cu, &env, Action::DockerRead).await?;
     let id = required(&id, "id")?.to_string();
     let (handle, mut rx) = s.hubs.stats(&env).subscribe(ops, &id);
     let q = c.queue(Policy::DropOldest);
@@ -166,6 +166,7 @@ pub(super) async fn stats(c: &Ctx<'_>, env: Option<String>, id: Option<String>) 
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: None,
     })
 }
@@ -181,12 +182,13 @@ pub(super) async fn logs(
     let (s, cu, sub) = (c.s, c.cu, c.sub);
     let o: LogOptions = opts(opts_v)?;
     let lines = if is_kube_env(s, &env) {
-        let (_, ops) =
-            crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead)?;
+        let crate::routes::kube::KubeCtx { env, ops, grant } =
+            crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead).await?;
         let (ns, pod) = pod_id(&id)?;
+        crate::authz::deny_audited(s, cu, env.id(), "k8s.read", grant.check_ns(&ns)).await?;
         ops.logs(&ns, &pod, &o)
     } else {
-        let (_, ops) = docker_for(s, cu, &env, Action::DockerRead)?;
+        let (_, ops) = docker_for(s, cu, &env, Action::DockerRead).await?;
         ops.logs(required(&id, "id")?, &o)
     };
     let q = c.queue(Policy::Gap);
@@ -194,6 +196,7 @@ pub(super) async fn logs(
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: None,
     })
 }
@@ -252,7 +255,7 @@ pub(super) async fn exec(
         return kube_exec(c, env, id, opts_v).await;
     }
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) = docker_for(s, cu, &env, Action::DockerWrite)?;
+    let (env, ops) = docker_for(s, cu, &env, Action::DockerWrite).await?;
     let id = required(&id, "id")?.to_string();
     let o: ExecOptions = opts(opts_v)?;
     let session = ops.exec_start(&id, &o).await;
@@ -287,6 +290,7 @@ pub(super) async fn exec(
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: Some(ExecCtl {
             input: session.input,
             resize: Resize::Docker {
@@ -306,9 +310,10 @@ async fn kube_exec(
     opts_v: Value,
 ) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) =
-        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeWrite)?;
+    let crate::routes::kube::KubeCtx { env, ops, grant } =
+        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeWrite).await?;
     let (ns, pod) = pod_id(&id)?;
+    crate::authz::deny_audited(s, cu, env.id(), "k8s.write", grant.check_ns(&ns)).await?;
     let o: ExecOptions = opts(opts_v)?;
     let session = ops.exec_start(&ns, &pod, &o).await;
     let failure = session.as_ref().err().map(|e| e.to_string());
@@ -335,6 +340,7 @@ async fn kube_exec(
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: Some(ExecCtl {
             input: session.input,
             resize: Resize::Kube(session.resize),
@@ -394,9 +400,17 @@ pub(super) async fn kube_watch(
     id: Option<String>,
 ) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) =
-        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead)?;
+    let crate::routes::kube::KubeCtx { env, ops, grant } =
+        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead).await?;
     let (kind, ns) = watch_id(&id)?;
+    crate::authz::deny_audited(
+        s,
+        cu,
+        env.id(),
+        "k8s.read",
+        grant.check_list(kind, ns.as_deref()),
+    )
+    .await?;
     let mut w = s
         .hubs
         .kube_watches
@@ -407,6 +421,11 @@ pub(super) async fn kube_watch(
         while let Some(item) = w.next().await {
             match item {
                 Ok(ev) => {
+                    // The shared watch carries every namespace; this
+                    // subscriber sees only its grant's.
+                    let Some(ev) = grant.filter_event(kind, ev) else {
+                        continue;
+                    };
                     let v = serde_json::to_value(&ev).unwrap_or(Value::Null);
                     if !qq.push_wait(protocol::data(sub, v)).await {
                         return;
@@ -422,6 +441,7 @@ pub(super) async fn kube_watch(
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: None,
     })
 }
@@ -471,6 +491,8 @@ pub(super) async fn task(c: &Ctx<'_>, id: Option<String>) -> Result<Sub> {
     Ok(Sub {
         queue: q,
         task: handle.abort_handle(),
+        // Owner-checked, not grant-checked: an access change leaves it.
+        keep_on_access: true,
         exec: None,
     })
 }

@@ -5,6 +5,7 @@ import { containersQuery, volumeQuery } from "@/api/queries";
 import { Details, DetailError } from "@/components/Details";
 import { JsonView } from "@/components/JsonView";
 import { Page } from "@/components/Page";
+import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { Masked } from "@/components/Masked";
 import { formatKeyValues } from "@/lib/kv";
@@ -14,6 +15,7 @@ import { RemoveVolumesDialog } from "./dialogs";
 
 export function VolumePage() {
   const { env, name } = useParams({ from: "/authed/shell/envs/$env/volumes/$name" });
+  const { canWrite } = useEnvAccess(env);
   const navigate = useNavigate();
   const q = useQuery(volumeQuery(env, name));
   const containers = useQuery(containersQuery(env));
@@ -31,9 +33,11 @@ export function VolumePage() {
     <Page
       title={v.Name}
       actions={
-        <Button variant="destructive" onClick={() => setRemoving(true)}>
-          Remove
-        </Button>
+        canWrite && (
+          <Button variant="destructive" onClick={() => setRemoving(true)}>
+            Remove
+          </Button>
+        )
       }
     >
       <Details

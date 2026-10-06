@@ -2,7 +2,7 @@ use crate::agents::{self, AgentView, CreatedEnv, Enrollment, EnvView, KubeAccess
 use crate::openapi::EnvParam;
 use crate::{
     auth::{extract::CurrentUser, token::hash_token},
-    authz::{authorize, Action},
+    authz::{authorize_global, Action},
     extract::{ApiJson, ApiPath},
     routes::audit,
     ApiResult, AppState,
@@ -140,7 +140,7 @@ async fn new_enrollment(
     responses((status = 200, description = "All environments; agent environments include their agent's state", body = Vec<EnvView>))
 )]
 pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<Vec<EnvView>>> {
-    authorize(&cu.user, None, Action::EnvRead)?;
+    let grants = s.store.user_grants(cu.user.id).await?;
     let mut agents: std::collections::HashMap<i64, _> = s
         .store
         .list_agents()
@@ -154,14 +154,20 @@ pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<
         .list_environments()
         .await?
         .into_iter()
-        .map(|env| {
+        .filter_map(|env| {
+            let access = grants.get(&env.id)?.clone();
             let agent = agents
                 .remove(&env.id)
                 .map(|a| AgentView::new(a, s.agents.get(env.id).is_some()));
             let kube = summaries
                 .get(&env.id)
                 .and_then(|v| serde_json::from_value(v.clone()).ok());
-            EnvView { env, agent, kube }
+            Some(EnvView {
+                env,
+                agent,
+                kube,
+                access: Some(access),
+            })
         })
         .collect();
     Ok(Json(views))
@@ -182,7 +188,7 @@ pub async fn create(
     headers: HeaderMap,
     ApiJson(body): ApiJson<CreateEnv>,
 ) -> ApiResult<(StatusCode, Json<CreatedEnv>)> {
-    authorize(&cu.user, None, Action::EnvManage)?;
+    authorize_global(&cu.user, Action::EnvManage)?;
     validate_env_name(&body.name)?;
     if body.access.is_some() && body.kind != EnvKind::KubeAgent {
         return Err(
@@ -308,7 +314,7 @@ pub async fn update(
     ApiPath(name): ApiPath<String>,
     ApiJson(body): ApiJson<UpdateEnv>,
 ) -> ApiResult<Json<EnvironmentRecord>> {
-    authorize(&cu.user, None, Action::EnvManage)?;
+    authorize_global(&cu.user, Action::EnvManage)?;
     let kind: EnvKind = find(&s, &name).await?.kind.parse()?;
     if body.url.is_some() && kind == EnvKind::DockerAgent {
         return Err(Error::Invalid("an agent environment's URL cannot be changed".into()).into());
@@ -386,7 +392,7 @@ pub async fn remove(
     cu: CurrentUser,
     ApiPath(name): ApiPath<String>,
 ) -> ApiResult<StatusCode> {
-    authorize(&cu.user, None, Action::EnvManage)?;
+    authorize_global(&cu.user, Action::EnvManage)?;
     let _guard = s.envs.lock_mutations().await;
     let current = find(&s, &name).await?;
     s.store.delete_environment(current.id).await?;
@@ -419,8 +425,7 @@ pub async fn status(
     cu: CurrentUser,
     ApiPath(name): ApiPath<String>,
 ) -> ApiResult<Json<EnvStatus>> {
-    let env = s.envs.get(&name)?;
-    authorize(&cu.user, Some(env.id()), Action::EnvRead)?;
+    let (env, _) = crate::authz::env_access(&s, &cu, &name, Action::EnvRead).await?;
     Ok(Json(env.status().await))
 }
 
@@ -439,7 +444,7 @@ pub async fn rotate_agent(
     headers: HeaderMap,
     ApiPath(name): ApiPath<String>,
 ) -> ApiResult<Json<Enrollment>> {
-    authorize(&cu.user, None, Action::EnvManage)?;
+    authorize_global(&cu.user, Action::EnvManage)?;
     let _guard = s.envs.lock_mutations().await;
     let current = find(&s, &name).await?;
     let kind: EnvKind = current.kind.parse()?;
@@ -474,7 +479,7 @@ pub async fn kube_contexts(
     cu: CurrentUser,
     ApiJson(body): ApiJson<KubeconfigText>,
 ) -> ApiResult<Json<KubeContexts>> {
-    authorize(&cu.user, None, Action::EnvManage)?;
+    authorize_global(&cu.user, Action::EnvManage)?;
     let c = kubeconfig::contexts(&body.kubeconfig)?;
     Ok(Json(KubeContexts {
         contexts: c.contexts,

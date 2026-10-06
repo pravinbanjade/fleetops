@@ -41,6 +41,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         onState: setState,
         onEnvStatus: (env, status) => qc.setQueryData(keys.envStatus(env), status),
         onReconnect: () => void qc.invalidateQueries({ queryKey: ["env"] }),
+        onAccessChanged: () => void qc.invalidateQueries(),
         onUnauthorized: reportUnauthorized,
         onConnectFailed: () => void checkSession(),
       }),
