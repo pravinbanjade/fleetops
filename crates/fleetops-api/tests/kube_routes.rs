@@ -464,3 +464,19 @@ async fn writes_need_csrf() {
     rq.headers_mut().remove("x-csrf-token");
     assert_eq!(t.send(rq).await.status, 403);
 }
+
+#[tokio::test]
+async fn an_edit_without_a_resource_version_is_refused() {
+    let (t, admin) = kube_app().await;
+    let body = json!({"yaml": "kind: Deployment\n", "resource_version": "", "dry_run": false});
+    let r = t
+        .send(req(
+            "PUT",
+            "/api/v1/envs/k/k8s/deployments/apps/web",
+            Some(body),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 400, "{:?}", r.json);
+    assert!(t.fake.kube.applied.lock().unwrap().is_empty());
+}
