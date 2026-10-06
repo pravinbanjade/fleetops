@@ -98,6 +98,50 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
     await expect(page.locator(".xterm")).toContainText("hi-from-e2e", { timeout: 15_000 });
   });
 
+  await test.step("an operator limited to fleetops-it sees only its pods, live", async () => {
+    const user = `ns-op-${Date.now().toString(36)}`;
+    await page.goto("/admin/users");
+    await page.getByRole("button", { name: "Add user" }).click();
+    let dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Username").fill(user);
+    await dialog.getByLabel("Password").fill(PASSWORD);
+    await dialog.getByRole("button", { name: "Add" }).click();
+    await expect(dialog).toBeHidden();
+    await page.getByRole("row", { name: new RegExp(user) }).getByRole("button", { name: "Access" }).click();
+    dialog = page.getByRole("dialog");
+    await dialog.getByLabel(`Role on ${ENV}`).selectOption("operator");
+    await dialog.getByText("Entire cluster", { exact: true }).click();
+    await dialog.getByLabel(`Namespaces on ${ENV}`).fill("fleetops-it");
+    await dialog.getByLabel(`Namespaces on ${ENV}`).press("Enter");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(dialog).toBeHidden();
+
+    const ctx = await page.context().browser()!.newContext();
+    const op = await ctx.newPage();
+    await op.goto("/login");
+    await op.getByLabel("Username").fill(user);
+    await op.getByLabel("Password").fill(PASSWORD);
+    await op.getByRole("button", { name: "Log in" }).click();
+    await expect(op.getByRole("navigation", { name: "Environment" })).toBeVisible();
+    await op.goto(`/envs/${ENV}/k8s/pods`);
+    await op.getByRole("combobox", { name: "Namespace" }).selectOption("");
+    await expect(op.getByRole("link", { name: "ticker", exact: true })).toBeVisible();
+    await expect(op.getByRole("combobox", { name: "Namespace" }).locator("option")).toHaveText(["All namespaces", "fleetops-it"]);
+    const outside = `e2e-out-${Date.now().toString(36)}`;
+    const inside = `e2e-in-${Date.now().toString(36)}`;
+    const kc = join(process.env.FLEETOPS_KUBE_IT ?? "../target/kube-it", "kubeconfig");
+    execFileSync("kubectl", ["--kubeconfig", kc, "-n", "default", "run", outside, "--image=busybox:1.37", "--", "sleep", "300"]);
+    execFileSync("kubectl", ["--kubeconfig", kc, "-n", "fleetops-it", "run", inside, "--image=busybox:1.37", "--", "sleep", "300"]);
+    try {
+      await expect(op.getByRole("link", { name: inside, exact: true })).toBeVisible({ timeout: 30_000 });
+      await expect(op.getByRole("link", { name: outside, exact: true })).toHaveCount(0);
+    } finally {
+      execFileSync("kubectl", ["--kubeconfig", kc, "-n", "default", "delete", "pod", outside, "--wait=false"]);
+      execFileSync("kubectl", ["--kubeconfig", kc, "-n", "fleetops-it", "delete", "pod", inside, "--wait=false"]);
+      await ctx.close();
+    }
+  });
+
   await test.step("scale back and remove the environment", async () => {
     await page.goto(`/envs/${ENV}/k8s/deployments/fleetops-it/web`);
     await page.getByRole("button", { name: "Scale" }).click();
