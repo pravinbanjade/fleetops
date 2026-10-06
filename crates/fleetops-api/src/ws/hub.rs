@@ -231,6 +231,8 @@ pub struct Hubs {
     events: Mutex<HashMap<EnvKey, Arc<EventHub>>>,
     stats: Mutex<HashMap<EnvKey, Arc<StatsHub>>>,
     status: Mutex<Option<broadcast::Sender<StatusChange>>>,
+    /// Shared Kubernetes watches (spec §2.4).
+    pub kube_watches: Arc<crate::ws::watches::Watches>,
 }
 
 impl Hubs {
