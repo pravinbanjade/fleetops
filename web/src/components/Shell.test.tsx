@@ -8,16 +8,21 @@ import { ADMIN, loggedIn, renderApp } from "@/test/app";
 describe("shell", () => {
   it("logs out and returns to the login page", async () => {
     let out = false;
+    // Once logged out, the shell's own queries are refused too.
+    const orGone = (body: unknown) => () => (out ? json(401, { code: "unauthorized", message: "no session" }) : json(200, body));
     const calls = mockFetch({
       ...loggedIn,
-      "GET /api/v1/auth/me": () => (out ? json(401, { code: "unauthorized", message: "no session" }) : json(200, ADMIN)),
+      "GET /api/v1/auth/me": orGone(ADMIN),
+      "GET /api/v1/envs": orGone(loggedIn["GET /api/v1/envs"].json),
+      "GET /api/v1/envs/local/status": orGone(loggedIn["GET /api/v1/envs/local/status"].json),
       "POST /api/v1/auth/logout": () => ((out = true), new Response(null, { status: 204 })),
     });
     const { history, screen } = renderApp("/envs/local");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "admin" }));
     await user.click(await screen.findByRole("menuitem", { name: "Log out" }));
-    await waitFor(() => expect(history.location.pathname).toBe("/login"));
+    expect(await screen.findByText("Log in to FleetOps")).toBeInTheDocument();
+    expect(history.location.pathname).toBe("/login");
     expect(calls.find((c) => c.path === "/api/v1/auth/logout")?.headers.get("x-csrf-token")).toBe("csrf-1");
   });
 

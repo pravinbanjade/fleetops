@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { setCsrfToken } from "@/api/client";
 import { meQuery } from "@/api/queries";
@@ -12,13 +12,12 @@ export function useSession() {
 }
 
 export function useLogout() {
-  const qc = useQueryClient();
   const navigate = useNavigate();
   return useMutation({
     mutationFn: () => logout(),
+    // The login page clears the cache once this page is gone (see LoginPage).
     onSettled: () => {
       setCsrfToken(undefined);
-      qc.clear();
       void navigate({ to: "/login" });
     },
   });

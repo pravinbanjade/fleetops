@@ -42,7 +42,9 @@ test("an agent environment comes online, serves logs, and goes offline", async (
     await page.goto("/admin/envs");
     await page.getByRole("button", { name: "Add environment" }).click();
     const form = page.getByRole("dialog", { name: "Add environment" });
-    await form.getByRole("radio", { name: /agent on a remote host/i }).check();
+    // The radio itself is visually hidden; click its label, as a user does.
+    await form.getByText("Agent on a remote host", { exact: true }).click();
+    await expect(form.getByRole("radio", { name: /agent on a remote host/i })).toBeChecked();
     await form.getByLabel("Name").fill("e2e-remote");
     await form.getByRole("button", { name: "Add" }).click();
     const shown = page.getByRole("dialog", { name: "Run this on the remote host" });
