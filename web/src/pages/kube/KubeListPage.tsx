@@ -53,8 +53,10 @@ export function KubeListPage() {
   const kind = asKind(raw) ?? "pods";
   const [ns, setNs] = useNamespace(env);
   const scoped = !CLUSTER_SCOPED.includes(kind);
-  const list = useQuery(kubeListQuery(env, kind, scoped ? ns : undefined));
   const live = useKubeWatch(env, kind, scoped ? ns : undefined);
+  // Once the watch has its snapshot the cache follows the cluster; a REST
+  // refetch (after a write, on focus) would race it with older rows.
+  const list = useQuery({ ...kubeListQuery(env, kind, scoped ? ns : undefined), enabled: !live.synced });
   const [creating, setCreating] = useState(false);
   const cols = useMemo(() => kindColumns(env, kind), [env, kind]);
   const forbidden = list.error instanceof ApiError && list.error.status === 403;
