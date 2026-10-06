@@ -100,4 +100,34 @@ describe("YamlDialog", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Force apply anyway" }));
     await waitFor(() => expect(calls.at(-1)!.body).toMatchObject({ force: true, dry_run: false }));
   });
+
+  it("keeps the user's text and version when the parent re-renders with a new target object", async () => {
+    let opened = 0;
+    const calls = mockFetch({
+      "GET /api/v1/envs/k/k8s/deployments/apps/web/edit": () => {
+        opened++;
+        return { json: { yaml: opened === 1 ? "replicas: 1\n" : "replicas: 7\n", resource_version: opened === 1 ? "5" : "8" } };
+      },
+      "PUT /api/v1/envs/k/k8s/deployments/apps/web": { json: result() },
+    });
+    const qc = new QueryClient();
+    const ui = () => (
+      <QueryClientProvider client={qc}>
+        <YamlDialog env="k" target={{ mode: "edit", kind: "deployments", ns: "apps", name: "web" }} onClose={() => {}} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(ui());
+    const editor = await screen.findByRole("textbox", { name: "YAML" });
+    await waitFor(() => expect(editor).toHaveValue("replicas: 1\n"));
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "replicas: 2\n");
+    // A watch event re-renders the page, which passes a fresh target literal.
+    rerender(ui());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(editor).toHaveValue("replicas: 2\n");
+    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    await screen.findByLabelText("Changes to Deployment web");
+    expect(calls.find((c) => c.method === "PUT")!.body).toMatchObject({ yaml: "replicas: 2\n", resource_version: "5" });
+    expect(opened).toBe(1);
+  });
 });

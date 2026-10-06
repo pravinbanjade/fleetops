@@ -40,7 +40,12 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
   const [confirmForce, setConfirmForce] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Load once per target, by value: callers pass a fresh object on every
+  // render (watch events re-render them), and reloading would replace the
+  // user's text and version under them.
+  const targetKey = JSON.stringify(target);
   useEffect(() => {
+    const target = JSON.parse(targetKey) as YamlTarget;
     void (async () => {
       try {
         if (target.mode === "edit") {
@@ -58,7 +63,7 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
         setProblems([errorMessage(e)]);
       }
     })();
-  }, [env, target]);
+  }, [env, targetKey]);
 
   /** Fetches the object as it is now, for the conflict view. */
   const live = async () => {
