@@ -238,6 +238,13 @@ export class WsClient {
         active.handlers.onGap?.(msg.dropped);
         break;
       case "end":
+        // The user's access changed: ask again, as after a reconnect. A
+        // refusal then arrives as an error; a terminal is not restarted.
+        if (msg.reason === "access" && active.resubscribe) {
+          active.spec = active.handlers.onResubscribe?.() ?? active.spec;
+          this.sendSub(sub, active.spec);
+          break;
+        }
         this.subs.delete(sub);
         active.handlers.onEnd?.(msg);
         break;

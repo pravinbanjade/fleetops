@@ -64,12 +64,7 @@ export function useKubeWatch(env: string, kind: KubeKind, ns: string | undefined
       if (ev.type === "snapshot") setState((s) => (s.key === key && s.synced ? s : { key, paused: null, synced: true }));
       onEvent?.(ev);
     },
-    onEnd: (m) => {
-      const msg = m as { reason: string; message?: string | null };
-      // Access changed: subscribe again; a refusal then pauses with its reason.
-      if (msg.reason === "access") return setAttempt((n) => n + 1);
-      pause(msg.message ?? "the watch ended");
-    },
+    onEnd: (m) => pause((m as { message?: string | null }).message ?? "the watch ended"),
     onError: (m) => pause(m.message),
   });
   return {
