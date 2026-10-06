@@ -32,34 +32,46 @@ export interface WatchPause {
   message: string;
 }
 
+interface WatchState {
+  /** Which list this state is about; any other list starts fresh. */
+  key: string;
+  paused: WatchPause | null;
+  /** A snapshot has arrived: the cache is the cluster's, not a REST read. */
+  synced: boolean;
+}
+
 /**
  * Keeps the cached list of `kind` in `ns` (all namespaces when empty) live
- * from the shared `kube-watch` topic. When the watch ends, the page shows
- * the data as paused (spec §6) until `retry`.
+ * from the shared `kube-watch` topic. While `synced`, the REST list must
+ * not refetch over it (a late response would bring back old rows). When
+ * the watch ends, the page shows the data as paused (spec §6) until
+ * `retry`; another list starts fresh.
  */
 export function useKubeWatch(env: string, kind: KubeKind, ns: string | undefined, onEvent?: (ev: WatchEvent) => void) {
   const qc = useQueryClient();
-  const [paused, setPaused] = useState<WatchPause | null>(null);
+  const id = `${kind}/${ns || "-"}`;
+  const key = `${env}:${id}`;
+  const [stored, setState] = useState<WatchState>({ key, paused: null, synced: false });
+  const state: WatchState = stored.key === key ? stored : { key, paused: null, synced: false };
   const [attempt, setAttempt] = useState(0);
   const last = useRef(0);
-  const pause = (message: string) => setPaused({ at: last.current || Date.now(), message });
-  useSubscription(
-    paused ? null : { topic: "kube-watch", env, id: `${kind}/${ns || "-"}`, ...(attempt ? { opts: { attempt } } : {}) },
-    {
-      onData: (d) => {
-        const ev = d as WatchEvent;
-        last.current = Date.now();
-        qc.setQueryData<KubeList>(keys.kube(env, kind, ns), (old) => applyWatchEvent(old, ev));
-        onEvent?.(ev);
-      },
-      onEnd: (m) => pause((m as { message?: string | null }).message ?? "the watch ended"),
-      onError: (m) => pause(m.message),
+  const pause = (message: string) => setState({ key, paused: { at: last.current || Date.now(), message }, synced: false });
+  useSubscription(state.paused ? null : { topic: "kube-watch", env, id, ...(attempt ? { opts: { attempt } } : {}) }, {
+    onData: (d) => {
+      const ev = d as WatchEvent;
+      last.current = Date.now();
+      qc.setQueryData<KubeList>(keys.kube(env, kind, ns), (old) => applyWatchEvent(old, ev));
+      if (ev.type === "snapshot") setState((s) => (s.key === key && s.synced ? s : { key, paused: null, synced: true }));
+      onEvent?.(ev);
     },
-  );
+    onEnd: (m) => pause((m as { message?: string | null }).message ?? "the watch ended"),
+    onError: (m) => pause(m.message),
+  });
   return {
-    paused,
+    paused: state.paused,
+    synced: state.synced,
     retry: () => {
-      setPaused(null);
+      setState({ key, paused: null, synced: false });
       setAttempt((n) => n + 1);
     },
   };
