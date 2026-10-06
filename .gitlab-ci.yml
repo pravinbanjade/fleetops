@@ -75,7 +75,10 @@ ci-image:
     DOCKER_TLS_CERTDIR: /certs
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    - docker buildx create --use --driver docker-container
+    # The dind daemon is reached over TLS from DOCKER_HOST/DOCKER_CERT_PATH;
+    # buildx only builds a builder on a context, so make one from them.
+    - docker context create dind
+    - docker buildx create --use --driver docker-container dind
     - >
       docker buildx build ci/ --push --tag "$CI_IMAGE"
       --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/ci:cache"
