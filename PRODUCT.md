@@ -13,7 +13,7 @@ web
 Other roles exist in the product and are secondary:
 
 - **Admins** set up the server, users and environments.
-- **Operators and viewers** are the roles planned for per-environment RBAC in sub-project 5.
+- **Operators and viewers** are the roles planned for per-environment RBAC in slice 3c.
 
 ## Product Purpose
 
@@ -40,18 +40,18 @@ The supporting differentiators, which must not be traded away lightly, are:
 
 - a lightweight single binary (small image, low memory, fast start);
 - no paywalled features: RBAC, SSO, GitOps and audit are free;
-- Compose/GitOps-first stacks (sub-project 3).
+- Compose/GitOps-first stacks (sub-project 4).
 
 ## Operating Context
 
 - It runs as a binary or a distroless container image next to the Docker daemon, reached over the socket.
-- The same UI will manage remote hosts through an agent (sub-project 2) and Kubernetes clusters (sub-project 4).
+- The same UI manages remote hosts through an agent (sub-project 2) and Kubernetes clusters (sub-project 3).
 - It is used in a desktop browser during working sessions, often side by side with a terminal, an editor or an incident channel.
 - **Roadmap:**
   1. core and local Docker (done);
-  2. agent and multi-host;
-  3. stacks and GitOps;
-  4. Kubernetes;
+  2. agent and multi-host (done);
+  3. Kubernetes (done: core, live watches and YAML editing; next: 3c RBAC for Docker and Kubernetes with namespace scoping, 3d Helm);
+  4. stacks and GitOps;
   5. teams and enterprise features (free).
 
 ## Capabilities and Constraints
