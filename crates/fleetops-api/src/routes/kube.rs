@@ -382,6 +382,13 @@ pub async fn replace(
 ) -> ApiResult<Json<ApplyResult>> {
     let k = p.checked()?;
     check_size(&body.yaml)?;
+    // An empty version would make the PUT unconditional: a silent overwrite.
+    if body.resource_version.trim().is_empty() {
+        return Err(Error::Invalid(
+            "resource_version is required: open the object to edit it".into(),
+        )
+        .into());
+    }
     let (env, ops) = kube_for(&s, &cu, &p.env, Action::KubeWrite)?;
     let r = ops
         .replace(

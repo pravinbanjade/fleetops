@@ -523,6 +523,11 @@ impl KubeOps for KubeClient {
         resource_version: &str,
         mode: ApplyMode,
     ) -> Result<ApplyResult> {
+        if resource_version.trim().is_empty() {
+            return Err(Error::Invalid(
+                "an edit needs the resource version it was opened at".into(),
+            ));
+        }
         let mut docs = crate::apply::split(yaml)?;
         if docs.len() != 1 {
             return Err(Error::Invalid("edit one object at a time".into()));
