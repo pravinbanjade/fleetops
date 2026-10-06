@@ -367,6 +367,7 @@ pub fn ws_config() -> ApiConfig {
     ApiConfig {
         ws_backoff: std::time::Duration::from_millis(10),
         ws_session_check: std::time::Duration::from_millis(50),
+        kube_watch_grace: std::time::Duration::from_millis(50),
         ..ApiConfig::default()
     }
 }

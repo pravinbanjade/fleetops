@@ -632,6 +632,7 @@ export type ServerMsg = {
     type: 'gap';
 } | {
     exit_code?: number | null;
+    message?: string | null;
     reason: string;
     sub: number;
     task?: null | TaskInfo;
@@ -712,7 +713,7 @@ export type TaskStarted = {
 
 export type TaskStatus = 'running' | 'succeeded' | 'failed';
 
-export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task';
+export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch';
 
 export type UpdateEnv = {
     context?: string | null;
@@ -760,6 +761,27 @@ export type VolumeSummary = {
     };
     mountpoint: string;
     name: string;
+};
+
+/**
+ * One change to a watched list. A watch that fails for good ends its
+ * stream with `Err` instead.
+ */
+export type WatchEvent = {
+    rows: Array<KubeRow>;
+    type: 'snapshot';
+} | {
+    row: KubeRow;
+    type: 'added';
+} | {
+    row: KubeRow;
+    type: 'modified';
+} | {
+    name: string;
+    namespace?: string | null;
+    type: 'deleted';
+} | {
+    type: 'resync';
 };
 
 export type AgentConnectData = {

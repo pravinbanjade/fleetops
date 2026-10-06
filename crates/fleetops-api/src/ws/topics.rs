@@ -1,4 +1,4 @@
-//! The five subscription topics. Each resolves and authorises what it
+//! The subscription topics. Each resolves and authorises what it
 //! needs, starts a producer task that fills the subscription's queue, and
 //! returns the subscription.
 
@@ -13,6 +13,7 @@ use crate::{
 };
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
+use fleetops_core::kube::KubeKind;
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions};
 use fleetops_core::{now_unix, Error, Result, Role};
 use fleetops_store::NewAudit;
@@ -368,6 +369,61 @@ async fn audit_kube_exec(
     if let Err(e) = s.store.insert_audit(&entry).await {
         tracing::error!(error = %e, "failed to write audit log");
     }
+}
+
+/// `<kind>/<namespace>`, with `-` for all namespaces or a cluster-scoped kind.
+fn watch_id(id: &Option<String>) -> Result<(KubeKind, Option<String>)> {
+    let id = required(id, "id")?;
+    let (kind, ns) = id
+        .split_once('/')
+        .ok_or_else(|| Error::Invalid("a watch id is <kind>/<namespace or ->".into()))?;
+    let kind: KubeKind = kind.parse()?;
+    crate::routes::kube::check_namespace(ns)?;
+    Ok((
+        kind,
+        (ns != "-" && !kind.cluster_scoped()).then(|| ns.to_string()),
+    ))
+}
+
+/// A live list of Kubernetes objects: a snapshot, then changes (spec §5).
+/// The producer waits for the client; a client that falls behind the shared
+/// watch gets a fresh snapshot rather than a gap.
+pub(super) async fn kube_watch(
+    c: &Ctx<'_>,
+    env: Option<String>,
+    id: Option<String>,
+) -> Result<Sub> {
+    let (s, cu, sub) = (c.s, c.cu, c.sub);
+    let (env, ops) =
+        crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead)?;
+    let (kind, ns) = watch_id(&id)?;
+    let mut w = s
+        .hubs
+        .kube_watches
+        .subscribe(&env, ops, kind, ns, s.config.kube_watch_grace);
+    let q = c.queue(Policy::Block);
+    let qq = q.clone();
+    let task = tokio::spawn(async move {
+        while let Some(item) = w.next().await {
+            match item {
+                Ok(ev) => {
+                    let v = serde_json::to_value(&ev).unwrap_or(Value::Null);
+                    if !qq.push_wait(protocol::data(sub, v)).await {
+                        return;
+                    }
+                }
+                Err(message) => {
+                    return qq.finish(protocol::end(sub, "error", json!({ "message": message })))
+                }
+            }
+        }
+        qq.finish(protocol::end(sub, "closed", Value::Null));
+    });
+    Ok(Sub {
+        queue: q,
+        task: task.abort_handle(),
+        exec: None,
+    })
 }
 
 /// A background task's progress: everything so far, then live, then `end`.

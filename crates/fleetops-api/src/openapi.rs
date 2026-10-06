@@ -38,6 +38,7 @@ pub const API_BASE: &str = "/api/v1";
         fleetops_core::streams::DockerEvent,
         fleetops_core::streams::StatsSample,
         fleetops_core::streams::LogLine,
+        fleetops_core::kube::WatchEvent,
         fleetops_core::streams::LogOptions,
         fleetops_core::streams::ExecOptions,
     )),
