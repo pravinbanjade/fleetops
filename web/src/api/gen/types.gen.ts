@@ -5,6 +5,10 @@ export type ClientOptions = {
 };
 
 export type AgentView = {
+    /**
+     * kube-agent: the access level its manifest grants.
+     */
+    access?: string | null;
     agent_version?: string | null;
     connected: boolean;
     enrolled: boolean;
@@ -253,6 +257,7 @@ export type CreateBody = ContainerSpec & {
 };
 
 export type CreateEnv = {
+    access?: null | KubeAccess;
     /**
      * kube-config: the context to use; default the current one.
      */
@@ -467,6 +472,11 @@ export type ImageSummary = {
     repo_tags: Array<string>;
     size: number;
 };
+
+/**
+ * What the in-cluster agent's ClusterRole allows (spec §2.5).
+ */
+export type KubeAccess = 'read-only' | 'standard' | 'cluster-admin';
 
 export type KubeCondition = {
     message?: string | null;
