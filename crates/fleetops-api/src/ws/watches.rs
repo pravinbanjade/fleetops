@@ -155,6 +155,25 @@ impl Watches {
         }
     }
 
+    /// Ends every watch of environment `env_id` with `message` (spec §2.4):
+    /// its subscribers get the error, and the next subscribe builds a new
+    /// watch from the environment as it now is.
+    pub fn end_env(&self, env_id: i64, message: &str) {
+        let mut map = self.map.lock().unwrap();
+        map.retain(|key, shared| {
+            if key.0 != env_id {
+                return true;
+            }
+            shared.stop();
+            let mut st = shared.state.lock().unwrap();
+            if st.ended.is_none() {
+                st.ended = Some(message.to_string());
+                let _ = shared.tx.send(Feed::End(message.to_string()));
+            }
+            false
+        });
+    }
+
     /// Upstream watches running, for tests and metrics.
     pub fn open(&self) -> usize {
         self.map
@@ -451,5 +470,21 @@ mod tests {
         tokio::time::sleep(GRACE * 3).await;
         assert_eq!(ops.open(), 0);
         assert_eq!(w.open(), 0);
+    }
+
+    #[tokio::test]
+    async fn ending_an_environment_ends_its_watches_and_the_next_subscribe_restarts() {
+        let (w, env, ops) = setup();
+        let mut a = w.subscribe(&env, ops.clone(), KubeKind::Pods, None, GRACE);
+        started(&ops, 1).await;
+        w.end_env(1, "the environment was removed or changed");
+        assert_eq!(
+            a.next().await,
+            Some(Err("the environment was removed or changed".into()))
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(ops.open(), 0);
+        let _b = w.subscribe(&env, ops.clone(), KubeKind::Pods, None, GRACE);
+        started(&ops, 2).await;
     }
 }

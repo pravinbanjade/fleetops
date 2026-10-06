@@ -19,6 +19,9 @@ use fleetops_store::EnvironmentRecord;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+/// Why open Kubernetes watches end when their environment is edited or deleted.
+const ENV_CHANGED: &str = "the environment was removed or changed";
+
 #[derive(Deserialize, ToSchema)]
 pub struct CreateEnv {
     pub name: String,
@@ -356,6 +359,7 @@ pub async fn update(
         None => s.store.env_credential(rec.id).await?,
     };
     s.envs.replace(&current.name, &rec, credential)?;
+    s.hubs.kube_watches.end_env(rec.id, ENV_CHANGED);
     audit(
         &s,
         Some(cu.user.id),
@@ -387,6 +391,7 @@ pub async fn remove(
     let current = find(&s, &name).await?;
     s.store.delete_environment(current.id).await?;
     s.envs.remove(&current.name);
+    s.hubs.kube_watches.end_env(current.id, ENV_CHANGED);
     s.agents.revoke(current.id);
     audit(
         &s,

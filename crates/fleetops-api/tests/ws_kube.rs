@@ -238,3 +238,23 @@ async fn unsubscribing_stops_the_watch_after_the_grace_period() {
     ws.send(json!({"op": "unsub", "sub": 1})).await;
     opened(&t, 0).await;
 }
+
+#[tokio::test]
+async fn deleting_an_environment_ends_its_watches() {
+    let (t, admin, mut ws) = kube_ws().await;
+    watch_sub(&mut ws, 2, "pods/apps").await;
+    opened(&t, 1).await;
+    let r = t
+        .send(req("DELETE", "/api/v1/envs/k", None, Some(&admin)))
+        .await;
+    assert!(r.status.is_success(), "{:?}", r.json);
+    let m = tokio::time::timeout(Duration::from_secs(5), ws.until(|m| m["type"] == "end"))
+        .await
+        .expect("the watch did not end when its environment was deleted");
+    assert_eq!(
+        (m["sub"].as_u64(), m["reason"].as_str()),
+        (Some(2), Some("error"))
+    );
+    assert_eq!(m["message"], "the environment was removed or changed");
+    opened(&t, 0).await;
+}
