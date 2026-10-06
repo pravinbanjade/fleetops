@@ -317,6 +317,27 @@ describe("Kubernetes environments", () => {
     expect(within(shown).getByText(/kubectl apply/)).toBeInTheDocument();
   });
 
+  it("asks for an agent cluster's access level and sends it", async () => {
+    const calls = mockFetch({
+      ...routes,
+      "POST /api/v1/envs": { status: 201, json: { id: 9, name: "ka", kind: "kube-agent", url: "agent://9", created_at: 1, updated_at: 1,
+        enrollment: { join_token: "fj_abc", expires_at: Math.floor(Date.now() / 1000) + 900, command: "kubectl apply" } } },
+    });
+    const { screen } = renderApp("/admin/envs");
+    await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Kubernetes" }));
+    await userEvent.click(within(dialog).getByRole("radio", { name: /in-cluster agent/i }));
+    expect(within(dialog).getByRole("radio", { name: /^Standard/ })).toBeChecked();
+    await userEvent.click(within(dialog).getByRole("radio", { name: /^Cluster admin/ }));
+    expect(within(dialog).getByText(/full control of the cluster/)).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText("Name"), "ka");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "POST" && c.path === "/api/v1/envs")?.body).toMatchObject({ kind: "kube-agent", access: "cluster-admin" }),
+    );
+  });
+
   it("lists a kubeconfig cluster's server and context", async () => {
     mockFetch({
       ...routes,

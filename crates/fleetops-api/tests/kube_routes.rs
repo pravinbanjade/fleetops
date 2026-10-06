@@ -309,3 +309,174 @@ async fn names_and_namespaces_must_be_kubernetes_names() {
         .await;
     assert_eq!(n.status, 200);
 }
+
+#[tokio::test]
+async fn edit_returns_yaml_and_a_resource_version() {
+    let (t, admin) = kube_app().await;
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/deployments/apps/web/edit",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json["resource_version"], "1");
+    assert!(r.json["yaml"].as_str().unwrap().contains("name: web"));
+}
+
+#[tokio::test]
+async fn a_stale_resource_version_is_409() {
+    let (t, admin) = kube_app().await;
+    let body = json!({"yaml": "kind: Deployment\n", "resource_version": "0", "dry_run": false});
+    let r = t
+        .send(req(
+            "PUT",
+            "/api/v1/envs/k/k8s/deployments/apps/web",
+            Some(body),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 409);
+    assert_eq!(r.json["code"], "conflict");
+    assert!(t.fake.kube.applied.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_edit_is_audited_but_its_dry_run_is_not() {
+    let (t, admin) = kube_app().await;
+    for dry_run in [true, false] {
+        let body =
+            json!({"yaml": "kind: Deployment\n", "resource_version": "1", "dry_run": dry_run});
+        let r = t
+            .send(req(
+                "PUT",
+                "/api/v1/envs/k/k8s/deployments/apps/web",
+                Some(body),
+                Some(&admin),
+            ))
+            .await;
+        assert_eq!(r.status, 200, "{:?}", r.json);
+        assert_eq!(r.json["action"], "configured");
+    }
+    let audit = t.audit_actions().await;
+    assert_eq!(
+        audit.iter().filter(|a| *a == "k8s.edit").count(),
+        1,
+        "{audit:?}"
+    );
+}
+
+#[tokio::test]
+async fn apply_reports_each_document_and_audits_commits() {
+    let (t, admin) = kube_app().await;
+    let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: r\n";
+    let dry = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/k/k8s/apply",
+            Some(json!({"yaml": yaml, "namespace": "apps", "dry_run": true})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(dry.status, 200, "{:?}", dry.json);
+    assert_eq!(
+        t.audit_actions()
+            .await
+            .iter()
+            .filter(|a| a.starts_with("k8s."))
+            .count(),
+        0
+    );
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/k/k8s/apply",
+            Some(json!({"yaml": yaml, "namespace": "apps"})),
+            Some(&admin),
+        ))
+        .await;
+    let docs = r.json.as_array().unwrap();
+    assert_eq!(docs.len(), 2);
+    assert_eq!(docs[0]["action"], "created");
+    assert_eq!(docs[1]["error"]["code"], "forbidden");
+    let audit = t.audit_actions().await;
+    assert!(audit.contains(&"k8s.create".to_string()), "{audit:?}");
+    assert!(
+        audit.contains(&"k8s.apply".to_string()),
+        "the failure is audited: {audit:?}"
+    );
+}
+
+#[tokio::test]
+async fn apply_refuses_oversized_yaml_and_a_missing_namespace() {
+    let (t, admin) = kube_app().await;
+    let big = "x".repeat(fleetops_core::kube::APPLY_MAX_BYTES + 1);
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/k/k8s/apply",
+            Some(json!({"yaml": big, "namespace": "apps"})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 400);
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/k/k8s/apply",
+            Some(json!({"yaml": "a: b", "namespace": "-"})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 400);
+}
+
+#[tokio::test]
+async fn templates_are_listed_by_kind() {
+    let (t, admin) = kube_app().await;
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/templates",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert!(r.json["deployments"]
+        .as_str()
+        .unwrap()
+        .contains("kind: Deployment"));
+    assert!(r.json.get("nodes").is_none());
+}
+
+#[tokio::test]
+async fn writes_need_csrf() {
+    let (t, admin) = kube_app().await;
+    let mut rq = req(
+        "POST",
+        "/api/v1/envs/k/k8s/apply",
+        Some(json!({"yaml": "a: b", "namespace": "apps"})),
+        Some(&admin),
+    );
+    rq.headers_mut().remove("x-csrf-token");
+    assert_eq!(t.send(rq).await.status, 403);
+}
+
+#[tokio::test]
+async fn an_edit_without_a_resource_version_is_refused() {
+    let (t, admin) = kube_app().await;
+    let body = json!({"yaml": "kind: Deployment\n", "resource_version": "", "dry_run": false});
+    let r = t
+        .send(req(
+            "PUT",
+            "/api/v1/envs/k/k8s/deployments/apps/web",
+            Some(body),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 400, "{:?}", r.json);
+    assert!(t.fake.kube.applied.lock().unwrap().is_empty());
+}

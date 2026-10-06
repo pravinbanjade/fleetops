@@ -9,7 +9,7 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 4).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent. Next is sub-project 4, stacks and GitOps.
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b). Next are slices 3c (RBAC) and 3d (Helm), then sub-project 4, stacks and GitOps.
 
 ## Contents
 
@@ -133,15 +133,23 @@ There are two ways in, both under **Admin → Environments → Add environment**
 - **Kubernetes cluster (kubeconfig).** Paste a kubeconfig and pick a context. Its user must authenticate with a bearer token (a ServiceAccount token works well) or a client certificate, and every certificate and key must be inline (`*-data`). `exec` plugins such as `aws eks get-token` and `auth-provider` users are refused: the server image has no CLIs. The server checks that the cluster answers before saving, unless you tick **Save without checking**. The kubeconfig is stored encrypted and never shown again.
 - **Kubernetes cluster (in-cluster agent).** You get a `kubectl apply` command. Run it with a context for the target cluster. It installs `fleetops-agent --kube` in the `fleetops` namespace. The agent dials out to this server, so the cluster needs no inbound access, and the server never holds the cluster's credentials. The agent keeps its key in the Secret `fleetops-agent-key`. Rotating the key gives a new command; re-applying it restarts the agent with the new join token.
 
-The agent's ClusterRole grants:
-- `get`, `list` and `watch` on namespaces, nodes, pods, services, configmaps, secrets, events, deployments, statefulsets, daemonsets, jobs, cronjobs and ingresses;
-- `delete` on the namespaced ones;
-- `patch` on deployments, statefulsets and daemonsets and their `scale` subresources;
-- `get` on `pods/log`, and `create` on `pods/exec`.
+When you add an agent cluster you pick what its ClusterRole allows:
 
-For a read-only agent, remove the `delete` and `patch` verbs, the `pods/exec` rule and the `*/scale` rule from the ClusterRole before applying. Actions then fail with the cluster's 403 reason.
+| Access level | Grants |
+|---|---|
+| **Read-only** | `get`, `list` and `watch` on namespaces, nodes, pods, services, configmaps, secrets, events, deployments, statefulsets, daemonsets, jobs, cronjobs and ingresses; `get` on `pods/log`. No changes and no terminal. |
+| **Standard** (default) | Read-only, plus `create`, `update` and `patch` on those kinds, `delete` on the namespaced ones, the `scale` subresources, and `create` on `pods/exec`. |
+| **Cluster admin** | Standard, plus a second binding, `fleetops-agent-cluster-admin`, to the built-in `cluster-admin` role. Needed to apply other kinds (CRDs, RBAC objects): full control of the cluster. |
 
-What you can do: browse the 12 common kinds in one namespace or all of them. Open an object to see a summary, its YAML (`managedFields` stripped) and its events. Follow pod logs and open a pod terminal. Scale, restart or delete objects. Secret values are never shown, including the copy kubectl keeps in the `last-applied-configuration` annotation. Lists refresh every 5 s; watch streams, YAML apply and Helm come later.
+The level is kept across key rotations. Raising it is a re-apply of the new command. A binding's role cannot change, so lowering it from cluster admin also needs `kubectl delete clusterrolebinding fleetops-agent-cluster-admin`; the lower manifests say so in a comment. When the cluster refuses a write, its 403 reason is shown with the level that would allow it.
+
+What you can do: browse the 12 common kinds in one namespace or all of them. Open an object to see a summary, its YAML (`managedFields` stripped) and its events. Follow pod logs and open a pod terminal. Scale, restart or delete objects.
+
+- **Live updates.** Lists and object pages follow the cluster through watch streams, shared between everyone viewing the same list and stopped 30 s after the last viewer leaves. When a watch cannot continue (for example the cluster forbids it), the page says *Live updates paused* with the reason and a Retry button, and never presents old data as live.
+- **Editing.** *Edit YAML* on an object page, *Create* on a list (from a starter template), and *Apply YAML* (top bar or command palette) for any YAML, several documents at once and any kind the cluster serves. Every write is a dry run first, shown as a diff; nothing is written until you apply. Create and apply use server-side apply as field manager `fleetops`; a field owned by another manager is a conflict you can force. An edit is refused if the object changed since you opened it, and offers to reapply your edit on top of the new version.
+- **Secrets.** Values are never shown, including the copy kubectl keeps in the `last-applied-configuration` annotation. Leave a masked value unchanged and the real one is kept; change it and the new value is written.
+
+Helm comes later.
 
 **The secret key.** Stored kubeconfigs are sealed with AES-256-GCM. The key is `FLEETOPS_SECRET_KEY` (32 bytes, base64), or `<data>/secret.key`, which is created on first start. Back it up with `fleetops.db`. Without it, stored kubeconfigs cannot be read; such environments show *credential cannot be decrypted; re-enter the kubeconfig*.
 
@@ -209,6 +217,7 @@ Design documents live in `docs/superpowers/`:
 - `specs/2026-09-29-fleetops-core-docker-design.md` is the sub-project 1 design and the authority for behaviour.
 - `specs/2026-10-01-fleetops-agent-multihost-design.md` is the sub-project 2 (agent) design.
 - `specs/2026-10-01-fleetops-kubernetes-design.md` is the sub-project 3 (Kubernetes) design.
+- `specs/2026-10-06-fleetops-kube-live-writable-design.md` is slice 3b (live and writable Kubernetes).
 - `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), one for sub-project 2, and one for sub-project 3.
 
 ## Architecture
@@ -254,7 +263,7 @@ Errors use the shape `{code, message, details?, request_id}`. Every response car
 
 The websocket is at `/api/v1/ws`. Each browser tab opens one connection, authenticated by the session cookie and checked against the Origin header.
 
-- **Subscribing.** Clients send `{op:"sub", sub, topic, env, id?, opts?}`. The topics are `events`, `stats`, `logs`, `exec` and `task`.
+- **Subscribing.** Clients send `{op:"sub", sub, topic, env, id?, opts?}`. The topics are `events`, `stats`, `logs`, `exec`, `task` and `kube-watch` (a live list of Kubernetes objects: a snapshot, then added, modified and deleted rows; `id` is `<kind>/<namespace or ->`).
 - **Server messages.** The server replies with `data`, `gap`, `end` and `error` frames. It also sends `env_status` when an environment goes up or down.
 - **Exec.** Terminal input and output use binary frames: `[u32 sub id, big-endian][payload]`.
 
@@ -279,9 +288,11 @@ The full protocol is in section 5.2 of the spec.
 |---|---|---|
 | **1** | **Core + local Docker** (done) | Server, embedded UI, auth, environments, full Docker resource management, real-time channel |
 | **2** | **Agent + multi-host** (done) | Rust agent that dials out to the server over a multiplexed websocket tunnel |
-| **3** | **Kubernetes** (first slice done) | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec. Later slices: YAML apply, watch streams, Helm |
+| **3** | **Kubernetes** (slices 3 and 3b done) | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec; live watch streams and YAML create, edit and apply (3b) |
+| 3c | RBAC | Per-environment roles for Docker and Kubernetes environments, with namespace scoping inside clusters |
+| 3d | Helm | Releases in Kubernetes environments |
 | 4 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
-| 5 | Teams & enterprise (free) | Per-environment RBAC, OIDC/SSO, LDAP, API tokens, backup and restore |
+| 5 | Teams & enterprise (free) | OIDC/SSO, LDAP, API tokens, backup and restore |
 
 Progress on sub-project 1:
 

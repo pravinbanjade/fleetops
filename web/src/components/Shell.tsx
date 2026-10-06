@@ -24,6 +24,8 @@ import { ADMIN_NAV, KUBE_NAV, NAV, navHref, type NavItem } from "./nav";
 import { WORKLOADS } from "@/pages/kube/kinds";
 import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
+import { openApplyYaml } from "@/components/yaml-editor/applyYaml";
+import { ApplyYamlHost } from "@/components/yaml-editor/ApplyYamlHost";
 
 const LINK =
   "group/link relative flex h-8 items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-cord-soft data-[status=active]:font-medium data-[status=active]:text-foreground [&[data-status=active]_svg]:text-primary";
@@ -62,6 +64,7 @@ export function Shell() {
         <TopBar env={env} kube={kube} onMenu={() => setDrawer(true)} />
         <ConnectionBanner />
         {env && !kube && <EnvLive env={env} />}
+        {env && kube && <ApplyYamlHost env={env} />}
         <Outlet />
       </main>
     </div>
@@ -215,6 +218,11 @@ function TopBar({ env, kube, onMenu }: { env?: string; kube: boolean; onMenu: ()
         )}
       </nav>
       <div className="ml-auto flex items-center gap-3">
+        {env && kube && (
+          <Button variant="outline" size="sm" onClick={() => openApplyYaml(env)}>
+            Apply YAML
+          </Button>
+        )}
         <LiveState />
         <CommandPalette env={env} />
       </div>

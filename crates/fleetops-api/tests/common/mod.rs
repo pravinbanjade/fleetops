@@ -236,6 +236,17 @@ pub const WS_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 impl TestApp {
     /// Serves the app on an ephemeral port; websockets need a real socket.
+    /// Every audit row's action, newest first.
+    pub async fn audit_actions(&self) -> Vec<String> {
+        self.store
+            .list_audit(1000, None)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.action)
+            .collect()
+    }
+
     pub async fn serve(&self) -> SocketAddr {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -367,6 +378,7 @@ pub fn ws_config() -> ApiConfig {
     ApiConfig {
         ws_backoff: std::time::Duration::from_millis(10),
         ws_session_check: std::time::Duration::from_millis(50),
+        kube_watch_grace: std::time::Duration::from_millis(50),
         ..ApiConfig::default()
     }
 }

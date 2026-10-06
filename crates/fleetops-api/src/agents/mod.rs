@@ -7,12 +7,47 @@ pub mod manifest;
 
 use crate::{auth::token::generate_token, ws::hub::StatusChange, AppState};
 use fleetops_store::{AgentRecord, EnvironmentRecord};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 /// How long a join token stays valid (spec §4.1).
 pub const JOIN_TTL_SECS: i64 = 900;
 pub const AGENT_IMAGE: &str = "docker.io/pravinbanjade/fleetops-agent";
+
+/// What the in-cluster agent's ClusterRole allows (spec §2.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum KubeAccess {
+    ReadOnly,
+    #[default]
+    Standard,
+    ClusterAdmin,
+}
+
+impl KubeAccess {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            KubeAccess::ReadOnly => "read-only",
+            KubeAccess::Standard => "standard",
+            KubeAccess::ClusterAdmin => "cluster-admin",
+        }
+    }
+}
+
+impl std::str::FromStr for KubeAccess {
+    type Err = fleetops_core::Error;
+
+    fn from_str(s: &str) -> fleetops_core::Result<Self> {
+        match s {
+            "read-only" => Ok(KubeAccess::ReadOnly),
+            "standard" => Ok(KubeAccess::Standard),
+            "cluster-admin" => Ok(KubeAccess::ClusterAdmin),
+            _ => Err(fleetops_core::Error::Invalid(format!(
+                "unknown access level '{s}'"
+            ))),
+        }
+    }
+}
 
 pub fn new_join_token() -> String {
     format!("fj_{}", generate_token())
@@ -56,6 +91,8 @@ pub struct AgentView {
     pub host: Option<serde_json::Value>,
     pub last_error: Option<String>,
     pub join_expires_at: Option<i64>,
+    /// kube-agent: the access level its manifest grants.
+    pub access: Option<String>,
 }
 
 impl AgentView {
@@ -68,6 +105,7 @@ impl AgentView {
             host: rec.host_info.and_then(|h| serde_json::from_str(&h).ok()),
             last_error: rec.last_error,
             join_expires_at: rec.join_expires_at,
+            access: rec.access,
         }
     }
 }
@@ -95,9 +133,10 @@ pub fn command_for(
     kind: fleetops_core::env::EnvKind,
     server_url: &str,
     join_token: &str,
+    access: KubeAccess,
 ) -> String {
     match kind {
-        fleetops_core::env::EnvKind::KubeAgent => manifest::command(server_url, join_token),
+        fleetops_core::env::EnvKind::KubeAgent => manifest::command(server_url, join_token, access),
         _ => enrollment_command(server_url, join_token),
     }
 }

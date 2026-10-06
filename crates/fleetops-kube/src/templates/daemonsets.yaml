@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: my-agent
+  namespace: NAMESPACE
+spec:
+  selector:
+    matchLabels:
+      app: my-agent
+  template:
+    metadata:
+      labels:
+        app: my-agent
+    spec:
+      containers:
+        - name: agent
+          image: busybox:1.37
+          command: ["sh", "-c", "while true; do sleep 3600; done"]

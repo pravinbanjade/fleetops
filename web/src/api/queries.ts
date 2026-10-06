@@ -117,8 +117,6 @@ export const ENV_DOWN_POLL_MS = 5000;
 
 /** How often a Kubernetes environment's status is read; nothing pushes it. */
 export const KUBE_STATUS_POLL_MS = 15000;
-/** How often a visible Kubernetes list refreshes. */
-export const KUBE_LIST_POLL_MS = 5000;
 
 export const envStatusQuery = (env: string, kube = false) =>
   queryOptions({
@@ -132,7 +130,6 @@ export const kubeListQuery = (env: string, kind: KubeKind, ns?: string) =>
   queryOptions({
     queryKey: keys.kube(env, kind, ns),
     queryFn: async () => (await listKube({ path: { env, kind }, query: ns ? { namespace: ns } : {} })).data,
-    refetchInterval: KUBE_LIST_POLL_MS,
     retry: (failures, err) => !(err instanceof ApiError && err.status === 403) && failures < 1,
   });
 
@@ -147,7 +144,6 @@ export const kubeEventsQuery = (env: string, kind: KubeKind, ns: string, name: s
   queryOptions({
     queryKey: [...keys.kubeObject(env, kind, ns, name), "events"] as const,
     queryFn: async () => (await kubeEvents({ path: { env, kind, ns, name } })).data,
-    refetchInterval: KUBE_LIST_POLL_MS,
   });
 
 export const infoQuery = (env: string) =>
