@@ -94,6 +94,26 @@ pub(crate) async fn kube_for(
     Ok(KubeCtx { env, ops, grant })
 }
 
+/// The grant's verdict on one object, audited when it refuses.
+async fn check_object(
+    s: &AppState,
+    cu: &CurrentUser,
+    k8: &KubeCtx,
+    kind: KubeKind,
+    p: &ObjectPath,
+    write: bool,
+) -> Result<()> {
+    let what = if write { "k8s.write" } else { "k8s.read" };
+    crate::authz::deny_audited(
+        s,
+        cu,
+        k8.env.id(),
+        what,
+        k8.grant.check_object(kind, &p.ns, &p.name, write),
+    )
+    .await
+}
+
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Path)]
 pub struct KindPath {
@@ -198,8 +218,10 @@ pub async fn list(
     if let Some(ns) = ns {
         check_namespace(ns)?;
     }
-    let KubeCtx { ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
-    Ok(Json(ops.list(k, ns).await?))
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.read", k8.grant.check_list(k, ns))
+        .await?;
+    Ok(Json(k8.grant.filter_list(k, k8.ops.list(k, ns).await?)))
 }
 
 #[utoipa::path(get, path = "/envs/{env}/k8s/{kind}/{ns}/{name}", operation_id = "getKube", tag = "kubernetes",
@@ -211,7 +233,9 @@ pub async fn get(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<KubeObject>> {
     let k = p.checked()?;
-    let KubeCtx { ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    check_object(&s, &cu, &k8, k, &p, false).await?;
+    let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.get(k, &p.ns, &p.name).await?))
 }
 
@@ -224,7 +248,9 @@ pub async fn events(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<Vec<KubeEvent>>> {
     let k = p.checked()?;
-    let KubeCtx { ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    check_object(&s, &cu, &k8, k, &p, false).await?;
+    let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.events(k, &p.ns, &p.name).await?))
 }
 
@@ -241,7 +267,9 @@ pub async fn delete(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<StatusCode> {
     let k = p.checked()?;
-    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let KubeCtx { env, ops, .. } = k8;
     let r = ops.delete(k, &p.ns, &p.name).await;
     audit(&s, &cu, env.id(), "k8s.delete", &target(k, &p), &r).await;
     r?;
@@ -261,7 +289,9 @@ pub async fn scale(
     if !k.scalable() {
         return Err(Error::Invalid(format!("{} cannot be scaled", k.as_str())).into());
     }
-    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let KubeCtx { env, ops, .. } = k8;
     let r = ops.scale(k, &p.ns, &p.name, body.replicas).await;
     audit(&s, &cu, env.id(), "k8s.scale", &target(k, &p), &r).await;
     r?;
@@ -280,7 +310,9 @@ pub async fn restart(
     if !k.restartable() {
         return Err(Error::Invalid(format!("{} cannot be restarted", k.as_str())).into());
     }
-    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let KubeCtx { env, ops, .. } = k8;
     let r = ops.restart(k, &p.ns, &p.name).await;
     audit(&s, &cu, env.id(), "k8s.restart", &target(k, &p), &r).await;
     r?;
@@ -373,7 +405,9 @@ pub async fn editable(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<EditableObject>> {
     let k = p.checked()?;
-    let KubeCtx { ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    check_object(&s, &cu, &k8, k, &p, false).await?;
+    let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.get_editable(k, &p.ns, &p.name).await?))
 }
 
@@ -396,7 +430,9 @@ pub async fn replace(
         )
         .into());
     }
-    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let KubeCtx { env, ops, .. } = k8;
     let r = ops
         .replace(
             k,
@@ -446,9 +482,22 @@ pub async fn apply(
         return Err(Error::Invalid("pick a namespace for documents that name none".into()).into());
     }
     check_namespace(&body.namespace)?;
-    let KubeCtx { env, ops, .. } = kube_for(&s, &cu, &env_name, Action::KubeWrite).await?;
+    let KubeCtx { env, ops, grant } = kube_for(&s, &cu, &env_name, Action::KubeWrite).await?;
+    crate::authz::deny_audited(
+        &s,
+        &cu,
+        env.id(),
+        "k8s.write",
+        grant.check_ns(&body.namespace),
+    )
+    .await?;
     let mut results = ops
-        .apply(&body.yaml, &body.namespace, mode(body.dry_run, body.force))
+        .apply(
+            &body.yaml,
+            &body.namespace,
+            mode(body.dry_run, body.force),
+            grant.namespaces.as_ref(),
+        )
         .await?;
     let level = agent_level(&s, &env).await;
     if let Some(hint) = access_hint(level.as_deref()) {

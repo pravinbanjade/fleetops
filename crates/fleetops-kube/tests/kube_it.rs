@@ -373,7 +373,7 @@ async fn apply_creates_then_is_unchanged_and_a_dry_run_writes_nothing() {
     let name = uniq("apply");
     let yaml =
         format!("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\ndata:\n  a: \"1\"\n");
-    let dry = ops.apply(&yaml, NS, ApplyMode::DryRun).await.unwrap();
+    let dry = ops.apply(&yaml, NS, ApplyMode::DryRun, None).await.unwrap();
     assert_eq!(dry[0].action, Some(ApplyAction::Created), "{dry:?}");
     let cms: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
     assert!(
@@ -381,12 +381,12 @@ async fn apply_creates_then_is_unchanged_and_a_dry_run_writes_nothing() {
         "a dry run writes nothing"
     );
     let r = ops
-        .apply(&yaml, NS, ApplyMode::Commit { force: false })
+        .apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
         .await
         .unwrap();
     assert_eq!(r[0].action, Some(ApplyAction::Created), "{:?}", r[0].error);
     let again = ops
-        .apply(&yaml, NS, ApplyMode::Commit { force: false })
+        .apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
         .await
         .unwrap();
     assert_eq!(again[0].action, Some(ApplyAction::Unchanged), "{again:?}");
@@ -410,7 +410,7 @@ async fn a_field_owned_by_another_manager_conflicts_until_forced() {
     let ours =
         format!("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\ndata:\n  k: ours\n");
     let r = ops
-        .apply(&ours, NS, ApplyMode::Commit { force: false })
+        .apply(&ours, NS, ApplyMode::Commit { force: false }, None)
         .await
         .unwrap();
     assert_eq!(
@@ -419,7 +419,7 @@ async fn a_field_owned_by_another_manager_conflicts_until_forced() {
         "{r:?}"
     );
     let forced = ops
-        .apply(&ours, NS, ApplyMode::Commit { force: true })
+        .apply(&ours, NS, ApplyMode::Commit { force: true }, None)
         .await
         .unwrap();
     assert_eq!(
@@ -507,7 +507,7 @@ async fn a_narrow_token_cannot_create_a_cluster_role() {
     let ops = fleetops_kube::KubeClient::new(common::tunnel_client_with("narrow-token"));
     let yaml = "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: fleetops-it-nope\nrules: []\n";
     let r = ops
-        .apply(yaml, NS, ApplyMode::Commit { force: false })
+        .apply(yaml, NS, ApplyMode::Commit { force: false }, None)
         .await
         .unwrap();
     let e = r[0].error.as_ref().expect("forbidden");
@@ -546,7 +546,10 @@ async fn reviewing_a_secret_value_change_says_it_changes() {
     let applied = format!(
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: {name}\nstringData:\n  password: newer\n"
     );
-    let a = ops.apply(&applied, NS, ApplyMode::DryRun).await.unwrap();
+    let a = ops
+        .apply(&applied, NS, ApplyMode::DryRun, None)
+        .await
+        .unwrap();
     assert_eq!(a[0].action, Some(ApplyAction::Configured), "{a:?}");
     secrets.delete(&name, &Default::default()).await.unwrap();
 }
