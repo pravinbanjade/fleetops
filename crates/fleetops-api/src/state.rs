@@ -33,6 +33,8 @@ pub struct ApiConfig {
     pub ws_queue_capacity: usize,
     /// How often the server pings each agent; two unanswered pings end the session.
     pub agent_ping_interval: Duration,
+    /// How long a Kubernetes watch outlives its last subscriber (spec §2.4).
+    pub kube_watch_grace: Duration,
 }
 
 impl Default for ApiConfig {
@@ -45,6 +47,7 @@ impl Default for ApiConfig {
             ws_ping_interval: Duration::from_secs(30),
             ws_queue_capacity: crate::ws::queue::QUEUE_CAPACITY,
             agent_ping_interval: Duration::from_secs(15),
+            kube_watch_grace: Duration::from_secs(30),
         }
     }
 }

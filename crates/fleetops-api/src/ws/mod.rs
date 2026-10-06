@@ -5,6 +5,7 @@ pub mod hub;
 pub mod protocol;
 pub mod queue;
 pub mod topics;
+pub mod watches;
 
 use crate::{
     auth::{cookie::read_cookie, cookie::SESSION_COOKIE, extract::CurrentUser, token::hash_token},
