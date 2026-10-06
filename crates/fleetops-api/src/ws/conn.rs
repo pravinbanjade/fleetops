@@ -49,6 +49,8 @@ pub(super) struct Sub {
     pub queue: Arc<SubQueue>,
     pub task: tokio::task::AbortHandle,
     pub exec: Option<ExecCtl>,
+    /// Survives an access change: not tied to an environment grant.
+    pub keep_on_access: bool,
 }
 
 impl Drop for Sub {
@@ -144,10 +146,19 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
                     Err(RecvError::Closed) => false,
                 };
                 if mine {
-                    for (sub, entry) in shared.subs.lock().unwrap().iter() {
-                        entry.task.abort();
-                        entry.queue.finish(protocol::end(
-                            *sub,
+                    // Dropped now, not when the writer drains them: a client
+                    // that is behind must not keep typing into a terminal.
+                    let ended: Vec<u32> = {
+                        let mut subs = shared.subs.lock().unwrap();
+                        let gone: Vec<u32> = subs.iter().filter(|(_, e)| !e.keep_on_access).map(|(sub, _)| *sub).collect();
+                        for sub in &gone {
+                            subs.remove(sub);
+                        }
+                        gone
+                    };
+                    for sub in ended {
+                        shared.say(protocol::end(
+                            sub,
                             "access",
                             serde_json::json!({ "message": super::ACCESS_CHANGED }),
                         ));

@@ -132,6 +132,7 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: None,
     })
 }
@@ -165,6 +166,7 @@ pub(super) async fn stats(c: &Ctx<'_>, env: Option<String>, id: Option<String>) 
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: None,
     })
 }
@@ -194,6 +196,7 @@ pub(super) async fn logs(
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: None,
     })
 }
@@ -287,6 +290,7 @@ pub(super) async fn exec(
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: Some(ExecCtl {
             input: session.input,
             resize: Resize::Docker {
@@ -336,6 +340,7 @@ async fn kube_exec(
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: Some(ExecCtl {
             input: session.input,
             resize: Resize::Kube(session.resize),
@@ -436,6 +441,7 @@ pub(super) async fn kube_watch(
     Ok(Sub {
         queue: q,
         task: task.abort_handle(),
+        keep_on_access: false,
         exec: None,
     })
 }
@@ -485,6 +491,8 @@ pub(super) async fn task(c: &Ctx<'_>, id: Option<String>) -> Result<Sub> {
     Ok(Sub {
         queue: q,
         task: handle.abort_handle(),
+        // Owner-checked, not grant-checked: an access change leaves it.
+        keep_on_access: true,
         exec: None,
     })
 }

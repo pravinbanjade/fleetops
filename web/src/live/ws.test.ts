@@ -225,6 +225,33 @@ describe("WsClient", () => {
     expect(onAccessChanged).toHaveBeenCalledTimes(1);
   });
 
+  it("sends a subscription again when the server ends it because access changed", () => {
+    const ws = client();
+    const onEnd = vi.fn();
+    const onResubscribe = vi.fn();
+    ws.subscribe({ topic: "events", env: "local" }, { onData: () => {}, onEnd, onResubscribe });
+    const sock = FakeWebSocket.latest();
+    sock.open();
+    sock.receive({ sub: 1, type: "end", reason: "access", message: "your access changed" });
+    expect(sock.frames().filter((f) => f.op === "sub")).toEqual([
+      { op: "sub", sub: 1, topic: "events", env: "local" },
+      { op: "sub", sub: 1, topic: "events", env: "local" },
+    ]);
+    expect(onResubscribe).toHaveBeenCalledTimes(1);
+    expect(onEnd).not.toHaveBeenCalled();
+  });
+
+  it("ends a terminal when access changes instead of starting a new process", () => {
+    const ws = client();
+    const onEnd = vi.fn();
+    ws.subscribe({ topic: "exec", env: "local", id: "c1" }, { onData: () => {}, onEnd }, { resubscribe: false });
+    const sock = FakeWebSocket.latest();
+    sock.open();
+    sock.receive({ sub: 1, type: "end", reason: "access", message: "your access changed" });
+    expect(sock.frames().filter((f) => f.op === "sub")).toHaveLength(1);
+    expect(onEnd).toHaveBeenCalledTimes(1);
+  });
+
   it("frames binary exec input and routes binary output by sub id", () => {
     const ws = client();
     const sock = FakeWebSocket.latest();
