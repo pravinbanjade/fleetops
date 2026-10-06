@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { MapPinOff, Unplug } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { useSession } from "@/auth/session";
 
 function Notice({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: ReactNode }) {
   return (
@@ -28,6 +29,14 @@ export function NotFoundPage() {
 }
 
 export function NoEnvironmentsPage() {
+  const { user } = useSession();
+  if (user.role !== "admin") {
+    return (
+      <Notice icon={Unplug} title="No environments">
+        <p className="text-sm text-muted-foreground">You don't have access to any environments yet. Ask an admin.</p>
+      </Notice>
+    );
+  }
   return (
     <Notice icon={Unplug} title="No environments">
       <p className="text-sm text-muted-foreground">

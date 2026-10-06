@@ -36,6 +36,16 @@ describe("routing", () => {
     expect(await screen.findByText("No environments")).toBeInTheDocument();
   });
 
+  it("tells a user without access to ask an admin", async () => {
+    mockFetch({
+      ...loggedIn,
+      "GET /api/v1/auth/me": { json: { ...ADMIN, user: { ...ADMIN.user, username: "bob", role: "user" } } },
+      "GET /api/v1/envs": { json: [] },
+    });
+    const { screen } = renderApp("/");
+    expect(await screen.findByText("You don't have access to any environments yet. Ask an admin.")).toBeInTheDocument();
+  });
+
   it("sends a logged-in user away from login and setup", async () => {
     mockFetch(loggedIn);
     const { history } = renderApp("/login");

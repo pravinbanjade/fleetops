@@ -54,6 +54,8 @@ export interface WsOptions {
   backoff?: (attempt: number) => number;
   onState?(state: ConnState): void;
   onEnvStatus?(env: string, status: EnvStatus): void;
+  /** The server says the user's access changed: what they can see may differ. */
+  onAccessChanged?(): void;
   /** Called after a reconnect, once every subscription has been sent again. */
   onReconnect?(): void;
   /**
@@ -213,6 +215,10 @@ export class WsClient {
     }
     if (msg.type === "env_status") {
       this.opts.onEnvStatus?.(msg.env, msg.status);
+      return;
+    }
+    if (msg.type === "access_changed") {
+      this.opts.onAccessChanged?.();
       return;
     }
     const sub = msg.sub;
