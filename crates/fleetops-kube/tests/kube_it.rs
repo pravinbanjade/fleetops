@@ -514,3 +514,39 @@ async fn a_narrow_token_cannot_create_a_cluster_role() {
     assert_eq!(e.code, "forbidden", "{e:?}");
     assert!(e.message.contains("forbidden"), "{}", e.message);
 }
+
+#[tokio::test]
+async fn reviewing_a_secret_value_change_says_it_changes() {
+    use k8s_openapi::api::core::v1::Secret;
+    let ops = common::ops();
+    let name = uniq("rot");
+    let secrets: Api<Secret> = Api::namespaced(kube_client(), NS);
+    let mut s = Secret::default();
+    s.metadata.name = Some(name.clone());
+    s.string_data = Some([("password".to_string(), "old".to_string())].into());
+    secrets.create(&PostParams::default(), &s).await.unwrap();
+    let opened = ops
+        .get_editable(KubeKind::Secrets, NS, &name)
+        .await
+        .unwrap();
+    // Only the value changes: "bmV3" is base64 for "new".
+    let edit = opened.yaml.replace(MASK, "bmV3");
+    let r = ops
+        .replace(
+            KubeKind::Secrets,
+            NS,
+            &name,
+            &edit,
+            &opened.resource_version,
+            ApplyMode::DryRun,
+        )
+        .await
+        .unwrap();
+    assert_eq!(r.action, Some(ApplyAction::Configured), "{r:?}");
+    let applied = format!(
+        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: {name}\nstringData:\n  password: newer\n"
+    );
+    let a = ops.apply(&applied, NS, ApplyMode::DryRun).await.unwrap();
+    assert_eq!(a[0].action, Some(ApplyAction::Configured), "{a:?}");
+    secrets.delete(&name, &Default::default()).await.unwrap();
+}
