@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: my-db
+  namespace: NAMESPACE
+spec:
+  serviceName: my-db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-db
+  template:
+    metadata:
+      labels:
+        app: my-db
+    spec:
+      containers:
+        - name: db
+          image: postgres:17
+          env:
+            - name: POSTGRES_PASSWORD
+              value: change-me

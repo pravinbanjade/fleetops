@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { toast } from "sonner";
 import { envsQuery, keys } from "@/api/queries";
 import { createEnv, deleteEnv, kubeContexts, rotateAgent, updateEnv } from "@/api/gen/sdk.gen";
-import type { Enrollment, EnvKind, EnvView } from "@/api/gen/types.gen";
+import type { Enrollment, EnvKind, EnvView, KubeAccess } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
@@ -62,6 +62,13 @@ const DESCRIPTIONS: Record<EnvKind, string> = {
   "kube-agent": "You'll get a kubectl command that installs the agent in the cluster. The cluster needs no inbound access.",
 };
 
+/** What an in-cluster agent may do, from least to most. */
+const ACCESS: [KubeAccess, string, string][] = [
+  ["read-only", "Read-only", "Browse and read logs. No changes, no terminal."],
+  ["standard", "Standard", "Change the common kinds: create, edit, scale, restart, delete, terminal."],
+  ["cluster-admin", "Cluster admin", "Apply any kind, including CRDs and RBAC: full control of the cluster."],
+];
+
 /** What an agent environment's agent is doing, for the list. */
 function AgentCell({ env }: { env: EnvView }) {
   const a = env.agent;
@@ -70,6 +77,7 @@ function AgentCell({ env }: { env: EnvView }) {
   return (
     <span className="grid gap-0.5">
       <span className="font-mono text-xs">{a.agent_version}</span>
+      {a.access && <span className="text-xs text-muted-foreground">{a.access}</span>}
       {!a.connected && a.last_seen_at != null && <span className="text-xs text-muted-foreground">last seen {formatAgo(a.last_seen_at)}</span>}
       {a.last_error && <span className="text-xs text-destructive">{a.last_error}</span>}
     </span>
@@ -186,6 +194,7 @@ function EnvForm({
   const [context, setContext] = useState<string | undefined>();
   const [contextsError, setContextsError] = useState<string | null>(null);
   const [skipCheck, setSkipCheck] = useState(false);
+  const [access, setAccess] = useState<KubeAccess>("standard");
   const agent = kind === "docker-agent" || kind === "kube-agent";
 
   const loadContexts = async (text: string) => {
@@ -224,7 +233,10 @@ function EnvForm({
             throwOnError: true,
           });
         } else if (agent) {
-          const { data } = await createEnv({ body: { name: name.trim(), kind }, throwOnError: true });
+          const { data } = await createEnv({
+            body: { name: name.trim(), kind, ...(kind === "kube-agent" ? { access } : {}) },
+            throwOnError: true,
+          });
           if (data.enrollment) onEnrollment?.({ enrollment: data.enrollment, kind });
         } else {
           await createEnv({ body: { name: name.trim(), url: url.trim(), kind } });
@@ -242,6 +254,20 @@ function EnvForm({
           <Label htmlFor="env-url">Docker URL</Label>
           <Input id="env-url" required className="font-mono" value={url} onChange={(e) => setUrl(e.target.value)} />
         </div>
+      )}
+      {!env && kind === "kube-agent" && (
+        <fieldset className="grid gap-2">
+          <legend className="mb-1 text-sm font-medium">Access in the cluster</legend>
+          {ACCESS.map(([value, label, hint]) => (
+            <label key={value} className="flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm has-[:checked]:border-primary">
+              <input type="radio" name="env-access" className="mt-1" checked={access === value} onChange={() => setAccess(value)} />
+              <span className="grid">
+                <span className="font-medium">{label}</span>
+                <span className="text-xs text-muted-foreground">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
       )}
       {kind === "kube-config" && (
         <>

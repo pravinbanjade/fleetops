@@ -5,6 +5,10 @@ export type ClientOptions = {
 };
 
 export type AgentView = {
+    /**
+     * kube-agent: the access level its manifest grants.
+     */
+    access?: string | null;
     agent_version?: string | null;
     connected: boolean;
     enrolled: boolean;
@@ -12,6 +16,60 @@ export type AgentView = {
     join_expires_at?: number | null;
     last_error?: string | null;
     last_seen_at?: number | null;
+};
+
+export type ApplyAction = 'created' | 'configured' | 'unchanged';
+
+export type ApplyBody = {
+    dry_run?: boolean;
+    /**
+     * Take ownership of fields another manager owns.
+     */
+    force?: boolean;
+    /**
+     * For namespaced documents that name none.
+     */
+    namespace: string;
+    /**
+     * One or more YAML documents.
+     */
+    yaml: string;
+};
+
+export type ApplyError = {
+    /**
+     * An `ErrorBody` code: `conflict` for a field-manager conflict,
+     * `forbidden`, `invalid`, `not_found`, `upstream`…
+     */
+    code: string;
+    /**
+     * Kubernetes' message, verbatim.
+     */
+    message: string;
+};
+
+/**
+ * What happened to one document of an apply or edit.
+ */
+export type ApplyResult = {
+    action?: null | ApplyAction;
+    /**
+     * The object as written (or as it would be, for a dry run).
+     */
+    after?: string | null;
+    api_version: string;
+    /**
+     * The live object before the write, cleaned and masked; `None` when created.
+     */
+    before?: string | null;
+    error?: null | ApplyError;
+    /**
+     * Position among the submitted non-empty documents, from 0.
+     */
+    index: number;
+    kind: string;
+    name: string;
+    namespace?: string | null;
 };
 
 export type AttachBody = {
@@ -199,6 +257,7 @@ export type CreateBody = ContainerSpec & {
 };
 
 export type CreateEnv = {
+    access?: null | KubeAccess;
     /**
      * kube-config: the context to use; default the current one.
      */
@@ -287,6 +346,21 @@ export type DockerEvent = {
      * Unix seconds.
      */
     time: number;
+};
+
+/**
+ * An object as the YAML editor opens it.
+ */
+export type EditableObject = {
+    /**
+     * Sent back with the edit; a newer version on the server is a conflict.
+     */
+    resource_version: string;
+    /**
+     * `managedFields`, `status` and the last-applied annotation removed;
+     * Secret values masked.
+     */
+    yaml: string;
 };
 
 export type EngineVersion = {
@@ -398,6 +472,11 @@ export type ImageSummary = {
     repo_tags: Array<string>;
     size: number;
 };
+
+/**
+ * What the in-cluster agent's ClusterRole allows (spec §2.5).
+ */
+export type KubeAccess = 'read-only' | 'standard' | 'cluster-admin';
 
 export type KubeCondition = {
     message?: string | null;
@@ -606,6 +685,15 @@ export type RecreateResult = {
     old_removed: boolean;
 };
 
+export type ReplaceBody = {
+    dry_run?: boolean;
+    /**
+     * The `resource_version` the editor opened.
+     */
+    resource_version: string;
+    yaml: string;
+};
+
 export type Role = 'admin' | 'user';
 
 /**
@@ -632,6 +720,7 @@ export type ServerMsg = {
     type: 'gap';
 } | {
     exit_code?: number | null;
+    message?: string | null;
     reason: string;
     sub: number;
     task?: null | TaskInfo;
@@ -712,7 +801,7 @@ export type TaskStarted = {
 
 export type TaskStatus = 'running' | 'succeeded' | 'failed';
 
-export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task';
+export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch';
 
 export type UpdateEnv = {
     context?: string | null;
@@ -760,6 +849,27 @@ export type VolumeSummary = {
     };
     mountpoint: string;
     name: string;
+};
+
+/**
+ * One change to a watched list. A watch that fails for good ends its
+ * stream with `Err` instead.
+ */
+export type WatchEvent = {
+    rows: Array<KubeRow>;
+    type: 'snapshot';
+} | {
+    row: KubeRow;
+    type: 'added';
+} | {
+    row: KubeRow;
+    type: 'modified';
+} | {
+    name: string;
+    namespace?: string | null;
+    type: 'deleted';
+} | {
+    type: 'resync';
 };
 
 export type AgentConnectData = {
@@ -2035,6 +2145,68 @@ export type GetEngineInfoResponses = {
 
 export type GetEngineInfoResponse = GetEngineInfoResponses[keyof GetEngineInfoResponses];
 
+export type ApplyKubeData = {
+    body: ApplyBody;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/apply';
+};
+
+export type ApplyKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ApplyKubeError = ApplyKubeErrors[keyof ApplyKubeErrors];
+
+export type ApplyKubeResponses = {
+    /**
+     * One result per document, in order
+     */
+    200: Array<ApplyResult>;
+};
+
+export type ApplyKubeResponse = ApplyKubeResponses[keyof ApplyKubeResponses];
+
+export type KubeTemplatesData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/templates';
+};
+
+export type KubeTemplatesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type KubeTemplatesError = KubeTemplatesErrors[keyof KubeTemplatesErrors];
+
+export type KubeTemplatesResponses = {
+    /**
+     * YAML by plural kind; NAMESPACE is a placeholder
+     */
+    200: {
+        [key: string]: string;
+    };
+};
+
+export type KubeTemplatesResponse = KubeTemplatesResponses[keyof KubeTemplatesResponses];
+
 export type ListKubeData = {
     body?: never;
     path: {
@@ -2139,6 +2311,72 @@ export type GetKubeResponses = {
 };
 
 export type GetKubeResponse = GetKubeResponses[keyof GetKubeResponses];
+
+export type ReplaceKubeData = {
+    body: ReplaceBody;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}';
+};
+
+export type ReplaceKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ReplaceKubeError = ReplaceKubeErrors[keyof ReplaceKubeErrors];
+
+export type ReplaceKubeResponses = {
+    /**
+     * What changed (or would, for a dry run)
+     */
+    200: ApplyResult;
+};
+
+export type ReplaceKubeResponse = ReplaceKubeResponses[keyof ReplaceKubeResponses];
+
+export type EditableKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/edit';
+};
+
+export type EditableKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type EditableKubeError = EditableKubeErrors[keyof EditableKubeErrors];
+
+export type EditableKubeResponses = {
+    /**
+     * Cleaned, masked YAML
+     */
+    200: EditableObject;
+};
+
+export type EditableKubeResponse = EditableKubeResponses[keyof EditableKubeResponses];
 
 export type KubeEventsData = {
     body?: never;

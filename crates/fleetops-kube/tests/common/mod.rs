@@ -43,15 +43,20 @@ pub fn tunnel_client() -> kube::Client {
 
 use fleetops_kube::KubeClient;
 
-/// The client the suite runs against: through the tunnel when
+/// The kube-rs client the suite runs against: through the tunnel when
 /// FLEETOPS_IT_TUNNEL is set, else straight from kind's kubeconfig.
-pub fn ops() -> KubeClient {
+pub fn kube_client() -> kube::Client {
     if std::env::var_os("FLEETOPS_IT_TUNNEL").is_some() {
-        return KubeClient::new(tunnel_client());
+        return tunnel_client();
     }
     let p = fleetops_kube::kubeconfig::prepare(&read("kubeconfig"), None).unwrap();
     let config = fleetops_kube::kubeconfig::config(&p.yaml).unwrap();
-    KubeClient::new(kube::Client::try_from(config).unwrap())
+    kube::Client::try_from(config).unwrap()
+}
+
+/// `KubeOps` over `kube_client()`.
+pub fn ops() -> KubeClient {
+    KubeClient::new(kube_client())
 }
 
 /// Polls `f` for up to 30 s.

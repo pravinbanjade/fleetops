@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { deleteKube, restartKube, scaleKube } from "@/api/gen/sdk.gen";
 import type { KubeKind } from "@/api/gen/types.gen";
 import { keys } from "@/api/queries";
@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import { FormDialog } from "@/pages/admin/FormDialog";
 import { KIND_LABEL, RESTARTABLE, SCALABLE } from "./kinds";
 
+const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
+
 export function KubeActions({ env, kind, ns, name, replicas }: { env: string; kind: KubeKind; ns: string; name: string; replicas?: number }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const [open, setOpen] = useState<"scale" | "restart" | "delete" | null>(null);
+  const [open, setOpen] = useState<"edit" | "scale" | "restart" | "delete" | null>(null);
   const [count, setCount] = useState(String(replicas ?? 1));
   const path = { env, kind, ns, name };
   const refresh = () => qc.invalidateQueries({ queryKey: keys.kube(env, kind).slice(0, 4) });
@@ -27,6 +29,12 @@ export function KubeActions({ env, kind, ns, name, replicas }: { env: string; ki
   const label = KIND_LABEL[kind].replace(/s$/, "");
   return (
     <div className="flex gap-2">
+      <Button variant="outline" size="sm" onClick={() => setOpen("edit")}>Edit YAML</Button>
+      {open === "edit" && (
+        <Suspense fallback={null}>
+          <YamlDialog env={env} target={{ mode: "edit", kind, ns, name }} onClose={() => setOpen(null)} />
+        </Suspense>
+      )}
       {SCALABLE.includes(kind) && <Button variant="outline" size="sm" onClick={() => {
             setCount(String(replicas ?? 1));
             setOpen("scale");

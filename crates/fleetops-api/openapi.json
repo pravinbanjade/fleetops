@@ -2123,6 +2123,120 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/apply": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Server-side apply one or more YAML documents",
+        "operationId": "applyKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "One result per document, in order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApplyResult"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/templates": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Starter YAML for creating each kind",
+        "operationId": "kubeTemplates",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "YAML by plural kind; NAMESPACE is a placeholder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/k8s/{kind}": {
       "get": {
         "tags": [
@@ -2258,6 +2372,86 @@
           }
         ]
       },
+      "put": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Replace an object with edited YAML; 409 when it changed since it was opened",
+        "operationId": "replaceKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What changed (or would, for a dry run)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
       "delete": {
         "tags": [
           "kubernetes"
@@ -2317,6 +2511,77 @@
         "security": [
           {
             "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/edit": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "An object as YAML for editing, with its resource version",
+        "operationId": "editableKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cleaned, masked YAML",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EditableObject"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
             "session": []
           }
         ]
@@ -3619,6 +3884,13 @@
           "enrolled"
         ],
         "properties": {
+          "access": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "kube-agent: the access level its manifest grants."
+          },
           "agent_version": {
             "type": [
               "string",
@@ -3651,6 +3923,122 @@
               "null"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "ApplyAction": {
+        "type": "string",
+        "enum": [
+          "created",
+          "configured",
+          "unchanged"
+        ]
+      },
+      "ApplyBody": {
+        "type": "object",
+        "required": [
+          "yaml",
+          "namespace"
+        ],
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Take ownership of fields another manager owns."
+          },
+          "namespace": {
+            "type": "string",
+            "description": "For namespaced documents that name none."
+          },
+          "yaml": {
+            "type": "string",
+            "description": "One or more YAML documents."
+          }
+        }
+      },
+      "ApplyError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "An `ErrorBody` code: `conflict` for a field-manager conflict,\n`forbidden`, `invalid`, `not_found`, `upstream`…"
+          },
+          "message": {
+            "type": "string",
+            "description": "Kubernetes' message, verbatim."
+          }
+        }
+      },
+      "ApplyResult": {
+        "type": "object",
+        "description": "What happened to one document of an apply or edit.",
+        "required": [
+          "index",
+          "api_version",
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "action": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ApplyAction",
+                "description": "`None` when the document failed."
+              }
+            ]
+          },
+          "after": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The object as written (or as it would be, for a dry run)."
+          },
+          "api_version": {
+            "type": "string"
+          },
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The live object before the write, cleaned and masked; `None` when created."
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ApplyError"
+              }
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "description": "Position among the submitted non-empty documents, from 0.",
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4206,6 +4594,17 @@
           "kind"
         ],
         "properties": {
+          "access": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/KubeAccess",
+                "description": "kube-agent: what the agent's ClusterRole allows; default `standard`."
+              }
+            ]
+          },
           "context": {
             "type": [
               "string",
@@ -4421,6 +4820,24 @@
             "type": "integer",
             "format": "int64",
             "description": "Unix seconds."
+          }
+        }
+      },
+      "EditableObject": {
+        "type": "object",
+        "description": "An object as the YAML editor opens it.",
+        "required": [
+          "yaml",
+          "resource_version"
+        ],
+        "properties": {
+          "resource_version": {
+            "type": "string",
+            "description": "Sent back with the edit; a newer version on the server is a conflict."
+          },
+          "yaml": {
+            "type": "string",
+            "description": "`managedFields`, `status` and the last-applied annotation removed;\nSecret values masked."
           }
         }
       },
@@ -4767,6 +5184,15 @@
             "format": "int64"
           }
         }
+      },
+      "KubeAccess": {
+        "type": "string",
+        "description": "What the in-cluster agent's ClusterRole allows (spec §2.5).",
+        "enum": [
+          "read-only",
+          "standard",
+          "cluster-admin"
+        ]
       },
       "KubeCondition": {
         "type": "object",
@@ -5354,6 +5780,25 @@
           }
         }
       },
+      "ReplaceBody": {
+        "type": "object",
+        "required": [
+          "yaml",
+          "resource_version"
+        ],
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "resource_version": {
+            "type": "string",
+            "description": "The `resource_version` the editor opened."
+          },
+          "yaml": {
+            "type": "string"
+          }
+        }
+      },
       "Role": {
         "type": "string",
         "enum": [
@@ -5388,7 +5833,7 @@
         "oneOf": [
           {
             "type": "object",
-            "description": "A payload for subscription `sub`: a `DockerEvent`, a `StatsSample`,\nan array of `LogLine`s, or a task progress message.",
+            "description": "A payload for subscription `sub`: a `DockerEvent`, a `StatsSample`,\nan array of `LogLine`s, a task progress message, or a `WatchEvent`\n(kube-watch).",
             "required": [
               "sub",
               "data",
@@ -5438,7 +5883,7 @@
           },
           {
             "type": "object",
-            "description": "The subscription is over. `reason` is `closed`, `ended`, `eof`,\n`exited` (with `exit_code`), `succeeded` or `failed` (with `task`).",
+            "description": "The subscription is over. `reason` is `closed`, `ended`, `eof`,\n`exited` (with `exit_code`), `succeeded` or `failed` (with `task`),\nor `error` (kube-watch, with `message`).",
             "required": [
               "sub",
               "reason",
@@ -5451,6 +5896,12 @@
                   "null"
                 ],
                 "format": "int64"
+              },
+              "message": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "reason": {
                 "type": "string"
@@ -5742,7 +6193,8 @@
           "stats",
           "logs",
           "exec",
-          "task"
+          "task",
+          "kube-watch"
         ]
       },
       "UpdateEnv": {
@@ -5910,6 +6362,108 @@
             "type": "string"
           }
         }
+      },
+      "WatchEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Every row, replacing what the client holds.",
+            "required": [
+              "rows",
+              "type"
+            ],
+            "properties": {
+              "rows": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/KubeRow"
+                }
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "snapshot"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "row",
+              "type"
+            ],
+            "properties": {
+              "row": {
+                "$ref": "#/components/schemas/KubeRow"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "added"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "row",
+              "type"
+            ],
+            "properties": {
+              "row": {
+                "$ref": "#/components/schemas/KubeRow"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "modified"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "type"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "deleted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The upstream watch restarted; a `Snapshot` follows.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "resync"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One change to a watched list. A watch that fails for good ends its\nstream with `Err` instead."
       }
     },
     "securitySchemes": {

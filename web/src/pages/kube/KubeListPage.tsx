@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import type { KubeKind, KubeRow } from "@/api/gen/types.gen";
 import { ApiError } from "@/api/client";
 import { kubeListQuery } from "@/api/queries";
@@ -9,9 +10,12 @@ import { Page } from "@/components/Page";
 import { formatAgo } from "@/lib/format";
 import { KubeHealth } from "./KubeHealth";
 import { CLUSTER_SCOPED, KIND_COLUMNS, KIND_LABEL, STATUS_HEADER, WORKLOADS, asKind } from "./kinds";
+import { LivePaused } from "./LivePaused";
 import { NamespacePicker, useNamespace } from "./NamespacePicker";
+import { useKubeWatch } from "@/live/kubeWatch";
 
 const route = getRouteApi("/authed/shell/envs/$env/k8s/$kind");
+const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
 
 function kindColumns(env: string, kind: KubeKind) {
   const col = columns<KubeRow>();
@@ -49,15 +53,34 @@ export function KubeListPage() {
   const kind = asKind(raw) ?? "pods";
   const [ns, setNs] = useNamespace(env);
   const scoped = !CLUSTER_SCOPED.includes(kind);
-  const list = useQuery(kubeListQuery(env, kind, scoped ? ns : undefined));
+  const live = useKubeWatch(env, kind, scoped ? ns : undefined);
+  // Once the watch has its snapshot the cache follows the cluster; a REST
+  // refetch (after a write, on focus) would race it with older rows.
+  const list = useQuery({ ...kubeListQuery(env, kind, scoped ? ns : undefined), enabled: !live.synced });
+  const [creating, setCreating] = useState(false);
   const cols = useMemo(() => kindColumns(env, kind), [env, kind]);
   const forbidden = list.error instanceof ApiError && list.error.status === 403;
   const where = ns ? `namespace ${ns}` : "all namespaces";
   return (
     <Page
       title={KIND_LABEL[kind]}
-      actions={scoped ? <NamespacePicker env={env} value={ns} onChange={setNs} /> : undefined}
+      actions={
+        <div className="flex items-center gap-2">
+          {scoped && <NamespacePicker env={env} value={ns} onChange={setNs} />}
+          {kind !== "nodes" && (
+            <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
+              Create
+            </Button>
+          )}
+        </div>
+      }
     >
+      {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}
+      {creating && (
+        <Suspense fallback={null}>
+          <YamlDialog env={env} target={{ mode: "create", kind, namespace: ns || "default" }} onClose={() => setCreating(false)} />
+        </Suspense>
+      )}
       {WORKLOADS.includes(kind) && (
         <nav aria-label="Workload kinds" className="mb-3 flex flex-wrap gap-1">
           {WORKLOADS.map((k) => (

@@ -26,6 +26,22 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
+    /// The message without the variant's prefix, for showing next to a
+    /// separate `code` (e.g. one document of an apply).
+    pub fn detail(&self) -> String {
+        match self {
+            Error::NotFound(m)
+            | Error::Conflict(m)
+            | Error::Invalid(m)
+            | Error::Unauthorized(m)
+            | Error::Forbidden(m)
+            | Error::EnvUnavailable(m)
+            | Error::Internal(m) => m.clone(),
+            Error::Upstream { message, .. } => message.clone(),
+            Error::RateLimited { .. } => self.to_string(),
+        }
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             Error::NotFound(_) => "not_found",
@@ -88,6 +104,27 @@ mod tests {
             }
             .to_string(),
             "too many attempts; retry in 30s"
+        );
+    }
+
+    #[test]
+    fn detail_drops_the_variant_prefix() {
+        assert_eq!(Error::NotFound("pods \"x\"".into()).detail(), "pods \"x\"");
+        assert_eq!(Error::Forbidden("no".into()).detail(), "no");
+        assert_eq!(
+            Error::Upstream {
+                status: 502,
+                message: "boom".into()
+            }
+            .detail(),
+            "boom"
+        );
+        assert_eq!(
+            Error::RateLimited {
+                retry_after_secs: 3
+            }
+            .detail(),
+            "too many attempts; retry in 3s"
         );
     }
 }

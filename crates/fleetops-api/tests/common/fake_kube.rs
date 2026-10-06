@@ -34,7 +34,15 @@ pub struct FakeKube {
     logs: Mutex<Vec<String>>,
     pub log_opts: Mutex<Vec<LogOptions>>,
     execs: Mutex<Vec<ExecHandle>>,
+    watches: Mutex<Vec<WatchTx>>,
+    pub applied: Mutex<Vec<(String, String, ApplyMode)>>,
 }
+
+type WatchTx = (
+    KubeKind,
+    Option<String>,
+    mpsc::UnboundedSender<Result<WatchEvent>>,
+);
 
 pub fn row(name: &str, ns: Option<&str>) -> KubeRow {
     KubeRow {
@@ -85,6 +93,28 @@ impl FakeKube {
     }
     pub fn take_exec(&self) -> Option<ExecHandle> {
         self.execs.lock().unwrap().pop()
+    }
+    /// Sends `ev` to every open watch of `kind`.
+    pub fn emit_watch(&self, kind: KubeKind, ev: Result<WatchEvent>) {
+        let mut w = self.watches.lock().unwrap();
+        w.retain(|(_, _, tx)| !tx.is_closed());
+        for (k, _, tx) in w.iter() {
+            if *k == kind {
+                let _ = tx.send(match &ev {
+                    Ok(e) => Ok(e.clone()),
+                    Err(e) => Err(Error::Forbidden(e.detail())),
+                });
+            }
+        }
+    }
+    /// Upstream watches still open.
+    pub fn open_watches(&self) -> usize {
+        self.watches
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, _, tx)| !tx.is_closed())
+            .count()
     }
     fn call(&self, c: String) {
         self.calls.lock().unwrap().push(c);
@@ -210,6 +240,97 @@ impl KubeOps for FakeKube {
             input: in_tx,
             resize: rs_tx,
             exit_code: exit_rx,
+        })
+    }
+    fn watch(&self, kind: KubeKind, ns: Option<&str>) -> BoxStream<WatchEvent> {
+        self.call(format!("watch {} {}", kind.as_str(), ns.unwrap_or("*")));
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.watches
+            .lock()
+            .unwrap()
+            .push((kind, ns.map(str::to_string), tx));
+        Box::pin(futures_util::stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|v| (v, rx))
+        }))
+    }
+    async fn get_editable(&self, kind: KubeKind, ns: &str, name: &str) -> Result<EditableObject> {
+        let o = self.find(kind, ns, name)?;
+        Ok(EditableObject {
+            yaml: o.yaml,
+            resource_version: "1".into(),
+        })
+    }
+    /// One result per `---`-separated document; a ClusterRole is forbidden,
+    /// as on a narrow agent.
+    async fn apply(
+        &self,
+        yaml: &str,
+        default_ns: &str,
+        mode: ApplyMode,
+    ) -> Result<Vec<ApplyResult>> {
+        self.applied
+            .lock()
+            .unwrap()
+            .push(("apply".into(), yaml.into(), mode));
+        let field = |doc: &str, key: &str| {
+            doc.lines()
+                .find_map(|l| l.trim().strip_prefix(key))
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        };
+        Ok(yaml
+            .split("\n---\n")
+            .filter(|d| !d.trim().is_empty())
+            .enumerate()
+            .map(|(index, doc)| {
+                let kind = field(doc, "kind:");
+                let forbidden = kind == "ClusterRole";
+                ApplyResult {
+                    index,
+                    api_version: field(doc, "apiVersion:"),
+                    namespace: (!forbidden).then(|| default_ns.to_string()),
+                    name: field(doc, "name:"),
+                    action: (!forbidden).then_some(ApplyAction::Created),
+                    before: None,
+                    after: (!forbidden).then(|| doc.to_string()),
+                    error: forbidden.then(|| ApplyError {
+                        code: "forbidden".into(),
+                        message: "clusterroles.rbac.authorization.k8s.io is forbidden".into(),
+                    }),
+                    kind,
+                }
+            })
+            .collect())
+    }
+    async fn replace(
+        &self,
+        kind: KubeKind,
+        ns: &str,
+        name: &str,
+        yaml: &str,
+        rv: &str,
+        mode: ApplyMode,
+    ) -> Result<ApplyResult> {
+        self.find(kind, ns, name)?;
+        if rv != "1" {
+            return Err(Error::Conflict("changed since you opened it".into()));
+        }
+        self.applied.lock().unwrap().push((
+            format!("replace {}/{ns}/{name}", kind.as_str()),
+            yaml.into(),
+            mode,
+        ));
+        Ok(ApplyResult {
+            index: 0,
+            api_version: "v1".into(),
+            kind: kind.kind_name().into(),
+            namespace: Some(ns.into()),
+            name: name.into(),
+            action: Some(ApplyAction::Configured),
+            before: Some(String::new()),
+            after: Some(yaml.into()),
+            error: None,
         })
     }
 }

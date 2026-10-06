@@ -4,7 +4,8 @@
 use crate::{errors, kinds::api_resource, mask, summaries};
 use async_trait::async_trait;
 use fleetops_core::kube::{
-    KubeEvent, KubeExec, KubeKind, KubeList, KubeObject, KubeOps, KubeRef, KubeVersion, LIST_CAP,
+    ApplyAction, ApplyError, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeExec, KubeKind,
+    KubeList, KubeObject, KubeOps, KubeRef, KubeVersion, WatchEvent, FIELD_MANAGER, LIST_CAP,
     PAGE_SIZE,
 };
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions, LogStream};
@@ -17,10 +18,12 @@ use k8s_openapi::api::{
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Status;
 use kube::api::{
     Api, AttachParams, DeleteParams, DynamicObject, ListParams, LogParams, Patch, PatchParams,
-    TerminalSize,
+    PostParams, TerminalSize,
 };
+use kube::discovery::{ApiResource, Scope};
 use serde_json::json;
 use std::{
+    collections::HashMap,
     future::Future,
     sync::Mutex,
     time::{Duration, Instant},
@@ -32,11 +35,17 @@ use tokio::sync::{mpsc, oneshot};
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Node counts in `version()` are reused for this long.
 pub const NODE_CACHE: Duration = Duration::from_secs(30);
+/// Discovery answers are reused for this long (spec §2.3).
+pub const DISCOVERY_TTL: Duration = Duration::from_secs(300);
+
+/// A kind's resource and whether it is namespaced.
+type Resolved = (ApiResource, bool);
 
 pub struct KubeClient {
     client: kube::Client,
     list_cap: usize,
     nodes: Mutex<Option<(Instant, (u32, u32))>>,
+    discovery: Mutex<HashMap<(String, String), (Instant, Resolved)>>,
 }
 
 impl KubeClient {
@@ -45,6 +54,7 @@ impl KubeClient {
             client,
             list_cap: LIST_CAP,
             nodes: Mutex::new(None),
+            discovery: Mutex::new(HashMap::new()),
         }
     }
 
@@ -89,6 +99,71 @@ impl KubeClient {
         Ok((total, ready))
     }
 
+    /// The resource for `apiVersion/kind` and whether it is namespaced.
+    async fn resolve(&self, api_version: &str, kind: &str) -> Result<Resolved> {
+        let k = (api_version.to_string(), kind.to_string());
+        if let Some((at, r)) = self.discovery.lock().unwrap().get(&k) {
+            if at.elapsed() < DISCOVERY_TTL {
+                return Ok(r.clone());
+            }
+        }
+        let gvk = crate::apply::gvk(api_version, kind);
+        let found = tokio::time::timeout(
+            REQUEST_TIMEOUT,
+            kube::discovery::pinned_kind(&self.client, &gvk),
+        )
+        .await
+        .map_err(|_| Error::Upstream {
+            status: 504,
+            message: "the cluster did not answer discovery in time".into(),
+        })?;
+        let (ar, caps) = match found {
+            Ok(v) => v,
+            Err(kube::Error::Discovery(_)) => {
+                return Err(Error::Invalid(format!(
+                    "the cluster does not serve {api_version}/{kind}"
+                )))
+            }
+            Err(kube::Error::Api(s)) if s.code == 404 => {
+                return Err(Error::Invalid(format!(
+                    "the cluster does not serve {api_version}/{kind}"
+                )))
+            }
+            Err(e) => return Err(errors::map(e)),
+        };
+        let r = (ar, caps.scope == Scope::Namespaced);
+        self.discovery
+            .lock()
+            .unwrap()
+            .insert(k, (Instant::now(), r.clone()));
+        Ok(r)
+    }
+
+    /// Server-side applies one document: its action, and the cleaned
+    /// before/after YAML.
+    async fn apply_doc(
+        &self,
+        doc: &mut crate::apply::Doc,
+        default_ns: &str,
+        mode: ApplyMode,
+    ) -> Result<(ApplyAction, Option<String>, String)> {
+        let (ar, namespaced) = self.resolve(&doc.api_version, &doc.kind).await?;
+        crate::apply::set_namespace(doc, namespaced, default_ns);
+        let api: Api<DynamicObject> = match &doc.namespace {
+            Some(ns) => Api::namespaced_with(self.client.clone(), ns, &ar),
+            None => Api::all_with(self.client.clone(), &ar),
+        };
+        let live = timed(api.get_opt(&doc.name))
+            .await?
+            .map(|o| serde_json::to_value(o).unwrap_or_default());
+        crate::mask::unmask(&mut doc.value, live.as_ref()).map_err(Error::Invalid)?;
+        let mut pp = PatchParams::apply(FIELD_MANAGER);
+        pp.dry_run = mode.dry_run();
+        pp.force = mode.force();
+        let out = timed(api.patch(&doc.name, &pp, &Patch::Apply(&doc.value))).await?;
+        outcome(live, serde_json::to_value(out).unwrap_or_default())
+    }
+
     /// The owner chain, nearest first. A ReplicaSet owner is followed one
     /// step so a Deployment's pods link to the Deployment.
     async fn owner_chain(&self, ns: &str, obj: &DynamicObject) -> Vec<KubeRef> {
@@ -116,6 +191,34 @@ impl KubeClient {
         }
         chain
     }
+}
+
+/// The object as the editor and diffs show it.
+fn cleaned(mut v: serde_json::Value) -> serde_json::Value {
+    crate::mask::clean(&mut v);
+    v
+}
+
+/// What a write did, judged on unmasked objects (a Secret whose values
+/// changed has identical masked forms), and the masked YAML to show.
+fn outcome(
+    before: Option<serde_json::Value>,
+    after: serde_json::Value,
+) -> Result<(ApplyAction, Option<String>, String)> {
+    let strip = |mut v: serde_json::Value| {
+        crate::mask::strip(&mut v);
+        v
+    };
+    let (before, after) = (before.map(strip), strip(after));
+    let action = match &before {
+        None => ApplyAction::Created,
+        Some(b) if *b == after => ApplyAction::Unchanged,
+        Some(_) => ApplyAction::Configured,
+    };
+    let before = before
+        .map(|b| crate::mask::to_yaml(&cleaned(b)))
+        .transpose()?;
+    Ok((action, before, crate::mask::to_yaml(&cleaned(after))?))
 }
 
 /// Runs one apiserver call with the request timeout and error mapping.
@@ -385,5 +488,103 @@ impl KubeOps for KubeClient {
             resize,
             exit_code: exit_rx,
         })
+    }
+
+    fn watch(&self, kind: KubeKind, ns: Option<&str>) -> BoxStream<WatchEvent> {
+        crate::watch::watch(self.api(kind, ns), kind)
+    }
+
+    async fn get_editable(&self, kind: KubeKind, ns: &str, name: &str) -> Result<EditableObject> {
+        let obj = timed(self.api(kind, Some(ns)).get(name)).await?;
+        let resource_version = obj.metadata.resource_version.clone().unwrap_or_default();
+        let yaml = crate::mask::to_yaml(&cleaned(crate::kinds::typed_json(kind, &obj)))?;
+        Ok(EditableObject {
+            yaml,
+            resource_version,
+        })
+    }
+
+    async fn apply(
+        &self,
+        yaml: &str,
+        default_ns: &str,
+        mode: ApplyMode,
+    ) -> Result<Vec<ApplyResult>> {
+        let docs = crate::apply::split(yaml)?;
+        let mut out = Vec::with_capacity(docs.len());
+        for mut doc in docs {
+            let r = self.apply_doc(&mut doc, default_ns, mode).await;
+            let mut res = doc.result();
+            match r {
+                Ok((action, before, after)) => {
+                    res.action = Some(action);
+                    res.before = before;
+                    res.after = Some(after);
+                }
+                Err(e) => res.error = Some(ApplyError::from(&e)),
+            }
+            out.push(res);
+        }
+        Ok(out)
+    }
+
+    async fn replace(
+        &self,
+        kind: KubeKind,
+        ns: &str,
+        name: &str,
+        yaml: &str,
+        resource_version: &str,
+        mode: ApplyMode,
+    ) -> Result<ApplyResult> {
+        if resource_version.trim().is_empty() {
+            return Err(Error::Invalid(
+                "an edit needs the resource version it was opened at".into(),
+            ));
+        }
+        let mut docs = crate::apply::split(yaml)?;
+        if docs.len() != 1 {
+            return Err(Error::Invalid("edit one object at a time".into()));
+        }
+        let mut doc = docs.remove(0);
+        if doc.kind != kind.kind_name() || doc.name != name {
+            return Err(Error::Invalid(format!(
+                "the YAML names {} {}, but this is {} {name}",
+                doc.kind,
+                doc.name,
+                kind.kind_name()
+            )));
+        }
+        let ns_opt = (!kind.cluster_scoped()).then_some(ns);
+        if doc.namespace.is_some() && doc.namespace.as_deref() != ns_opt {
+            return Err(Error::Invalid(
+                "an edit cannot move an object to another namespace".into(),
+            ));
+        }
+        crate::apply::set_namespace(&mut doc, !kind.cluster_scoped(), ns);
+        let api = self.api(kind, Some(ns));
+        let live = serde_json::to_value(timed(api.get(name)).await?).unwrap_or_default();
+        crate::mask::unmask(&mut doc.value, Some(&live)).map_err(Error::Invalid)?;
+        crate::mask::restore_hidden(&mut doc.value, &live);
+        doc.value["metadata"]["resourceVersion"] = resource_version.into();
+        let obj: DynamicObject = serde_json::from_value(doc.value.clone())
+            .map_err(|e| Error::Invalid(format!("not a Kubernetes object: {e}")))?;
+        let pp = PostParams {
+            dry_run: mode.dry_run(),
+            field_manager: Some(FIELD_MANAGER.into()),
+        };
+        let out = match timed(api.replace(name, &pp, &obj)).await {
+            Err(Error::Conflict(_)) => {
+                return Err(Error::Conflict("changed since you opened it".into()))
+            }
+            r => r?,
+        };
+        let (action, before, after) =
+            outcome(Some(live), serde_json::to_value(out).unwrap_or_default())?;
+        let mut res = doc.result();
+        res.action = Some(action);
+        res.before = before;
+        res.after = Some(after);
+        Ok(res)
     }
 }

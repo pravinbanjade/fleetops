@@ -15,6 +15,9 @@ pub enum Topic {
     Logs,
     Exec,
     Task,
+    /// A live list of Kubernetes objects; `id` is `<kind>/<namespace or ->`.
+    #[serde(rename = "kube-watch")]
+    KubeWatch,
 }
 
 /// A text frame from the client. Exec stdin may also arrive as a binary
@@ -57,17 +60,20 @@ pub enum ClientMsg {
 #[allow(dead_code)]
 pub enum ServerMsg {
     /// A payload for subscription `sub`: a `DockerEvent`, a `StatsSample`,
-    /// an array of `LogLine`s, or a task progress message.
+    /// an array of `LogLine`s, a task progress message, or a `WatchEvent`
+    /// (kube-watch).
     Data { sub: u32, data: Value },
     /// The logs queue overflowed and `dropped` lines were skipped.
     Gap { sub: u32, dropped: u64 },
     /// The subscription is over. `reason` is `closed`, `ended`, `eof`,
-    /// `exited` (with `exit_code`), `succeeded` or `failed` (with `task`).
+    /// `exited` (with `exit_code`), `succeeded` or `failed` (with `task`),
+    /// or `error` (kube-watch, with `message`).
     End {
         sub: u32,
         reason: String,
         exit_code: Option<i64>,
         task: Option<TaskInfo>,
+        message: Option<String>,
     },
     /// A request failed; `sub` is null when the frame named no valid
     /// subscription. `code` is an error code as in `ErrorBody`.

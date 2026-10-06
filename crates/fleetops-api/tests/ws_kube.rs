@@ -128,3 +128,133 @@ async fn a_kube_pod_id_must_be_kubernetes_names() {
     let e = ws.until(|m| m["type"] == "error").await;
     assert_eq!(e["code"], "invalid");
 }
+
+use fleetops_core::kube::WatchEvent;
+
+async fn watch_sub(ws: &mut Ws, sub: u32, id: &str) {
+    ws.send(json!({"op": "sub", "sub": sub, "topic": "kube-watch", "env": "k", "id": id}))
+        .await;
+}
+
+async fn opened(t: &TestApp, n: usize) {
+    for _ in 0..100 {
+        if t.fake.kube.open_watches() == n {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!(
+        "expected {n} open watches, have {}",
+        t.fake.kube.open_watches()
+    );
+}
+
+#[tokio::test]
+async fn a_kube_watch_streams_a_snapshot_then_changes() {
+    let (t, _admin, mut ws) = kube_ws().await;
+    watch_sub(&mut ws, 1, "pods/apps").await;
+    opened(&t, 1).await;
+    let row = common::fake_kube::row("web-1", Some("apps"));
+    t.fake.kube.emit_watch(
+        KubeKind::Pods,
+        Ok(WatchEvent::Snapshot {
+            rows: vec![row.clone()],
+        }),
+    );
+    let m = ws.until(|m| m["type"] == "data").await;
+    assert_eq!(m["data"]["type"], "snapshot");
+    assert_eq!(m["data"]["rows"][0]["name"], "web-1");
+    t.fake.kube.emit_watch(
+        KubeKind::Pods,
+        Ok(WatchEvent::Deleted {
+            namespace: Some("apps".into()),
+            name: "web-1".into(),
+        }),
+    );
+    let m = ws.until(|m| m["type"] == "data").await;
+    assert_eq!(
+        m["data"],
+        json!({"type": "deleted", "namespace": "apps", "name": "web-1"})
+    );
+    assert!(t.fake.kube.calls().contains(&"watch pods apps".to_string()));
+}
+
+#[tokio::test]
+async fn two_tabs_share_one_upstream_watch() {
+    let (t, admin, mut ws) = kube_ws().await;
+    let mut ws2 = Ws::open(t.serve().await, &admin).await;
+    watch_sub(&mut ws, 1, "pods/-").await;
+    watch_sub(&mut ws2, 1, "pods/-").await;
+    opened(&t, 1).await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        t.fake
+            .kube
+            .calls()
+            .iter()
+            .filter(|c| c.starts_with("watch"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_failed_watch_ends_with_the_reason() {
+    let (t, _admin, mut ws) = kube_ws().await;
+    watch_sub(&mut ws, 4, "secrets/-").await;
+    opened(&t, 1).await;
+    t.fake.kube.emit_watch(
+        KubeKind::Secrets,
+        Err(fleetops_core::Error::Forbidden(
+            "secrets is forbidden".into(),
+        )),
+    );
+    let m = ws.until(|m| m["type"] == "end").await;
+    assert_eq!(
+        (m["sub"].as_u64(), m["reason"].as_str()),
+        (Some(4), Some("error"))
+    );
+    assert_eq!(m["message"], "secrets is forbidden");
+}
+
+#[tokio::test]
+async fn a_watch_id_must_be_kind_slash_namespace() {
+    let (_t, _admin, mut ws) = kube_ws().await;
+    for (sub, bad) in [(1, "pods"), (2, "widgets/apps"), (3, "pods/Not_A_NS")] {
+        watch_sub(&mut ws, sub, bad).await;
+        let e = ws.until(|m| m["type"] == "error").await;
+        assert!(
+            e["code"] == "invalid" || e["code"] == "not_found",
+            "{bad}: {e}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn unsubscribing_stops_the_watch_after_the_grace_period() {
+    let (t, _admin, mut ws) = kube_ws().await;
+    watch_sub(&mut ws, 1, "pods/apps").await;
+    opened(&t, 1).await;
+    ws.send(json!({"op": "unsub", "sub": 1})).await;
+    opened(&t, 0).await;
+}
+
+#[tokio::test]
+async fn deleting_an_environment_ends_its_watches() {
+    let (t, admin, mut ws) = kube_ws().await;
+    watch_sub(&mut ws, 2, "pods/apps").await;
+    opened(&t, 1).await;
+    let r = t
+        .send(req("DELETE", "/api/v1/envs/k", None, Some(&admin)))
+        .await;
+    assert!(r.status.is_success(), "{:?}", r.json);
+    let m = tokio::time::timeout(Duration::from_secs(5), ws.until(|m| m["type"] == "end"))
+        .await
+        .expect("the watch did not end when its environment was deleted");
+    assert_eq!(
+        (m["sub"].as_u64(), m["reason"].as_str()),
+        (Some(2), Some("error"))
+    );
+    assert_eq!(m["message"], "the environment was removed or changed");
+    opened(&t, 0).await;
+}

@@ -18,10 +18,12 @@ pub struct AgentRecord {
     pub host_info: Option<String>,
     /// Why the last connection was refused, when it was.
     pub last_error: Option<String>,
+    /// kube-agent: `read-only`, `standard` or `cluster-admin`.
+    pub access: Option<String>,
 }
 
 const AGENT_COLS: &str = "environment_id, key_hash IS NOT NULL AS enrolled, join_expires_at, \
-                          last_seen_at, agent_version, host_info, last_error";
+                          last_seen_at, agent_version, host_info, last_error, access";
 
 impl Store {
     pub async fn create_agent_environment(
@@ -65,6 +67,18 @@ impl Store {
         .map_err(db_err)?;
         tx.commit().await.map_err(db_err)?;
         self.get_environment(id).await
+    }
+
+    /// Records what a kube-agent's manifest grants (`read-only`,
+    /// `standard`, `cluster-admin`), so a rotation regenerates the same one.
+    pub async fn set_agent_access(&self, env_id: i64, access: &str) -> Result<()> {
+        sqlx::query("UPDATE agent_credentials SET access = ? WHERE environment_id = ?")
+            .bind(access)
+            .bind(env_id)
+            .execute(&self.pool)
+            .await
+            .map_err(db_err)?;
+        Ok(())
     }
 
     pub async fn agent_by_join_token(&self, join_hash: &str, now: i64) -> Result<Option<i64>> {
