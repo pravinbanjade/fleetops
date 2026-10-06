@@ -129,7 +129,9 @@ async fn the_agent_enrolls_and_its_environment_comes_up() {
     )));
 
     eventually("connected", || srv.state.agents.connected() == 1).await;
-    assert!(data.join("agent.key").exists());
+    // The server counts the agent once it sends the key; the agent saves it
+    // when it reads the reply.
+    eventually("key saved", || data.join("agent.key").exists()).await;
     let env = srv.state.envs.get("web-01").unwrap();
     match env.status().await {
         fleetops_core::env::EnvStatus::Up {
@@ -286,6 +288,7 @@ async fn a_new_join_command_re_enrolls_over_a_rotated_key() {
         Some(token),
     )));
     eventually("connected", || srv.state.agents.connected() == 1).await;
+    eventually("key saved", || data.join("agent.key").exists()).await;
     let old_key = std::fs::read_to_string(data.join("agent.key")).unwrap();
 
     // The admin rotates; the old agent is told and stops.
@@ -321,6 +324,9 @@ async fn a_new_join_command_re_enrolls_over_a_rotated_key() {
         1,
         "the new join command did not reconnect"
     );
-    let new_key = std::fs::read_to_string(data.join("agent.key")).unwrap();
-    assert_ne!(new_key, old_key, "a fresh key replaced the rotated one");
+    let read_key = || std::fs::read_to_string(data.join("agent.key")).unwrap();
+    eventually("a fresh key replaced the rotated one", || {
+        read_key() != old_key
+    })
+    .await;
 }
