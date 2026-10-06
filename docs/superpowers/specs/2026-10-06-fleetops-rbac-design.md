@@ -115,8 +115,8 @@ The filter sits in the subscriber (`WatchSub`), not in the shared registry, so t
 ### 3.3 Access changes during a session
 
 - REST re-reads the grant every request.
-- Any grant change or revocation, user deletion, or role change on a user publishes `ACCESS_CHANGED(user_id)` on the hub. Each of that user's connections ends every open subscription with `End { message: "your access changed" }` and re-sends its env-status list.
-- The web client, on that message, invalidates the environment list and resubscribes; topics that are now refused end with the refusal text.
+- Any grant change or revocation, or role change on a user, publishes `ACCESS_CHANGED(user_id)` on the hub (a deleted user's sockets already close). Each of that user's connections ends every open subscription with `End { reason: "access", message: "your access changed" }`, then sends a connection-level `{type: "access_changed"}`.
+- The web client, on `access_changed`, invalidates its cached queries (the environment list first); a live Kubernetes list ended with reason `access` subscribes again at once, and a topic that is now refused ends with the refusal text.
 
 ### 3.4 Errors
 
