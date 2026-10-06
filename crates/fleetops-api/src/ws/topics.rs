@@ -180,9 +180,10 @@ pub(super) async fn logs(
     let (s, cu, sub) = (c.s, c.cu, c.sub);
     let o: LogOptions = opts(opts_v)?;
     let lines = if is_kube_env(s, &env) {
-        let crate::routes::kube::KubeCtx { ops, .. } =
+        let crate::routes::kube::KubeCtx { env, ops, grant } =
             crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead).await?;
         let (ns, pod) = pod_id(&id)?;
+        crate::authz::deny_audited(s, cu, env.id(), "k8s.read", grant.check_ns(&ns)).await?;
         ops.logs(&ns, &pod, &o)
     } else {
         let (_, ops) = docker_for(s, cu, &env, Action::DockerRead).await?;
@@ -305,9 +306,10 @@ async fn kube_exec(
     opts_v: Value,
 ) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let crate::routes::kube::KubeCtx { env, ops, .. } =
+    let crate::routes::kube::KubeCtx { env, ops, grant } =
         crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeWrite).await?;
     let (ns, pod) = pod_id(&id)?;
+    crate::authz::deny_audited(s, cu, env.id(), "k8s.write", grant.check_ns(&ns)).await?;
     let o: ExecOptions = opts(opts_v)?;
     let session = ops.exec_start(&ns, &pod, &o).await;
     let failure = session.as_ref().err().map(|e| e.to_string());
@@ -393,9 +395,17 @@ pub(super) async fn kube_watch(
     id: Option<String>,
 ) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let crate::routes::kube::KubeCtx { env, ops, .. } =
+    let crate::routes::kube::KubeCtx { env, ops, grant } =
         crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead).await?;
     let (kind, ns) = watch_id(&id)?;
+    crate::authz::deny_audited(
+        s,
+        cu,
+        env.id(),
+        "k8s.read",
+        grant.check_list(kind, ns.as_deref()),
+    )
+    .await?;
     let mut w = s
         .hubs
         .kube_watches
@@ -406,6 +416,11 @@ pub(super) async fn kube_watch(
         while let Some(item) = w.next().await {
             match item {
                 Ok(ev) => {
+                    // The shared watch carries every namespace; this
+                    // subscriber sees only its grant's.
+                    let Some(ev) = grant.filter_event(kind, ev) else {
+                        continue;
+                    };
                     let v = serde_json::to_value(&ev).unwrap_or(Value::Null);
                     if !qq.push_wait(protocol::data(sub, v)).await {
                         return;
