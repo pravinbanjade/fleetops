@@ -1,6 +1,5 @@
 use crate::{db_err, Store};
 use fleetops_core::{Error, Result, Role, User};
-use sqlx::SqliteConnection;
 
 const COLS: &str = "id, username, password_hash, role, created_at, updated_at";
 
@@ -32,20 +31,6 @@ impl UserRow {
     }
 }
 
-async fn insert_global_binding(
-    conn: &mut SqliteConnection,
-    user_id: i64,
-    role: Role,
-) -> Result<()> {
-    sqlx::query("INSERT INTO role_bindings (user_id, environment_id, role) VALUES (?, NULL, ?)")
-        .bind(user_id)
-        .bind(role.as_str())
-        .execute(conn)
-        .await
-        .map_err(db_err)?;
-    Ok(())
-}
-
 impl Store {
     pub async fn create_user(
         &self,
@@ -67,7 +52,6 @@ impl Store {
         .fetch_one(&mut *tx)
         .await
         .map_err(db_err)?;
-        insert_global_binding(&mut tx, row.id, role).await?;
         tx.commit().await.map_err(db_err)?;
         row.into_user()
     }
@@ -96,7 +80,6 @@ impl Store {
         let Some(row) = row else {
             return Err(Error::Conflict("setup already completed".into()));
         };
-        insert_global_binding(&mut tx, row.id, Role::Admin).await?;
         tx.commit().await.map_err(db_err)?;
         row.into_user()
     }
@@ -159,14 +142,6 @@ impl Store {
             self.get_user(id).await?;
             return Err(Error::Conflict("cannot demote the last admin".into()));
         }
-        sqlx::query(
-            "UPDATE role_bindings SET role = ? WHERE user_id = ? AND environment_id IS NULL",
-        )
-        .bind(role.as_str())
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(db_err)?;
         tx.commit().await.map_err(db_err)?;
         self.get_user(id).await
     }
@@ -199,16 +174,5 @@ impl Store {
             return Err(Error::Conflict("cannot delete the last admin".into()));
         }
         Ok(())
-    }
-
-    pub async fn global_role_binding(&self, user_id: i64) -> Result<Option<Role>> {
-        let role: Option<String> = sqlx::query_scalar(
-            "SELECT role FROM role_bindings WHERE user_id = ? AND environment_id IS NULL",
-        )
-        .bind(user_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(db_err)?;
-        role.map(|r| r.parse()).transpose()
     }
 }

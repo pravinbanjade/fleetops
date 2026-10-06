@@ -111,22 +111,3 @@ async fn list_users_ordered_by_id() {
         .collect();
     assert_eq!(names, vec!["b", "a"]);
 }
-
-#[tokio::test]
-async fn global_role_binding_mirrors_role() {
-    let s = store().await;
-    let a = s.create_user("a", "h", Role::Admin, 0).await.unwrap();
-    let u = s.create_user("u", "h", Role::User, 0).await.unwrap();
-    assert_eq!(s.global_role_binding(u.id).await.unwrap(), Some(Role::User));
-    s.set_user_role(u.id, Role::Admin, 1).await.unwrap();
-    assert_eq!(
-        s.global_role_binding(u.id).await.unwrap(),
-        Some(Role::Admin)
-    );
-    let first = s.create_first_admin("x", "h", 0).await;
-    assert!(first.is_err());
-    assert_eq!(
-        s.global_role_binding(a.id).await.unwrap(),
-        Some(Role::Admin)
-    );
-}
