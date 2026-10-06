@@ -333,11 +333,15 @@ pub trait KubeOps: Send + Sync {
     async fn get_editable(&self, kind: KubeKind, ns: &str, name: &str) -> Result<EditableObject>;
     /// Server-side apply of every document in `yaml`, in order. `Err` only
     /// when nothing could be attempted; per-document failures are in the results.
+    /// With `allowed`, a document that is cluster-scoped or names a namespace
+    /// outside it is refused (code `forbidden`) without being sent, dry run
+    /// included.
     async fn apply(
         &self,
         yaml: &str,
         default_ns: &str,
         mode: ApplyMode,
+        allowed: Option<&std::collections::BTreeSet<String>>,
     ) -> Result<Vec<ApplyResult>>;
     /// Replaces one object, refusing with `Error::Conflict` when it changed
     /// since `resource_version`.

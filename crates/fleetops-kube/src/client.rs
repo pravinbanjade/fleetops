@@ -146,9 +146,11 @@ impl KubeClient {
         doc: &mut crate::apply::Doc,
         default_ns: &str,
         mode: ApplyMode,
+        allowed: Option<&std::collections::BTreeSet<String>>,
     ) -> Result<(ApplyAction, Option<String>, String)> {
         let (ar, namespaced) = self.resolve(&doc.api_version, &doc.kind).await?;
         crate::apply::set_namespace(doc, namespaced, default_ns);
+        fleetops_core::access::check_doc(allowed, namespaced, doc.namespace.as_deref())?;
         let api: Api<DynamicObject> = match &doc.namespace {
             Some(ns) => Api::namespaced_with(self.client.clone(), ns, &ar),
             None => Api::all_with(self.client.clone(), &ar),
@@ -509,11 +511,12 @@ impl KubeOps for KubeClient {
         yaml: &str,
         default_ns: &str,
         mode: ApplyMode,
+        allowed: Option<&std::collections::BTreeSet<String>>,
     ) -> Result<Vec<ApplyResult>> {
         let docs = crate::apply::split(yaml)?;
         let mut out = Vec::with_capacity(docs.len());
         for mut doc in docs {
-            let r = self.apply_doc(&mut doc, default_ns, mode).await;
+            let r = self.apply_doc(&mut doc, default_ns, mode, allowed).await;
             let mut res = doc.result();
             match r {
                 Ok((action, before, after)) => {

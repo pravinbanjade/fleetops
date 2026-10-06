@@ -336,7 +336,13 @@ mod tests {
         async fn get_editable(&self, _: KubeKind, _: &str, _: &str) -> Result<EditableObject> {
             unreachable!()
         }
-        async fn apply(&self, _: &str, _: &str, _: ApplyMode) -> Result<Vec<ApplyResult>> {
+        async fn apply(
+            &self,
+            _: &str,
+            _: &str,
+            _: ApplyMode,
+            _: Option<&std::collections::BTreeSet<String>>,
+        ) -> Result<Vec<ApplyResult>> {
             unreachable!()
         }
         async fn replace(
