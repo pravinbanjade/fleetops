@@ -57,15 +57,16 @@ The agent binary does not change.
 ### 2.2 `fleetops-core::kube`
 
 ```rust
+/// Serialised as `{"type": "snapshot", "rows": […]}` and so on. A watch
+/// that fails for good ends its stream with `Err`.
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum WatchEvent {
-    Snapshot(Vec<KubeRow>),
-    Added(KubeRow),
-    Modified(KubeRow),
-    Deleted { ns: Option<String>, name: String },
+    Snapshot { rows: Vec<KubeRow> },
+    Added { row: KubeRow },
+    Modified { row: KubeRow },
+    Deleted { namespace: Option<String>, name: String },
     /// The upstream watch restarted; a Snapshot follows.
     Resync,
-    /// The watch failed and will not resume on its own.
-    Error(String),
 }
 
 pub struct EditableObject {
@@ -81,15 +82,17 @@ pub struct ApplyResult {
     pub index: usize,             // document position in the submitted YAML
     pub api_version: String,
     pub kind: String,
-    pub ns: Option<String>,
+    pub namespace: Option<String>,
     pub name: String,
-    pub outcome: std::result::Result<ApplyOutcome, String>,
+    pub action: Option<ApplyAction>, // None when the document failed
+    pub before: Option<String>,   // cleaned, masked live YAML; None when created
+    pub after: Option<String>,    // cleaned, masked result YAML
+    pub error: Option<ApplyError>,
 }
 
-pub struct ApplyOutcome {
-    pub action: ApplyAction,
-    pub before: Option<String>,   // cleaned, masked live YAML; None when created
-    pub after: String,            // cleaned, masked result YAML
+pub struct ApplyError {
+    pub code: String,             // an ErrorBody code: conflict, forbidden, invalid, not_found…
+    pub message: String,          // Kubernetes' message, verbatim
 }
 
 #[async_trait]
@@ -103,7 +106,7 @@ pub trait KubeOps {
 }
 ```
 
-`apply` returns `Err` only when nothing could be attempted (YAML that does not parse, an empty document set, the cluster unreachable). Per-document failures are reported in `outcome`. `replace` returns `Error::Conflict` when the `resourceVersion` is stale.
+`apply` returns `Err` only when nothing could be attempted (YAML that does not parse, an empty document set, the cluster unreachable). Per-document failures are reported in `error`; a field-manager conflict has code `conflict`. `replace` returns `Error::Conflict` when the `resourceVersion` is stale.
 
 ### 2.3 `fleetops-kube`
 
@@ -144,13 +147,13 @@ The kube-agent enrollment manifest takes an access level, chosen when the cluste
 |---|---|
 | `read-only` | `get`, `list`, `watch` on the 12 kinds and events; `get` on `pods/log`. Today's README variant, now generated. |
 | `standard` | Today's role plus `create`, `update`, `patch` on the 12 kinds. |
-| `cluster-admin` | A ClusterRoleBinding to the built-in `cluster-admin`. Needed to apply other kinds (CRDs, RBAC objects). |
+| `cluster-admin` | The `standard` role plus a second ClusterRoleBinding, `fleetops-agent-cluster-admin`, to the built-in `cluster-admin`. Needed to apply other kinds (CRDs, RBAC objects). |
 
-All levels keep the agent's existing grants on its own key Secret. Existing agents keep their role until their manifest is re-applied. Kubeconfig environments are limited only by their credentials.
+A binding's `roleRef` cannot change, so the extra binding has its own name: raising the level is a re-apply; lowering it from `cluster-admin` also needs `kubectl delete clusterrolebinding fleetops-agent-cluster-admin`, which the lower manifests say in a comment. All levels keep the agent's existing grants on its own key Secret. Existing agents keep their role until their manifest is re-applied. Kubeconfig environments are limited only by their credentials.
 
 ## 3. Data model
 
-`environments` gains a nullable `kube_access TEXT` column for `kube-agent` environments, used to regenerate the manifest on rotation. Existing rows are backfilled with `standard`.
+`agent_credentials` gains a nullable `access TEXT` column, set for `kube-agent` environments and used to regenerate the manifest on rotation. Existing `kube-agent` rows are backfilled with `standard`. `AgentView` reports it.
 
 ## 4. Flows
 
@@ -166,7 +169,7 @@ All levels keep the agent's existing grants on its own key Secret. Existing agen
 1. "Edit YAML" calls `GET …/{kind}/{ns}/{name}/edit` and opens the editor with the YAML and `resourceVersion`.
 2. "Review" sends `PUT` with `dry_run: true`; the editor shows the diff between `before` and `after`.
 3. "Apply" sends the same `PUT` with `dry_run: false`.
-4. On 409 the editor shows the user's text beside the live YAML and offers "Reload and reapply my edit" (fetch the live object, put the user's text back, return to step 2 with the new `resourceVersion`) or "Discard".
+4. On 409 (`conflict`) the editor fetches the live object with `GET …/edit` and shows the user's text beside the live YAML and offers "Reload and reapply my edit" (fetch the live object, put the user's text back, return to step 2 with the new `resourceVersion`) or "Discard".
 
 ### 4.3 Create and apply
 
@@ -182,13 +185,13 @@ All routes are under `/api/v1/envs/{env}/k8s`. Writes need CSRF, like every muta
 | Method | Path | Authz | Notes |
 |---|---|---|---|
 | GET | `/{kind}/{ns}/{name}/edit` | KubeRead | `EditableObject` |
-| PUT | `/{kind}/{ns}/{name}` `{yaml, resource_version, dry_run}` | KubeWrite | `ApplyResult`; 409 `conflict` carries the live `EditableObject`; audited `k8s.edit` unless dry run |
-| POST | `/apply` `{yaml, namespace, dry_run, force}` | KubeWrite | `ApplyResult[]`, always 200 when attempted; audited per successful document as `k8s.create` (created) or `k8s.apply` (configured), never for dry runs or unchanged documents |
+| PUT | `/{kind}/{ns}/{name}` `{yaml, resource_version, dry_run}` | KubeWrite | `ApplyResult`; a stale version is 409 `conflict`; audited `k8s.edit` (success or failure) unless dry run |
+| POST | `/apply` `{yaml, namespace, dry_run, force}` | KubeWrite | `ApplyResult[]`, always 200 when attempted; unless dry run, audited per document as `k8s.create` (created), `k8s.apply` (configured, or failed); unchanged documents are not audited |
 | GET | `/templates` | KubeRead | `{kind: yaml}` |
 
 The request body for `PUT` and `POST /apply` is limited to 1 MiB.
 
-**Websocket topic `kube-watch`.** Subscribe `{topic: "kube-watch", env, id: "<kind>/<ns>"}` with `ns` `-` for all namespaces or cluster-scoped kinds. Messages are `{type: "snapshot", rows}`, `{type: "added"|"modified", row}`, `{type: "deleted", ns, name}`, `{type: "resync"}`; failure is the topic's existing `end` frame with reason `error` and Kubernetes' message. Subscribing on a Docker environment ends with `wrong environment kind`.
+**Websocket topic `kube-watch`.** Subscribe `{topic: "kube-watch", env, id: "<kind>/<ns>"}` with `ns` `-` for all namespaces or cluster-scoped kinds. Each `data` frame carries one `WatchEvent`: `{type: "snapshot", rows}`, `{type: "added"|"modified", row}`, `{type: "deleted", namespace, name}`, `{type: "resync"}`; failure is the topic's existing `end` frame with reason `error` and Kubernetes' message. Subscribing on a Docker environment ends with `wrong environment kind`.
 
 All new types are in the OpenAPI document; the web client is regenerated.
 
@@ -226,12 +229,12 @@ All new types are in the OpenAPI document; the web client is regenerated.
 ## 9. Testing
 
 - **`kube_it`** against a `kind` cluster, through a kubeconfig and through the agent tunnel:
-  - watch: snapshot, then `added`/`modified`/`deleted` in order after kubectl changes; a forced 410 (compacted `resourceVersion`) yields `resync` and a new snapshot;
+  - watch: snapshot, then `added`/`modified`/`deleted` in order after changes made with the kube API (a 410 re-list cannot be forced on kind; the fold's `resync` path is unit-tested);
   - apply: multi-document create, re-apply is `unchanged`, dry run changes nothing, a conflicting field manager is refused then succeeds with force;
   - replace: a stale `resourceVersion` gives `Conflict`;
   - Secret round trip: edit a Secret's label leaving masked values, real values preserved;
-  - a `standard` agent is refused creating a ClusterRole with Kubernetes' 403.
-- **Unit:** watch registry (shared upstream, late subscriber snapshot, lag → snapshot, 30 s grace stop); `unmask`; cleaning; document splitting and namespace defaulting.
+  - a narrow token is refused creating a ClusterRole, with Kubernetes' 403 message in that document's error.
+- **Unit:** the watch fold (snapshot, added vs modified, deleted, re-list → `resync` + snapshot); watch registry (shared upstream, late subscriber snapshot, lag → snapshot, 30 s grace stop); `unmask`; cleaning; document splitting and namespace defaulting.
 - **Vitest:** cache patching from each delta type; paused banner; editor states and conflict view.
 - **Playwright:** create a Deployment from its template in a `kind` cluster, then `kubectl scale` it and see the list update without a refresh.
 - **rss-bench:** kube phase adds 5 kubeconfig environments × 3 open watches; gate is the sub-project 3 figure + 5 MiB.
