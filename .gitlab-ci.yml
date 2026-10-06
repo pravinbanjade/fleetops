@@ -107,7 +107,7 @@ e2e:
   extends: [.test, .docker]
   cache: [*rust-cache, *web-cache]
   script:
-    - pnpm -C web install --frozen-lockfile
+    - (cd web && pnpm install --frozen-lockfile)
     - make e2e
   artifacts:
     when: on_failure
@@ -120,7 +120,7 @@ kube:
   cache: [*rust-cache, *web-cache]
   script:
     - make test-kube
-    - pnpm -C web install --frozen-lockfile
+    - (cd web && pnpm install --frozen-lockfile)
     - make e2e-kube
     - make image IMAGE=fleetops:dev PLATFORMS=linux/amd64
     - make image-agent AGENT_IMAGE=fleetops-agent:dev PLATFORMS=linux/amd64

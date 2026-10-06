@@ -5,8 +5,8 @@ dev:
 	$(MAKE) -j2 dev-server dev-web
 
 dev-web:
-	pnpm -C web install --frozen-lockfile
-	pnpm -C web dev
+	cd web && pnpm install --frozen-lockfile
+	cd web && pnpm dev
 
 dev-server:
 	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null)} \
@@ -18,11 +18,11 @@ test:
 # Typecheck, lint and unit tests for the web UI, and a check that the
 # committed API client matches the committed OpenAPI document.
 test-web:
-	pnpm -C web install --frozen-lockfile
-	pnpm -C web typecheck
-	pnpm -C web lint
-	pnpm -C web test
-	pnpm -C web check:api
+	cd web && pnpm install --frozen-lockfile
+	cd web && pnpm typecheck
+	cd web && pnpm lint
+	cd web && pnpm test
+	cd web && pnpm check:api
 
 # Integration tests against the Docker daemon of the current docker context;
 # the Docker suite runs twice, the second time through an agent tunnel.
@@ -38,11 +38,11 @@ test-docker:
 # second spec enrolls a real fleetops-agent against the same daemon.
 e2e: build
 	cargo build --release -p fleetops-agent
-	pnpm -C web exec playwright install chromium
-	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
+	cd web && pnpm exec playwright install chromium
+	cd web && DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
 		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
 		FLEETOPS_AGENT_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops-agent \
-		pnpm -C web exec playwright test
+		pnpm exec playwright test
 
 # The idle memory targets: a release build managing 50 containers on the
 # current docker context's daemon stays under 50 MiB of RSS, plus 1 MiB per
@@ -65,10 +65,10 @@ rss-bench: build
 		$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops-agent
 
 e2e-kube: build kind-up
-	pnpm -C web exec playwright install chromium
-	FLEETOPS_KIND=1 FLEETOPS_KUBE_IT=$(KUBE_IT) \
+	cd web && pnpm exec playwright install chromium
+	cd web && FLEETOPS_KIND=1 FLEETOPS_KUBE_IT=$(KUBE_IT) \
 		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
-		pnpm -C web exec playwright test e2e/kube.spec.ts
+		pnpm exec playwright test e2e/kube.spec.ts
 
 agent-kube-smoke: kind-up
 	scripts/agent-kube-smoke.sh $(IMAGE) $(AGENT_IMAGE)
@@ -82,8 +82,8 @@ fmt:
 
 # Builds the web UI into web/dist, which the server binary embeds.
 web:
-	pnpm -C web install --frozen-lockfile
-	pnpm -C web build
+	cd web && pnpm install --frozen-lockfile
+	cd web && pnpm build
 
 build: web
 	cargo build --release -p fleetops-server
@@ -92,7 +92,7 @@ build: web
 # web client from it; `cargo test` and `make test-web` fail until both match.
 openapi:
 	cargo run -q -p fleetops-server -- --openapi > crates/fleetops-api/openapi.json
-	pnpm -C web gen:api
+	cd web && pnpm gen:api
 
 # The container image: a static musl binary on distroless/static, for
 # linux/amd64 and linux/arm64, built entirely inside BuildKit (no local zig
