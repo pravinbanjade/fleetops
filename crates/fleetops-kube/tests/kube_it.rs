@@ -322,3 +322,195 @@ async fn the_create_check_rejects_bad_credentials() {
         .to_string();
     assert!(e.contains("credentials rejected"), "{e}");
 }
+
+use common::kube_client;
+use fleetops_core::kube::{ApplyAction, ApplyMode, WatchEvent};
+use futures_util::StreamExt;
+
+fn uniq(prefix: &str) -> String {
+    let n = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+        % 1_000_000_000;
+    format!("{prefix}-{n}")
+}
+
+/// The next watch event, failing the test on an error or a timeout.
+async fn next_event(w: &mut fleetops_core::streams::BoxStream<WatchEvent>) -> WatchEvent {
+    timeout(WAIT, w.next()).await.unwrap().unwrap().unwrap()
+}
+
+#[tokio::test]
+async fn a_watch_sees_a_snapshot_then_add_and_delete() {
+    let ops = common::ops();
+    let mut w = ops.watch(KubeKind::ConfigMaps, Some(NS));
+    let first = next_event(&mut w).await;
+    assert!(matches!(first, WatchEvent::Snapshot { .. }), "{first:?}");
+    let name = uniq("watch");
+    let cms: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
+    let mut cm = ConfigMap::default();
+    cm.metadata.name = Some(name.clone());
+    cms.create(&PostParams::default(), &cm).await.unwrap();
+    loop {
+        match next_event(&mut w).await {
+            WatchEvent::Added { row } if row.name == name => break,
+            _ => continue,
+        }
+    }
+    cms.delete(&name, &Default::default()).await.unwrap();
+    loop {
+        match next_event(&mut w).await {
+            WatchEvent::Deleted { name: n, .. } if n == name => break,
+            _ => continue,
+        }
+    }
+}
+
+#[tokio::test]
+async fn apply_creates_then_is_unchanged_and_a_dry_run_writes_nothing() {
+    let ops = common::ops();
+    let name = uniq("apply");
+    let yaml =
+        format!("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\ndata:\n  a: \"1\"\n");
+    let dry = ops.apply(&yaml, NS, ApplyMode::DryRun).await.unwrap();
+    assert_eq!(dry[0].action, Some(ApplyAction::Created), "{dry:?}");
+    let cms: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
+    assert!(
+        cms.get_opt(&name).await.unwrap().is_none(),
+        "a dry run writes nothing"
+    );
+    let r = ops
+        .apply(&yaml, NS, ApplyMode::Commit { force: false })
+        .await
+        .unwrap();
+    assert_eq!(r[0].action, Some(ApplyAction::Created), "{:?}", r[0].error);
+    let again = ops
+        .apply(&yaml, NS, ApplyMode::Commit { force: false })
+        .await
+        .unwrap();
+    assert_eq!(again[0].action, Some(ApplyAction::Unchanged), "{again:?}");
+    cms.delete(&name, &Default::default()).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_field_owned_by_another_manager_conflicts_until_forced() {
+    let ops = common::ops();
+    let name = uniq("owned");
+    let cms: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
+    let theirs = serde_json::json!({"apiVersion": "v1", "kind": "ConfigMap",
+        "metadata": {"name": name}, "data": {"k": "theirs"}});
+    cms.patch(
+        &name,
+        &kube::api::PatchParams::apply("someone-else"),
+        &kube::api::Patch::Apply(&theirs),
+    )
+    .await
+    .unwrap();
+    let ours =
+        format!("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\ndata:\n  k: ours\n");
+    let r = ops
+        .apply(&ours, NS, ApplyMode::Commit { force: false })
+        .await
+        .unwrap();
+    assert_eq!(
+        r[0].error.as_ref().map(|e| e.code.as_str()),
+        Some("conflict"),
+        "{r:?}"
+    );
+    let forced = ops
+        .apply(&ours, NS, ApplyMode::Commit { force: true })
+        .await
+        .unwrap();
+    assert_eq!(
+        forced[0].action,
+        Some(ApplyAction::Configured),
+        "{forced:?}"
+    );
+    cms.delete(&name, &Default::default()).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_stale_edit_is_a_conflict() {
+    let ops = common::ops();
+    let name = uniq("stale");
+    let cms: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
+    let mut cm = ConfigMap::default();
+    cm.metadata.name = Some(name.clone());
+    cms.create(&PostParams::default(), &cm).await.unwrap();
+    let opened = ops
+        .get_editable(KubeKind::ConfigMaps, NS, &name)
+        .await
+        .unwrap();
+    let mut changed = cms.get(&name).await.unwrap();
+    changed.data = Some([("x".to_string(), "1".to_string())].into());
+    cms.replace(&name, &PostParams::default(), &changed)
+        .await
+        .unwrap();
+    let edit = format!("{}data:\n  y: \"2\"\n", opened.yaml);
+    let r = ops
+        .replace(
+            KubeKind::ConfigMaps,
+            NS,
+            &name,
+            &edit,
+            &opened.resource_version,
+            ApplyMode::Commit { force: false },
+        )
+        .await;
+    assert!(matches!(r, Err(Error::Conflict(_))), "{r:?}");
+    cms.delete(&name, &Default::default()).await.unwrap();
+}
+
+#[tokio::test]
+async fn editing_a_secret_label_keeps_its_values_and_never_shows_them() {
+    use k8s_openapi::api::core::v1::Secret;
+    let ops = common::ops();
+    let name = uniq("sec");
+    let secrets: Api<Secret> = Api::namespaced(kube_client(), NS);
+    let mut s = Secret::default();
+    s.metadata.name = Some(name.clone());
+    s.string_data = Some([("password".to_string(), "hunter2".to_string())].into());
+    secrets.create(&PostParams::default(), &s).await.unwrap();
+    let opened = ops
+        .get_editable(KubeKind::Secrets, NS, &name)
+        .await
+        .unwrap();
+    assert!(
+        !opened.yaml.contains("aHVudGVyMg==") && opened.yaml.contains(MASK),
+        "{}",
+        opened.yaml
+    );
+    let edit = opened
+        .yaml
+        .replacen("metadata:\n", "metadata:\n  labels:\n    team: a\n", 1);
+    let r = ops
+        .replace(
+            KubeKind::Secrets,
+            NS,
+            &name,
+            &edit,
+            &opened.resource_version,
+            ApplyMode::Commit { force: false },
+        )
+        .await
+        .unwrap();
+    assert!(!r.after.unwrap().contains("aHVudGVyMg=="));
+    let live = secrets.get(&name).await.unwrap();
+    assert_eq!(live.data.unwrap()["password"].0, b"hunter2");
+    assert_eq!(live.metadata.labels.unwrap()["team"], "a");
+    secrets.delete(&name, &Default::default()).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_narrow_token_cannot_create_a_cluster_role() {
+    let ops = fleetops_kube::KubeClient::new(common::tunnel_client_with("narrow-token"));
+    let yaml = "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: fleetops-it-nope\nrules: []\n";
+    let r = ops
+        .apply(yaml, NS, ApplyMode::Commit { force: false })
+        .await
+        .unwrap();
+    let e = r[0].error.as_ref().expect("forbidden");
+    assert_eq!(e.code, "forbidden", "{e:?}");
+    assert!(e.message.contains("forbidden"), "{}", e.message);
+}
