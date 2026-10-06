@@ -122,14 +122,21 @@ kube:
     - make test-kube
     - (cd web && pnpm install --frozen-lockfile)
     - make e2e-kube
-    - make image IMAGE=fleetops:dev PLATFORMS=linux/amd64
-    - make image-agent AGENT_IMAGE=fleetops-agent:dev PLATFORMS=linux/amd64
-    - make agent-kube-smoke
     - make rss-bench KUBE_IT_RSS=$CI_PROJECT_DIR/target/kube-it
   artifacts:
     when: on_failure
     expire_in: 7 days
     paths: [web/playwright-report/]
+
+# The agent's Kubernetes mode with the real images, on its own kind cluster.
+# Kept apart from kube: the image build compiles the workspace again inside
+# BuildKit, and next to kube's target/ and cluster the runner's disk fills.
+agent-kube:
+  extends: [.test, .docker]
+  script:
+    - make image IMAGE=fleetops:dev PLATFORMS=linux/amd64
+    - make image-agent AGENT_IMAGE=fleetops-agent:dev PLATFORMS=linux/amd64
+    - make agent-kube-smoke
 
 # Idle memory: 50 containers, under 50 MiB.
 rss:
