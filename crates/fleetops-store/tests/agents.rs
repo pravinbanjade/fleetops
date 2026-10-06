@@ -142,3 +142,29 @@ async fn agent_names_share_the_environment_namespace() {
         Err(fleetops_core::Error::Conflict(_))
     ));
 }
+
+#[tokio::test]
+async fn a_kube_agent_records_its_access_level() {
+    let s = Store::in_memory().await.unwrap();
+    let env = s
+        .create_agent_environment(
+            "k8s-01",
+            fleetops_core::env::EnvKind::KubeAgent,
+            "join-hash",
+            T0 + 900,
+            T0,
+        )
+        .await
+        .unwrap();
+    assert_eq!(s.get_agent(env.id).await.unwrap().unwrap().access, None);
+    s.set_agent_access(env.id, "cluster-admin").await.unwrap();
+    assert_eq!(
+        s.get_agent(env.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .access
+            .as_deref(),
+        Some("cluster-admin")
+    );
+}

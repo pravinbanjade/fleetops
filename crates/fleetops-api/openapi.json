@@ -3884,6 +3884,13 @@
           "enrolled"
         ],
         "properties": {
+          "access": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "kube-agent: the access level its manifest grants."
+          },
           "agent_version": {
             "type": [
               "string",
@@ -4587,6 +4594,17 @@
           "kind"
         ],
         "properties": {
+          "access": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/KubeAccess",
+                "description": "kube-agent: what the agent's ClusterRole allows; default `standard`."
+              }
+            ]
+          },
           "context": {
             "type": [
               "string",
@@ -5166,6 +5184,15 @@
             "format": "int64"
           }
         }
+      },
+      "KubeAccess": {
+        "type": "string",
+        "description": "What the in-cluster agent's ClusterRole allows (spec §2.5).",
+        "enum": [
+          "read-only",
+          "standard",
+          "cluster-admin"
+        ]
       },
       "KubeCondition": {
         "type": "object",

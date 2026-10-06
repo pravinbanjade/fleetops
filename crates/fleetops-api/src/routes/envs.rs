@@ -1,4 +1,4 @@
-use crate::agents::{self, AgentView, CreatedEnv, Enrollment, EnvView};
+use crate::agents::{self, AgentView, CreatedEnv, Enrollment, EnvView, KubeAccess};
 use crate::openapi::EnvParam;
 use crate::{
     auth::{extract::CurrentUser, token::hash_token},
@@ -35,6 +35,9 @@ pub struct CreateEnv {
     /// kube-config: save without checking that the cluster answers.
     #[serde(default)]
     pub skip_check: bool,
+    /// kube-agent: what the agent's ClusterRole allows; default `standard`.
+    #[serde(default)]
+    pub access: Option<KubeAccess>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -104,12 +107,20 @@ async fn new_enrollment(
     let server = server_url(headers)?;
     let token = agents::new_join_token();
     let expires_at = now_unix() + agents::JOIN_TTL_SECS;
+    let access: KubeAccess = s
+        .store
+        .get_agent(env_id)
+        .await?
+        .and_then(|a| a.access)
+        .map(|a| a.parse())
+        .transpose()?
+        .unwrap_or_default();
     if rotate {
         s.store
             .rotate_agent(env_id, &hash_token(&token), expires_at)
             .await?;
     }
-    let command = agents::command_for(kind, &server, &token);
+    let command = agents::command_for(kind, &server, &token, access);
     Ok(Enrollment {
         join_token: token,
         expires_at,
@@ -170,6 +181,11 @@ pub async fn create(
 ) -> ApiResult<(StatusCode, Json<CreatedEnv>)> {
     authorize(&cu.user, None, Action::EnvManage)?;
     validate_env_name(&body.name)?;
+    if body.access.is_some() && body.kind != EnvKind::KubeAgent {
+        return Err(
+            Error::Invalid("only a kube-agent environment takes an access level".into()).into(),
+        );
+    }
     if body.kind.is_kube() && body.url.is_some() {
         return Err(Error::Invalid(
             "a Kubernetes environment takes no URL; paste a kubeconfig".into(),
@@ -220,7 +236,11 @@ pub async fn create(
                     now_unix(),
                 )
                 .await?;
-            let command = agents::command_for(body.kind, &server, &token);
+            let access = body.access.unwrap_or_default();
+            if body.kind == EnvKind::KubeAgent {
+                s.store.set_agent_access(rec.id, access.as_str()).await?;
+            }
+            let command = agents::command_for(body.kind, &server, &token, access);
             let enrollment = Enrollment {
                 join_token: token,
                 expires_at,

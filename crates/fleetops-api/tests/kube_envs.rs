@@ -225,3 +225,67 @@ async fn updating_a_kubeconfig_replaces_it_and_rebuilds_the_environment() {
         .await;
     assert_eq!(bad.status, 400);
 }
+
+#[tokio::test]
+async fn a_kube_agent_keeps_its_access_level_across_rotation() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let created = t
+        .send(post(
+            "/api/v1/envs",
+            json!({"name": "ka", "kind": "kube-agent", "access": "cluster-admin"}),
+            &admin,
+        ))
+        .await;
+    assert_eq!(created.status, 201, "{:?}", created.json);
+    assert!(created.json["enrollment"]["command"]
+        .as_str()
+        .unwrap()
+        .contains("name: cluster-admin"));
+    let list = t.send(req("GET", "/api/v1/envs", None, Some(&admin))).await;
+    let ka = list
+        .json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "ka")
+        .unwrap()
+        .clone();
+    assert_eq!(ka["agent"]["access"], "cluster-admin");
+    let rotated = t
+        .send(post("/api/v1/envs/ka/agent/rotate", json!({}), &admin))
+        .await;
+    assert!(rotated.json["command"]
+        .as_str()
+        .unwrap()
+        .contains("name: cluster-admin"));
+}
+
+#[tokio::test]
+async fn a_kube_agent_defaults_to_standard_access() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let created = t
+        .send(post(
+            "/api/v1/envs",
+            json!({"name": "ks", "kind": "kube-agent"}),
+            &admin,
+        ))
+        .await;
+    let cmd = created.json["enrollment"]["command"].as_str().unwrap();
+    assert!(cmd.contains("# Access level: standard") && !cmd.contains("name: cluster-admin\n"));
+}
+
+#[tokio::test]
+async fn only_a_kube_agent_takes_an_access_level() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let r = t
+        .send(post(
+            "/api/v1/envs",
+            json!({"name": "d", "kind": "docker-local", "url": "unix:///x.sock", "access": "standard"}),
+            &admin,
+        ))
+        .await;
+    assert_eq!(r.status, 400, "{:?}", r.json);
+}

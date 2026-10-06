@@ -69,6 +69,18 @@ impl Store {
         self.get_environment(id).await
     }
 
+    /// Records what a kube-agent's manifest grants (`read-only`,
+    /// `standard`, `cluster-admin`), so a rotation regenerates the same one.
+    pub async fn set_agent_access(&self, env_id: i64, access: &str) -> Result<()> {
+        sqlx::query("UPDATE agent_credentials SET access = ? WHERE environment_id = ?")
+            .bind(access)
+            .bind(env_id)
+            .execute(&self.pool)
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
     pub async fn agent_by_join_token(&self, join_hash: &str, now: i64) -> Result<Option<i64>> {
         sqlx::query_scalar(
             "SELECT environment_id FROM agent_credentials
