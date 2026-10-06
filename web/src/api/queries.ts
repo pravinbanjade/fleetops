@@ -25,6 +25,8 @@ import {
   listNetworks,
   listSessions,
   listUsers,
+  listUserAccess,
+  listEnvAccess,
   listRecentEvents,
   listVolumes,
 } from "./gen/sdk.gen";
@@ -42,6 +44,8 @@ export const keys = {
   sessions: ["auth", "sessions"] as const,
   envs: ["envs"] as const,
   users: ["users"] as const,
+  userAccess: (id: number) => ["users", id, "access"] as const,
+  envAccess: (env: string) => ["envs", env, "access"] as const,
   audit: ["audit"] as const,
   env: (env: string) => ["env", env] as const,
   envStatus: (env: string) => ["env", env, "status"] as const,
@@ -98,6 +102,12 @@ export const usersQuery = queryOptions({
   queryKey: keys.users,
   queryFn: async () => (await listUsers()).data,
 });
+
+export const userAccessQuery = (id: number) =>
+  queryOptions({ queryKey: keys.userAccess(id), queryFn: async () => (await listUserAccess({ path: { id } })).data });
+
+export const envAccessQuery = (env: string) =>
+  queryOptions({ queryKey: keys.envAccess(env), queryFn: async () => (await listEnvAccess({ path: { env } })).data });
 
 /** Audit entries a page asks for at once. */
 export const AUDIT_PAGE = 100;
