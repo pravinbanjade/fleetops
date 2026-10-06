@@ -98,6 +98,7 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
     };
 
     let mut status = s.hubs.status().subscribe();
+    let mut access = s.hubs.access().subscribe();
     let mut check = tokio::time::interval(s.config.ws_session_check);
     check.tick().await;
     let ping_every = s.config.ws_ping_interval;
@@ -134,6 +135,25 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
                 }
                 Err(RecvError::Lagged(_)) => {}
                 Err(RecvError::Closed) => {}
+            },
+            changed = access.recv() => {
+                let mine = match changed {
+                    Ok(uid) => uid == cu.user.id,
+                    // Missed some: assume one was ours.
+                    Err(RecvError::Lagged(_)) => true,
+                    Err(RecvError::Closed) => false,
+                };
+                if mine {
+                    for (sub, entry) in shared.subs.lock().unwrap().iter() {
+                        entry.task.abort();
+                        entry.queue.finish(protocol::end(
+                            *sub,
+                            "access",
+                            serde_json::json!({ "message": super::ACCESS_CHANGED }),
+                        ));
+                    }
+                    shared.say(protocol::access_changed());
+                }
             },
             _ = ping.tick() => {
                 // Half-open sockets (a laptop that slept) never answer; drop

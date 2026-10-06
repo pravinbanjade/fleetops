@@ -171,6 +171,8 @@ fn websocket_messages_match_their_schemas() {
         protocol::error(None, "invalid", "bad frame"),
         protocol::env_status("local", &up),
         protocol::env_status("local", &json!({"state": "down", "reason": "refused"})),
+        protocol::end(1, "access", json!({ "message": "your access changed" })),
+        protocol::access_changed(),
     ];
     for out in server {
         let v = text(out);

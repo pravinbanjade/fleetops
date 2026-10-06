@@ -5924,7 +5924,7 @@
           },
           {
             "type": "object",
-            "description": "The subscription is over. `reason` is `closed`, `ended`, `eof`,\n`exited` (with `exit_code`), `succeeded` or `failed` (with `task`),\nor `error` (kube-watch, with `message`).",
+            "description": "The subscription is over. `reason` is `closed`, `ended`, `eof`,\n`exited` (with `exit_code`), `succeeded` or `failed` (with `task`),\n`error` (kube-watch, with `message`), or `access` (the user's access\nchanged, with `message`).",
             "required": [
               "sub",
               "reason",
@@ -6020,6 +6020,21 @@
                 "type": "string",
                 "enum": [
                   "env_status"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The user's access changed: what they can see may differ.",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "access_changed"
                 ]
               }
             }
