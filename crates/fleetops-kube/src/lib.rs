@@ -10,5 +10,6 @@ pub mod kubeconfig;
 pub mod mask;
 pub mod summaries;
 pub mod tunnel;
+pub mod watch;
 
 pub use client::KubeClient;

@@ -387,10 +387,8 @@ impl KubeOps for KubeClient {
         })
     }
 
-    fn watch(&self, _kind: KubeKind, _ns: Option<&str>) -> BoxStream<WatchEvent> {
-        Box::pin(futures_util::stream::once(async {
-            Err(Error::Invalid("watching is not available yet".into()))
-        }))
+    fn watch(&self, kind: KubeKind, ns: Option<&str>) -> BoxStream<WatchEvent> {
+        crate::watch::watch(self.api(kind, ns), kind)
     }
 
     async fn get_editable(
