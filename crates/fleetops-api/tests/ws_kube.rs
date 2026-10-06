@@ -258,3 +258,72 @@ async fn deleting_an_environment_ends_its_watches() {
     assert_eq!(m["message"], "the environment was removed or changed");
     opened(&t, 0).await;
 }
+
+async fn limited_ws() -> (TestApp, Ws) {
+    let t = app_with(ws_config()).await;
+    let admin = t.setup_admin().await;
+    t.add_kube_env(&admin, "k").await;
+    t.fake.kube.object(KubeKind::Pods, "team-b", "db-1");
+    t.create_user(&admin, "bob", "bob-password-1", "user").await;
+    t.grant("bob", "k", "operator", Some(&["team-a"])).await;
+    let bob = session_from(&t.login("bob", "bob-password-1").await);
+    let ws = Ws::open(t.serve().await, &bob).await;
+    (t, ws)
+}
+
+#[tokio::test]
+async fn a_limited_watch_sees_only_its_namespaces() {
+    let (t, mut ws) = limited_ws().await;
+    watch_sub(&mut ws, 1, "pods/-").await;
+    opened(&t, 1).await;
+    let a = common::fake_kube::row("web-1", Some("team-a"));
+    let b = common::fake_kube::row("db-1", Some("team-b"));
+    t.fake.kube.emit_watch(
+        KubeKind::Pods,
+        Ok(WatchEvent::Snapshot {
+            rows: vec![a.clone(), b.clone()],
+        }),
+    );
+    let m = ws.until(|m| m["type"] == "data").await;
+    assert_eq!(m["data"]["rows"].as_array().unwrap().len(), 1);
+    t.fake
+        .kube
+        .emit_watch(KubeKind::Pods, Ok(WatchEvent::Added { row: b }));
+    t.fake.kube.emit_watch(
+        KubeKind::Pods,
+        Ok(WatchEvent::Added {
+            row: common::fake_kube::row("web-2", Some("team-a")),
+        }),
+    );
+    let m = ws.until(|m| m["type"] == "data").await;
+    assert_eq!(
+        m["data"]["row"]["name"], "web-2",
+        "the team-b add never arrives"
+    );
+}
+
+#[tokio::test]
+async fn limited_subscribers_share_the_upstream_watch() {
+    let (t, mut ws) = limited_ws().await;
+    let admin = session_from(&t.login(ADMIN, ADMIN_PW).await);
+    let mut ws2 = Ws::open(t.serve().await, &admin).await;
+    watch_sub(&mut ws, 1, "pods/-").await;
+    watch_sub(&mut ws2, 1, "pods/-").await;
+    opened(&t, 1).await;
+}
+
+#[tokio::test]
+async fn topics_outside_the_set_are_refused() {
+    let (_t, mut ws) = limited_ws().await;
+    for (sub, topic, id) in [
+        (1, "kube-watch", "pods/team-b"),
+        (2, "logs", "team-b/db-1"),
+        (3, "exec", "team-b/db-1"),
+    ] {
+        ws.send(json!({"op": "sub", "sub": sub, "topic": topic, "env": "k", "id": id}))
+            .await;
+        let e = ws.until(|m| m["type"] == "error" && m["sub"] == sub).await;
+        assert_eq!(e["code"], "forbidden", "{topic}");
+        assert_eq!(e["message"], "namespace 'team-b' is not in your access");
+    }
+}
