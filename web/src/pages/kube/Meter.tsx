@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -12,11 +13,8 @@ export function Meter({ value, share, title, plain, className }: { value: string
       {share !== undefined && (
         <span aria-hidden className="h-0.5 overflow-hidden rounded-full bg-muted">
           <span
-            className={cn(
-              "block h-full rounded-full transition-[width] duration-700 ease-out",
-              plain ? "bg-foreground/60" : share > 0.9 ? "bg-state-fail" : share > 0.75 ? "bg-state-wait" : "bg-foreground/60",
-            )}
-            style={{ width: `${Math.min(100, share * 100).toFixed(1)}%` }}
+            className={cn("bar-fill", plain ? "bg-foreground/60" : share > 0.9 ? "bg-state-fail" : share > 0.75 ? "bg-state-wait" : "bg-foreground/60")}
+            style={{ "--share": share } as CSSProperties}
           />
         </span>
       )}

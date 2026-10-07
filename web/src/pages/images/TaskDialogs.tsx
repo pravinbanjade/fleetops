@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { buildImage, pullImage } from "@/api/gen/sdk.gen";
 import { Button } from "@/components/ui/button";
 import {
@@ -215,7 +215,8 @@ function Bar({ label, percent }: { label: string; percent: number }) {
       aria-valuenow={percent}
       className="h-1.5 overflow-hidden rounded-full bg-muted"
     >
-      <div className="h-full bg-primary transition-[width]" style={{ width: `${percent}%` }} />
+      {/* Progress ticks often: a shorter glide keeps it close to the bytes. */}
+      <div className="bar-fill bg-primary [--bar-ms:300ms]" style={{ "--share": percent / 100 } as CSSProperties} />
     </div>
   );
 }

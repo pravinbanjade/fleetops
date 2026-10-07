@@ -197,6 +197,24 @@
 }
 
 /* Headlines: the face widened, like a printed callsign. */
+/*
+ * The fill of a share track (usage, disk, progress). It scales instead of
+ * changing width, so a refresh moves on the compositor without layout, and
+ * eases out on the curve the holder flash uses. With reduced motion the
+ * fill jumps to the new reading: the value is the state, the glide is not.
+ * Set the share (0-1) as `--share`.
+ */
+@utility bar-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transform: scaleX(clamp(0, var(--share, 0), 1));
+  @media (prefers-reduced-motion: no-preference) {
+    transition: transform var(--bar-ms, 700ms) cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
 @utility font-callsign {
   font-stretch: 112%;
   letter-spacing: -0.012em;

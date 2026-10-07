@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import type { CSSProperties } from "react";
 import { Sparkline } from "@/components/Sparkline";
 
 /**
@@ -44,10 +45,7 @@ export function Readout({
       </p>
       {share !== undefined && (
         <div aria-hidden className="h-0.5 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-foreground/60 transition-[width] duration-700 ease-out"
-            style={{ width: `${Math.min(100, share * 100).toFixed(1)}%` }}
-          />
+          <div className="bar-fill bg-foreground/60" style={{ "--share": share } as CSSProperties} />
         </div>
       )}
     </div>

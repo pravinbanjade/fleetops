@@ -145,6 +145,8 @@ describe("container page", () => {
     );
     expect(await screen.findByRole("alert")).toHaveTextContent("This container no longer exists.");
     expect(screen.getByRole("link", { name: "Back to containers" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "This container no longer exists." })).toBeInTheDocument();
+    expect(document.title).toBe("Container not found · FleetOps");
   });
 
   it("masks secrets in the Inspect JSON until shown", async () => {
