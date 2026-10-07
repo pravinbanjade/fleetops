@@ -2234,6 +2234,357 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/helm/releases": {
+      "get": {
+        "tags": [
+          "helm"
+        ],
+        "summary": "Helm releases at their latest revision",
+        "operationId": "listHelmReleases",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "description": "Omit for all namespaces.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Releases",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HelmRelease"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}": {
+      "get": {
+        "tags": [
+          "helm"
+        ],
+        "summary": "One revision of a release: chart, status, masked values and manifest, notes",
+        "operationId": "getHelmRelease",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "The release's namespace.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Release name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision",
+            "in": "query",
+            "description": "Omit for the latest.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/history": {
+      "get": {
+        "tags": [
+          "helm"
+        ],
+        "summary": "Every stored revision, oldest first",
+        "operationId": "helmHistory",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "The release's namespace.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Release name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HelmRevision"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/rollback": {
+      "post": {
+        "tags": [
+          "helm"
+        ],
+        "summary": "Plan or commit a rollback to an earlier revision",
+        "operationId": "rollbackHelmRelease",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "The release's namespace.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Release name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The plan, or what was done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelmPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/uninstall": {
+      "post": {
+        "tags": [
+          "helm"
+        ],
+        "summary": "Plan or commit uninstalling a release",
+        "operationId": "uninstallHelmRelease",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "The release's namespace.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Release name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UninstallBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The plan, or what was done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelmPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/k8s/templates": {
       "get": {
         "tags": [
@@ -5462,6 +5813,198 @@
           }
         }
       },
+      "HelmChange": {
+        "type": "string",
+        "enum": [
+          "patch",
+          "create",
+          "delete",
+          "keep"
+        ]
+      },
+      "HelmObjectChange": {
+        "type": "object",
+        "description": "What a rollback or uninstall does (or did) to one object.",
+        "required": [
+          "api_version",
+          "kind",
+          "name",
+          "change"
+        ],
+        "properties": {
+          "after": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The object after (or as it would be); `None` for a delete or keep."
+          },
+          "api_version": {
+            "type": "string"
+          },
+          "before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The live object before, cleaned and masked; `None` when absent."
+          },
+          "change": {
+            "$ref": "#/components/schemas/HelmChange"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ApplyError"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "HelmPlan": {
+        "type": "object",
+        "description": "A rollback or uninstall: the dry run's plan, or a commit's results.",
+        "required": [
+          "current",
+          "changes",
+          "note"
+        ],
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HelmObjectChange"
+            }
+          },
+          "current": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The latest revision this was computed against; a commit sends it\nback as `expected_current`.",
+            "minimum": 0
+          },
+          "note": {
+            "type": "string"
+          },
+          "revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Commit of a rollback only: the revision written.",
+            "minimum": 0
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Commit only: the release's status afterwards (`deployed`, `failed`\nor `uninstalled`)."
+          }
+        }
+      },
+      "HelmRelease": {
+        "type": "object",
+        "description": "One release, at its latest revision.",
+        "required": [
+          "name",
+          "namespace",
+          "revision",
+          "status",
+          "chart",
+          "chart_version",
+          "app_version",
+          "updated"
+        ],
+        "properties": {
+          "app_version": {
+            "type": "string"
+          },
+          "chart": {
+            "type": "string"
+          },
+          "chart_version": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the record cannot be read, when the status is `unreadable`."
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "description": "Helm's status (`deployed`, `failed`, `pending-upgrade`, …), or `unreadable`."
+          },
+          "updated": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Last deployed, unix seconds; 0 when unknown."
+          }
+        }
+      },
+      "HelmRevision": {
+        "type": "object",
+        "description": "One revision in a release's history.",
+        "required": [
+          "revision",
+          "status",
+          "chart_version",
+          "app_version",
+          "description",
+          "updated"
+        ],
+        "properties": {
+          "app_version": {
+            "type": "string"
+          },
+          "chart_version": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ImageRemoved": {
         "type": "object",
         "required": [
@@ -6104,6 +6647,36 @@
           }
         }
       },
+      "ReleaseDetail": {
+        "type": "object",
+        "description": "One revision in full, masked.",
+        "required": [
+          "release",
+          "description",
+          "notes",
+          "values",
+          "manifest"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "string",
+            "description": "The rendered manifest, Secret values masked."
+          },
+          "notes": {
+            "type": "string"
+          },
+          "release": {
+            "$ref": "#/components/schemas/HelmRelease"
+          },
+          "values": {
+            "type": "string",
+            "description": "User-supplied values as YAML, credential-looking keys masked; empty when none."
+          }
+        }
+      },
       "ReplaceBody": {
         "type": "object",
         "required": [
@@ -6129,6 +6702,30 @@
           "admin",
           "user"
         ]
+      },
+      "RollbackBody": {
+        "type": "object",
+        "required": [
+          "revision",
+          "expected_current",
+          "dry_run"
+        ],
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "expected_current": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The latest revision the plan was reviewed against.",
+            "minimum": 0
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       },
       "RowHealth": {
         "type": "string",
@@ -6557,6 +7154,24 @@
           "kube-watch"
         ]
       },
+      "UninstallBody": {
+        "type": "object",
+        "required": [
+          "expected_current",
+          "dry_run"
+        ],
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "expected_current": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The latest revision the plan was reviewed against.",
+            "minimum": 0
+          }
+        }
+      },
       "UpdateEnv": {
         "type": "object",
         "properties": {
@@ -6879,6 +7494,10 @@
     {
       "name": "kubernetes",
       "description": "Objects in Kubernetes environments"
+    },
+    {
+      "name": "helm",
+      "description": "Helm releases in Kubernetes environments"
     },
     {
       "name": "tasks",
