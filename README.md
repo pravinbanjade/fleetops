@@ -149,6 +149,7 @@ What you can do: browse the 12 common kinds and the cluster's events in one name
 - **Live updates.** Lists and object pages follow the cluster through watch streams, shared between everyone viewing the same list and stopped 30 s after the last viewer leaves. When a watch cannot continue (for example the cluster forbids it), the page says *Live updates paused* with the reason and a Retry button, and never presents old data as live.
 - **Editing.** *Edit YAML* on an object page, *Create* on a list (from a starter template), and *Apply YAML* (top bar or command palette) for any YAML, several documents at once and any kind the cluster serves. Every write is a dry run first, shown as a diff; nothing is written until you apply. Create and apply use server-side apply as field manager `fleetops`; a field owned by another manager is a conflict you can force. An edit is refused if the object changed since you opened it, and offers to reapply your edit on top of the new version.
 - **Overview.** A cluster's home page lists what needs attention first (failing pods, workloads short of replicas, failed Helm releases, nodes not ready), then the newest warning events, each workload kind's health, the nodes and counts of everything else.
+- **Suspend and resume.** A Deployment or StatefulSet you don't need for now can be suspended: it scales to 0 and FleetOps remembers its replica count (annotation `fleetops.io/suspended-replicas`), so Resume brings back exactly that many. A CronJob suspends with its own `spec.suspend`. Suspend from the object's page, from a list (several at once), or straight from *Needs attention* on the overview. Suspended workloads sit in their own bay and never count as failing.
 - **Events.** *Events* in the sidebar lists the cluster's events, warnings first and newest first, each linked to the object it is about. Events are read-only.
 - **CPU and memory.** When the cluster runs [metrics-server](https://github.com/kubernetes-sigs/metrics-server), the overview shows the cluster's CPU and memory against what its nodes can allocate and the busiest pods, and the Nodes and Pods lists gain CPU and Memory columns. Figures refresh every 15 s. Without metrics-server the pages say so; nothing else changes. An agent installed before this release needs its command re-applied to read metrics.
 - **Secrets.** Values are never shown, including the copy kubectl keeps in the `last-applied-configuration` annotation. Leave a masked value unchanged and the real one is kept; change it and the new value is written.
@@ -242,6 +243,7 @@ Design documents live in `docs/superpowers/`:
 - `specs/2026-10-01-fleetops-kubernetes-design.md` is the sub-project 3 (Kubernetes) design.
 - `specs/2026-10-06-fleetops-kube-live-writable-design.md` is slice 3b (live and writable Kubernetes).
 - `specs/2026-10-07-fleetops-kube-events-metrics-design.md` is slice 3e (events and CPU and memory).
+- `specs/2026-10-07-fleetops-kube-suspend-design.md` is slice 3f (suspend and resume).
 - `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), one for sub-project 2, and one for sub-project 3.
 
 ## Architecture

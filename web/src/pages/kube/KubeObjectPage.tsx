@@ -59,7 +59,6 @@ export function KubeObjectPage() {
   const o = obj.data;
   const isPod = kind === "pods";
   const chosen = container ?? o?.containers[0];
-  const replicas = Number(o?.row.columns.ready?.split("/")[1] ?? 1);
   const tabs: [KubeTab, string, typeof Info][] = [
     ["summary", "Summary", Info],
     ["yaml", "YAML", FileText],
@@ -68,7 +67,7 @@ export function KubeObjectPage() {
     ...(isPod && canWrite ? ([["terminal", "Terminal", TerminalSquare]] as [KubeTab, string, typeof Info][]) : []),
   ];
   return (
-    <Page title={name} meta={o && <KubeHealth health={o.row.health} label={o.row.status} />} actions={o && <KubeActions env={env} kind={kind} ns={ns} name={name} replicas={replicas} />}>
+    <Page title={name} meta={o && <KubeHealth health={o.row.health} label={o.row.status} />} actions={o && <KubeActions env={env} kind={kind} ns={ns} name={name} row={o.row} />}>
       {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}
       {gone && (
         <p role="status" className="mb-3 rounded-md border border-state-fail/40 bg-state-fail/10 px-3 py-2 text-sm">

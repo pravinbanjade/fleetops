@@ -1,89 +1,48 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
-import { deleteKube, restartKube, scaleKube } from "@/api/gen/sdk.gen";
-import type { KubeKind } from "@/api/gen/types.gen";
+import type { KubeKind, KubeRow } from "@/api/gen/types.gen";
 import { useEnvAccess } from "@/api/access";
-import { keys } from "@/api/queries";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
-import { FormDialog } from "@/pages/admin/FormDialog";
-import { KIND_LABEL, READ_ONLY, RESTARTABLE, SCALABLE } from "./kinds";
+import { ActDialog, actIcon, actLabel, actsFor, type Act } from "./Act";
+import { READ_ONLY } from "./kinds";
 
 const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
 
-export function KubeActions({ env, kind, ns, name, replicas }: { env: string; kind: KubeKind; ns: string; name: string; replicas?: number }) {
-  const qc = useQueryClient();
+/** The object page's actions: the same set a list offers for a selection of one. */
+export function KubeActions({ env, kind, ns, name, row }: { env: string; kind: KubeKind; ns: string; name: string; row: KubeRow }) {
   const navigate = useNavigate();
   const { canWrite } = useEnvAccess(env);
-  const [open, setOpen] = useState<"edit" | "scale" | "restart" | "delete" | null>(null);
-  const [count, setCount] = useState(String(replicas ?? 1));
-  const path = { env, kind, ns, name };
-  const refresh = () => qc.invalidateQueries({ queryKey: keys.kube(env, kind).slice(0, 4) });
-  const restart = useMutation({ mutationFn: () => restartKube({ path, throwOnError: true }), onSuccess: refresh });
-  const remove = useMutation({
-    mutationFn: () => deleteKube({ path, throwOnError: true }),
-    onSuccess: async () => {
-      await refresh();
-      void navigate({ to: "/envs/$env/k8s/$kind", params: { env, kind } });
-    },
-  });
-  const label = KIND_LABEL[kind].replace(/s$/, "");
+  const [open, setOpen] = useState<Act | "edit" | null>(null);
   if (!canWrite || READ_ONLY.includes(kind)) return null;
+  const acts = actsFor(kind, [row]).map((a) => a.act);
+  const done = (act: Act, results: (string | undefined)[]) => {
+    setOpen(null);
+    if (act === "delete") void navigate({ to: "/envs/$env/k8s/$kind", params: { env, kind } });
+    // Run now: the new Job is what you came to watch.
+    const job = results[0];
+    if (act === "trigger" && job) void navigate({ to: "/envs/$env/k8s/$kind/$ns/$name", params: { env, kind: "jobs", ns, name: job } });
+  };
   return (
-    <div className="flex gap-2">
-      <Button variant="outline" size="sm" onClick={() => setOpen("edit")}>Edit YAML</Button>
+    <div className="flex flex-wrap gap-2">
+      <Button variant="outline" size="sm" onClick={() => setOpen("edit")}>
+        Edit YAML
+      </Button>
+      {acts.map((act) => {
+        const Icon = actIcon(act);
+        return (
+          <Button key={act} variant="outline" size="sm" onClick={() => setOpen(act)}>
+            <Icon aria-hidden />
+            {actLabel(act)}
+          </Button>
+        );
+      })}
       {open === "edit" && (
         <Suspense fallback={null}>
           <YamlDialog env={env} target={{ mode: "edit", kind, ns, name }} onClose={() => setOpen(null)} />
         </Suspense>
       )}
-      {SCALABLE.includes(kind) && <Button variant="outline" size="sm" onClick={() => {
-            setCount(String(replicas ?? 1));
-            setOpen("scale");
-          }}>Scale</Button>}
-      {RESTARTABLE.includes(kind) && <Button variant="outline" size="sm" onClick={() => setOpen("restart")}>Restart</Button>}
-      <Button variant="outline" size="sm" onClick={() => setOpen("delete")}>Delete</Button>
-      {open === "scale" && (
-        <FormDialog
-          title={`Scale ${name}`}
-          submitLabel="Scale"
-          onClose={() => setOpen(null)}
-          onSubmit={async () => {
-            const n = Number(count);
-            if (count.trim() === "" || !Number.isInteger(n) || n < 0) {
-              throw new Error("Replicas must be a whole number, 0 or more");
-            }
-            await scaleKube({ path, body: { replicas: n }, throwOnError: true });
-            await refresh();
-          }}
-        >
-          <label className="grid gap-1 text-sm">
-            Replicas
-            <input type="number" required min={0} step={1} className="h-9 rounded-md border px-2" value={count} onChange={(e) => setCount(e.target.value)} />
-          </label>
-        </FormDialog>
-      )}
-      {open === "restart" && (
-        <ConfirmDialog
-          open
-          onOpenChange={(o) => !o && setOpen(null)}
-          title={`Restart ${name}?`}
-          description="Its pods are replaced one by one, as kubectl rollout restart does."
-          confirmLabel="Restart"
-          onConfirm={() => restart.mutateAsync()}
-        />
-      )}
-      {open === "delete" && (
-        <ConfirmDialog
-          open
-          onOpenChange={(o) => !o && setOpen(null)}
-          title={`Delete ${label} ${name}?`}
-          description={kind === "namespaces" ? "Everything in the namespace is deleted with it." : "This cannot be undone."}
-          confirmLabel="Delete"
-          destructive
-          onConfirm={() => remove.mutateAsync()}
-        />
+      {open && open !== "edit" && (
+        <ActDialog env={env} act={open} targets={[{ kind, ns, name, row }]} onClose={() => setOpen(null)} onDone={(r) => done(open, r)} />
       )}
     </div>
   );

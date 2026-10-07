@@ -481,3 +481,149 @@ async fn an_edit_without_a_resource_version_is_refused() {
     assert_eq!(r.status, 400, "{:?}", r.json);
     assert!(t.fake.kube.applied.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn suspend_and_resume_act_on_suspendable_kinds_and_are_audited() {
+    let (t, admin) = kube_app().await;
+    for (verb, kind, path) in [
+        ("suspend", "deployments", "apps/web"),
+        ("resume", "deployments", "apps/web"),
+    ] {
+        let r = t
+            .send(req(
+                "POST",
+                &format!("/api/v1/envs/k/k8s/{kind}/{path}/{verb}"),
+                None,
+                Some(&admin),
+            ))
+            .await;
+        assert_eq!(r.status, 204, "{verb}: {:?}", r.json);
+    }
+    let calls = t.fake.kube.calls();
+    assert!(
+        calls.contains(&"suspend deployments apps/web".to_string()),
+        "{calls:?}"
+    );
+    assert!(calls.contains(&"resume deployments apps/web".to_string()));
+    let pods = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/k/k8s/pods/apps/web-1/suspend",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(pods.status, 400);
+    let audit = t
+        .send(req("GET", "/api/v1/audit", None, Some(&admin)))
+        .await
+        .json
+        .to_string();
+    assert!(
+        audit.contains("k8s.suspend") && audit.contains("k8s.resume"),
+        "{audit}"
+    );
+}
+
+#[tokio::test]
+async fn a_viewer_cannot_suspend() {
+    let (t, admin) = kube_app().await;
+    t.create_user(&admin, "vic", "vic-password-1", "user").await;
+    t.grant("vic", "k", "viewer", None).await;
+    let vic = session_from(&t.login("vic", "vic-password-1").await);
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/k/k8s/deployments/apps/web/suspend",
+            None,
+            Some(&vic),
+        ))
+        .await;
+    assert_eq!(r.status, 403);
+    assert!(t
+        .fake
+        .kube
+        .calls()
+        .iter()
+        .all(|c| !c.starts_with("suspend")));
+}
+
+#[tokio::test]
+async fn nodes_cordon_and_cronjobs_run_now_and_both_are_audited() {
+    let (t, admin) = kube_app().await;
+    t.fake.kube.object(KubeKind::CronJobs, "apps", "nightly");
+    for verb in ["cordon", "uncordon"] {
+        let r = t
+            .send(req(
+                "POST",
+                &format!("/api/v1/envs/k/k8s/nodes/-/n1/{verb}"),
+                None,
+                Some(&admin),
+            ))
+            .await;
+        assert_eq!(r.status, 204, "{verb}: {:?}", r.json);
+    }
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/k/k8s/cronjobs/apps/nightly/trigger",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json["job"], "nightly-manual-1");
+    let calls = t.fake.kube.calls();
+    for c in ["cordon n1", "uncordon n1", "trigger apps/nightly"] {
+        assert!(calls.contains(&c.to_string()), "{c}: {calls:?}");
+    }
+    // Each action belongs to its kind.
+    for path in [
+        "deployments/apps/web/cordon",
+        "deployments/apps/web/trigger",
+    ] {
+        let r = t
+            .send(req(
+                "POST",
+                &format!("/api/v1/envs/k/k8s/{path}"),
+                None,
+                Some(&admin),
+            ))
+            .await;
+        assert_eq!(r.status, 400, "{path}");
+    }
+    let audit = t
+        .send(req("GET", "/api/v1/audit", None, Some(&admin)))
+        .await
+        .json
+        .to_string();
+    for a in ["k8s.cordon", "k8s.uncordon", "k8s.trigger"] {
+        assert!(audit.contains(a), "{a}: {audit}");
+    }
+}
+
+#[tokio::test]
+async fn a_viewer_cannot_cordon_or_run_now() {
+    let (t, admin) = kube_app().await;
+    t.fake.kube.object(KubeKind::CronJobs, "apps", "nightly");
+    t.create_user(&admin, "vic", "vic-password-1", "user").await;
+    t.grant("vic", "k", "viewer", None).await;
+    let vic = session_from(&t.login("vic", "vic-password-1").await);
+    for path in ["nodes/-/n1/cordon", "cronjobs/apps/nightly/trigger"] {
+        let r = t
+            .send(req(
+                "POST",
+                &format!("/api/v1/envs/k/k8s/{path}"),
+                None,
+                Some(&vic),
+            ))
+            .await;
+        assert_eq!(r.status, 403, "{path}");
+    }
+    assert!(!t
+        .fake
+        .kube
+        .calls()
+        .iter()
+        .any(|c| c.starts_with("cordon") || c.starts_with("trigger")));
+}

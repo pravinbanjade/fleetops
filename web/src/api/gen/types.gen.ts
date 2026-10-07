@@ -892,7 +892,7 @@ export type RollbackBody = {
 /**
  * The status dot's colour.
  */
-export type RowHealth = 'ok' | 'warn' | 'bad' | 'unknown';
+export type RowHealth = 'ok' | 'warn' | 'bad' | 'unknown' | 'off';
 
 export type ScaleBody = {
     replicas: number;
@@ -1005,6 +1005,13 @@ export type TaskStarted = {
 export type TaskStatus = 'running' | 'succeeded' | 'failed';
 
 export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch';
+
+export type TriggerResult = {
+    /**
+     * The Job that was started.
+     */
+    job: string;
+};
 
 export type UninstallBody = {
     dry_run: boolean;
@@ -2850,6 +2857,39 @@ export type ReplaceKubeResponses = {
 
 export type ReplaceKubeResponse = ReplaceKubeResponses[keyof ReplaceKubeResponses];
 
+export type CordonKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/cordon';
+};
+
+export type CordonKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CordonKubeError = CordonKubeErrors[keyof CordonKubeErrors];
+
+export type CordonKubeResponses = {
+    /**
+     * Cordoned
+     */
+    204: void;
+};
+
+export type CordonKubeResponse = CordonKubeResponses[keyof CordonKubeResponses];
+
 export type EditableKubeData = {
     body?: never;
     path: {
@@ -2949,6 +2989,39 @@ export type RestartKubeResponses = {
 
 export type RestartKubeResponse = RestartKubeResponses[keyof RestartKubeResponses];
 
+export type ResumeKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/resume';
+};
+
+export type ResumeKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ResumeKubeError = ResumeKubeErrors[keyof ResumeKubeErrors];
+
+export type ResumeKubeResponses = {
+    /**
+     * Resumed
+     */
+    204: void;
+};
+
+export type ResumeKubeResponse = ResumeKubeResponses[keyof ResumeKubeResponses];
+
 export type ScaleKubeData = {
     body: ScaleBody;
     path: {
@@ -2981,6 +3054,105 @@ export type ScaleKubeResponses = {
 };
 
 export type ScaleKubeResponse = ScaleKubeResponses[keyof ScaleKubeResponses];
+
+export type SuspendKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/suspend';
+};
+
+export type SuspendKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type SuspendKubeError = SuspendKubeErrors[keyof SuspendKubeErrors];
+
+export type SuspendKubeResponses = {
+    /**
+     * Suspended
+     */
+    204: void;
+};
+
+export type SuspendKubeResponse = SuspendKubeResponses[keyof SuspendKubeResponses];
+
+export type TriggerKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/trigger';
+};
+
+export type TriggerKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type TriggerKubeError = TriggerKubeErrors[keyof TriggerKubeErrors];
+
+export type TriggerKubeResponses = {
+    /**
+     * The Job started
+     */
+    200: TriggerResult;
+};
+
+export type TriggerKubeResponse = TriggerKubeResponses[keyof TriggerKubeResponses];
+
+export type UncordonKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/uncordon';
+};
+
+export type UncordonKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type UncordonKubeError = UncordonKubeErrors[keyof UncordonKubeErrors];
+
+export type UncordonKubeResponses = {
+    /**
+     * Uncordoned
+     */
+    204: void;
+};
+
+export type UncordonKubeResponse = UncordonKubeResponses[keyof UncordonKubeResponses];
 
 export type ListNetworksData = {
     body?: never;

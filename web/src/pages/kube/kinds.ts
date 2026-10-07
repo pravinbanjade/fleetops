@@ -11,6 +11,8 @@ export const SCALABLE: readonly KubeKind[] = ["deployments", "statefulsets"];
 export const HEALTH_KINDS: readonly KubeKind[] = [...WORKLOADS, "pods", "nodes"];
 /** Kinds FleetOps lists and watches but never creates, edits or deletes. */
 export const READ_ONLY: readonly KubeKind[] = ["events"];
+/** Suspended and resumed from FleetOps (Deployments and StatefulSets by scaling, CronJobs by `spec.suspend`). */
+export const SUSPENDABLE: readonly KubeKind[] = ["deployments", "statefulsets", "cronjobs"];
 export const RESTARTABLE: readonly KubeKind[] = ["deployments", "statefulsets", "daemonsets"];
 
 export const KIND_LABEL: Record<KubeKind, string> = {
@@ -43,10 +45,12 @@ export const STATUS_HEADER: Partial<Record<KubeKind, string>> = { services: "Typ
 export const asKind = (s: string): KubeKind | undefined => KUBE_KINDS.find((k) => k === s);
 
 /** Where a row sits in the rack: the ones that need someone first. */
-export const HEALTH_RANK: Record<RowHealth, number> = { bad: 0, warn: 1, ok: 2, unknown: 3 };
+export const HEALTH_RANK: Record<RowHealth, number> = { bad: 0, warn: 1, ok: 2, unknown: 3, off: 4 };
 export const HEALTH_BAYS = [
   { id: "attention", label: "Needs attention" },
   { id: "changing", label: "Changing" },
   { id: "healthy", label: "Healthy" },
   { id: "other", label: "Other" },
+  // Turned off on purpose, last: parked, not a problem to chase.
+  { id: "suspended", label: "Suspended" },
 ];

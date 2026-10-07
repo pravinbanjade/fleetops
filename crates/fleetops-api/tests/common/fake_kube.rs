@@ -242,6 +242,25 @@ impl KubeOps for FakeKube {
         self.gate(kind)?;
         self.find(kind, ns, name)
     }
+    async fn suspend(&self, kind: KubeKind, ns: &str, name: &str, on: bool) -> Result<()> {
+        self.find(kind, ns, name)?;
+        self.call(format!(
+            "{} {} {ns}/{name}",
+            if on { "suspend" } else { "resume" },
+            kind.as_str()
+        ));
+        Ok(())
+    }
+    async fn cordon(&self, node: &str, on: bool) -> Result<()> {
+        self.find(KubeKind::Nodes, "-", node)?;
+        self.call(format!("{} {node}", if on { "cordon" } else { "uncordon" }));
+        Ok(())
+    }
+    async fn trigger(&self, ns: &str, cronjob: &str) -> Result<String> {
+        self.find(KubeKind::CronJobs, ns, cronjob)?;
+        self.call(format!("trigger {ns}/{cronjob}"));
+        Ok(format!("{cronjob}-manual-1"))
+    }
     async fn usage(&self, kind: KubeKind, ns: Option<&str>) -> Result<KubeUsage> {
         self.gate(kind)?;
         self.call(format!("usage {} {}", kind.as_str(), ns.unwrap_or("*")));

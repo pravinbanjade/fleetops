@@ -3,7 +3,9 @@
 //! Unknown, so one odd object never fails a whole list.
 
 use crate::kinds::typed_json;
-use fleetops_core::kube::{KubeCondition, KubeKind, KubeRef, KubeRow, RowHealth};
+use fleetops_core::kube::{
+    KubeCondition, KubeKind, KubeRef, KubeRow, RowHealth, SUSPENDED_ANNOTATION,
+};
 use k8s_openapi::api::{
     apps::v1::{DaemonSet, Deployment, StatefulSet},
     batch::v1::{CronJob, Job},
@@ -109,6 +111,7 @@ fn node(n: Node) -> Summary {
                 .map(str::to_string)
         })
         .collect();
+    let cordoned = n.spec.and_then(|s| s.unschedulable).unwrap_or(false);
     let status = n.status.unwrap_or_default();
     let ready = status
         .conditions
@@ -126,24 +129,53 @@ fn node(n: Node) -> Summary {
         .node_info
         .map(|i| i.kubelet_version)
         .unwrap_or_default();
-    let (s, h) = if ready {
-        ("Ready", RowHealth::Ok)
-    } else {
-        ("NotReady", RowHealth::Bad)
+    let (s, h) = match (ready, cordoned) {
+        // kubectl's words; nothing new lands there until it is uncordoned.
+        (true, true) => ("Ready,SchedulingDisabled", RowHealth::Warn),
+        (true, false) => ("Ready", RowHealth::Ok),
+        (false, true) => ("NotReady,SchedulingDisabled", RowHealth::Bad),
+        (false, false) => ("NotReady", RowHealth::Bad),
     };
-    (
-        s.into(),
-        h,
-        cols([
-            ("roles", roles.join(",")),
-            ("version", version),
-            ("internal_ip", ip),
-        ]),
-    )
+    let mut c = cols([
+        ("roles", roles.join(",")),
+        ("version", version),
+        ("internal_ip", ip),
+    ]);
+    if cordoned {
+        c.insert("unschedulable".into(), "true".into());
+    }
+    (s.into(), h, c)
+}
+
+/// The replicas a FleetOps suspend put away, when the object is still at
+/// zero. Scaled up by hand since, it is simply running again.
+fn suspended(
+    meta: &k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta,
+    want: i32,
+) -> Option<String> {
+    let kept = meta.annotations.as_ref()?.get(SUSPENDED_ANNOTATION)?;
+    (want == 0).then(|| kept.clone())
+}
+
+fn suspended_summary(ready: String, kept: String, mut extra: Cols) -> Summary {
+    extra.insert("ready".into(), ready);
+    extra.insert("suspended_replicas".into(), kept);
+    ("Suspended".into(), RowHealth::Off, extra)
 }
 
 fn deployment(d: Deployment) -> Summary {
-    let want = d.spec.and_then(|s| s.replicas).unwrap_or(1);
+    let want = d.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
+    if let Some(kept) = suspended(&d.metadata, want) {
+        let st = d.status.unwrap_or_default();
+        return suspended_summary(
+            format!("{}/0", st.ready_replicas.unwrap_or(0)),
+            kept,
+            cols([
+                ("up_to_date", st.updated_replicas.unwrap_or(0).to_string()),
+                ("available", st.available_replicas.unwrap_or(0).to_string()),
+            ]),
+        );
+    }
     let st = d.status.unwrap_or_default();
     let available = st.available_replicas.unwrap_or(0);
     let (ready, h) = replicas(st.ready_replicas.unwrap_or(0), want);
@@ -164,7 +196,11 @@ fn deployment(d: Deployment) -> Summary {
 }
 
 fn statefulset(s: StatefulSet) -> Summary {
-    let want = s.spec.and_then(|s| s.replicas).unwrap_or(1);
+    let want = s.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
+    if let Some(kept) = suspended(&s.metadata, want) {
+        let ready = s.status.and_then(|s| s.ready_replicas).unwrap_or(0);
+        return suspended_summary(format!("{ready}/0"), kept, Cols::new());
+    }
     let (ready, h) = replicas(s.status.and_then(|s| s.ready_replicas).unwrap_or(0), want);
     let h = if want == 0 { RowHealth::Ok } else { h };
     (ready.clone(), h, cols([("ready", ready)]))
@@ -215,16 +251,16 @@ fn cronjob(c: CronJob) -> Summary {
     let spec = c.spec.unwrap_or_default();
     let st = c.status.unwrap_or_default();
     let active = st.active.map(|a| a.len()).unwrap_or(0);
-    let s = if spec.suspend.unwrap_or(false) {
-        "Suspended"
+    let (s, h) = if spec.suspend.unwrap_or(false) {
+        ("Suspended", RowHealth::Off)
     } else if active > 0 {
-        "Active"
+        ("Active", RowHealth::Ok)
     } else {
-        "Scheduled"
+        ("Scheduled", RowHealth::Ok)
     };
     (
         s.into(),
-        RowHealth::Ok,
+        h,
         cols([
             ("schedule", spec.schedule),
             ("active", active.to_string()),
@@ -419,7 +455,7 @@ impl Worst for RowHealth {
             RowHealth::Bad => 0,
             RowHealth::Warn => 1,
             RowHealth::Unknown => 2,
-            RowHealth::Ok => 3,
+            RowHealth::Ok | RowHealth::Off => 3,
         };
         if rank(self) <= rank(other) {
             self

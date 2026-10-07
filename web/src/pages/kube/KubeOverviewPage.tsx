@@ -11,6 +11,7 @@ import {
   History,
   KeyRound,
   MemoryStick,
+  Pause,
   Package,
   TriangleAlert,
   Waypoints,
@@ -29,15 +30,17 @@ import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "
 import { cn } from "@/lib/utils";
 import { useLive } from "@/live/LiveProvider";
 import { useKubeWatch, type WatchPause } from "@/live/kubeWatch";
-import { HEALTH_RANK, KIND_LABEL, asKind } from "./kinds";
+import { HEALTH_RANK, KIND_LABEL, SUSPENDABLE, asKind } from "./kinds";
+import { SuspendDialog, type SuspendTarget } from "./Suspend";
+import { useEnvAccess } from "@/api/access";
 import { Meter } from "./Meter";
 import { LivePaused } from "./LivePaused";
 import { NamespacePicker, useNamespace } from "./NamespacePicker";
 import { clusterTotals, share, useKubeUsage, useSeries } from "./usage";
 
 /** A row's health as a holder tone: the same readings the Docker board uses. */
-const TONE: Record<RowHealth, Tone> = { bad: "fail", warn: "wait", ok: "run", unknown: "idle" };
-const FILL: Record<RowHealth, string> = { bad: "bg-state-fail", warn: "bg-state-wait", ok: "bg-state-run", unknown: "bg-input" };
+const TONE: Record<RowHealth, Tone> = { bad: "fail", warn: "wait", ok: "run", unknown: "idle", off: "idle" };
+const FILL: Record<RowHealth, string> = { bad: "bg-state-fail", warn: "bg-state-wait", ok: "bg-state-run", unknown: "bg-input", off: "bg-muted-foreground/35" };
 
 /** Strips shown in the attention bay before the full lists take over. */
 const ATTENTION_SHOWN = 10;
@@ -175,6 +178,8 @@ type Trouble = {
   rank: number;
   detail?: string;
   link: ReactNode;
+  /** A failing workload that can be parked from here. */
+  suspend?: SuspendTarget;
 };
 
 function troubleLink(env: string, kind: KubeKind, r: KubeRow, label: string) {
@@ -207,6 +212,8 @@ function AttentionPanel({
   where: string;
 }) {
   const id = useId();
+  const { canWrite } = useEnvAccess(env);
+  const [parking, setParking] = useState<SuspendTarget | null>(null);
   const podRows = pods.q.data?.rows;
   if (pods.q.isPending && !pods.forbidden) return <Loading label="Loading pods" />;
   const trouble: Trouble[] = [];
@@ -223,6 +230,7 @@ function AttentionPanel({
         rank: HEALTH_RANK[r.health],
         detail: detail?.(r),
         link: troubleLink(env, kind, r, r.name),
+        suspend: SUSPENDABLE.includes(kind) && r.namespace ? { kind, ns: r.namespace, name: r.name, row: r } : undefined,
       });
     }
   };
@@ -295,7 +303,7 @@ function AttentionPanel({
           {shown.map((t) => (
             <li
               key={t.key}
-              className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 strip-focus @2xl:grid-cols-[auto_minmax(0,1fr)_7rem_minmax(0,10rem)_8rem]"
+              className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 strip-focus @2xl:grid-cols-[auto_minmax(0,1fr)_7rem_minmax(0,10rem)_8rem_4.5rem]"
             >
               <StateBadge state={t.status} tone={t.tone} track={t.key} />
               {t.link}
@@ -304,11 +312,27 @@ function AttentionPanel({
                 <span className="shrink-0 truncate">{t.what}</span>
                 <span className="truncate font-ident text-xs">{t.namespace ?? ""}</span>
                 <span className="ml-auto shrink-0 tabular-nums @2xl:ml-0 @2xl:text-right">{t.detail ?? ""}</span>
+                {/* Above the strip's stretched link, so it takes its own click. */}
+                <span className="relative z-10 shrink-0 @2xl:justify-self-end">
+                  {canWrite && t.suspend && (
+                    <button
+                      type="button"
+                      onClick={() => setParking(t.suspend!)}
+                      aria-label={`Suspend ${t.what.toLowerCase()} ${t.name}`}
+                      className="-my-1 inline-flex h-7 items-center gap-1 rounded-sm px-1.5 text-xs text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35"
+                    >
+                      <Pause aria-hidden className="size-3.5" strokeWidth={2} />
+                      {/* Icon only on a narrow bay: the meta line keeps its namespace. */}
+                      <span className="@max-2xl:sr-only">Suspend</span>
+                    </button>
+                  )}
+                </span>
               </span>
             </li>
           ))}
         </ul>
       )}
+      {parking && <SuspendDialog env={env} targets={[parking]} on onClose={() => setParking(null)} onDone={() => setParking(null)} />}
       {trouble.length > shown.length && (
         <p className="border-b px-4 py-2 text-xs text-muted-foreground">
           {trouble.length - shown.length} more not shown.{" "}
@@ -352,7 +376,7 @@ function WorkloadsPanel({ env, workloads }: { env: string; workloads: [KubeKind,
       <ul aria-label="Workloads by kind" className="font-strip @container text-sm">
         {workloads.map(([kind, l]) => {
           const rows = l.q.data?.rows ?? [];
-          const by = { ok: 0, warn: 0, bad: 0, unknown: 0 } satisfies Record<RowHealth, number>;
+          const by = { ok: 0, warn: 0, bad: 0, unknown: 0, off: 0 } satisfies Record<RowHealth, number>;
           for (const r of rows) by[r.health] += 1;
           return (
             <li
@@ -367,7 +391,7 @@ function WorkloadsPanel({ env, workloads }: { env: string; workloads: [KubeKind,
               </span>
               <span aria-hidden className="col-span-2 flex h-1.5 gap-px overflow-hidden rounded-full bg-muted @lg:col-span-1">
                 {rows.length > 0 &&
-                  (["bad", "warn", "ok", "unknown"] as const).map((h) =>
+                  (["bad", "warn", "ok", "unknown", "off"] as const).map((h) =>
                     by[h] ? <span key={h} className={FILL[h]} style={{ width: `${((by[h] / rows.length) * 100).toFixed(2)}%` }} /> : null,
                   )}
               </span>
@@ -380,7 +404,7 @@ function WorkloadsPanel({ env, workloads }: { env: string; workloads: [KubeKind,
                       ? l.q.isPending
                         ? "Loading…"
                         : "None"
-                      : [by.bad && `${by.bad} failing`, by.warn && `${by.warn} changing`, by.ok && `${by.ok} healthy`].filter(Boolean).join(" · ")}
+                      : [by.bad && `${by.bad} failing`, by.warn && `${by.warn} changing`, by.ok && `${by.ok} healthy`, by.off && `${by.off} suspended`].filter(Boolean).join(" · ")}
               </span>
             </li>
           );

@@ -12,6 +12,7 @@ import { StateBadge } from "@/components/StateBadge";
 import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "@/lib/format";
 import { KubeHealth } from "./KubeHealth";
 import { CLUSTER_SCOPED, HEALTH_BAYS, HEALTH_KINDS, HEALTH_RANK, KIND_COLUMNS, KIND_LABEL, READ_ONLY, STATUS_HEADER, asKind } from "./kinds";
+import { ActDialog, actIcon, actLabel, actsFor, type Act, type ActTarget } from "./Act";
 import { Meter } from "./Meter";
 import { share, useKubeUsage, usageKey } from "./usage";
 import { LivePaused } from "./LivePaused";
@@ -191,6 +192,8 @@ export function KubeListPage() {
   // refetch (after a write, on focus) would race it with older rows.
   const list = useQuery({ ...kubeListQuery(env, kind, scoped ? ns : undefined), enabled: !live.synced });
   const [creating, setCreating] = useState(false);
+  const [bulk, setBulk] = useState<{ act: Act; targets: ActTarget[]; clear: () => void } | null>(null);
+  const selectable = canWrite && !READ_ONLY.includes(kind);
   const metered = kind === "pods" || kind === "nodes";
   const usage = useKubeUsage(env, kind === "nodes" ? "nodes" : "pods", kind === "pods" ? ns : undefined, metered);
   const withUsage = metered && usage.available;
@@ -222,6 +225,18 @@ export function KubeListPage() {
           <YamlDialog env={env} target={{ mode: "create", kind, namespace: ns || "default" }} onClose={() => setCreating(false)} />
         </Suspense>
       )}
+      {bulk && (
+        <ActDialog
+          env={env}
+          act={bulk.act}
+          targets={bulk.targets}
+          onClose={() => setBulk(null)}
+          onDone={() => {
+            bulk.clear();
+            setBulk(null);
+          }}
+        />
+      )}
       {list.data?.truncated && (
         <p role="status" className="mb-3 rounded-md border border-state-wait/40 bg-state-wait/10 px-3 py-2 text-sm">
           Showing the first 5,000. Pick a namespace to narrow the list.
@@ -233,6 +248,25 @@ export function KubeListPage() {
         columns={cols}
         getRowId={(r) => `${r.namespace ?? "-"}/${r.name}`}
         initialFilter={q}
+        selectable={selectable}
+        actions={(selected, clear) =>
+          actsFor(kind, selected).map(({ act, rows: of }) => {
+            const Icon = actIcon(act);
+            return (
+              <Button
+                key={act}
+                variant="outline"
+                size="sm"
+                className={act === "delete" ? "text-state-fail-text hover:text-state-fail-text" : undefined}
+                onClick={() => setBulk({ act, targets: of.map((r) => ({ kind, ns: r.namespace ?? "-", name: r.name, row: r })), clear })}
+              >
+                <Icon aria-hidden />
+                {actLabel(act)}
+                {of.length > 1 ? ` ${of.length}` : ""}
+              </Button>
+            );
+          })
+        }
         {...(kind === "events"
           ? {
               initialSorting: [{ id: "status", desc: false }, { id: "last_seen", desc: true }],

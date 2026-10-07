@@ -117,6 +117,15 @@ impl KubeKind {
         self == KubeKind::Events
     }
 
+    /// Can be suspended and resumed: Deployments and StatefulSets by
+    /// scaling to zero and back, CronJobs by their own `spec.suspend`.
+    pub fn suspendable(self) -> bool {
+        matches!(
+            self,
+            KubeKind::Deployments | KubeKind::StatefulSets | KubeKind::CronJobs
+        )
+    }
+
     pub fn restartable(self) -> bool {
         matches!(
             self,
@@ -144,7 +153,13 @@ pub enum RowHealth {
     Warn,
     Bad,
     Unknown,
+    /// Deliberately not running: suspended, so not a failure to chase.
+    Off,
 }
+
+/// Where a suspended Deployment or StatefulSet keeps the replicas it had,
+/// so resuming brings back exactly that many (spec 3f §1).
+pub const SUSPENDED_ANNOTATION: &str = "fleetops.io/suspended-replicas";
 
 /// One object in a list: common fields plus columns that depend on its kind.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -445,6 +460,23 @@ pub trait KubeOps: Send + Sync {
     async fn delete(&self, kind: KubeKind, ns: &str, name: &str) -> Result<()>;
     async fn scale(&self, kind: KubeKind, ns: &str, name: &str, replicas: u32) -> Result<()>;
     async fn restart(&self, kind: KubeKind, ns: &str, name: &str) -> Result<()>;
+    /// Suspends (`on`) or resumes a suspendable object (spec 3f §1).
+    async fn suspend(&self, kind: KubeKind, _ns: &str, _name: &str, _on: bool) -> Result<()> {
+        Err(Error::Invalid(format!(
+            "{} cannot be suspended",
+            kind.as_str()
+        )))
+    }
+    /// Cordons (`on`: no new pods are scheduled there) or uncordons a node,
+    /// as `kubectl cordon` and `uncordon` do.
+    async fn cordon(&self, _node: &str, _on: bool) -> Result<()> {
+        Err(Error::Invalid("only nodes can be cordoned".into()))
+    }
+    /// Starts a Job from a CronJob's template now, as `kubectl create job
+    /// --from=cronjob/…` does. Returns the new Job's name.
+    async fn trigger(&self, _ns: &str, _cronjob: &str) -> Result<String> {
+        Err(Error::Invalid("only cronjobs can be run now".into()))
+    }
     /// `opts.container` `None` means the pod's first container.
     fn logs(&self, ns: &str, pod: &str, opts: &LogOptions) -> BoxStream<LogLine>;
     async fn exec_start(&self, ns: &str, pod: &str, opts: &ExecOptions) -> Result<KubeExec>;

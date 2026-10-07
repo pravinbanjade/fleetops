@@ -6,13 +6,14 @@ use async_trait::async_trait;
 use fleetops_core::kube::{
     ApplyAction, ApplyError, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeExec,
     KubeFilter, KubeKind, KubeList, KubeObject, KubeOps, KubeRef, KubeVersion, WatchEvent,
-    FIELD_MANAGER, LIST_CAP, PAGE_SIZE,
+    FIELD_MANAGER, LIST_CAP, PAGE_SIZE, SUSPENDED_ANNOTATION,
 };
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions, LogStream};
 use fleetops_core::{now_unix, Error, Result};
 use futures_util::{AsyncBufReadExt, SinkExt, StreamExt, TryStreamExt};
 use k8s_openapi::api::{
     apps::v1::ReplicaSet,
+    batch::v1::{CronJob, Job},
     core::v1::{Event, Node, Pod},
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Status;
@@ -414,6 +415,101 @@ impl KubeOps for KubeClient {
         Ok(())
     }
 
+    async fn suspend(&self, kind: KubeKind, ns: &str, name: &str, on: bool) -> Result<()> {
+        if !kind.suspendable() {
+            return Err(Error::Invalid(format!(
+                "{} cannot be suspended",
+                kind.as_str()
+            )));
+        }
+        let api = self.api(kind, Some(ns));
+        let pp = PatchParams {
+            field_manager: Some(FIELD_MANAGER.into()),
+            ..PatchParams::default()
+        };
+        if kind == KubeKind::CronJobs {
+            let patch = Patch::Merge(json!({ "spec": { "suspend": on } }));
+            timed(api.patch(name, &pp, &patch)).await?;
+            return Ok(());
+        }
+        let obj = timed(api.get(name)).await?;
+        let want = obj.data["spec"]["replicas"].as_i64().unwrap_or(1);
+        let kept = obj
+            .metadata
+            .annotations
+            .as_ref()
+            .and_then(|a| a.get(SUSPENDED_ANNOTATION))
+            .cloned();
+        // The version read is a precondition: a scale in between is a
+        // conflict, never a silent overwrite of someone else's count.
+        let rv = obj.metadata.resource_version.clone();
+        let patch = match (on, kept) {
+            (true, Some(_)) if want == 0 => return Ok(()),
+            (true, _) if want == 0 => {
+                return Err(Error::Invalid(format!(
+                    "{name} is already at 0 replicas; there is nothing to suspend"
+                )))
+            }
+            (true, _) => json!({
+                "metadata": { "resourceVersion": rv, "annotations": { SUSPENDED_ANNOTATION: want.to_string() } },
+                "spec": { "replicas": 0 },
+            }),
+            (false, None) => {
+                return Err(Error::Invalid(format!(
+                    "{name} was not suspended by FleetOps; scale it instead"
+                )))
+            }
+            (false, Some(n)) => {
+                let n: i64 = n.trim().parse().ok().filter(|n| *n > 0).ok_or_else(|| {
+                    Error::Invalid(format!(
+                        "{name} has an unreadable {SUSPENDED_ANNOTATION} ('{n}'); scale it instead"
+                    ))
+                })?;
+                // Scaled up by hand since: only the note is left to clear.
+                let spec = if want == 0 {
+                    json!({ "replicas": n })
+                } else {
+                    json!({})
+                };
+                json!({
+                    "metadata": { "resourceVersion": rv, "annotations": { SUSPENDED_ANNOTATION: null } },
+                    "spec": spec,
+                })
+            }
+        };
+        match timed(api.patch(name, &pp, &Patch::Merge(patch))).await {
+            Err(Error::Conflict(_)) => Err(Error::Conflict(format!(
+                "{name} changed while it was being {}; try again",
+                if on { "suspended" } else { "resumed" }
+            ))),
+            r => r.map(|_| ()),
+        }
+    }
+
+    async fn cordon(&self, node: &str, on: bool) -> Result<()> {
+        // `null` drops the field, as `kubectl uncordon` does.
+        let patch = Patch::Merge(
+            json!({ "spec": { "unschedulable": if on { json!(true) } else { json!(null) } } }),
+        );
+        let pp = PatchParams {
+            field_manager: Some(FIELD_MANAGER.into()),
+            ..PatchParams::default()
+        };
+        timed(Api::<Node>::all(self.client.clone()).patch(node, &pp, &patch)).await?;
+        Ok(())
+    }
+
+    async fn trigger(&self, ns: &str, cronjob: &str) -> Result<String> {
+        let cj = timed(Api::<CronJob>::namespaced(self.client.clone(), ns).get(cronjob)).await?;
+        let job = manual_job(&cj, now_unix())?;
+        let pp = PostParams {
+            field_manager: Some(FIELD_MANAGER.into()),
+            ..PostParams::default()
+        };
+        let made = timed(Api::<Job>::namespaced(self.client.clone(), ns).create(&pp, &job)).await?;
+        Ok(made.metadata.name.unwrap_or_default())
+    }
+
     fn logs(&self, ns: &str, pod: &str, opts: &LogOptions) -> BoxStream<LogLine> {
         let pods = self.pods(ns);
         let (pod, o) = (pod.to_string(), opts.clone());
@@ -715,4 +811,45 @@ impl KubeClient {
         }
         Ok(n)
     }
+}
+
+/// The Job `kubectl create job --from=cronjob/<name>` makes: the CronJob's
+/// template, marked as started by hand and owned by the CronJob, so its
+/// history limits and the CronJob's deletion apply to it too.
+pub fn manual_job(cj: &CronJob, now: i64) -> Result<Job> {
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference};
+    let name = cj.metadata.name.clone().unwrap_or_default();
+    let uid = cj.metadata.uid.clone().ok_or_else(|| {
+        Error::Invalid(format!("{name} has no uid; it may still be being created"))
+    })?;
+    let spec = cj
+        .spec
+        .as_ref()
+        .ok_or_else(|| Error::Invalid(format!("{name} has no spec")))?;
+    let template = spec.job_template.clone();
+    let meta = template.metadata.unwrap_or_default();
+    // Job names are DNS labels (63); CronJob names are at most 52.
+    let suffix = format!("-manual-{}", now % 100_000);
+    let base: String = name.chars().take(63 - suffix.len()).collect();
+    let mut annotations = meta.annotations.unwrap_or_default();
+    annotations.insert("cronjob.kubernetes.io/instantiate".into(), "manual".into());
+    Ok(Job {
+        metadata: ObjectMeta {
+            name: Some(format!("{}{suffix}", base.trim_end_matches('-'))),
+            namespace: cj.metadata.namespace.clone(),
+            labels: meta.labels,
+            annotations: Some(annotations),
+            owner_references: Some(vec![OwnerReference {
+                api_version: "batch/v1".into(),
+                kind: "CronJob".into(),
+                name,
+                uid,
+                controller: Some(true),
+                block_owner_deletion: Some(true),
+            }]),
+            ..ObjectMeta::default()
+        },
+        spec: template.spec,
+        status: None,
+    })
 }

@@ -19,7 +19,7 @@ use fleetops_core::kube::{
 };
 use fleetops_core::{now_unix, Error, Grant, Result};
 use fleetops_store::NewAudit;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 
@@ -460,6 +460,128 @@ pub async fn restart(
     audit(&s, &cu, env.id(), "k8s.restart", &target(k, &p), &r).await;
     r?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Suspends or resumes; the handlers differ only in the direction.
+async fn set_suspended(
+    s: AppState,
+    cu: CurrentUser,
+    p: ObjectPath,
+    on: bool,
+) -> ApiResult<StatusCode> {
+    let k = p.checked()?;
+    if !k.suspendable() {
+        return Err(Error::Invalid(format!("{} cannot be suspended", k.as_str())).into());
+    }
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let KubeCtx { env, ops, .. } = k8;
+    let r = ops.suspend(k, &p.ns, &p.name, on).await;
+    let action = if on { "k8s.suspend" } else { "k8s.resume" };
+    audit(&s, &cu, env.id(), action, &target(k, &p), &r).await;
+    r?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(post, path = "/envs/{env}/k8s/{kind}/{ns}/{name}/suspend", operation_id = "suspendKube", tag = "kubernetes",
+    summary = "Suspend a Deployment or StatefulSet (scale to 0, keeping its replica count) or a CronJob (spec.suspend)",
+    params(ObjectPath),
+    responses((status = 204, description = "Suspended")))]
+pub async fn suspend(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ObjectPath>,
+) -> ApiResult<StatusCode> {
+    set_suspended(s, cu, p, true).await
+}
+
+#[utoipa::path(post, path = "/envs/{env}/k8s/{kind}/{ns}/{name}/resume", operation_id = "resumeKube", tag = "kubernetes",
+    summary = "Resume what suspend stopped: the kept replica count, or a CronJob's schedule",
+    params(ObjectPath),
+    responses((status = 204, description = "Resumed")))]
+pub async fn resume(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ObjectPath>,
+) -> ApiResult<StatusCode> {
+    set_suspended(s, cu, p, false).await
+}
+
+async fn set_cordoned(
+    s: AppState,
+    cu: CurrentUser,
+    p: ObjectPath,
+    on: bool,
+) -> ApiResult<StatusCode> {
+    let k = p.checked()?;
+    if k != KubeKind::Nodes {
+        return Err(Error::Invalid("only nodes can be cordoned".into()).into());
+    }
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let KubeCtx { env, ops, .. } = k8;
+    let r = ops.cordon(&p.name, on).await;
+    let action = if on { "k8s.cordon" } else { "k8s.uncordon" };
+    audit(&s, &cu, env.id(), action, &target(k, &p), &r).await;
+    r?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(post, path = "/envs/{env}/k8s/{kind}/{ns}/{name}/cordon", operation_id = "cordonKube", tag = "kubernetes",
+    summary = "Cordon a node: nothing new is scheduled on it; what runs there keeps running", params(ObjectPath),
+    responses((status = 204, description = "Cordoned")))]
+pub async fn cordon(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ObjectPath>,
+) -> ApiResult<StatusCode> {
+    set_cordoned(s, cu, p, true).await
+}
+
+#[utoipa::path(post, path = "/envs/{env}/k8s/{kind}/{ns}/{name}/uncordon", operation_id = "uncordonKube", tag = "kubernetes",
+    summary = "Uncordon a node: it takes new pods again", params(ObjectPath),
+    responses((status = 204, description = "Uncordoned")))]
+pub async fn uncordon(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ObjectPath>,
+) -> ApiResult<StatusCode> {
+    set_cordoned(s, cu, p, false).await
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TriggerResult {
+    /// The Job that was started.
+    pub job: String,
+}
+
+#[utoipa::path(post, path = "/envs/{env}/k8s/{kind}/{ns}/{name}/trigger", operation_id = "triggerKube", tag = "kubernetes",
+    summary = "Run a CronJob now: a Job from its template, as kubectl create job --from=cronjob does", params(ObjectPath),
+    responses((status = 200, description = "The Job started", body = TriggerResult)))]
+pub async fn trigger(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ObjectPath>,
+) -> ApiResult<Json<TriggerResult>> {
+    let k = p.checked()?;
+    if k != KubeKind::CronJobs {
+        return Err(Error::Invalid("only cronjobs can be run now".into()).into());
+    }
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let KubeCtx { env, ops, .. } = k8;
+    let r = ops.trigger(&p.ns, &p.name).await;
+    let err = r.as_ref().err().map(|e| e.to_string());
+    audit_with(
+        &s,
+        &cu,
+        env.id(),
+        "k8s.trigger",
+        &target(k, &p),
+        err.as_deref(),
+    )
+    .await;
+    Ok(Json(TriggerResult { job: r? }))
 }
 
 #[derive(Deserialize, ToSchema)]

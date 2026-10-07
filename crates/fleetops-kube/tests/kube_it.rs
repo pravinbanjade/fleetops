@@ -652,3 +652,122 @@ async fn the_warnings_filter_runs_on_the_apiserver() {
         Err(Error::Invalid(_))
     ));
 }
+
+#[tokio::test]
+async fn suspend_keeps_the_replicas_and_resume_brings_them_back() {
+    use fleetops_core::kube::{ApplyMode, RowHealth};
+    let ops = common::ops();
+    let name = uniq("sus");
+    let yaml = format!(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: {name}\nspec:\n  replicas: 2\n  selector:\n    matchLabels: {{app: {name}}}\n  template:\n    metadata:\n      labels: {{app: {name}}}\n    spec:\n      containers:\n      - name: main\n        image: busybox:1.36\n        command: [sleep, '3600']\n"
+    );
+    let r = ops
+        .apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+        .await
+        .unwrap();
+    assert!(r[0].error.is_none(), "{r:?}");
+    ops.suspend(KubeKind::Deployments, NS, &name, true)
+        .await
+        .unwrap();
+    let o = ops.get(KubeKind::Deployments, NS, &name).await.unwrap();
+    assert_eq!(
+        (o.row.status.as_str(), o.row.health),
+        ("Suspended", RowHealth::Off)
+    );
+    assert_eq!(o.row.columns["suspended_replicas"], "2");
+    // Suspending again is a no-op, not an error.
+    ops.suspend(KubeKind::Deployments, NS, &name, true)
+        .await
+        .unwrap();
+    ops.suspend(KubeKind::Deployments, NS, &name, false)
+        .await
+        .unwrap();
+    let o = ops.get(KubeKind::Deployments, NS, &name).await.unwrap();
+    assert!(o.row.columns["ready"].ends_with("/2"), "{:?}", o.row);
+    assert!(!o.yaml.contains("suspended-replicas"));
+    assert!(matches!(
+        ops.suspend(KubeKind::Deployments, NS, &name, false).await,
+        Err(Error::Invalid(_))
+    ));
+    ops.delete(KubeKind::Deployments, NS, &name).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_cronjob_suspends_with_its_own_flag() {
+    use fleetops_core::kube::{ApplyMode, RowHealth};
+    let ops = common::ops();
+    let name = uniq("cron");
+    let yaml = format!(
+        "apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: {name}\nspec:\n  schedule: '0 2 * * *'\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          restartPolicy: Never\n          containers:\n          - name: main\n            image: busybox:1.36\n"
+    );
+    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+        .await
+        .unwrap();
+    ops.suspend(KubeKind::CronJobs, NS, &name, true)
+        .await
+        .unwrap();
+    let o = ops.get(KubeKind::CronJobs, NS, &name).await.unwrap();
+    assert_eq!(
+        (o.row.status.as_str(), o.row.health),
+        ("Suspended", RowHealth::Off)
+    );
+    ops.suspend(KubeKind::CronJobs, NS, &name, false)
+        .await
+        .unwrap();
+    let o = ops.get(KubeKind::CronJobs, NS, &name).await.unwrap();
+    assert_eq!(o.row.status, "Scheduled");
+    ops.delete(KubeKind::CronJobs, NS, &name).await.unwrap();
+}
+
+#[tokio::test]
+async fn run_now_starts_a_job_the_cronjob_owns() {
+    use fleetops_core::kube::ApplyMode;
+    let ops = common::ops();
+    let name = uniq("now");
+    let yaml = format!(
+        "apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: {name}\nspec:\n  schedule: '0 2 * * *'\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          restartPolicy: Never\n          containers:\n          - name: main\n            image: busybox:1.36\n            command: [\"true\"]\n"
+    );
+    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+        .await
+        .unwrap();
+    let job = ops.trigger(NS, &name).await.unwrap();
+    assert!(job.starts_with(&format!("{name}-manual-")), "{job}");
+    let o = ops.get(KubeKind::Jobs, NS, &job).await.unwrap();
+    assert!(
+        o.owners
+            .iter()
+            .any(|r| r.kind == "CronJob" && r.name == name),
+        "{:?}",
+        o.owners
+    );
+    // Deleting the CronJob takes its Job with it.
+    ops.delete(KubeKind::CronJobs, NS, &name).await.unwrap();
+}
+
+#[tokio::test]
+async fn cordon_marks_the_node_and_uncordon_clears_it() {
+    use fleetops_core::kube::RowHealth;
+    let ops = common::ops();
+    let node = ops.list(KubeKind::Nodes, None).await.unwrap().rows[0]
+        .name
+        .clone();
+    ops.cordon(&node, true).await.unwrap();
+    let r = ops.get(KubeKind::Nodes, "-", &node).await.unwrap().row;
+    let cordoned = (
+        r.status.clone(),
+        r.health,
+        r.columns.get("unschedulable").cloned(),
+    );
+    // Uncordon before asserting: a cordoned node would starve the other tests.
+    ops.cordon(&node, false).await.unwrap();
+    assert_eq!(
+        cordoned,
+        (
+            "Ready,SchedulingDisabled".into(),
+            RowHealth::Warn,
+            Some("true".into())
+        )
+    );
+    let r = ops.get(KubeKind::Nodes, "-", &node).await.unwrap().row;
+    assert_eq!((r.status.as_str(), r.health), ("Ready", RowHealth::Ok));
+}

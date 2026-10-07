@@ -101,6 +101,11 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kube::events))
         .routes(routes!(kube::scale))
         .routes(routes!(kube::restart))
+        .routes(routes!(kube::suspend))
+        .routes(routes!(kube::resume))
+        .routes(routes!(kube::cordon))
+        .routes(routes!(kube::uncordon))
+        .routes(routes!(kube::trigger))
 }
 
 #[derive(Serialize, ToSchema)]

@@ -42,6 +42,11 @@ fn scope_and_actions_follow_the_spec() {
         .filter(|k| k.read_only())
         .collect();
     assert_eq!(read_only, [Events]);
+    let suspendable: Vec<_> = KubeKind::ALL
+        .into_iter()
+        .filter(|k| k.suspendable())
+        .collect();
+    assert_eq!(suspendable, [Deployments, StatefulSets, CronJobs]);
 }
 
 #[test]

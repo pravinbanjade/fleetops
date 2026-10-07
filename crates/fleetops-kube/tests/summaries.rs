@@ -83,6 +83,16 @@ fn nodes_jobs_and_secrets_summarise() {
     assert_eq!(r.namespace, None);
     assert_eq!(r.columns["roles"], "control-plane");
     assert_eq!(r.columns["version"], "v1.32.0");
+    assert!(!r.columns.contains_key("unschedulable"));
+
+    let mut cordoned = n.clone();
+    cordoned.data["spec"] = json!({"unschedulable": true});
+    let r = row(KubeKind::Nodes, &cordoned);
+    assert_eq!(
+        (r.status.as_str(), r.health),
+        ("Ready,SchedulingDisabled", RowHealth::Warn)
+    );
+    assert_eq!(r.columns["unschedulable"], "true");
 
     let j = obj(
         json!({"metadata": meta("once"), "spec": {"template": {}}, "status": {"succeeded": 1,
@@ -152,4 +162,64 @@ fn an_event_without_a_last_timestamp_falls_back_to_its_event_time() {
     assert_eq!(r.columns["object_link"], "");
     assert_eq!(r.columns["count"], "1");
     assert_eq!(r.columns["source"], "default-scheduler");
+}
+
+#[test]
+fn a_deployment_suspended_by_fleetops_is_off_not_failing() {
+    let d = obj(
+        json!({"metadata": {"name": "api", "namespace": "apps", "creationTimestamp": "2026-10-01T00:00:00Z",
+        "annotations": {"fleetops.io/suspended-replicas": "3"}},
+        "spec": {"replicas": 0, "selector": {}, "template": {}}, "status": {}}),
+    );
+    let r = row(KubeKind::Deployments, &d);
+    assert_eq!((r.status.as_str(), r.health), ("Suspended", RowHealth::Off));
+    assert_eq!(r.columns["suspended_replicas"], "3");
+    assert_eq!(r.columns["ready"], "0/0");
+    // Scaled up by hand since: just running again.
+    let up = obj(json!({"metadata": {"name": "api", "namespace": "apps",
+        "annotations": {"fleetops.io/suspended-replicas": "3"}},
+        "spec": {"replicas": 2, "selector": {}, "template": {}}, "status": {"readyReplicas": 2, "availableReplicas": 2}}));
+    assert_eq!(row(KubeKind::Deployments, &up).status, "2/2");
+}
+
+#[test]
+fn a_suspended_cronjob_is_off() {
+    let c = obj(
+        json!({"metadata": meta("nightly"), "spec": {"schedule": "0 2 * * *", "suspend": true,
+        "jobTemplate": {"spec": {"template": {}}}}, "status": {}}),
+    );
+    let r = row(KubeKind::CronJobs, &c);
+    assert_eq!((r.status.as_str(), r.health), ("Suspended", RowHealth::Off));
+}
+
+#[test]
+fn a_manual_job_copies_the_template_and_is_owned_by_its_cronjob() {
+    use k8s_openapi::api::batch::v1::CronJob;
+    let cj: CronJob = serde_json::from_value(json!({
+        "metadata": {"name": "nightly", "namespace": "apps", "uid": "u-1"},
+        "spec": {"schedule": "0 3 * * *", "jobTemplate": {
+            "metadata": {"labels": {"app": "nightly"}},
+            "spec": {"template": {"spec": {"restartPolicy": "Never",
+                "containers": [{"name": "run", "image": "busybox"}]}}}}}}))
+    .unwrap();
+    let j = fleetops_kube::client::manual_job(&cj, 1_760_000_042).unwrap();
+    assert_eq!(j.metadata.name.as_deref(), Some("nightly-manual-42"));
+    assert_eq!(j.metadata.namespace.as_deref(), Some("apps"));
+    assert_eq!(j.metadata.labels.unwrap()["app"], "nightly");
+    assert_eq!(
+        j.metadata.annotations.unwrap()["cronjob.kubernetes.io/instantiate"],
+        "manual"
+    );
+    let owner = &j.metadata.owner_references.unwrap()[0];
+    assert_eq!(
+        (owner.kind.as_str(), owner.name.as_str(), owner.uid.as_str()),
+        ("CronJob", "nightly", "u-1")
+    );
+    assert_eq!(owner.controller, Some(true));
+    assert_eq!(
+        j.spec.unwrap().template.spec.unwrap().containers[0]
+            .image
+            .as_deref(),
+        Some("busybox")
+    );
 }

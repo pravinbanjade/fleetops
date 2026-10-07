@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetTaskData, GetTaskErrors, GetTaskResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, TagImageData, TagImageErrors, TagImageResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses } from './types.gen';
+import type { AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CordonKubeData, CordonKubeErrors, CordonKubeResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetTaskData, GetTaskErrors, GetTaskResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, ResumeKubeData, ResumeKubeErrors, ResumeKubeResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, SuspendKubeData, SuspendKubeErrors, SuspendKubeResponses, TagImageData, TagImageErrors, TagImageResponses, TriggerKubeData, TriggerKubeErrors, TriggerKubeResponses, UncordonKubeData, UncordonKubeErrors, UncordonKubeResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -768,6 +768,19 @@ export const replaceKube = <ThrowOnError extends boolean = true>(options: Option
 });
 
 /**
+ * Cordon a node: nothing new is scheduled on it; what runs there keeps running
+ */
+export const cordonKube = <ThrowOnError extends boolean = true>(options: Options<CordonKubeData, ThrowOnError>): RequestResult<CordonKubeResponses, CordonKubeErrors, ThrowOnError> => (options.client ?? client).post<CordonKubeResponses, CordonKubeErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/cordon',
+    ...options
+});
+
+/**
  * An object as YAML for editing, with its resource version
  */
 export const editableKube = <ThrowOnError extends boolean = true>(options: Options<EditableKubeData, ThrowOnError>): RequestResult<EditableKubeResponses, EditableKubeErrors, ThrowOnError> => (options.client ?? client).get<EditableKubeResponses, EditableKubeErrors, ThrowOnError>({
@@ -807,6 +820,19 @@ export const restartKube = <ThrowOnError extends boolean = true>(options: Option
 });
 
 /**
+ * Resume what suspend stopped: the kept replica count, or a CronJob's schedule
+ */
+export const resumeKube = <ThrowOnError extends boolean = true>(options: Options<ResumeKubeData, ThrowOnError>): RequestResult<ResumeKubeResponses, ResumeKubeErrors, ThrowOnError> => (options.client ?? client).post<ResumeKubeResponses, ResumeKubeErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/resume',
+    ...options
+});
+
+/**
  * Set a Deployment's or StatefulSet's replicas
  */
 export const scaleKube = <ThrowOnError extends boolean = true>(options: Options<ScaleKubeData, ThrowOnError>): RequestResult<ScaleKubeResponses, ScaleKubeErrors, ThrowOnError> => (options.client ?? client).post<ScaleKubeResponses, ScaleKubeErrors, ThrowOnError>({
@@ -821,6 +847,45 @@ export const scaleKube = <ThrowOnError extends boolean = true>(options: Options<
         'Content-Type': 'application/json',
         ...options.headers
     }
+});
+
+/**
+ * Suspend a Deployment or StatefulSet (scale to 0, keeping its replica count) or a CronJob (spec.suspend)
+ */
+export const suspendKube = <ThrowOnError extends boolean = true>(options: Options<SuspendKubeData, ThrowOnError>): RequestResult<SuspendKubeResponses, SuspendKubeErrors, ThrowOnError> => (options.client ?? client).post<SuspendKubeResponses, SuspendKubeErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/suspend',
+    ...options
+});
+
+/**
+ * Run a CronJob now: a Job from its template, as kubectl create job --from=cronjob does
+ */
+export const triggerKube = <ThrowOnError extends boolean = true>(options: Options<TriggerKubeData, ThrowOnError>): RequestResult<TriggerKubeResponses, TriggerKubeErrors, ThrowOnError> => (options.client ?? client).post<TriggerKubeResponses, TriggerKubeErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/trigger',
+    ...options
+});
+
+/**
+ * Uncordon a node: it takes new pods again
+ */
+export const uncordonKube = <ThrowOnError extends boolean = true>(options: Options<UncordonKubeData, ThrowOnError>): RequestResult<UncordonKubeResponses, UncordonKubeErrors, ThrowOnError> => (options.client ?? client).post<UncordonKubeResponses, UncordonKubeErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/uncordon',
+    ...options
 });
 
 /**

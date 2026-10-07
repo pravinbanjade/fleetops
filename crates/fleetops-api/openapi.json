@@ -3062,6 +3062,71 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/cordon": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Cordon a node: nothing new is scheduled on it; what runs there keeps running",
+        "operationId": "cordonKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cordoned"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/edit": {
       "get": {
         "tags": [
@@ -3272,6 +3337,71 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/resume": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Resume what suspend stopped: the kept replica count, or a CronJob's schedule",
+        "operationId": "resumeKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Resumed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/scale": {
       "post": {
         "tags": [
@@ -3327,6 +3457,208 @@
         "responses": {
           "204": {
             "description": "Scaled"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/suspend": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Suspend a Deployment or StatefulSet (scale to 0, keeping its replica count) or a CronJob (spec.suspend)",
+        "operationId": "suspendKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Suspended"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/trigger": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Run a CronJob now: a Job from its template, as kubectl create job --from=cronjob does",
+        "operationId": "triggerKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Job started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TriggerResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/uncordon": {
+      "post": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "Uncordon a node: it takes new pods again",
+        "operationId": "uncordonKube",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Uncordoned"
           },
           "default": {
             "description": "Error: `{code, message, request_id}`",
@@ -6984,7 +7316,8 @@
           "ok",
           "warn",
           "bad",
-          "unknown"
+          "unknown",
+          "off"
         ]
       },
       "ScaleBody": {
@@ -7403,6 +7736,18 @@
           "task",
           "kube-watch"
         ]
+      },
+      "TriggerResult": {
+        "type": "object",
+        "required": [
+          "job"
+        ],
+        "properties": {
+          "job": {
+            "type": "string",
+            "description": "The Job that was started."
+          }
+        }
       },
       "UninstallBody": {
         "type": "object",

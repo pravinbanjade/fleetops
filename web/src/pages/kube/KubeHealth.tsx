@@ -1,7 +1,7 @@
 import type { RowHealth } from "@/api/gen/types.gen";
 import { cn } from "@/lib/utils";
 
-const TONE: Record<RowHealth, string> = { ok: "bg-live", warn: "bg-state-wait", bad: "bg-state-fail", unknown: "bg-muted-foreground/50" };
+const TONE: Record<RowHealth, string> = { ok: "bg-live", warn: "bg-state-wait", bad: "bg-state-fail", unknown: "bg-muted-foreground/50", off: "border border-muted-foreground bg-transparent" };
 
 export function KubeHealth({ health, label }: { health: RowHealth; label: string }) {
   return (
