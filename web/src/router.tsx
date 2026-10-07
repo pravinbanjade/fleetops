@@ -17,6 +17,7 @@ import { TaskProvider } from "@/live/TaskProvider";
 import { LoginPage } from "@/pages/LoginPage";
 import { NoEnvironmentsPage, NotFoundPage } from "@/pages/misc";
 import { CONTAINER_TABS, type ContainerTab } from "@/pages/containers/tabs";
+import { HELM_TABS, type HelmTab } from "@/pages/helm/tabs";
 import { KUBE_TABS, type KubeTab } from "@/pages/kube/tabs";
 import { SetupPage } from "@/pages/SetupPage";
 
@@ -128,6 +129,19 @@ const dashboardRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "/",
   component: lazyRouteComponent(() => import("@/pages/EnvHome"), "EnvHome"),
+});
+
+const helmReleasesRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "k8s/helm",
+  component: lazyRouteComponent(() => import("@/pages/helm/ReleasesPage"), "ReleasesPage"),
+});
+
+const helmReleaseRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "k8s/helm/$ns/$name",
+  validateSearch: (s: Record<string, unknown>): { tab?: HelmTab } => ({ tab: HELM_TABS.find((t) => t === s.tab) }),
+  component: lazyRouteComponent(() => import("@/pages/helm/ReleasePage"), "ReleasePage"),
 });
 
 const kubeListRoute = createRoute({
@@ -274,6 +288,8 @@ const routeTree = rootRoute.addChildren([
         networksRoute,
         networkRoute,
         composeRoute,
+        helmReleasesRoute,
+        helmReleaseRoute,
         kubeListRoute,
         kubeObjectRoute,
       ]),

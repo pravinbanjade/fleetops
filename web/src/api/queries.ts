@@ -22,6 +22,9 @@ import {
   listKube,
   getKube,
   kubeEvents,
+  listHelmReleases,
+  getHelmRelease,
+  helmHistory,
   listNetworks,
   listSessions,
   listUsers,
@@ -68,6 +71,8 @@ export const keys = {
   composeProjects: (env: string) => ["env", env, "compose-projects"] as const,
   kube: (env: string, kind: string, ns?: string) => ["env", env, "k8s", kind, ns ?? "*"] as const,
   kubeObject: (env: string, kind: string, ns: string, name: string) => ["env", env, "k8s", kind, ns, name] as const,
+  helm: (env: string, ns?: string) => ["env", env, "helm", ns ?? "*"] as const,
+  helmRelease: (env: string, ns: string, name: string) => ["env", env, "helm", ns, name] as const,
   /** The newest Docker events seen over the websocket; filled by the live layer, never fetched. */
   recentEvents: (env: string) => ["live", env, "events"] as const,
 };
@@ -168,6 +173,29 @@ export const containersQuery = (env: string) =>
 /** Retry a failed detail query once, but not when the resource is gone. */
 const retryUnlessGone = (failures: number, err: unknown) =>
   !(err instanceof ApiError && err.status === 404) && failures < 1;
+
+/** Releases are not watched; the list is read this often while visible (spec 3d §2.3). */
+export const HELM_POLL_MS = 10000;
+
+export const helmReleasesQuery = (env: string, ns?: string) =>
+  queryOptions({
+    queryKey: keys.helm(env, ns),
+    queryFn: async () => (await listHelmReleases({ path: { env }, query: ns ? { namespace: ns } : {} })).data,
+    refetchInterval: HELM_POLL_MS,
+  });
+
+export const helmReleaseQuery = (env: string, ns: string, name: string, revision?: number) =>
+  queryOptions({
+    queryKey: [...keys.helmRelease(env, ns, name), revision ?? "latest"] as const,
+    queryFn: async () => (await getHelmRelease({ path: { env, ns, name }, query: revision ? { revision } : {} })).data,
+    retry: retryUnlessGone,
+  });
+
+export const helmHistoryQuery = (env: string, ns: string, name: string) =>
+  queryOptions({
+    queryKey: [...keys.helmRelease(env, ns, name), "history"] as const,
+    queryFn: async () => (await helmHistory({ path: { env, ns, name } })).data,
+  });
 
 export const containerQuery = (env: string, id: string) =>
   queryOptions({
