@@ -127,7 +127,7 @@ fn owners_link_kinds_fleetops_has_pages_for() {
     assert_eq!(o.len(), 1);
     assert_eq!(
         (o[0].kind.as_str(), o[0].name.as_str(), o[0].link),
-        ("ReplicaSet", "web-7d9", None)
+        ("ReplicaSet", "web-7d9", Some(KubeKind::ReplicaSets))
     );
 }
 
