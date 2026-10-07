@@ -21,6 +21,7 @@ hyper.workspace = true
 hyper-util.workspace = true
 k8s-openapi.workspace = true
 kube.workspace = true
+jsonpath-rust = "1.0"
 rustls.workspace = true
 serde.workspace = true
 serde-saphyr.workspace = true

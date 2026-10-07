@@ -77,9 +77,7 @@ pub fn row(kind: KubeKind, obj: &DynamicObject) -> KubeRow {
         KubeKind::Secrets => typed::<Secret>(kind, obj).map(secret),
         KubeKind::Events => typed::<Event>(kind, obj).map(event),
         KubeKind::ReplicaSets => typed::<ReplicaSet>(kind, obj).map(replicaset),
-        KubeKind::HorizontalPodAutoscalers => {
-            typed::<HorizontalPodAutoscaler>(kind, obj).map(hpa)
-        }
+        KubeKind::HorizontalPodAutoscalers => typed::<HorizontalPodAutoscaler>(kind, obj).map(hpa),
         KubeKind::NetworkPolicies => typed::<NetworkPolicy>(kind, obj).map(network_policy),
         KubeKind::PersistentVolumeClaims => typed::<PersistentVolumeClaim>(kind, obj).map(pvc),
         KubeKind::PersistentVolumes => typed::<PersistentVolume>(kind, obj).map(pv),
@@ -469,7 +467,11 @@ fn event(e: Event) -> Summary {
 
 fn replicaset(r: ReplicaSet) -> Summary {
     let want = r.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
-    let ready = r.status.as_ref().and_then(|s| s.ready_replicas).unwrap_or(0);
+    let ready = r
+        .status
+        .as_ref()
+        .and_then(|s| s.ready_replicas)
+        .unwrap_or(0);
     let owner = r
         .metadata
         .owner_references
@@ -747,6 +749,55 @@ impl Worst for RowHealth {
         } else {
             other
         }
+    }
+}
+
+/// A row of a discovered kind (spec 3g §2.3): printer columns, and health
+/// from the `Ready` condition when the object has one.
+pub fn generic_row(k: &fleetops_core::kube::ApiKind, obj: &DynamicObject) -> KubeRow {
+    let m = &obj.metadata;
+    let v = serde_json::to_value(obj).unwrap_or_default();
+    let columns = k
+        .columns
+        .iter()
+        .map(|c| (c.name.clone(), crate::printer::evaluate(c, &v)))
+        .collect();
+    let (status, health) = match conditions(obj).into_iter().find(|c| c.type_ == "Ready") {
+        Some(c) => {
+            let h = match c.status.as_str() {
+                "True" => RowHealth::Ok,
+                "False" => RowHealth::Bad,
+                _ => RowHealth::Warn,
+            };
+            let fallback = if c.status == "True" {
+                "Ready"
+            } else {
+                "NotReady"
+            };
+            (
+                c.reason
+                    .filter(|r| !r.is_empty())
+                    .unwrap_or_else(|| fallback.into()),
+                h,
+            )
+        }
+        None => (String::new(), RowHealth::Unknown),
+    };
+    KubeRow {
+        name: m.name.clone().unwrap_or_default(),
+        namespace: if k.namespaced {
+            m.namespace.clone()
+        } else {
+            None
+        },
+        created: m
+            .creation_timestamp
+            .as_ref()
+            .map(|t| t.0.as_second())
+            .unwrap_or(0),
+        status,
+        health,
+        columns,
     }
 }
 

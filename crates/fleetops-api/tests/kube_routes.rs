@@ -55,12 +55,7 @@ async fn a_list_is_scoped_to_the_namespace_asked_for() {
 async fn an_unknown_kind_is_404() {
     let (t, admin) = kube_app().await;
     let r = t
-        .send(req(
-            "GET",
-            "/api/v1/envs/k/k8s/widgets",
-            None,
-            Some(&admin),
-        ))
+        .send(req("GET", "/api/v1/envs/k/k8s/widgets", None, Some(&admin)))
         .await;
     assert_eq!(r.status, 404);
 }

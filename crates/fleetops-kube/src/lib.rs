@@ -10,6 +10,7 @@ pub mod kinds;
 pub mod kubeconfig;
 pub mod mask;
 pub mod metrics;
+pub mod printer;
 pub mod summaries;
 pub mod templates;
 pub mod tunnel;

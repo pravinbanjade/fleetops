@@ -264,6 +264,84 @@ pub struct KubeObject {
     pub containers: Vec<String>,
 }
 
+/// A served resource, the key of every generic request: `group` is empty
+/// for the core API.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ToSchema)]
+pub struct KindRef {
+    pub group: String,
+    pub version: String,
+    /// Plural lowercase, e.g. `certificates`.
+    pub resource: String,
+}
+
+impl KindRef {
+    /// `v1` or `group/version`.
+    pub fn api_version(&self) -> String {
+        if self.group.is_empty() {
+            self.version.clone()
+        } else {
+            format!("{}/{}", self.group, self.version)
+        }
+    }
+
+    /// `core/v1/pods`, as URLs and audit targets spell it.
+    pub fn path(&self) -> String {
+        let g = if self.group.is_empty() {
+            "core"
+        } else {
+            &self.group
+        };
+        format!("{g}/{}/{}", self.version, self.resource)
+    }
+
+    /// The URL's group (`core` for the core group) to the API's (`""`).
+    pub fn group_from_url(g: &str) -> String {
+        if g == "core" {
+            String::new()
+        } else {
+            g.to_string()
+        }
+    }
+}
+
+/// One column `kubectl get` shows for a custom resource.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+pub struct PrinterColumn {
+    pub name: String,
+    /// kubectl JSONPath, e.g. `.status.conditions[?(@.type=="Ready")].status`.
+    pub json_path: String,
+    /// `string`, `integer`, `number`, `boolean` or `date`.
+    #[serde(rename = "type")]
+    pub type_: String,
+}
+
+/// A kind the cluster serves that FleetOps has no curated page for.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+pub struct ApiKind {
+    pub api: KindRef,
+    /// e.g. `Certificate`.
+    pub kind: String,
+    pub namespaced: bool,
+    pub verbs: Vec<String>,
+    /// CRD printer columns (priority 0, Age dropped); empty for others.
+    pub columns: Vec<PrinterColumn>,
+    /// The CRD's name, when one defines it.
+    pub crd: Option<String>,
+}
+
+impl ApiKind {
+    pub fn can(&self, verb: &str) -> bool {
+        self.verbs.iter().any(|v| v == verb)
+    }
+}
+
+/// Every generic kind, and the API groups that could not be read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct Discovery {
+    pub kinds: Vec<ApiKind>,
+    pub failed_groups: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct KubeEvent {
     /// "Normal" or "Warning".
@@ -641,6 +719,51 @@ pub trait KubeOps: Send + Sync {
     ) -> Result<crate::helm::HelmPlan> {
         Err(helm_unsupported())
     }
+    /// The cluster's generic kinds (spec 3g §2.1). `refresh` skips the cache.
+    async fn discover(&self, _refresh: bool) -> Result<Discovery> {
+        Err(generic_unsupported())
+    }
+    async fn generic_list(&self, _k: &ApiKind, _ns: Option<&str>) -> Result<KubeList> {
+        Err(generic_unsupported())
+    }
+    async fn generic_get(&self, _k: &ApiKind, _ns: &str, _name: &str) -> Result<KubeObject> {
+        Err(generic_unsupported())
+    }
+    fn generic_watch(&self, _k: &ApiKind, _ns: Option<&str>) -> BoxStream<WatchEvent> {
+        Box::pin(futures_util::stream::once(async {
+            Err(generic_unsupported())
+        }))
+    }
+    async fn generic_events(&self, _k: &ApiKind, _ns: &str, _name: &str) -> Result<Vec<KubeEvent>> {
+        Err(generic_unsupported())
+    }
+    async fn generic_delete(&self, _k: &ApiKind, _ns: &str, _name: &str) -> Result<()> {
+        Err(generic_unsupported())
+    }
+    async fn generic_editable(
+        &self,
+        _k: &ApiKind,
+        _ns: &str,
+        _name: &str,
+    ) -> Result<EditableObject> {
+        Err(generic_unsupported())
+    }
+    #[allow(clippy::too_many_arguments)]
+    async fn generic_replace(
+        &self,
+        _k: &ApiKind,
+        _ns: &str,
+        _name: &str,
+        _yaml: &str,
+        _resource_version: &str,
+        _mode: ApplyMode,
+    ) -> Result<ApplyResult> {
+        Err(generic_unsupported())
+    }
+}
+
+fn generic_unsupported() -> Error {
+    Error::Invalid("custom resources are not available for this environment".into())
 }
 
 fn helm_unsupported() -> Error {
@@ -721,6 +844,28 @@ mod kind_tests {
         assert_eq!(
             KubeKind::ClusterRoleBindings.kind_name(),
             "ClusterRoleBinding"
+        );
+    }
+
+    #[test]
+    fn a_kind_ref_spells_the_core_group_as_core() {
+        let pods = KindRef {
+            group: "".into(),
+            version: "v1".into(),
+            resource: "pods".into(),
+        };
+        assert_eq!(pods.api_version(), "v1");
+        assert_eq!(pods.path(), "core/v1/pods");
+        let c = KindRef {
+            group: "cert-manager.io".into(),
+            version: "v1".into(),
+            resource: "certificates".into(),
+        };
+        assert_eq!(c.api_version(), "cert-manager.io/v1");
+        assert_eq!(KindRef::group_from_url("core"), "");
+        assert_eq!(
+            KindRef::group_from_url("cert-manager.io"),
+            "cert-manager.io"
         );
     }
 

@@ -186,3 +186,51 @@ fn rbac_rows_count_rules_and_list_subjects() {
     );
     assert_eq!(sa.columns["secrets"], "1");
 }
+
+fn widgets(namespaced: bool) -> fleetops_core::kube::ApiKind {
+    use fleetops_core::kube::{ApiKind, KindRef, PrinterColumn};
+    ApiKind {
+        api: KindRef {
+            group: "example.fleetops.io".into(),
+            version: "v1".into(),
+            resource: "widgets".into(),
+        },
+        kind: "Widget".into(),
+        namespaced,
+        verbs: vec!["get".into(), "list".into(), "watch".into()],
+        columns: vec![PrinterColumn {
+            name: "Size".into(),
+            json_path: ".spec.size".into(),
+            type_: "integer".into(),
+        }],
+        crd: Some("widgets.example.fleetops.io".into()),
+    }
+}
+
+#[test]
+fn a_generic_row_takes_printer_columns_and_ready_health() {
+    use fleetops_kube::summaries::generic_row;
+    let o = obj(
+        json!({"apiVersion": "example.fleetops.io/v1", "kind": "Widget", "metadata": meta("w1"),
+        "spec": {"size": 3},
+        "status": {"conditions": [{"type": "Ready", "status": "False", "reason": "Pending"}]}}),
+    );
+    let r = generic_row(&widgets(true), &o);
+    assert_eq!(r.namespace.as_deref(), Some("apps"));
+    assert_eq!(r.columns["Size"], "3");
+    assert_eq!((r.status.as_str(), r.health), ("Pending", RowHealth::Bad));
+}
+
+#[test]
+fn without_a_ready_condition_health_is_unknown_and_cluster_scope_drops_the_namespace() {
+    use fleetops_kube::summaries::generic_row;
+    let o = obj(json!({"metadata": meta("w2"), "spec": {}}));
+    let r = generic_row(&widgets(false), &o);
+    assert_eq!(r.namespace, None);
+    assert_eq!((r.status.as_str(), r.health), ("", RowHealth::Unknown));
+    assert_eq!(r.columns["Size"], "");
+    let ready = obj(
+        json!({"metadata": meta("w3"), "status": {"conditions": [{"type": "Ready", "status": "True"}]}}),
+    );
+    assert_eq!(generic_row(&widgets(true), &ready).status, "Ready");
+}

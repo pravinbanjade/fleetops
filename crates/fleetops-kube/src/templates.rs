@@ -19,7 +19,9 @@ pub fn get(kind: KubeKind) -> Option<&'static str> {
         KubeKind::PersistentVolumeClaims => include_str!("templates/persistentvolumeclaims.yaml"),
         KubeKind::PersistentVolumes => include_str!("templates/persistentvolumes.yaml"),
         KubeKind::StorageClasses => include_str!("templates/storageclasses.yaml"),
-        KubeKind::HorizontalPodAutoscalers => include_str!("templates/horizontalpodautoscalers.yaml"),
+        KubeKind::HorizontalPodAutoscalers => {
+            include_str!("templates/horizontalpodautoscalers.yaml")
+        }
         KubeKind::NetworkPolicies => include_str!("templates/networkpolicies.yaml"),
         KubeKind::ServiceAccounts => include_str!("templates/serviceaccounts.yaml"),
         KubeKind::Roles => include_str!("templates/roles.yaml"),
