@@ -90,6 +90,8 @@ export function CustomResourcesNav({ env }: { env: string }) {
     );
   if (!d.data) return null;
   const { crd, other } = byGroup(d.data.kinds);
+  // Discovery leaves the CRDs out for grants that cannot open them.
+  const defs = d.data.kinds.some((k) => k.api.group === DEFS.group && k.api.resource === DEFS.resource);
   const otherOpen = toggles["crs:other"] ?? false;
   return (
     <Fold id="nav-crs" label="Custom Resources" count={crd.length} open={open} onToggle={() => setToggle("crs", !open)}>
@@ -101,7 +103,7 @@ export function CustomResourcesNav({ env }: { env: string }) {
           </button>
         </p>
       )}
-      <KindLink env={env} to={DEFS} label="Definitions" />
+      {defs && <KindLink env={env} to={DEFS} label="Definitions" />}
       {crd.map(([group, kinds]) => {
         const gOpen = toggles[`crs:${group}`] ?? pathname.includes(`/k8s/r/${group}/`);
         return (

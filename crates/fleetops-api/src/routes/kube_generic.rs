@@ -2,7 +2,8 @@
 //! has no curated page for, found by discovery (spec 3g §2).
 
 use crate::routes::kube::{
-    audit_with, check_name, check_namespace, check_size, kube_for, mode, KubeCtx, ReplaceBody,
+    audit_with, check_name, check_namespace, check_object_name, check_size, kube_for, mode,
+    KubeCtx, ReplaceBody,
 };
 use crate::{
     auth::extract::CurrentUser,
@@ -102,7 +103,7 @@ fn target(k: &ApiKind, ns: &str, name: &str) -> String {
 impl GenericObjectPath {
     fn checked(&self) -> Result<KindRef> {
         check_namespace(&self.ns)?;
-        check_name(&self.name)?;
+        check_object_name(&self.name)?;
         kind_ref(&self.group, &self.version, &self.resource)
     }
 }

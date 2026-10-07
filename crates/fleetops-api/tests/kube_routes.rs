@@ -271,6 +271,32 @@ async fn ordinary_users_can_read_and_act() {
 }
 
 #[tokio::test]
+async fn rbac_objects_named_with_colons_can_be_opened() {
+    let (t, admin) = kube_app().await;
+    t.fake
+        .kube
+        .object(KubeKind::ClusterRoles, "-", "system:aggregate-to-admin");
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/clusterroles/-/system:aggregate-to-admin",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    // Colons are allowed; path tricks still are not.
+    for path in [
+        "/api/v1/envs/k/k8s/clusterroles/-/..",
+        "/api/v1/envs/k/k8s/clusterroles/-/system:a%2F..%2Fb",
+        "/api/v1/envs/k/k8s/clusterroles/-/system:a%3Fx",
+    ] {
+        let r = t.send(req("GET", path, None, Some(&admin))).await;
+        assert_eq!(r.status, 400, "{path}: {:?}", r.json);
+    }
+}
+
+#[tokio::test]
 async fn names_and_namespaces_must_be_kubernetes_names() {
     let (t, admin) = kube_app().await;
     // An encoded slash or query would be spliced into the apiserver URL and

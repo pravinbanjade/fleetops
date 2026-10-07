@@ -51,6 +51,20 @@ pub(crate) fn check_name(name: &str) -> Result<()> {
     }
 }
 
+/// An object's name in a URL: a DNS subdomain, or one with `:` in it as RBAC
+/// objects take (`system:controller:job-controller`). `:` is safe in a path
+/// segment; `/`, `?`, `%` and the rest stay refused.
+pub(crate) fn check_object_name(name: &str) -> Result<()> {
+    let segments_ok = name.split(':').all(is_dns_subdomain);
+    if is_dns_subdomain(name) || (name.len() <= 253 && segments_ok) {
+        Ok(())
+    } else {
+        Err(Error::Invalid(format!(
+            "'{name}' is not a Kubernetes object name"
+        )))
+    }
+}
+
 /// A namespace, or `-` for cluster-scoped kinds.
 pub(crate) fn check_namespace(ns: &str) -> Result<()> {
     if ns == "-" || is_dns_label(ns) {
@@ -178,7 +192,7 @@ impl ObjectPath {
     fn checked(&self) -> Result<KubeKind> {
         let k = kind(&self.kind)?;
         check_namespace(&self.ns)?;
-        check_name(&self.name)?;
+        check_object_name(&self.name)?;
         Ok(k)
     }
 }

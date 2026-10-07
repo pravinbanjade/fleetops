@@ -4,7 +4,7 @@ import { FileText, Info, ListTree } from "lucide-react";
 import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import { deleteGenericKube } from "@/api/gen/sdk.gen";
 import { useEnvAccess } from "@/api/access";
-import { discoveryQuery, genericEventsQuery, genericObjectQuery, keys } from "@/api/queries";
+import { genericEventsQuery, genericObjectQuery, keys } from "@/api/queries";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailError, Details } from "@/components/Details";
 import { Page } from "@/components/Page";
@@ -17,7 +17,8 @@ import { LivePaused } from "../LivePaused";
 import { Conditions, EventStrips } from "../ObjectParts";
 import type { KubeTab } from "../tabs";
 import { printed } from "./GenericListPage";
-import { findKind, refKind, type Ref } from "./ref";
+import { refKind, type Ref } from "./ref";
+import { useDiscoveredKind } from "./useDiscoveredKind";
 
 const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
 const route = getRouteApi("/authed/shell/envs/$env/k8s/r/$group/$version/$resource/$ns/$name");
@@ -30,7 +31,7 @@ export function GenericObjectPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { canWrite } = useEnvAccess(env);
-  const k = findKind(useQuery(discoveryQuery(env)).data, r);
+  const { kind: k } = useDiscoveredKind(env, r);
   const obj = useQuery(genericObjectQuery(env, r, ns, name));
   const events = useQuery({ ...genericEventsQuery(env, r, ns, name), enabled: tab === "events" });
   const [open, setOpen] = useState<"edit" | "delete" | null>(null);
@@ -125,7 +126,20 @@ export function GenericObjectPage() {
               <Details label="Summary" items={summary} />
               {o.owners.length > 0 && (
                 <p className="text-sm">
-                  Owned by {o.owners.map((x) => `${x.name} (${x.kind})`).join(" → ")}
+                  Owned by{" "}
+                  {o.owners.map((x, i) => (
+                    <span key={`${x.kind}/${x.name}`}>
+                      {i > 0 && " → "}
+                      {x.link ? (
+                        <Link to="/envs/$env/k8s/$kind/$ns/$name" params={{ env, kind: x.link, ns, name: x.name }} className="hover:underline">
+                          {x.name}
+                        </Link>
+                      ) : (
+                        <span>{x.name}</span>
+                      )}{" "}
+                      <span className="text-muted-foreground">({x.kind})</span>
+                    </span>
+                  ))}
                 </p>
               )}
               {o.conditions.length > 0 && <Conditions conditions={o.conditions} />}

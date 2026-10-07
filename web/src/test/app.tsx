@@ -77,9 +77,19 @@ export const WIDGETS = {
   crd: "widgets.example.fleetops.io",
 };
 
+/** The CRDs themselves, which discovery lists only for whole-environment grants. */
+export const CRD_DEFINITIONS = {
+  api: { group: "apiextensions.k8s.io", version: "v1", resource: "customresourcedefinitions" },
+  kind: "CustomResourceDefinition",
+  namespaced: false,
+  verbs: ["get", "list", "watch"],
+  columns: [],
+  crd: null,
+};
+
 /** Discovery and one Widget for `k`, on top of `kubeRoutes`. */
 export const genericRoutes = {
-  "GET /api/v1/envs/k/k8s/discovery": { json: { kinds: [WIDGETS], failed_groups: ["metrics.k8s.io"] } },
+  "GET /api/v1/envs/k/k8s/discovery": { json: { kinds: [CRD_DEFINITIONS, WIDGETS], failed_groups: ["metrics.k8s.io"] } },
   "GET /api/v1/envs/k/k8s/r/example.fleetops.io/v1/widgets": {
     json: { rows: [{ ...kubeRow("w1", "apps", { Size: "3", Expires: "1790812800" }), status: "Ready" }], truncated: false },
   },

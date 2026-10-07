@@ -5,7 +5,7 @@ import type { ApiKind, KubeRow } from "@/api/gen/types.gen";
 import { deleteGenericKube } from "@/api/gen/sdk.gen";
 import { ApiError } from "@/api/client";
 import { useEnvAccess } from "@/api/access";
-import { discoveryQuery, genericListQuery } from "@/api/queries";
+import { genericListQuery } from "@/api/queries";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, columns } from "@/components/DataTable";
 import { Page } from "@/components/Page";
@@ -16,7 +16,8 @@ import { KubeHealth } from "../KubeHealth";
 import { HEALTH_BAYS, HEALTH_RANK } from "../kinds";
 import { LivePaused } from "../LivePaused";
 import { NamespacePicker, useNamespace } from "../NamespacePicker";
-import { findKind, refKind, type Ref } from "./ref";
+import { refKind, type Ref } from "./ref";
+import { useDiscoveredKind } from "./useDiscoveredKind";
 
 const route = getRouteApi("/authed/shell/envs/$env/k8s/r/$group/$version/$resource");
 
@@ -69,8 +70,7 @@ export function GenericListPage() {
   const { env, group, version, resource } = route.useParams();
   const r = useMemo<Ref>(() => ({ group, version, resource }), [group, version, resource]);
   const qc = useQueryClient();
-  const discovery = useQuery(discoveryQuery(env));
-  const k = findKind(discovery.data, r);
+  const { kind: k, discovery } = useDiscoveredKind(env, r);
   const [ns, setNs] = useNamespace(env);
   const { canWrite } = useEnvAccess(env);
   const scoped = k?.namespaced ?? true;

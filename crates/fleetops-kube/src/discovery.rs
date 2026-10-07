@@ -10,6 +10,18 @@ pub use k8s_openapi::apimachinery::pkg::apis::meta::v1::APIResource;
 use std::time::{Duration, Instant};
 
 pub const DISCOVERY_CACHE: Duration = Duration::from_secs(60);
+/// A forced refresh younger than this reuses the last answer: every unknown
+/// URL refreshes once, and that must not let any viewer hammer the apiserver.
+pub const REFRESH_FLOOR: Duration = Duration::from_secs(5);
+
+/// Whether a cached answer of `age` serves this request.
+fn reuse(age: Duration, refresh: bool) -> bool {
+    age < if refresh {
+        REFRESH_FLOOR
+    } else {
+        DISCOVERY_CACHE
+    }
+}
 
 /// One group's preferred version as the apiserver answered it.
 pub struct GroupResult {
@@ -109,11 +121,9 @@ pub fn assemble(groups: Vec<GroupResult>, crds: &[CustomResourceDefinition]) -> 
 
 impl KubeClient {
     pub(crate) async fn discover_impl(&self, refresh: bool) -> Result<Discovery> {
-        if !refresh {
-            if let Some((at, d)) = self.generic.lock().unwrap().as_ref() {
-                if at.elapsed() < DISCOVERY_CACHE {
-                    return Ok(d.clone());
-                }
+        if let Some((at, d)) = self.generic.lock().unwrap().as_ref() {
+            if reuse(at.elapsed(), refresh) {
+                return Ok(d.clone());
             }
         }
         let client = &self.client;
@@ -292,6 +302,17 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["Group", "Kind", "Scope"]
         );
+    }
+
+    #[test]
+    fn a_forced_refresh_is_honored_at_most_every_few_seconds() {
+        use std::time::Duration;
+        // Fresh enough for a plain read; a refresh within the floor reuses it too.
+        assert!(reuse(Duration::from_secs(1), true));
+        assert!(reuse(Duration::from_secs(30), false));
+        // Past the floor a refresh goes to the cluster; past the cache, everything does.
+        assert!(!reuse(REFRESH_FLOOR + Duration::from_millis(1), true));
+        assert!(!reuse(DISCOVERY_CACHE + Duration::from_millis(1), false));
     }
 
     #[test]

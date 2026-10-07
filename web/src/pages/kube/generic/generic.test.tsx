@@ -97,6 +97,51 @@ describe("custom resources", () => {
     expect(within(nav).getByRole("button", { name: /Workloads/ })).toBeInTheDocument();
   });
 
+  it("refreshes discovery for a kind installed after the browser read it", async () => {
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      ...genericRoutes,
+      // The cached answer predates the CRD; only a refresh knows it.
+      "GET /api/v1/envs/k/k8s/discovery": (c) => ({
+        json: { kinds: c.path.includes("refresh=1") ? [WIDGETS] : [], failed_groups: [] },
+      }),
+    });
+    renderApp("/envs/k/k8s/r/example.fleetops.io/v1/widgets");
+    const table = await screen.findByRole("table", { name: "Widget" });
+    expect(await within(table).findByRole("columnheader", { name: /Size/ })).toBeInTheDocument();
+  });
+
+  it("shows no Definitions link when the grant cannot read CRDs", async () => {
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      ...genericRoutes,
+      "GET /api/v1/envs/k/k8s/discovery": { json: { kinds: [WIDGETS], failed_groups: [] } },
+    });
+    renderApp("/envs/k");
+    const nav = await screen.findByRole("navigation", { name: "Environment" });
+    await userEvent.click(await within(nav).findByRole("button", { name: /Custom Resources/ }));
+    expect(within(nav).getByRole("button", { name: /example\.fleetops\.io/ })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Definitions" })).not.toBeInTheDocument();
+  });
+
+  it("links an owner FleetOps has a page for", async () => {
+    const obj = genericRoutes["GET /api/v1/envs/k/k8s/r/example.fleetops.io/v1/widgets/apps/w1"].json;
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      ...genericRoutes,
+      "GET /api/v1/envs/k/k8s/r/example.fleetops.io/v1/widgets/apps/w1": {
+        json: { ...obj, owners: [{ kind: "Deployment", name: "web", link: "deployments" }, { kind: "Gadget", name: "g1", link: null }] },
+      },
+    });
+    renderApp("/envs/k/k8s/r/example.fleetops.io/v1/widgets/apps/w1");
+    expect(await screen.findByRole("link", { name: "web" })).toHaveAttribute("href", "/envs/k/k8s/deployments/apps/web");
+    expect(screen.getByText(/g1/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "g1" })).not.toBeInTheDocument();
+  });
+
   it("finds a discovered kind from the command palette", async () => {
     mockFetch({ ...loggedIn, ...kubeRoutes, ...genericRoutes });
     renderApp("/envs/k");
