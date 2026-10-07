@@ -9,7 +9,7 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 4).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b) and per-environment roles (slice 3c). Next is slice 3d (Helm), then sub-project 4, stacks and GitOps.
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b), per-environment roles (slice 3c) and Helm releases (slice 3d). Next is sub-project 4, stacks and GitOps.
 
 ## Contents
 
@@ -150,7 +150,13 @@ What you can do: browse the 12 common kinds in one namespace or all of them. Ope
 - **Editing.** *Edit YAML* on an object page, *Create* on a list (from a starter template), and *Apply YAML* (top bar or command palette) for any YAML, several documents at once and any kind the cluster serves. Every write is a dry run first, shown as a diff; nothing is written until you apply. Create and apply use server-side apply as field manager `fleetops`; a field owned by another manager is a conflict you can force. An edit is refused if the object changed since you opened it, and offers to reapply your edit on top of the new version.
 - **Secrets.** Values are never shown, including the copy kubectl keeps in the `last-applied-configuration` annotation. Leave a masked value unchanged and the real one is kept; change it and the new value is written.
 
-Helm comes later.
+**Helm releases.** *Helm releases* in the sidebar lists the releases in one namespace or all of them, with chart, app version, status and revision; the list refreshes every 10 s. A release page shows its overview, revision history, values, rendered manifest and notes.
+
+- **Masking.** In values, anything under a key containing `password`, `passwd`, `secret`, `token`, `key`, `credential`, `auth`, `cert` or `private` is masked, and Secret objects in the manifest are masked. This is best effort: a credential under an innocent key name is shown.
+- **Rollback and uninstall** (operators). Both are a dry run first, shown per object as a diff; nothing changes until you confirm, and an uninstall asks you to type the release name. FleetOps writes the release history the way Helm does, so `helm history`, `helm upgrade` and `helm rollback` keep working afterwards. If the release changed since you reviewed it, or another Helm operation is in progress, you are asked to review again. A rollback or uninstall runs to the end even if you close the page; if the server itself stops part-way, the release can be left `pending-rollback` or `uninstalling`, and `helm rollback <release> <revision>` from the CLI recovers it.
+- **Limits.** Chart hooks (`pre-rollback`, `pre-delete` and so on) are **not run**. A rollback patches each object from the current revision's form to the target's: fields the newer revision added are removed, and a list that changed between the two revisions is replaced whole, so entries others added to such a list (for example sidecars injected by a webhook) are dropped until they are added again. Only Helm 3 releases stored as Secrets (Helm's default driver, also used by Helm 4) are seen. A user limited to some namespaces cannot roll back or uninstall a release that touches anything outside them, including cluster-scoped objects.
+
+Installing and upgrading charts come later.
 
 **The secret key.** Stored kubeconfigs are sealed with AES-256-GCM. The key is `FLEETOPS_SECRET_KEY` (32 bytes, base64), or `<data>/secret.key`, which is created on first start. Back it up with `fleetops.db`. Without it, stored kubeconfigs cannot be read; such environments show *credential cannot be decrypted; re-enter the kubeconfig*.
 
@@ -302,9 +308,9 @@ The full protocol is in section 5.2 of the spec.
 |---|---|---|
 | **1** | **Core + local Docker** (done) | Server, embedded UI, auth, environments, full Docker resource management, real-time channel |
 | **2** | **Agent + multi-host** (done) | Rust agent that dials out to the server over a multiplexed websocket tunnel |
-| **3** | **Kubernetes** (slices 3 and 3b done) | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec; live watch streams and YAML create, edit and apply (3b) |
+| **3** | **Kubernetes** (done) | Clusters through kubeconfig or an in-cluster agent: workloads, services, ingress, config and secrets, logs and exec; live watch streams and YAML create, edit and apply (3b) |
 | **3c** | **RBAC** (done) | Per-environment viewer and operator roles for Docker and Kubernetes environments, with namespace scoping inside clusters |
-| 3d | Helm | Releases in Kubernetes environments |
+| **3d** | **Helm** (done) | Releases in Kubernetes environments: history, masked values and manifest, rollback, uninstall |
 | 4 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
 | 5 | Teams & enterprise (free) | Teams, OIDC/SSO, LDAP, API tokens, backup and restore |
 

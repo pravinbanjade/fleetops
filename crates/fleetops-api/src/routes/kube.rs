@@ -365,7 +365,7 @@ pub(crate) fn access_hint(level: Option<&str>) -> Option<&'static str> {
     }
 }
 
-async fn agent_level(s: &AppState, env: &Arc<dyn Environment>) -> Option<String> {
+pub(crate) async fn agent_level(s: &AppState, env: &Arc<dyn Environment>) -> Option<String> {
     if env.kind() != EnvKind::KubeAgent {
         return None;
     }
@@ -377,7 +377,7 @@ async fn agent_level(s: &AppState, env: &Arc<dyn Environment>) -> Option<String>
         .and_then(|a| a.access)
 }
 
-fn with_hint(message: String, hint: Option<&str>) -> String {
+pub(crate) fn with_hint(message: String, hint: Option<&str>) -> String {
     match hint {
         Some(h) => format!("{message} ({h})"),
         None => message,

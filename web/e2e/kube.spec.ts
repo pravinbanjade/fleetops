@@ -98,6 +98,25 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
     await expect(page.locator(".xterm")).toContainText("hi-from-e2e", { timeout: 15_000 });
   });
 
+  await test.step("roll a Helm release back", async () => {
+    const kc = join(process.env.FLEETOPS_KUBE_IT ?? "../target/kube-it", "kubeconfig");
+    const chart = "../scripts/helm-it-chart";
+    const helm = (...args: string[]) =>
+      execFileSync(process.env.HELM ?? "helm", ["--kubeconfig", kc, "--namespace", "fleetops-it", ...args]);
+    helm("uninstall", "e2e-demo", "--ignore-not-found", "--wait");
+    helm("install", "e2e-demo", chart);
+    helm("upgrade", "e2e-demo", chart, "--set", "extra=true");
+    await page.goto(`/envs/${ENV}/k8s/helm`);
+    await page.getByRole("link", { name: "e2e-demo", exact: true }).click();
+    await page.getByRole("tab", { name: "History" }).click();
+    await page.getByRole("button", { name: "Roll back to 1" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("Chart hooks are not run by FleetOps.")).toBeVisible();
+    await dialog.getByRole("button", { name: "Roll back" }).click();
+    await expect(dialog.getByText("Revision 3 is deployed.")).toBeVisible();
+    helm("uninstall", "e2e-demo", "--wait");
+  });
+
   await test.step("an operator limited to fleetops-it sees only its pods, live", async () => {
     const user = `ns-op-${Date.now().toString(36)}`;
     await page.goto("/admin/users");

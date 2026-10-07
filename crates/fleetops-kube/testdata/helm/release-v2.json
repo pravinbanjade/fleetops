@@ -1,0 +1,24 @@
+{
+  "name": "demo",
+  "info": {
+    "first_deployed": "2026-10-07T09:00:00.123456789Z",
+    "last_deployed": "2026-10-07T09:05:00.5Z",
+    "deleted": "",
+    "description": "Upgrade complete",
+    "status": "deployed",
+    "notes": "Visit http://demo.local"
+  },
+  "chart": {
+    "metadata": {"name": "demo", "version": "0.2.0", "description": "A demo", "apiVersion": "v2", "appVersion": "1.1.0", "type": "application"},
+    "lock": null,
+    "templates": [{"name": "templates/deploy.yaml", "data": "a2luZDogRGVwbG95bWVudAo="}],
+    "values": {"replicas": 1},
+    "schema": null,
+    "files": null
+  },
+  "config": {"replicas": 2, "db": {"host": "db", "password": "hunter2"}},
+  "manifest": "---\n# Source: demo/templates/secret.yaml\napiVersion: v1\nkind: Secret\nmetadata:\n  name: demo-db\ntype: Opaque\ndata:\n  password: aHVudGVyMg==\n---\n# Source: demo/templates/deploy.yaml\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: demo\nspec:\n  replicas: 2\n",
+  "hooks": [{"name": "demo-test", "kind": "Pod", "path": "demo/templates/test.yaml", "manifest": "kind: Pod\n", "events": ["test"], "last_run": {"started_at": "", "completed_at": "", "phase": ""}}],
+  "version": 2,
+  "namespace": "apps"
+}

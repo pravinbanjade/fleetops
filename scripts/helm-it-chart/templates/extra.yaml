@@ -1,0 +1,12 @@
+{{- if .Values.extra }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-extra
+  {{- if .Values.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+data:
+  k: v
+{{- end }}
