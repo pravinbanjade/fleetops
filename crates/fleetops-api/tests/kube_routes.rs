@@ -57,7 +57,7 @@ async fn an_unknown_kind_is_404() {
     let r = t
         .send(req(
             "GET",
-            "/api/v1/envs/k/k8s/replicasets",
+            "/api/v1/envs/k/k8s/widgets",
             None,
             Some(&admin),
         ))

@@ -635,7 +635,7 @@ export type KubeEvent = {
  */
 export type KubeFilter = 'warnings';
 
-export type KubeKind = 'namespaces' | 'nodes' | 'deployments' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs' | 'pods' | 'services' | 'ingresses' | 'configmaps' | 'secrets' | 'events';
+export type KubeKind = 'namespaces' | 'nodes' | 'deployments' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs' | 'pods' | 'services' | 'ingresses' | 'configmaps' | 'secrets' | 'events' | 'replicasets' | 'horizontalpodautoscalers' | 'networkpolicies' | 'persistentvolumeclaims' | 'persistentvolumes' | 'storageclasses' | 'serviceaccounts' | 'roles' | 'rolebindings' | 'clusterroles' | 'clusterrolebindings';
 
 export type KubeList = {
     rows: Array<KubeRow>;

@@ -6667,7 +6667,18 @@
           "ingresses",
           "configmaps",
           "secrets",
-          "events"
+          "events",
+          "replicasets",
+          "horizontalpodautoscalers",
+          "networkpolicies",
+          "persistentvolumeclaims",
+          "persistentvolumes",
+          "storageclasses",
+          "serviceaccounts",
+          "roles",
+          "rolebindings",
+          "clusterroles",
+          "clusterrolebindings"
         ]
       },
       "KubeList": {

@@ -70,6 +70,7 @@ pub fn row(kind: KubeKind, obj: &DynamicObject) -> KubeRow {
         KubeKind::ConfigMaps => typed::<ConfigMap>(kind, obj).map(configmap),
         KubeKind::Secrets => typed::<Secret>(kind, obj).map(secret),
         KubeKind::Events => typed::<Event>(kind, obj).map(event),
+        _ => None,
     };
     match summary {
         Some((status, health, columns)) => KubeRow {

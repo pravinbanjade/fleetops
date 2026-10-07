@@ -16,7 +16,17 @@ pub fn get(kind: KubeKind) -> Option<&'static str> {
         KubeKind::ConfigMaps => include_str!("templates/configmaps.yaml"),
         KubeKind::Secrets => include_str!("templates/secrets.yaml"),
         KubeKind::Namespaces => include_str!("templates/namespaces.yaml"),
-        KubeKind::Nodes | KubeKind::Events => return None,
+        KubeKind::PersistentVolumeClaims => include_str!("templates/persistentvolumeclaims.yaml"),
+        KubeKind::PersistentVolumes => include_str!("templates/persistentvolumes.yaml"),
+        KubeKind::StorageClasses => include_str!("templates/storageclasses.yaml"),
+        KubeKind::HorizontalPodAutoscalers => include_str!("templates/horizontalpodautoscalers.yaml"),
+        KubeKind::NetworkPolicies => include_str!("templates/networkpolicies.yaml"),
+        KubeKind::ServiceAccounts => include_str!("templates/serviceaccounts.yaml"),
+        KubeKind::Roles => include_str!("templates/roles.yaml"),
+        KubeKind::RoleBindings => include_str!("templates/rolebindings.yaml"),
+        KubeKind::ClusterRoles => include_str!("templates/clusterroles.yaml"),
+        KubeKind::ClusterRoleBindings => include_str!("templates/clusterrolebindings.yaml"),
+        KubeKind::Nodes | KubeKind::Events | KubeKind::ReplicaSets => return None,
     })
 }
 
@@ -39,5 +49,6 @@ mod tests {
         }
         assert!(get(KubeKind::Nodes).is_none());
         assert!(get(KubeKind::Events).is_none());
+        assert!(get(KubeKind::ReplicaSets).is_none());
     }
 }

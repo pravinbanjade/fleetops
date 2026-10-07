@@ -19,6 +19,10 @@ export const KIND_LABEL: Record<KubeKind, string> = {
   namespaces: "Namespaces", nodes: "Nodes", deployments: "Deployments", statefulsets: "StatefulSets",
   daemonsets: "DaemonSets", jobs: "Jobs", cronjobs: "CronJobs", pods: "Pods", services: "Services",
   ingresses: "Ingresses", configmaps: "ConfigMaps", secrets: "Secrets", events: "Events",
+  replicasets: "ReplicaSets", horizontalpodautoscalers: "HorizontalPodAutoscalers", networkpolicies: "NetworkPolicies",
+  persistentvolumeclaims: "PersistentVolumeClaims", persistentvolumes: "PersistentVolumes", storageclasses: "StorageClasses",
+  serviceaccounts: "ServiceAccounts", roles: "Roles", rolebindings: "RoleBindings", clusterroles: "ClusterRoles",
+  clusterrolebindings: "ClusterRoleBindings",
 };
 
 /** Kind-specific columns: [key in KubeRow.columns, header]. */
@@ -37,6 +41,17 @@ export const KIND_COLUMNS: Record<KubeKind, [string, string][]> = {
   secrets: [["keys", "Keys"]],
   // The events list draws its own columns.
   events: [],
+  replicasets: [],
+  horizontalpodautoscalers: [],
+  networkpolicies: [],
+  persistentvolumeclaims: [],
+  persistentvolumes: [],
+  storageclasses: [],
+  serviceaccounts: [],
+  roles: [],
+  rolebindings: [],
+  clusterroles: [],
+  clusterrolebindings: [],
 };
 
 /** What the status column shows, by kind. */

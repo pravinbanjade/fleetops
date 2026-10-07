@@ -4,7 +4,7 @@ use fleetops_core::Error;
 
 #[test]
 fn every_kind_round_trips_through_its_path_name() {
-    assert_eq!(KubeKind::ALL.len(), 13);
+    assert_eq!(KubeKind::ALL.len(), 24);
     for k in KubeKind::ALL {
         assert_eq!(k.as_str().parse::<KubeKind>().unwrap(), k);
         assert_eq!(serde_json::to_value(k).unwrap(), k.as_str());
@@ -17,7 +17,7 @@ fn every_kind_round_trips_through_its_path_name() {
 #[test]
 fn an_unknown_kind_is_not_found() {
     assert!(matches!(
-        "replicasets".parse::<KubeKind>(),
+        "widgets".parse::<KubeKind>(),
         Err(Error::NotFound(_))
     ));
 }
@@ -29,7 +29,17 @@ fn scope_and_actions_follow_the_spec() {
         .into_iter()
         .filter(|k| k.cluster_scoped())
         .collect();
-    assert_eq!(cluster, [Namespaces, Nodes]);
+    assert_eq!(
+        cluster,
+        [
+            Namespaces,
+            Nodes,
+            PersistentVolumes,
+            StorageClasses,
+            ClusterRoles,
+            ClusterRoleBindings
+        ]
+    );
     let scalable: Vec<_> = KubeKind::ALL.into_iter().filter(|k| k.scalable()).collect();
     assert_eq!(scalable, [Deployments, StatefulSets]);
     let restartable: Vec<_> = KubeKind::ALL

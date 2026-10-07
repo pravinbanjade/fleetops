@@ -42,10 +42,21 @@ pub enum KubeKind {
     ConfigMaps,
     Secrets,
     Events,
+    ReplicaSets,
+    HorizontalPodAutoscalers,
+    NetworkPolicies,
+    PersistentVolumeClaims,
+    PersistentVolumes,
+    StorageClasses,
+    ServiceAccounts,
+    Roles,
+    RoleBindings,
+    ClusterRoles,
+    ClusterRoleBindings,
 }
 
 impl KubeKind {
-    pub const ALL: [KubeKind; 13] = [
+    pub const ALL: [KubeKind; 24] = [
         KubeKind::Namespaces,
         KubeKind::Nodes,
         KubeKind::Deployments,
@@ -59,6 +70,17 @@ impl KubeKind {
         KubeKind::ConfigMaps,
         KubeKind::Secrets,
         KubeKind::Events,
+        KubeKind::ReplicaSets,
+        KubeKind::HorizontalPodAutoscalers,
+        KubeKind::NetworkPolicies,
+        KubeKind::PersistentVolumeClaims,
+        KubeKind::PersistentVolumes,
+        KubeKind::StorageClasses,
+        KubeKind::ServiceAccounts,
+        KubeKind::Roles,
+        KubeKind::RoleBindings,
+        KubeKind::ClusterRoles,
+        KubeKind::ClusterRoleBindings,
     ];
 
     /// The plural lowercase name used in URLs.
@@ -77,6 +99,17 @@ impl KubeKind {
             KubeKind::ConfigMaps => "configmaps",
             KubeKind::Secrets => "secrets",
             KubeKind::Events => "events",
+            KubeKind::ReplicaSets => "replicasets",
+            KubeKind::HorizontalPodAutoscalers => "horizontalpodautoscalers",
+            KubeKind::NetworkPolicies => "networkpolicies",
+            KubeKind::PersistentVolumeClaims => "persistentvolumeclaims",
+            KubeKind::PersistentVolumes => "persistentvolumes",
+            KubeKind::StorageClasses => "storageclasses",
+            KubeKind::ServiceAccounts => "serviceaccounts",
+            KubeKind::Roles => "roles",
+            KubeKind::RoleBindings => "rolebindings",
+            KubeKind::ClusterRoles => "clusterroles",
+            KubeKind::ClusterRoleBindings => "clusterrolebindings",
         }
     }
 
@@ -96,6 +129,17 @@ impl KubeKind {
             KubeKind::ConfigMaps => "ConfigMap",
             KubeKind::Secrets => "Secret",
             KubeKind::Events => "Event",
+            KubeKind::ReplicaSets => "ReplicaSet",
+            KubeKind::HorizontalPodAutoscalers => "HorizontalPodAutoscaler",
+            KubeKind::NetworkPolicies => "NetworkPolicy",
+            KubeKind::PersistentVolumeClaims => "PersistentVolumeClaim",
+            KubeKind::PersistentVolumes => "PersistentVolume",
+            KubeKind::StorageClasses => "StorageClass",
+            KubeKind::ServiceAccounts => "ServiceAccount",
+            KubeKind::Roles => "Role",
+            KubeKind::RoleBindings => "RoleBinding",
+            KubeKind::ClusterRoles => "ClusterRole",
+            KubeKind::ClusterRoleBindings => "ClusterRoleBinding",
         }
     }
 
@@ -104,7 +148,15 @@ impl KubeKind {
     }
 
     pub fn cluster_scoped(self) -> bool {
-        matches!(self, KubeKind::Namespaces | KubeKind::Nodes)
+        matches!(
+            self,
+            KubeKind::Namespaces
+                | KubeKind::Nodes
+                | KubeKind::PersistentVolumes
+                | KubeKind::StorageClasses
+                | KubeKind::ClusterRoles
+                | KubeKind::ClusterRoleBindings
+        )
     }
 
     pub fn scalable(self) -> bool {
@@ -648,5 +700,46 @@ mod watch_and_apply_tests {
         ));
         assert_eq!(e.code, "conflict");
         assert_eq!(e.message, "field manager kubectl owns .spec.replicas");
+    }
+}
+
+#[cfg(test)]
+mod kind_tests {
+    use super::*;
+
+    #[test]
+    fn every_kind_round_trips_through_its_url_name_and_kind_name() {
+        assert_eq!(KubeKind::ALL.len(), 24);
+        for k in KubeKind::ALL {
+            assert_eq!(k.as_str().parse::<KubeKind>().unwrap(), k);
+            assert_eq!(KubeKind::from_kind_name(k.kind_name()), Some(k));
+        }
+        assert_eq!(
+            KubeKind::HorizontalPodAutoscalers.as_str(),
+            "horizontalpodautoscalers"
+        );
+        assert_eq!(
+            KubeKind::ClusterRoleBindings.kind_name(),
+            "ClusterRoleBinding"
+        );
+    }
+
+    #[test]
+    fn the_new_cluster_scoped_kinds_say_so() {
+        for k in [
+            KubeKind::PersistentVolumes,
+            KubeKind::StorageClasses,
+            KubeKind::ClusterRoles,
+            KubeKind::ClusterRoleBindings,
+        ] {
+            assert!(k.cluster_scoped(), "{k:?}");
+        }
+        for k in [
+            KubeKind::PersistentVolumeClaims,
+            KubeKind::Roles,
+            KubeKind::ReplicaSets,
+        ] {
+            assert!(!k.cluster_scoped(), "{k:?}");
+        }
     }
 }
