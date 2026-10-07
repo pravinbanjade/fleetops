@@ -3,6 +3,7 @@
 
 pub mod apply;
 pub mod client;
+pub mod discovery;
 pub mod env;
 pub mod errors;
 pub mod helm;

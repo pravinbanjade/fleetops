@@ -48,6 +48,8 @@ pub struct KubeClient {
     nodes: Mutex<Option<(Instant, (u32, u32))>>,
     discovery: Mutex<HashMap<(String, String), (Instant, Resolved)>>,
     pub(crate) usage_cache: Mutex<UsageCache>,
+    /// Generic kinds, reused for `discovery::DISCOVERY_CACHE`.
+    pub(crate) generic: Mutex<Option<(Instant, fleetops_core::kube::Discovery)>>,
 }
 
 type UsageCache = HashMap<(KubeKind, Option<String>), (Instant, fleetops_core::kube::KubeUsage)>;
@@ -60,6 +62,7 @@ impl KubeClient {
             nodes: Mutex::new(None),
             discovery: Mutex::new(HashMap::new()),
             usage_cache: Mutex::new(HashMap::new()),
+            generic: Mutex::new(None),
         }
     }
 
@@ -702,6 +705,10 @@ impl KubeOps for KubeClient {
         ns: Option<&str>,
     ) -> Result<fleetops_core::kube::KubeUsage> {
         self.usage_impl(kind, ns).await
+    }
+
+    async fn discover(&self, refresh: bool) -> Result<fleetops_core::kube::Discovery> {
+        self.discover_impl(refresh).await
     }
 
     async fn helm_list(&self, ns: Option<&str>) -> Result<Vec<fleetops_core::helm::HelmRelease>> {
