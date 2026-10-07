@@ -93,6 +93,8 @@ pub struct AgentView {
     pub join_expires_at: Option<i64>,
     /// kube-agent: the access level its manifest grants.
     pub access: Option<String>,
+    /// kube-agent: the manifest also reads every kind, for custom resources.
+    pub custom_resources: bool,
 }
 
 impl AgentView {
@@ -106,6 +108,7 @@ impl AgentView {
             last_error: rec.last_error,
             join_expires_at: rec.join_expires_at,
             access: rec.access,
+            custom_resources: rec.custom_resources,
         }
     }
 }
@@ -136,9 +139,12 @@ pub fn command_for(
     server_url: &str,
     join_token: &str,
     access: KubeAccess,
+    custom_resources: bool,
 ) -> String {
     match kind {
-        fleetops_core::env::EnvKind::KubeAgent => manifest::command(server_url, join_token, access),
+        fleetops_core::env::EnvKind::KubeAgent => {
+            manifest::command(server_url, join_token, access, custom_resources)
+        }
         _ => enrollment_command(server_url, join_token),
     }
 }

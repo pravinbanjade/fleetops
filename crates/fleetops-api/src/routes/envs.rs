@@ -41,6 +41,9 @@ pub struct CreateEnv {
     /// kube-agent: what the agent's ClusterRole allows; default `standard`.
     #[serde(default)]
     pub access: Option<KubeAccess>,
+    /// kube-agent: also read every kind, for custom resources; off by default.
+    #[serde(default)]
+    pub custom_resources: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -110,10 +113,9 @@ async fn new_enrollment(
     let server = server_url(headers)?;
     let token = agents::new_join_token();
     let expires_at = now_unix() + agents::JOIN_TTL_SECS;
-    let access: KubeAccess = s
-        .store
-        .get_agent(env_id)
-        .await?
+    let agent = s.store.get_agent(env_id).await?;
+    let custom_resources = agent.as_ref().is_some_and(|a| a.custom_resources);
+    let access: KubeAccess = agent
         .and_then(|a| a.access)
         .map(|a| a.parse())
         .transpose()?
@@ -123,7 +125,7 @@ async fn new_enrollment(
             .rotate_agent(env_id, &hash_token(&token), expires_at)
             .await?;
     }
-    let command = agents::command_for(kind, &server, &token, access);
+    let command = agents::command_for(kind, &server, &token, access, custom_resources);
     Ok(Enrollment {
         join_token: token,
         expires_at,
@@ -195,6 +197,11 @@ pub async fn create(
             Error::Invalid("only a kube-agent environment takes an access level".into()).into(),
         );
     }
+    if body.custom_resources && body.kind != EnvKind::KubeAgent {
+        return Err(
+            Error::Invalid("only a kube-agent environment reads custom resources".into()).into(),
+        );
+    }
     if body.kind.is_kube() && body.url.is_some() {
         return Err(Error::Invalid(
             "a Kubernetes environment takes no URL; paste a kubeconfig".into(),
@@ -248,8 +255,12 @@ pub async fn create(
             let access = body.access.unwrap_or_default();
             if body.kind == EnvKind::KubeAgent {
                 s.store.set_agent_access(rec.id, access.as_str()).await?;
+                s.store
+                    .set_agent_custom_resources(rec.id, body.custom_resources)
+                    .await?;
             }
-            let command = agents::command_for(body.kind, &server, &token, access);
+            let command =
+                agents::command_for(body.kind, &server, &token, access, body.custom_resources);
             let enrollment = Enrollment {
                 join_token: token,
                 expires_at,

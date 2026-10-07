@@ -22,6 +22,10 @@ export type AgentView = {
     access?: string | null;
     agent_version?: string | null;
     connected: boolean;
+    /**
+     * kube-agent: the manifest also reads every kind, for custom resources.
+     */
+    custom_resources: boolean;
     enrolled: boolean;
     host?: unknown;
     join_expires_at?: number | null;
@@ -294,6 +298,10 @@ export type CreateEnv = {
      * kube-config: the context to use; default the current one.
      */
     context?: string | null;
+    /**
+     * kube-agent: also read every kind, for custom resources; off by default.
+     */
+    custom_resources?: boolean;
     kind: EnvKind;
     /**
      * kube-config: the kubeconfig, stored encrypted and never returned.

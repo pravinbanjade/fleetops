@@ -10,7 +10,7 @@ pub const NAMESPACE: &str = "fleetops";
 pub const KEY_SECRET: &str = "fleetops-agent-key";
 
 const READ_ONLY_RULES: &str = r#"  - apiGroups: [""]
-    resources: [namespaces, nodes, pods, services, configmaps, secrets, events]
+    resources: [namespaces, nodes, pods, services, configmaps, secrets, events, persistentvolumeclaims, persistentvolumes, serviceaccounts]
     verbs: [get, list, watch]
   - apiGroups: [""]
     resources: [pods/log]
@@ -22,7 +22,16 @@ const READ_ONLY_RULES: &str = r#"  - apiGroups: [""]
     resources: [jobs, cronjobs]
     verbs: [get, list, watch]
   - apiGroups: [networking.k8s.io]
-    resources: [ingresses]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list, watch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings, clusterroles, clusterrolebindings]
     verbs: [get, list, watch]
   - apiGroups: [metrics.k8s.io]
     resources: [nodes, pods]
@@ -51,14 +60,26 @@ const STANDARD_RULES: &str = r#"  - apiGroups: [""]
   - apiGroups: [apps]
     resources: [deployments/scale, statefulsets/scale]
     verbs: [get, patch]
-  - apiGroups: [apps]
-    resources: [replicasets]
-    verbs: [get]
+  - apiGroups: [apps, autoscaling]
+    resources: [replicasets, horizontalpodautoscalers]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims, serviceaccounts]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [persistentvolumes]
+    verbs: [get, list, watch]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list, watch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings, clusterroles, clusterrolebindings]
+    verbs: [get, list, watch]
   - apiGroups: [batch]
     resources: [jobs, cronjobs]
     verbs: [get, list, watch, create, update, patch, delete]
   - apiGroups: [networking.k8s.io]
-    resources: [ingresses]
+    resources: [ingresses, networkpolicies]
     verbs: [get, list, watch, create, update, patch, delete]
   - apiGroups: [metrics.k8s.io]
     resources: [nodes, pods]
@@ -83,14 +104,34 @@ subjects:
     name: fleetops-agent
     namespace: fleetops"#;
 
-pub fn command(server_url: &str, join_token: &str, access: KubeAccess) -> String {
+/// "Read custom resources": every kind, read-only. It also reads every
+/// built-in kind, Secrets included, so it is opt-in (spec 3g §3).
+const READ_EVERYTHING_RULE: &str =
+    "\n  - apiGroups: [\"*\"]\n    resources: [\"*\"]\n    verbs: [get, list, watch]";
+
+pub fn command(
+    server_url: &str,
+    join_token: &str,
+    access: KubeAccess,
+    custom_resources: bool,
+) -> String {
     format!(
         "kubectl apply -f - <<'EOF'\n{}\nEOF\n",
-        manifest(server_url, join_token, access)
+        manifest(server_url, join_token, access, custom_resources)
     )
 }
 
-pub fn manifest(server_url: &str, join_token: &str, access: KubeAccess) -> String {
+pub fn manifest(
+    server_url: &str,
+    join_token: &str,
+    access: KubeAccess,
+    custom_resources: bool,
+) -> String {
+    let extra = if custom_resources {
+        READ_EVERYTHING_RULE
+    } else {
+        ""
+    };
     let version = env!("CARGO_PKG_VERSION");
     let join_hash = &hex::encode(Sha256::digest(join_token.as_bytes()))[..12];
     let rules = if access == KubeAccess::ReadOnly {
@@ -128,7 +169,7 @@ kind: ClusterRole
 metadata:
   name: fleetops-agent
 rules:
-{rules}
+{rules}{extra}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -234,7 +275,12 @@ mod tests {
 
     #[test]
     fn the_manifest_installs_a_namespaced_agent_with_its_join_token() {
-        let m = manifest("https://fleet.example", "fj_abc", KubeAccess::Standard);
+        let m = manifest(
+            "https://fleet.example",
+            "fj_abc",
+            KubeAccess::Standard,
+            false,
+        );
         let docs: Vec<&str> = m.split("\n---\n").collect();
         let kinds: Vec<&str> = docs
             .iter()
@@ -271,8 +317,8 @@ mod tests {
 
     #[test]
     fn a_new_token_changes_the_pod_template_so_reapplying_restarts_the_agent() {
-        let a = manifest("https://f", "fj_one", KubeAccess::Standard);
-        let b = manifest("https://f", "fj_two", KubeAccess::Standard);
+        let a = manifest("https://f", "fj_one", KubeAccess::Standard, false);
+        let b = manifest("https://f", "fj_two", KubeAccess::Standard, false);
         let ann = |m: &str| {
             m.lines()
                 .find(|l| l.contains("fleetops.io/join:"))
@@ -287,7 +333,7 @@ mod tests {
         // The distroless image's USER is "nonroot", which kubelet cannot
         // check against runAsNonRoot; without a numeric uid the pod never
         // starts (CreateContainerConfigError).
-        let m = manifest("https://f", "fj_x", KubeAccess::Standard);
+        let m = manifest("https://f", "fj_x", KubeAccess::Standard, false);
         assert!(
             m.contains("runAsUser: 65532") && m.contains("runAsGroup: 65532"),
             "{m}"
@@ -296,7 +342,7 @@ mod tests {
 
     #[test]
     fn the_command_pipes_the_manifest_to_kubectl() {
-        let c = command("https://f", "fj_x", KubeAccess::Standard);
+        let c = command("https://f", "fj_x", KubeAccess::Standard, false);
         assert!(
             c.starts_with("kubectl apply -f - <<'EOF'\n") && c.ends_with("EOF\n"),
             "{c}"
@@ -310,7 +356,7 @@ mod tests {
 
     #[test]
     fn read_only_grants_no_write_verbs_and_no_exec() {
-        let m = manifest("https://f", "fj_x", KubeAccess::ReadOnly);
+        let m = manifest("https://f", "fj_x", KubeAccess::ReadOnly, false);
         let r = rules(&m);
         for verb in ["create", "update", "patch", "delete"] {
             assert!(!r.contains(verb), "{verb} in {r}");
@@ -322,7 +368,7 @@ mod tests {
     #[test]
     fn every_level_can_read_metrics() {
         for access in [KubeAccess::ReadOnly, KubeAccess::Standard] {
-            let m = manifest("https://f", "fj_x", access);
+            let m = manifest("https://f", "fj_x", access, false);
             assert!(
                 rules(&m).contains(
                     "apiGroups: [metrics.k8s.io]\n    resources: [nodes, pods]\n    verbs: [get, list]"
@@ -334,7 +380,7 @@ mod tests {
 
     #[test]
     fn standard_can_create_update_and_patch_the_common_kinds() {
-        let m = manifest("https://f", "fj_x", KubeAccess::Standard);
+        let m = manifest("https://f", "fj_x", KubeAccess::Standard, false);
         let r = rules(&m);
         assert!(
             r.contains("deployments, statefulsets, daemonsets]\n    verbs: [get, list, watch, create, update, patch, delete]"),
@@ -345,15 +391,64 @@ mod tests {
 
     #[test]
     fn cluster_admin_adds_a_separately_named_binding() {
-        let m = manifest("https://f", "fj_x", KubeAccess::ClusterAdmin);
+        let m = manifest("https://f", "fj_x", KubeAccess::ClusterAdmin, false);
         assert!(
             m.contains("name: fleetops-agent-cluster-admin\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: ClusterRole\n  name: cluster-admin"),
             "{m}"
         );
-        let s = manifest("https://f", "fj_x", KubeAccess::Standard);
+        let s = manifest("https://f", "fj_x", KubeAccess::Standard, false);
         assert!(
             s.contains("kubectl delete clusterrolebinding fleetops-agent-cluster-admin"),
             "the downgrade note"
         );
+    }
+
+    #[test]
+    fn read_only_and_standard_read_the_new_core_kinds() {
+        for access in [KubeAccess::ReadOnly, KubeAccess::Standard] {
+            let m = manifest("https://f", "t", access, false);
+            let r = rules(&m);
+            for needle in [
+                "horizontalpodautoscalers",
+                "networkpolicies",
+                "persistentvolumeclaims",
+                "persistentvolumes",
+                "serviceaccounts",
+                "storageclasses",
+                "rbac.authorization.k8s.io",
+            ] {
+                assert!(r.contains(needle), "{access:?} lacks {needle}");
+            }
+            assert!(
+                !r.contains(r#"apiGroups: ["*"]"#),
+                "{access:?} must not read everything by default"
+            );
+        }
+    }
+
+    #[test]
+    fn standard_writes_the_new_namespaced_kinds() {
+        let r = rules(&manifest("https://f", "t", KubeAccess::Standard, false)).to_string();
+        assert!(
+            r.contains("resources: [replicasets, horizontalpodautoscalers]\n    verbs: [get, list, watch, create, update, patch, delete]"),
+            "{r}"
+        );
+        assert!(
+            r.contains("resources: [persistentvolumeclaims, serviceaccounts]\n    verbs: [get, list, watch, create, update, patch, delete]"),
+            "{r}"
+        );
+    }
+
+    #[test]
+    fn the_custom_resources_toggle_adds_a_read_everything_rule() {
+        for access in [KubeAccess::ReadOnly, KubeAccess::Standard] {
+            let r = rules(&manifest("https://f", "t", access, true)).to_string();
+            assert!(
+                r.contains(
+                    "  - apiGroups: [\"*\"]\n    resources: [\"*\"]\n    verbs: [get, list, watch]"
+                ),
+                "{r}"
+            );
+        }
     }
 }

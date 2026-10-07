@@ -338,6 +338,28 @@ describe("Kubernetes environments", () => {
     );
   });
 
+  it("lets an agent cluster read custom resources, off unless asked", async () => {
+    const calls = mockFetch({
+      ...routes,
+      "POST /api/v1/envs": { status: 201, json: { id: 9, name: "kc", kind: "kube-agent", url: "agent://9", created_at: 1, updated_at: 1,
+        enrollment: { join_token: "fj_abc", expires_at: Math.floor(Date.now() / 1000) + 900, command: "kubectl apply" } } },
+    });
+    const { screen } = renderApp("/admin/envs");
+    await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Kubernetes" }));
+    await userEvent.click(within(dialog).getByRole("radio", { name: /in-cluster agent/i }));
+    const box = within(dialog).getByRole("checkbox", { name: /Read custom resources/ });
+    expect(box).not.toBeChecked();
+    expect(within(dialog).getByText(/Secrets included/)).toBeInTheDocument();
+    await userEvent.click(box);
+    await userEvent.type(within(dialog).getByLabelText("Name"), "kc");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "POST" && c.path === "/api/v1/envs")?.body).toMatchObject({ kind: "kube-agent", custom_resources: true }),
+    );
+  });
+
   it("lists a kubeconfig cluster's server and context", async () => {
     mockFetch({
       ...routes,

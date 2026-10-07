@@ -20,10 +20,13 @@ pub struct AgentRecord {
     pub last_error: Option<String>,
     /// kube-agent: `read-only`, `standard` or `cluster-admin`.
     pub access: Option<String>,
+    /// kube-agent: the manifest also reads every kind (custom resources).
+    pub custom_resources: bool,
 }
 
 const AGENT_COLS: &str = "environment_id, key_hash IS NOT NULL AS enrolled, join_expires_at, \
-                          last_seen_at, agent_version, host_info, last_error, access";
+                          last_seen_at, agent_version, host_info, last_error, access, \
+                          custom_resources";
 
 impl Store {
     pub async fn create_agent_environment(
@@ -74,6 +77,17 @@ impl Store {
     pub async fn set_agent_access(&self, env_id: i64, access: &str) -> Result<()> {
         sqlx::query("UPDATE agent_credentials SET access = ? WHERE environment_id = ?")
             .bind(access)
+            .bind(env_id)
+            .execute(&self.pool)
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Records whether a kube-agent's manifest also reads every kind.
+    pub async fn set_agent_custom_resources(&self, env_id: i64, on: bool) -> Result<()> {
+        sqlx::query("UPDATE agent_credentials SET custom_resources = ? WHERE environment_id = ?")
+            .bind(on)
             .bind(env_id)
             .execute(&self.pool)
             .await

@@ -5540,7 +5540,8 @@
         "type": "object",
         "required": [
           "connected",
-          "enrolled"
+          "enrolled",
+          "custom_resources"
         ],
         "properties": {
           "access": {
@@ -5558,6 +5559,10 @@
           },
           "connected": {
             "type": "boolean"
+          },
+          "custom_resources": {
+            "type": "boolean",
+            "description": "kube-agent: the manifest also reads every kind, for custom resources."
           },
           "enrolled": {
             "type": "boolean"
@@ -6313,6 +6318,10 @@
               "null"
             ],
             "description": "kube-config: the context to use; default the current one."
+          },
+          "custom_resources": {
+            "type": "boolean",
+            "description": "kube-agent: also read every kind, for custom resources; off by default."
           },
           "kind": {
             "$ref": "#/components/schemas/EnvKind"

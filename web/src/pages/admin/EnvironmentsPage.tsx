@@ -201,6 +201,7 @@ function EnvForm({
   const [contextsError, setContextsError] = useState<string | null>(null);
   const [skipCheck, setSkipCheck] = useState(false);
   const [access, setAccess] = useState<KubeAccess>("standard");
+  const [customResources, setCustomResources] = useState(false);
   const agent = kind === "docker-agent" || kind === "kube-agent";
 
   const loadContexts = async (text: string) => {
@@ -240,7 +241,7 @@ function EnvForm({
           });
         } else if (agent) {
           const { data } = await createEnv({
-            body: { name: name.trim(), kind, ...(kind === "kube-agent" ? { access } : {}) },
+            body: { name: name.trim(), kind, ...(kind === "kube-agent" ? { access, custom_resources: customResources } : {}) },
             throwOnError: true,
           });
           if (data.enrollment) onEnrollment?.({ enrollment: data.enrollment, kind });
@@ -274,6 +275,17 @@ function EnvForm({
             </label>
           ))}
         </fieldset>
+      )}
+      {!env && kind === "kube-agent" && (
+        <label className="flex cursor-pointer items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={customResources} onChange={(e) => setCustomResources(e.target.checked)} />
+          <span className="grid">
+            <span className="font-medium">Read custom resources</span>
+            <span className="text-xs text-muted-foreground">
+              Lets FleetOps list every kind, including CRDs. This also reads every built-in kind, Secrets included.
+            </span>
+          </span>
+        </label>
       )}
       {kind === "kube-config" && (
         <>

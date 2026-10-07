@@ -262,6 +262,48 @@ async fn a_kube_agent_keeps_its_access_level_across_rotation() {
 }
 
 #[tokio::test]
+async fn a_kube_agent_can_read_custom_resources_and_keeps_it_across_rotation() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let created = t
+        .send(post(
+            "/api/v1/envs",
+            json!({"name": "kc", "kind": "kube-agent", "access": "read-only", "custom_resources": true}),
+            &admin,
+        ))
+        .await;
+    assert_eq!(created.status, 201, "{:?}", created.json);
+    let everything = r#"apiGroups: ["*"]"#;
+    assert!(created.json["enrollment"]["command"]
+        .as_str()
+        .unwrap()
+        .contains(everything));
+    let rotated = t
+        .send(post("/api/v1/envs/kc/agent/rotate", json!({}), &admin))
+        .await;
+    assert!(rotated.json["command"].as_str().unwrap().contains(everything));
+    let plain = t
+        .send(post(
+            "/api/v1/envs",
+            json!({"name": "kp", "kind": "kube-agent"}),
+            &admin,
+        ))
+        .await;
+    assert!(!plain.json["enrollment"]["command"]
+        .as_str()
+        .unwrap()
+        .contains(everything));
+    let docker = t
+        .send(post(
+            "/api/v1/envs",
+            json!({"name": "da", "kind": "docker-agent", "custom_resources": true}),
+            &admin,
+        ))
+        .await;
+    assert_eq!(docker.status, 400, "{:?}", docker.json);
+}
+
+#[tokio::test]
 async fn a_kube_agent_defaults_to_standard_access() {
     let t = app().await;
     let admin = t.setup_admin().await;
