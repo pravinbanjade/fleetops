@@ -269,8 +269,30 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
               <TableBody key={g.id} aria-label={racked ? g.label : undefined} className="[&_tr:last-child]:border-b [&:last-child_tr:last-child]:border-0">
                 {racked && (
                   // The bay's label is the row group's name; drawn here for sighted readers.
-                  <tr aria-hidden data-bay={g.id} className="border-b bg-muted/30">
-                    <td colSpan={width} className="h-7 px-3 text-xs font-medium text-muted-foreground">
+                  <tr aria-hidden={props.selectable ? undefined : true} data-bay={g.id} className="border-b bg-muted/30">
+                    {props.selectable && (
+                      <td className="h-7 py-0 pr-0 pl-3 align-middle">
+                        <Checkbox
+                          aria-label={`Select all in ${g.label}`}
+                          checked={g.rows.every((r) => r.getIsSelected()) ? true : g.rows.some((r) => r.getIsSelected()) ? "indeterminate" : false}
+                          onCheckedChange={(v) =>
+                            setRowSelection((sel) => {
+                              const next = { ...sel };
+                              for (const r of g.rows) {
+                                if (v) next[r.id] = true;
+                                else delete next[r.id];
+                              }
+                              return next;
+                            })
+                          }
+                        />
+                      </td>
+                    )}
+                    <td
+                      aria-hidden={props.selectable ? true : undefined}
+                      colSpan={width - (props.selectable ? 1 : 0)}
+                      className="h-7 px-3 text-xs font-medium text-muted-foreground"
+                    >
                       {g.label} <span className="ml-1 font-normal tabular-nums">{g.rows.length}</span>
                     </td>
                   </tr>

@@ -137,3 +137,36 @@ describe("acting on a selection", () => {
     expect(within(table).queryByRole("checkbox")).not.toBeInTheDocument();
   });
 });
+
+describe("selecting a bay", () => {
+  it("selects every row in a health bay from its header", async () => {
+    mockFetch({
+      ...routes,
+      "GET /api/v1/envs/k/k8s/deployments": {
+        json: {
+          rows: [
+            { ...kubeRow("api", "apps", { ready: "0/3" }, "bad"), status: "0/3" },
+            { ...kubeRow("jobs", "apps", { ready: "0/1" }, "bad"), status: "0/1" },
+            dep("web"),
+          ],
+          truncated: false,
+        },
+      },
+    });
+    renderApp("/envs/k/k8s/deployments");
+    const table = await screen.findByRole("table", { name: "Deployments" });
+    const bay = await within(table).findByRole("checkbox", { name: "Select all in Needs attention" });
+    await userEvent.click(bay);
+    expect(within(table).getByRole("checkbox", { name: "Select apps/api" })).toBeChecked();
+    expect(within(table).getByRole("checkbox", { name: "Select apps/jobs" })).toBeChecked();
+    expect(within(table).getByRole("checkbox", { name: "Select apps/web" })).not.toBeChecked();
+    expect(within(screen.getByRole("group", { name: "Selected" })).getByText("2 selected")).toBeInTheDocument();
+    // One row off: the bay reads as partly selected; clicking again selects it whole.
+    await userEvent.click(within(table).getByRole("checkbox", { name: "Select apps/api" }));
+    expect(bay).toHaveAttribute("data-state", "indeterminate");
+    await userEvent.click(bay);
+    expect(within(table).getByRole("checkbox", { name: "Select apps/api" })).toBeChecked();
+    await userEvent.click(bay);
+    expect(screen.queryByRole("group", { name: "Selected" })).not.toBeInTheDocument();
+  });
+});

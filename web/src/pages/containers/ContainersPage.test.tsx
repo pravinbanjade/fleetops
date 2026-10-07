@@ -16,8 +16,12 @@ const LIST = [
   container({ id: "c2", name: "db", image: "postgres:17", state: "exited", status: "Exited (0) 1 hour ago" }),
 ];
 
+// Data rows only: past the column headers, without each bay's own header row.
 const rows = (screen: typeof import("@testing-library/react").screen) =>
-  within(screen.getByRole("table", { name: "Containers" })).getAllByRole("row").slice(1);
+  within(screen.getByRole("table", { name: "Containers" }))
+    .getAllByRole("row")
+    .slice(1)
+    .filter((r) => !r.hasAttribute("data-bay"));
 
 describe("containers list", () => {
   it("starts filtered when linked with ?q=", async () => {
