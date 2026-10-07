@@ -56,7 +56,7 @@ fn text(v: &Value, ptr: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-pub fn split(yaml: &str) -> Result<Vec<Doc>> {
+fn parse(yaml: &str, max: usize) -> Result<Vec<Doc>> {
     let mut docs = Vec::new();
     for raw in documents(yaml) {
         let n = docs.len() + 1;
@@ -82,16 +82,27 @@ pub fn split(yaml: &str) -> Result<Vec<Doc>> {
             value,
         };
         docs.push(doc);
-        if docs.len() > APPLY_MAX_DOCS {
+        if docs.len() > max {
             return Err(Error::Invalid(format!(
                 "at most {APPLY_MAX_DOCS} documents can be applied at once"
             )));
         }
     }
+    Ok(docs)
+}
+
+pub fn split(yaml: &str) -> Result<Vec<Doc>> {
+    let docs = parse(yaml, APPLY_MAX_DOCS)?;
     if docs.is_empty() {
         return Err(Error::Invalid("there is nothing to apply".into()));
     }
     Ok(docs)
+}
+
+/// Every document, uncapped; a release's manifest may hold more than an
+/// apply may, or none.
+pub fn split_all(yaml: &str) -> Result<Vec<Doc>> {
+    parse(yaml, usize::MAX)
 }
 
 /// Namespaced kinds without a namespace take `default_ns`; cluster-scoped
