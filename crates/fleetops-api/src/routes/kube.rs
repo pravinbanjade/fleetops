@@ -183,7 +183,7 @@ impl ObjectPath {
     }
 }
 
-async fn audit_with(
+pub(crate) async fn audit_with(
     s: &AppState,
     cu: &CurrentUser,
     env_id: i64,
@@ -606,14 +606,14 @@ pub struct ApplyBody {
     pub force: bool,
 }
 
-fn check_size(yaml: &str) -> Result<()> {
+pub(crate) fn check_size(yaml: &str) -> Result<()> {
     if yaml.len() > APPLY_MAX_BYTES {
         return Err(Error::Invalid("the YAML is larger than 1 MiB".into()));
     }
     Ok(())
 }
 
-fn mode(dry_run: bool, force: bool) -> ApplyMode {
+pub(crate) fn mode(dry_run: bool, force: bool) -> ApplyMode {
     if dry_run {
         ApplyMode::DryRun
     } else {
@@ -625,7 +625,7 @@ fn mode(dry_run: bool, force: bool) -> ApplyMode {
 pub(crate) fn access_hint(level: Option<&str>) -> Option<&'static str> {
     match level {
         Some("read-only") => Some("this agent is installed read-only; re-install it at the standard level to change the common kinds, or cluster-admin for any kind"),
-        Some("standard") => Some("this agent's standard level covers the 12 common kinds; re-install it at cluster-admin to apply other kinds"),
+        Some("standard") => Some("this agent's standard level covers the common kinds; re-install it at cluster-admin to apply other kinds"),
         _ => None,
     }
 }

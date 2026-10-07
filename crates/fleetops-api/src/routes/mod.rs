@@ -5,6 +5,7 @@ pub mod docker;
 pub mod envs;
 pub(crate) mod helm;
 pub(crate) mod kube;
+pub(crate) mod kube_generic;
 pub mod tasks;
 pub mod users;
 
@@ -106,6 +107,15 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kube::cordon))
         .routes(routes!(kube::uncordon))
         .routes(routes!(kube::trigger))
+        .routes(routes!(kube_generic::discovery))
+        .routes(routes!(kube_generic::list))
+        .routes(routes!(
+            kube_generic::get,
+            kube_generic::delete,
+            kube_generic::replace
+        ))
+        .routes(routes!(kube_generic::editable))
+        .routes(routes!(kube_generic::events))
 }
 
 #[derive(Serialize, ToSchema)]

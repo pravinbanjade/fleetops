@@ -29,6 +29,27 @@ export type AgentView = {
     last_seen_at?: number | null;
 };
 
+/**
+ * A kind the cluster serves that FleetOps has no curated page for.
+ */
+export type ApiKind = {
+    api: KindRef;
+    /**
+     * CRD printer columns (priority 0, Age dropped); empty for others.
+     */
+    columns: Array<PrinterColumn>;
+    /**
+     * The CRD's name, when one defines it.
+     */
+    crd?: string | null;
+    /**
+     * e.g. `Certificate`.
+     */
+    kind: string;
+    namespaced: boolean;
+    verbs: Array<string>;
+};
+
 export type ApplyAction = 'created' | 'configured' | 'unchanged';
 
 export type ApplyBody = {
@@ -334,6 +355,14 @@ export type DirListing = {
 };
 
 /**
+ * Every generic kind, and the API groups that could not be read.
+ */
+export type Discovery = {
+    failed_groups: Array<string>;
+    kinds: Array<ApiKind>;
+};
+
+/**
  * One Docker event, reduced to what the UI needs to patch its caches.
  */
 export type DockerEvent = {
@@ -587,6 +616,19 @@ export type ImageSummary = {
 };
 
 /**
+ * A served resource, the key of every generic request: `group` is empty
+ * for the core API.
+ */
+export type KindRef = {
+    group: string;
+    /**
+     * Plural lowercase, e.g. `certificates`.
+     */
+    resource: string;
+    version: string;
+};
+
+/**
  * What the in-cluster agent's ClusterRole allows (spec §2.5).
  */
 export type KubeAccess = 'read-only' | 'standard' | 'cluster-admin';
@@ -828,6 +870,21 @@ export type PortMapping = {
     private_port: number;
     protocol: string;
     public_port?: number | null;
+};
+
+/**
+ * One column `kubectl get` shows for a custom resource.
+ */
+export type PrinterColumn = {
+    /**
+     * kubectl JSONPath, e.g. `.status.conditions[?(@.type=="Ready")].status`.
+     */
+    json_path: string;
+    name: string;
+    /**
+     * `string`, `integer`, `number`, `boolean` or `date`.
+     */
+    type: string;
 };
 
 export type PruneReport = {
@@ -2464,6 +2521,41 @@ export type KubeCountsResponses = {
 
 export type KubeCountsResponse = KubeCountsResponses[keyof KubeCountsResponses];
 
+export type KubeDiscoveryData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: {
+        /**
+         * `1` skips the 60-second cache.
+         */
+        refresh?: string;
+    };
+    url: '/api/v1/envs/{env}/k8s/discovery';
+};
+
+export type KubeDiscoveryErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type KubeDiscoveryError = KubeDiscoveryErrors[keyof KubeDiscoveryErrors];
+
+export type KubeDiscoveryResponses = {
+    /**
+     * Generic kinds, and API groups that could not be read
+     */
+    200: Discovery;
+};
+
+export type KubeDiscoveryResponse = KubeDiscoveryResponses[keyof KubeDiscoveryResponses];
+
 export type ListHelmReleasesData = {
     body?: never;
     path: {
@@ -2682,6 +2774,225 @@ export type KubeUsageResponses = {
 };
 
 export type KubeUsageResponse = KubeUsageResponses[keyof KubeUsageResponses];
+
+export type ListGenericKubeData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * API group; `core` for the core group.
+         */
+        group: string;
+        version: string;
+        /**
+         * Plural lowercase resource, e.g. `certificates`.
+         */
+        resource: string;
+    };
+    query?: {
+        /**
+         * Omit for all namespaces.
+         */
+        namespace?: string;
+    };
+    url: '/api/v1/envs/{env}/k8s/r/{group}/{version}/{resource}';
+};
+
+export type ListGenericKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListGenericKubeError = ListGenericKubeErrors[keyof ListGenericKubeErrors];
+
+export type ListGenericKubeResponses = {
+    /**
+     * Rows
+     */
+    200: KubeList;
+};
+
+export type ListGenericKubeResponse = ListGenericKubeResponses[keyof ListGenericKubeResponses];
+
+export type DeleteGenericKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        group: string;
+        version: string;
+        resource: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/r/{group}/{version}/{resource}/{ns}/{name}';
+};
+
+export type DeleteGenericKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteGenericKubeError = DeleteGenericKubeErrors[keyof DeleteGenericKubeErrors];
+
+export type DeleteGenericKubeResponses = {
+    /**
+     * Deleted
+     */
+    204: void;
+};
+
+export type DeleteGenericKubeResponse = DeleteGenericKubeResponses[keyof DeleteGenericKubeResponses];
+
+export type GetGenericKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        group: string;
+        version: string;
+        resource: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/r/{group}/{version}/{resource}/{ns}/{name}';
+};
+
+export type GetGenericKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetGenericKubeError = GetGenericKubeErrors[keyof GetGenericKubeErrors];
+
+export type GetGenericKubeResponses = {
+    /**
+     * The object
+     */
+    200: KubeObject;
+};
+
+export type GetGenericKubeResponse = GetGenericKubeResponses[keyof GetGenericKubeResponses];
+
+export type ReplaceGenericKubeData = {
+    body: ReplaceBody;
+    path: {
+        env: string;
+        group: string;
+        version: string;
+        resource: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/r/{group}/{version}/{resource}/{ns}/{name}';
+};
+
+export type ReplaceGenericKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ReplaceGenericKubeError = ReplaceGenericKubeErrors[keyof ReplaceGenericKubeErrors];
+
+export type ReplaceGenericKubeResponses = {
+    /**
+     * What changed (or would, for a dry run)
+     */
+    200: ApplyResult;
+};
+
+export type ReplaceGenericKubeResponse = ReplaceGenericKubeResponses[keyof ReplaceGenericKubeResponses];
+
+export type EditableGenericKubeData = {
+    body?: never;
+    path: {
+        env: string;
+        group: string;
+        version: string;
+        resource: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/r/{group}/{version}/{resource}/{ns}/{name}/edit';
+};
+
+export type EditableGenericKubeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type EditableGenericKubeError = EditableGenericKubeErrors[keyof EditableGenericKubeErrors];
+
+export type EditableGenericKubeResponses = {
+    /**
+     * Cleaned YAML
+     */
+    200: EditableObject;
+};
+
+export type EditableGenericKubeResponse = EditableGenericKubeResponses[keyof EditableGenericKubeResponses];
+
+export type GenericKubeEventsData = {
+    body?: never;
+    path: {
+        env: string;
+        group: string;
+        version: string;
+        resource: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/r/{group}/{version}/{resource}/{ns}/{name}/events';
+};
+
+export type GenericKubeEventsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GenericKubeEventsError = GenericKubeEventsErrors[keyof GenericKubeEventsErrors];
+
+export type GenericKubeEventsResponses = {
+    /**
+     * Events
+     */
+    200: Array<KubeEvent>;
+};
+
+export type GenericKubeEventsResponse = GenericKubeEventsResponses[keyof GenericKubeEventsResponses];
 
 export type KubeTemplatesData = {
     body?: never;
