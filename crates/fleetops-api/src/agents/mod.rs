@@ -12,7 +12,7 @@ use utoipa::ToSchema;
 
 /// How long a join token stays valid (spec §4.1).
 pub const JOIN_TTL_SECS: i64 = 900;
-pub const AGENT_IMAGE: &str = "docker.io/pravinbanjade/fleetops-agent";
+pub const AGENT_IMAGE: &str = "docker.io/fleets/fleetops-agent";
 
 /// What the in-cluster agent's ClusterRole allows (spec §2.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, ToSchema)]

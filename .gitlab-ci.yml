@@ -21,8 +21,8 @@ stages: [prepare, test, release]
 
 variables:
   CI_IMAGE: $CI_REGISTRY_IMAGE/ci:$CI_COMMIT_REF_SLUG
-  SERVER_IMAGE_REPO: docker.io/pravinbanjade/fleetops
-  AGENT_IMAGE_REPO: docker.io/pravinbanjade/fleetops-agent
+  SERVER_IMAGE_REPO: docker.io/fleets/fleetops
+  AGENT_IMAGE_REPO: docker.io/fleets/fleetops-agent
   BUILD_CACHE: $CI_REGISTRY_IMAGE/cache:build
   CARGO_HOME: $CI_PROJECT_DIR/.cargo
   CARGO_TERM_COLOR: always
