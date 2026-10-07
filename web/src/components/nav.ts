@@ -22,6 +22,13 @@ import {
   Server,
   Users,
   Waypoints,
+  Archive,
+  ListChecks,
+  Network,
+  Scale,
+  Shield,
+  ShieldCheck,
+  UserCog,
   type LucideIcon,
 } from "lucide-react";
 
@@ -81,19 +88,50 @@ export const KUBE_SIDEBAR: readonly (KubeLink | KubeGroup)[] = [
       list("daemonsets", "DaemonSets", Copy),
       list("jobs", "Jobs", Play),
       list("cronjobs", "CronJobs", Clock),
+      list("replicasets", "ReplicaSets", ListChecks),
     ],
   },
   {
     id: "network",
     label: "Network",
     icon: Waypoints,
-    items: [list("services", "Services", Waypoints, "s"), list("ingresses", "Ingresses", Globe, "i")],
+    items: [
+      list("services", "Services", Waypoints, "s"),
+      list("ingresses", "Ingresses", Globe, "i"),
+      list("networkpolicies", "NetworkPolicies", Network),
+    ],
   },
   {
     id: "config",
     label: "Config",
     icon: FileCog,
-    items: [list("configmaps", "ConfigMaps", FileCog, "m"), list("secrets", "Secrets", KeyRound, "x")],
+    items: [
+      list("configmaps", "ConfigMaps", FileCog, "m"),
+      list("secrets", "Secrets", KeyRound, "x"),
+      list("horizontalpodautoscalers", "HorizontalPodAutoscalers", Scale),
+    ],
+  },
+  {
+    id: "storage",
+    label: "Storage",
+    icon: HardDrive,
+    items: [
+      list("persistentvolumeclaims", "PersistentVolumeClaims", HardDrive),
+      list("persistentvolumes", "PersistentVolumes", Archive),
+      list("storageclasses", "StorageClasses", Layers),
+    ],
+  },
+  {
+    id: "access",
+    label: "Access Control",
+    icon: Shield,
+    items: [
+      list("serviceaccounts", "ServiceAccounts", UserCog),
+      list("roles", "Roles", ShieldCheck),
+      list("rolebindings", "RoleBindings", ShieldCheck),
+      list("clusterroles", "ClusterRoles", Shield),
+      list("clusterrolebindings", "ClusterRoleBindings", Shield),
+    ],
   },
   { to: "/envs/$env/k8s/helm", label: "Helm releases", icon: Package, key: "h" },
   {

@@ -13,7 +13,7 @@ describe("Kubernetes environments", () => {
       expect(within(nav).getByRole("link", { name: new RegExp(label) })).toBeInTheDocument();
     }
     // Groups start folded on the overview; opening one shows its pages.
-    for (const group of ["Workloads", "Network", "Config", "Cluster"]) {
+    for (const group of ["Workloads", "Network", "Config", "Storage", "Access Control", "Cluster"]) {
       expect(within(nav).getByRole("button", { name: new RegExp(group) })).toHaveAttribute("aria-expanded", "false");
     }
     expect(within(nav).queryByRole("link", { name: /Pods/ })).not.toBeInTheDocument();
@@ -185,5 +185,45 @@ describe("credentials that cannot list namespaces", () => {
     renderApp("/envs/k/k8s/deployments/apps/web");
     await userEvent.click(await screen.findByRole("button", { name: "Edit YAML" }));
     expect(await screen.findByRole("dialog", { name: "Edit web" })).toBeInTheDocument();
+  });
+
+  it("groups storage and access control in the sidebar", async () => {
+    mockFetch({ ...loggedIn, ...kubeRoutes });
+    renderApp("/envs/k");
+    const nav = await screen.findByRole("navigation", { name: "Environment" });
+    await userEvent.click(within(nav).getByRole("button", { name: /Storage/ }));
+    for (const label of ["PersistentVolumeClaims", "PersistentVolumes", "StorageClasses"]) {
+      expect(within(nav).getByRole("link", { name: label })).toBeInTheDocument();
+    }
+    await userEvent.click(within(nav).getByRole("button", { name: /Access Control/ }));
+    for (const label of ["ServiceAccounts", "Roles", "RoleBindings", "ClusterRoles", "ClusterRoleBindings"]) {
+      expect(within(nav).getByRole("link", { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it("lists PVCs with their columns and links the volume", async () => {
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      "GET /api/v1/envs/k/k8s/persistentvolumeclaims": {
+        json: {
+          rows: [{ ...kubeRow("data", "apps", { volume: "pv-1", capacity: "1Gi", access_modes: "RWO", storage_class: "standard" }, "warn"), status: "Pending" }],
+          truncated: false,
+        },
+      },
+    });
+    renderApp("/envs/k/k8s/persistentvolumeclaims");
+    const table = await screen.findByRole("table", { name: "PersistentVolumeClaims" });
+    for (const h of ["Volume", "Capacity", "Access modes", "Storage class"]) {
+      expect(within(table).getByRole("columnheader", { name: new RegExp(h) })).toBeInTheDocument();
+    }
+    expect(await within(table).findByRole("link", { name: "pv-1" })).toHaveAttribute("href", "/envs/k/k8s/persistentvolumes/-/pv-1");
+  });
+
+  it("offers no Create for ReplicaSets", async () => {
+    mockFetch({ ...loggedIn, ...kubeRoutes, "GET /api/v1/envs/k/k8s/replicasets": { json: { rows: [], truncated: false } } });
+    renderApp("/envs/k/k8s/replicasets");
+    await screen.findByRole("table", { name: "ReplicaSets" });
+    expect(screen.queryByRole("button", { name: "Create" })).not.toBeInTheDocument();
   });
 });

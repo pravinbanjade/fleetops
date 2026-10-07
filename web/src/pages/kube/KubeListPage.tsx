@@ -11,7 +11,7 @@ import { Page } from "@/components/Page";
 import { StateBadge } from "@/components/StateBadge";
 import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "@/lib/format";
 import { KubeHealth } from "./KubeHealth";
-import { CLUSTER_SCOPED, HEALTH_BAYS, HEALTH_KINDS, HEALTH_RANK, KIND_COLUMNS, KIND_LABEL, READ_ONLY, STATUS_HEADER, asKind } from "./kinds";
+import { CLUSTER_SCOPED, HEALTH_BAYS, HEALTH_KINDS, HEALTH_RANK, KIND_COLUMNS, KIND_LABEL, LINK_COLUMNS, NO_CREATE, READ_ONLY, STATUS_HEADER, asKind } from "./kinds";
 import { ActDialog, actIcon, actLabel, actsFor, type Act, type ActTarget } from "./Act";
 import { Meter } from "./Meter";
 import { share, useKubeUsage, usageKey } from "./usage";
@@ -174,7 +174,23 @@ function kindColumns(env: string, kind: KubeKind, withUsage: boolean) {
       cell: (c) => <KubeHealth health={c.row.original.health} label={c.getValue()} />,
       ...(HEALTH_KINDS.includes(kind) ? { sortFn: byNumber((r) => HEALTH_RANK[r.health]) } : {}),
     }),
-    ...KIND_COLUMNS[kind].map(([key, header]) => col.accessor((r) => r.columns[key] ?? "", { id: key, header })),
+    ...KIND_COLUMNS[kind].map(([key, header]) =>
+      col.accessor((r) => r.columns[key] ?? "", {
+        id: key,
+        header,
+        cell: (c) => {
+          const v = c.getValue();
+          const to = v ? LINK_COLUMNS[kind]?.[key]?.(c.row.original.columns, c.row.original.namespace ?? null) : undefined;
+          return to ? (
+            <Link to="/envs/$env/k8s/$kind/$ns/$name" params={{ env, kind: to.kind, ns: to.ns, name: v }} className="font-ident hover:underline">
+              {v}
+            </Link>
+          ) : (
+            v
+          );
+        },
+      }),
+    ),
     ...(withUsage ? usageColumns(kind) : []),
     col.accessor("created", { header: "Age", cell: (c) => formatAgo(c.getValue()) }),
   ];
@@ -211,7 +227,7 @@ export function KubeListPage() {
       actions={
         <div className="flex items-center gap-2">
           {scoped && <NamespacePicker env={env} value={ns} onChange={setNs} />}
-          {canWrite && kind !== "nodes" && !READ_ONLY.includes(kind) && (
+          {canWrite && !NO_CREATE.includes(kind) && !READ_ONLY.includes(kind) && (
             <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
               Create
             </Button>
