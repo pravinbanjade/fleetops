@@ -42,7 +42,7 @@ pub const DISCOVERY_TTL: Duration = Duration::from_secs(300);
 type Resolved = (ApiResource, bool);
 
 pub struct KubeClient {
-    client: kube::Client,
+    pub(crate) client: kube::Client,
     list_cap: usize,
     nodes: Mutex<Option<(Instant, (u32, u32))>>,
     discovery: Mutex<HashMap<(String, String), (Instant, Resolved)>>,
@@ -100,7 +100,7 @@ impl KubeClient {
     }
 
     /// The resource for `apiVersion/kind` and whether it is namespaced.
-    async fn resolve(&self, api_version: &str, kind: &str) -> Result<Resolved> {
+    pub(crate) async fn resolve(&self, api_version: &str, kind: &str) -> Result<Resolved> {
         let k = (api_version.to_string(), kind.to_string());
         if let Some((at, r)) = self.discovery.lock().unwrap().get(&k) {
             if at.elapsed() < DISCOVERY_TTL {
@@ -196,14 +196,14 @@ impl KubeClient {
 }
 
 /// The object as the editor and diffs show it.
-fn cleaned(mut v: serde_json::Value) -> serde_json::Value {
+pub(crate) fn cleaned(mut v: serde_json::Value) -> serde_json::Value {
     crate::mask::clean(&mut v);
     v
 }
 
 /// What a write did, judged on unmasked objects (a Secret whose values
 /// changed has identical masked forms), and the masked YAML to show.
-fn outcome(
+pub(crate) fn outcome(
     before: Option<serde_json::Value>,
     after: serde_json::Value,
 ) -> Result<(ApplyAction, Option<String>, String)> {
@@ -224,7 +224,7 @@ fn outcome(
 }
 
 /// Runs one apiserver call with the request timeout and error mapping.
-async fn timed<T>(f: impl Future<Output = kube::Result<T>>) -> Result<T> {
+pub(crate) async fn timed<T>(f: impl Future<Output = kube::Result<T>>) -> Result<T> {
     match tokio::time::timeout(REQUEST_TIMEOUT, f).await {
         Ok(r) => r.map_err(errors::map),
         Err(_) => Err(Error::Upstream {
@@ -589,5 +589,51 @@ impl KubeOps for KubeClient {
         res.before = before;
         res.after = Some(after);
         Ok(res)
+    }
+
+    async fn helm_list(&self, ns: Option<&str>) -> Result<Vec<fleetops_core::helm::HelmRelease>> {
+        self.helm_list_impl(ns).await
+    }
+
+    async fn helm_get(
+        &self,
+        ns: &str,
+        name: &str,
+        revision: Option<u32>,
+    ) -> Result<fleetops_core::helm::ReleaseDetail> {
+        self.helm_get_impl(ns, name, revision).await
+    }
+
+    async fn helm_history(
+        &self,
+        ns: &str,
+        name: &str,
+    ) -> Result<Vec<fleetops_core::helm::HelmRevision>> {
+        self.helm_history_impl(ns, name).await
+    }
+
+    async fn helm_rollback(
+        &self,
+        ns: &str,
+        name: &str,
+        revision: u32,
+        expected_current: u32,
+        dry_run: bool,
+        allowed: Option<&std::collections::BTreeSet<String>>,
+    ) -> Result<fleetops_core::helm::HelmPlan> {
+        self.helm_rollback_impl(ns, name, revision, expected_current, dry_run, allowed)
+            .await
+    }
+
+    async fn helm_uninstall(
+        &self,
+        ns: &str,
+        name: &str,
+        expected_current: u32,
+        dry_run: bool,
+        allowed: Option<&std::collections::BTreeSet<String>>,
+    ) -> Result<fleetops_core::helm::HelmPlan> {
+        self.helm_uninstall_impl(ns, name, expected_current, dry_run, allowed)
+            .await
     }
 }

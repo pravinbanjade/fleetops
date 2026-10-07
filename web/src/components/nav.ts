@@ -11,6 +11,7 @@ import {
   HardDrive,
   KeyRound,
   Layers,
+  Package,
   ScrollText,
   Server,
   Users,
@@ -43,6 +44,7 @@ export const KUBE_NAV = [
   { to: "/envs/$env/k8s/$kind", kind: "ingresses", label: "Ingresses", icon: Globe, key: "i" },
   { to: "/envs/$env/k8s/$kind", kind: "configmaps", label: "ConfigMaps", icon: FileCog, key: "m" },
   { to: "/envs/$env/k8s/$kind", kind: "secrets", label: "Secrets", icon: KeyRound, key: "x" },
+  { to: "/envs/$env/k8s/helm", label: "Helm releases", icon: Package, key: "h" },
   { to: "/envs/$env/k8s/$kind", kind: "namespaces", label: "Namespaces", icon: FolderTree, key: "n" },
   { to: "/envs/$env/k8s/$kind", kind: "nodes", label: "Nodes", icon: Cpu, key: "e" },
 ] as const;

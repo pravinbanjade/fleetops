@@ -354,6 +354,53 @@ pub trait KubeOps: Send + Sync {
         resource_version: &str,
         mode: ApplyMode,
     ) -> Result<ApplyResult>;
+    /// Helm releases at their latest revision; `None` is every namespace.
+    async fn helm_list(&self, _ns: Option<&str>) -> Result<Vec<crate::helm::HelmRelease>> {
+        Err(helm_unsupported())
+    }
+    /// One revision (the latest when `None`), masked.
+    async fn helm_get(
+        &self,
+        _ns: &str,
+        _name: &str,
+        _revision: Option<u32>,
+    ) -> Result<crate::helm::ReleaseDetail> {
+        Err(helm_unsupported())
+    }
+    /// Every stored revision, oldest first.
+    async fn helm_history(&self, _ns: &str, _name: &str) -> Result<Vec<crate::helm::HelmRevision>> {
+        Err(helm_unsupported())
+    }
+    /// Rolls back to `revision` (spec 3d §3). A dry run plans; a commit
+    /// refuses with `Conflict(CHANGED)` unless the latest revision is still
+    /// `expected_current`. With `allowed`, any object cluster-scoped or
+    /// outside it refuses the whole action before anything is sent.
+    async fn helm_rollback(
+        &self,
+        _ns: &str,
+        _name: &str,
+        _revision: u32,
+        _expected_current: u32,
+        _dry_run: bool,
+        _allowed: Option<&std::collections::BTreeSet<String>>,
+    ) -> Result<crate::helm::HelmPlan> {
+        Err(helm_unsupported())
+    }
+    /// Uninstalls (spec 3d §4), with the same checks as `helm_rollback`.
+    async fn helm_uninstall(
+        &self,
+        _ns: &str,
+        _name: &str,
+        _expected_current: u32,
+        _dry_run: bool,
+        _allowed: Option<&std::collections::BTreeSet<String>>,
+    ) -> Result<crate::helm::HelmPlan> {
+        Err(helm_unsupported())
+    }
+}
+
+fn helm_unsupported() -> Error {
+    Error::Invalid("Helm is not available for this environment".into())
 }
 
 #[cfg(test)]

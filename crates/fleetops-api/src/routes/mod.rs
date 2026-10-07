@@ -3,6 +3,7 @@ pub mod audit_log;
 pub mod auth;
 pub mod docker;
 pub mod envs;
+pub(crate) mod helm;
 pub(crate) mod kube;
 pub mod tasks;
 pub mod users;
@@ -87,6 +88,11 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(compose::action))
         .routes(routes!(kube::apply))
         .routes(routes!(kube::templates))
+        .routes(routes!(helm::list))
+        .routes(routes!(helm::get))
+        .routes(routes!(helm::history))
+        .routes(routes!(helm::rollback))
+        .routes(routes!(helm::uninstall))
         .routes(routes!(kube::list))
         .routes(routes!(kube::get, kube::delete, kube::replace))
         .routes(routes!(kube::editable))

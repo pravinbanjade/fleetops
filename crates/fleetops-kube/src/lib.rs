@@ -5,6 +5,7 @@ pub mod apply;
 pub mod client;
 pub mod env;
 pub mod errors;
+pub mod helm;
 pub mod kinds;
 pub mod kubeconfig;
 pub mod mask;
