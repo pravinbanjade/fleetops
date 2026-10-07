@@ -4,6 +4,7 @@
 use async_trait::async_trait;
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::{EnvKind, EnvStatus, EnvVersion, Environment};
+use fleetops_core::helm::*;
 use fleetops_core::kube::*;
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions, LogStream};
 use fleetops_core::{Error, Result};
@@ -40,6 +41,11 @@ pub struct FakeKube {
     execs: Mutex<Vec<ExecHandle>>,
     watches: Mutex<Vec<WatchTx>>,
     pub applied: Mutex<Vec<Applied>>,
+    pub helm_releases: Mutex<Vec<HelmRelease>>,
+    /// Returned by rollback and uninstall; `status` and `revision` are set on commit.
+    pub helm_plan: Mutex<Option<HelmPlan>>,
+    /// (namespaced, namespace) of each object a rollback or uninstall touches.
+    pub helm_objects: Mutex<Vec<(bool, Option<String>)>>,
 }
 
 type WatchTx = (
@@ -60,6 +66,52 @@ pub fn row(name: &str, ns: Option<&str>) -> KubeRow {
 }
 
 impl FakeKube {
+    pub fn helm_release(&self, ns: &str, name: &str, revision: u32, status: &str) {
+        self.helm_releases.lock().unwrap().push(HelmRelease {
+            name: name.into(),
+            namespace: ns.into(),
+            revision,
+            status: status.into(),
+            chart: "demo".into(),
+            chart_version: "0.2.0".into(),
+            app_version: "1.1.0".into(),
+            updated: 1,
+            error: (status == UNREADABLE).then(|| "not gzip".into()),
+        });
+    }
+    /// Checks each scripted object against `allowed`, then returns the
+    /// scripted plan, with the outcome filled in on a commit.
+    fn helm_write(
+        &self,
+        dry_run: bool,
+        expected: u32,
+        allowed: Option<&BTreeSet<String>>,
+        revision: Option<u32>,
+    ) -> Result<HelmPlan> {
+        for (namespaced, ns) in self.helm_objects.lock().unwrap().iter() {
+            fleetops_core::access::check_doc(allowed, *namespaced, ns.as_deref())?;
+        }
+        let mut plan = self
+            .helm_plan
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("script helm_plan first");
+        if !dry_run {
+            if expected != plan.current {
+                return Err(Error::Conflict(CHANGED.into()));
+            }
+            plan.revision = revision;
+            plan.status.get_or_insert_with(|| {
+                if revision.is_some() {
+                    "deployed".into()
+                } else {
+                    "uninstalled".into()
+                }
+            });
+        }
+        Ok(plan)
+    }
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
     }
@@ -360,6 +412,78 @@ impl KubeOps for FakeKube {
             after: Some(yaml.into()),
             error: None,
         })
+    }
+    async fn helm_list(&self, ns: Option<&str>) -> Result<Vec<HelmRelease>> {
+        self.call(format!("helm_list {}", ns.unwrap_or("*")));
+        Ok(self
+            .helm_releases
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| ns.is_none_or(|n| r.namespace == n))
+            .cloned()
+            .collect())
+    }
+    async fn helm_get(&self, ns: &str, name: &str, _: Option<u32>) -> Result<ReleaseDetail> {
+        let release = self
+            .helm_releases
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r.namespace == ns && r.name == name)
+            .cloned()
+            .ok_or_else(|| Error::NotFound(format!("release '{name}' not found")))?;
+        Ok(ReleaseDetail {
+            release,
+            description: "Upgrade complete".into(),
+            notes: "hello".into(),
+            values: format!("db:\n  password: {MASK}\n"),
+            manifest: "---\nkind: ConfigMap\n".into(),
+        })
+    }
+    async fn helm_history(&self, ns: &str, name: &str) -> Result<Vec<HelmRevision>> {
+        let r = self.helm_get(ns, name, None).await?.release;
+        Ok((1..=r.revision)
+            .map(|v| HelmRevision {
+                revision: v,
+                status: if v == r.revision {
+                    r.status.clone()
+                } else {
+                    "superseded".into()
+                },
+                chart_version: r.chart_version.clone(),
+                app_version: r.app_version.clone(),
+                description: String::new(),
+                updated: 0,
+            })
+            .collect())
+    }
+    async fn helm_rollback(
+        &self,
+        ns: &str,
+        name: &str,
+        revision: u32,
+        expected: u32,
+        dry_run: bool,
+        allowed: Option<&BTreeSet<String>>,
+    ) -> Result<HelmPlan> {
+        self.call(format!(
+            "helm_rollback {ns}/{name} to {revision} at {expected} dry={dry_run}"
+        ));
+        self.helm_write(dry_run, expected, allowed, Some(expected + 1))
+    }
+    async fn helm_uninstall(
+        &self,
+        ns: &str,
+        name: &str,
+        expected: u32,
+        dry_run: bool,
+        allowed: Option<&BTreeSet<String>>,
+    ) -> Result<HelmPlan> {
+        self.call(format!(
+            "helm_uninstall {ns}/{name} at {expected} dry={dry_run}"
+        ));
+        self.helm_write(dry_run, expected, allowed, None)
     }
 }
 

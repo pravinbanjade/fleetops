@@ -491,6 +491,86 @@ export type Health = {
     status: string;
 };
 
+export type HelmChange = 'patch' | 'create' | 'delete' | 'keep';
+
+/**
+ * What a rollback or uninstall does (or did) to one object.
+ */
+export type HelmObjectChange = {
+    /**
+     * The object after (or as it would be); `None` for a delete or keep.
+     */
+    after?: string | null;
+    api_version: string;
+    /**
+     * The live object before, cleaned and masked; `None` when absent.
+     */
+    before?: string | null;
+    change: HelmChange;
+    error?: null | ApplyError;
+    kind: string;
+    name: string;
+    namespace?: string | null;
+};
+
+/**
+ * A rollback or uninstall: the dry run's plan, or a commit's results.
+ */
+export type HelmPlan = {
+    changes: Array<HelmObjectChange>;
+    /**
+     * The latest revision this was computed against; a commit sends it
+     * back as `expected_current`.
+     */
+    current: number;
+    note: string;
+    /**
+     * Commit of a rollback only: the revision written.
+     */
+    revision?: number | null;
+    /**
+     * Commit only: the release's status afterwards (`deployed`, `failed`
+     * or `uninstalled`).
+     */
+    status?: string | null;
+};
+
+/**
+ * One release, at its latest revision.
+ */
+export type HelmRelease = {
+    app_version: string;
+    chart: string;
+    chart_version: string;
+    /**
+     * Why the record cannot be read, when the status is `unreadable`.
+     */
+    error?: string | null;
+    name: string;
+    namespace: string;
+    revision: number;
+    /**
+     * Helm's status (`deployed`, `failed`, `pending-upgrade`, …), or `unreadable`.
+     */
+    status: string;
+    /**
+     * Last deployed, unix seconds; 0 when unknown.
+     */
+    updated: number;
+};
+
+/**
+ * One revision in a release's history.
+ */
+export type HelmRevision = {
+    app_version: string;
+    chart_version: string;
+    description: string;
+    revision: number;
+    status: string;
+    updated: number;
+};
+
 export type ImageRemoved = {
     /**
      * Image ids deleted and tags removed, as Docker reports them.
@@ -718,6 +798,23 @@ export type RecreateResult = {
     old_removed: boolean;
 };
 
+/**
+ * One revision in full, masked.
+ */
+export type ReleaseDetail = {
+    description: string;
+    /**
+     * The rendered manifest, Secret values masked.
+     */
+    manifest: string;
+    notes: string;
+    release: HelmRelease;
+    /**
+     * User-supplied values as YAML, credential-looking keys masked; empty when none.
+     */
+    values: string;
+};
+
 export type ReplaceBody = {
     dry_run?: boolean;
     /**
@@ -728,6 +825,15 @@ export type ReplaceBody = {
 };
 
 export type Role = 'admin' | 'user';
+
+export type RollbackBody = {
+    dry_run: boolean;
+    /**
+     * The latest revision the plan was reviewed against.
+     */
+    expected_current: number;
+    revision: number;
+};
 
 /**
  * The status dot's colour.
@@ -845,6 +951,14 @@ export type TaskStarted = {
 export type TaskStatus = 'running' | 'succeeded' | 'failed';
 
 export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch';
+
+export type UninstallBody = {
+    dry_run: boolean;
+    /**
+     * The latest revision the plan was reviewed against.
+     */
+    expected_current: number;
+};
 
 export type UpdateEnv = {
     context?: string | null;
@@ -2247,6 +2361,186 @@ export type ApplyKubeResponses = {
 };
 
 export type ApplyKubeResponse = ApplyKubeResponses[keyof ApplyKubeResponses];
+
+export type ListHelmReleasesData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: {
+        /**
+         * Omit for all namespaces.
+         */
+        namespace?: string;
+    };
+    url: '/api/v1/envs/{env}/k8s/helm/releases';
+};
+
+export type ListHelmReleasesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListHelmReleasesError = ListHelmReleasesErrors[keyof ListHelmReleasesErrors];
+
+export type ListHelmReleasesResponses = {
+    /**
+     * Releases
+     */
+    200: Array<HelmRelease>;
+};
+
+export type ListHelmReleasesResponse = ListHelmReleasesResponses[keyof ListHelmReleasesResponses];
+
+export type GetHelmReleaseData = {
+    body?: never;
+    path: {
+        env: string;
+        /**
+         * The release's namespace.
+         */
+        ns: string;
+        /**
+         * Release name.
+         */
+        name: string;
+    };
+    query?: {
+        /**
+         * Omit for the latest.
+         */
+        revision?: number;
+    };
+    url: '/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}';
+};
+
+export type GetHelmReleaseErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetHelmReleaseError = GetHelmReleaseErrors[keyof GetHelmReleaseErrors];
+
+export type GetHelmReleaseResponses = {
+    /**
+     * The revision
+     */
+    200: ReleaseDetail;
+};
+
+export type GetHelmReleaseResponse = GetHelmReleaseResponses[keyof GetHelmReleaseResponses];
+
+export type HelmHistoryData = {
+    body?: never;
+    path: {
+        env: string;
+        /**
+         * The release's namespace.
+         */
+        ns: string;
+        /**
+         * Release name.
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/history';
+};
+
+export type HelmHistoryErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type HelmHistoryError = HelmHistoryErrors[keyof HelmHistoryErrors];
+
+export type HelmHistoryResponses = {
+    /**
+     * Revisions
+     */
+    200: Array<HelmRevision>;
+};
+
+export type HelmHistoryResponse = HelmHistoryResponses[keyof HelmHistoryResponses];
+
+export type RollbackHelmReleaseData = {
+    body: RollbackBody;
+    path: {
+        env: string;
+        /**
+         * The release's namespace.
+         */
+        ns: string;
+        /**
+         * Release name.
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/rollback';
+};
+
+export type RollbackHelmReleaseErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RollbackHelmReleaseError = RollbackHelmReleaseErrors[keyof RollbackHelmReleaseErrors];
+
+export type RollbackHelmReleaseResponses = {
+    /**
+     * The plan, or what was done
+     */
+    200: HelmPlan;
+};
+
+export type RollbackHelmReleaseResponse = RollbackHelmReleaseResponses[keyof RollbackHelmReleaseResponses];
+
+export type UninstallHelmReleaseData = {
+    body: UninstallBody;
+    path: {
+        env: string;
+        /**
+         * The release's namespace.
+         */
+        ns: string;
+        /**
+         * Release name.
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/uninstall';
+};
+
+export type UninstallHelmReleaseErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type UninstallHelmReleaseError = UninstallHelmReleaseErrors[keyof UninstallHelmReleaseErrors];
+
+export type UninstallHelmReleaseResponses = {
+    /**
+     * The plan, or what was done
+     */
+    200: HelmPlan;
+};
+
+export type UninstallHelmReleaseResponse = UninstallHelmReleaseResponses[keyof UninstallHelmReleaseResponses];
 
 export type KubeTemplatesData = {
     body?: never;
