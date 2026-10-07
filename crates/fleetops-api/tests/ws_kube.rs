@@ -356,3 +356,68 @@ async fn a_filtered_watch_is_its_own_upstream_and_keeps_only_warnings() {
     let e = ws.until(|m| m["type"] == "error" && m["sub"] == 3).await;
     assert_eq!(e["code"], "invalid");
 }
+
+fn widget_discovery() -> fleetops_core::kube::Discovery {
+    fleetops_core::kube::Discovery {
+        kinds: vec![common::fake_kube::widgets(true)],
+        failed_groups: vec![],
+    }
+}
+
+#[tokio::test]
+async fn a_generic_watch_streams_rows_of_a_discovered_kind() {
+    let (t, _admin, mut ws) = kube_ws().await;
+    t.fake.kube.set_discovery(widget_discovery());
+    watch_sub(&mut ws, 1, "r/example.fleetops.io/v1/widgets/apps").await;
+    eventually("the generic watch opens", || {
+        t.fake
+            .kube
+            .calls()
+            .contains(&"gwatch example.fleetops.io/v1/widgets apps".to_string())
+    })
+    .await;
+    t.fake.kube.emit_generic_watch(
+        &common::fake_kube::widgets(true).api,
+        Ok(WatchEvent::Snapshot {
+            rows: vec![common::fake_kube::row("w1", Some("apps"))],
+        }),
+    );
+    let m = ws.until(|m| m["type"] == "data").await;
+    assert_eq!(m["data"]["type"], "snapshot");
+    assert_eq!(m["data"]["rows"][0]["name"], "w1");
+}
+
+#[tokio::test]
+async fn a_limited_generic_watch_sees_only_its_namespaces() {
+    let (t, mut ws) = limited_ws().await;
+    t.fake.kube.set_discovery(widget_discovery());
+    watch_sub(&mut ws, 1, "r/example.fleetops.io/v1/widgets/-").await;
+    eventually("the generic watch opens", || {
+        t.fake
+            .kube
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("gwatch example.fleetops.io/v1/widgets"))
+    })
+    .await;
+    t.fake.kube.emit_generic_watch(
+        &common::fake_kube::widgets(true).api,
+        Ok(WatchEvent::Snapshot {
+            rows: vec![
+                common::fake_kube::row("a", Some("team-a")),
+                common::fake_kube::row("b", Some("team-b")),
+            ],
+        }),
+    );
+    let m = ws.until(|m| m["type"] == "data").await;
+    assert_eq!(m["data"]["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(m["data"]["rows"][0]["name"], "a");
+}
+
+#[tokio::test]
+async fn a_generic_watch_id_must_name_group_version_resource_and_namespace() {
+    let (_t, _admin, mut ws) = kube_ws().await;
+    watch_sub(&mut ws, 1, "r/example.fleetops.io/v1").await;
+    let e = ws.until(|m| m["type"] == "error" && m["sub"] == 1).await;
+    assert_eq!(e["code"], "invalid");
+}

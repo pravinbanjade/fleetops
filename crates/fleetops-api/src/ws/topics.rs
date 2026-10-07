@@ -5,6 +5,7 @@
 use super::conn::{ExecCtl, Resize, Sub};
 use super::protocol::{self, encode_binary, Out};
 use super::queue::{Policy, SubQueue};
+use super::watches::Watched;
 use crate::{
     auth::extract::CurrentUser,
     authz::Action,
@@ -377,10 +378,30 @@ async fn audit_kube_exec(
     }
 }
 
-/// `<kind>/<namespace>[/<filter>]`, with `-` for all namespaces or a
-/// cluster-scoped kind, e.g. `events/-/warnings`.
-fn watch_id(id: &Option<String>) -> Result<(KubeKind, Option<String>, Option<KubeFilter>)> {
+enum WatchId {
+    Curated(KubeKind, Option<String>, Option<KubeFilter>),
+    /// Namespace `None` for all namespaces; resolved against discovery later.
+    Generic(fleetops_core::kube::KindRef, Option<String>),
+}
+
+/// `<kind>/<namespace>[/<filter>]` or `r/<group>/<version>/<resource>/<namespace>`,
+/// with `-` for all namespaces or a cluster-scoped kind, e.g. `events/-/warnings`.
+fn watch_id(id: &Option<String>) -> Result<WatchId> {
     let id = required(id, "id")?;
+    if let Some(rest) = id.strip_prefix("r/") {
+        let bad = || {
+            Error::Invalid(
+                "a generic watch id is r/<group>/<version>/<resource>/<namespace or ->".into(),
+            )
+        };
+        let parts: Vec<&str> = rest.split('/').collect();
+        let [group, version, resource, ns] = parts[..] else {
+            return Err(bad());
+        };
+        crate::routes::kube::check_namespace(ns)?;
+        let r = crate::routes::kube_generic::kind_ref(group, version, resource)?;
+        return Ok(WatchId::Generic(r, (ns != "-").then(|| ns.to_string())));
+    }
     let bad = || Error::Invalid("a watch id is <kind>/<namespace or ->[/<filter>]".into());
     let mut parts = id.splitn(3, '/');
     let kind: KubeKind = parts.next().ok_or_else(bad)?.parse()?;
@@ -390,7 +411,7 @@ fn watch_id(id: &Option<String>) -> Result<(KubeKind, Option<String>, Option<Kub
     if let Some(f) = filter {
         f.check(kind)?;
     }
-    Ok((
+    Ok(WatchId::Curated(
         kind,
         (ns != "-" && !kind.cluster_scoped()).then(|| ns.to_string()),
         filter,
@@ -408,19 +429,36 @@ pub(super) async fn kube_watch(
     let (s, cu, sub) = (c.s, c.cu, c.sub);
     let crate::routes::kube::KubeCtx { env, ops, grant } =
         crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead).await?;
-    let (kind, ns, filter) = watch_id(&id)?;
-    crate::authz::deny_audited(
-        s,
-        cu,
-        env.id(),
-        "k8s.read",
-        grant.check_list(kind, ns.as_deref()),
-    )
-    .await?;
+    let (what, ns, filter) = match watch_id(&id)? {
+        WatchId::Curated(kind, ns, filter) => {
+            crate::authz::deny_audited(
+                s,
+                cu,
+                env.id(),
+                "k8s.read",
+                grant.check_list(kind, ns.as_deref()),
+            )
+            .await?;
+            (Watched::Curated(kind), ns, filter)
+        }
+        WatchId::Generic(r, ns) => {
+            let k = crate::routes::kube_generic::resolve(&ops, &r).await?;
+            let ns = ns.filter(|_| k.namespaced);
+            crate::authz::deny_audited(
+                s,
+                cu,
+                env.id(),
+                "k8s.read",
+                grant.check_list_in(k.namespaced, ns.as_deref()),
+            )
+            .await?;
+            (Watched::Generic(k), ns, None)
+        }
+    };
     let mut w = s.hubs.kube_watches.subscribe_filtered(
         &env,
         ops,
-        kind,
+        what.clone(),
         ns,
         filter,
         s.config.kube_watch_grace,
@@ -433,7 +471,11 @@ pub(super) async fn kube_watch(
                 Ok(ev) => {
                     // The shared watch carries every namespace; this
                     // subscriber sees only its grant's.
-                    let Some(ev) = grant.filter_event(kind, ev) else {
+                    let ev = match &what {
+                        Watched::Curated(kind) => grant.filter_event(*kind, ev),
+                        Watched::Generic(k) => grant.filter_event_in(k.namespaced, ev),
+                    };
+                    let Some(ev) = ev else {
                         continue;
                     };
                     let v = serde_json::to_value(&ev).unwrap_or(Value::Null);

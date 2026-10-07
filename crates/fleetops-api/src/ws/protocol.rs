@@ -15,7 +15,8 @@ pub enum Topic {
     Logs,
     Exec,
     Task,
-    /// A live list of Kubernetes objects; `id` is `<kind>/<namespace or ->`.
+    /// A live list of Kubernetes objects; `id` is `<kind>/<namespace or ->`,
+    /// or `r/<group>/<version>/<resource>/<namespace or ->` for a discovered kind.
     #[serde(rename = "kube-watch")]
     KubeWatch,
 }

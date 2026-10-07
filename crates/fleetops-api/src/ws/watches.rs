@@ -3,7 +3,7 @@
 //! the current rows so a late or lagging subscriber starts from a snapshot.
 
 use fleetops_core::env::Environment;
-use fleetops_core::kube::{KubeFilter, KubeKind, KubeOps, KubeRow, WatchEvent};
+use fleetops_core::kube::{ApiKind, KubeFilter, KubeKind, KubeOps, KubeRow, WatchEvent};
 use futures_util::StreamExt;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, Weak};
@@ -11,6 +11,13 @@ use std::time::Duration;
 use tokio::sync::broadcast::{self, error::RecvError};
 
 pub const FEED_BUFFER: usize = 256;
+
+/// What a shared watch follows: a curated kind, or a discovered one.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Watched {
+    Curated(KubeKind),
+    Generic(ApiKind),
+}
 
 #[derive(Debug, Clone)]
 enum Feed {
@@ -64,7 +71,7 @@ struct Shared {
 impl Shared {
     fn start(
         ops: Arc<dyn KubeOps>,
-        kind: KubeKind,
+        what: Watched,
         ns: Option<String>,
         filter: Option<KubeFilter>,
     ) -> Arc<Shared> {
@@ -75,9 +82,10 @@ impl Shared {
         });
         let s = shared.clone();
         let handle = tokio::spawn(async move {
-            let mut stream = match filter {
-                Some(f) => ops.watch_filtered(kind, ns.as_deref(), f),
-                None => ops.watch(kind, ns.as_deref()),
+            let mut stream = match (&what, filter) {
+                (Watched::Curated(k), Some(f)) => ops.watch_filtered(*k, ns.as_deref(), f),
+                (Watched::Curated(k), None) => ops.watch(*k, ns.as_deref()),
+                (Watched::Generic(k), _) => ops.generic_watch(k, ns.as_deref()),
             };
             let end = loop {
                 match stream.next().await {
@@ -115,7 +123,7 @@ impl Shared {
     }
 }
 
-type Key = (i64, usize, KubeKind, Option<String>, Option<KubeFilter>);
+type Key = (i64, usize, Watched, Option<String>, Option<KubeFilter>);
 
 #[derive(Default)]
 pub struct Watches {
@@ -131,7 +139,7 @@ impl Watches {
         ns: Option<String>,
         grace: Duration,
     ) -> WatchSub {
-        self.subscribe_filtered(env, ops, kind, ns, None, grace)
+        self.subscribe_filtered(env, ops, Watched::Curated(kind), ns, None, grace)
     }
 
     /// `subscribe` to the rows `filter` keeps: a separate upstream watch,
@@ -140,7 +148,7 @@ impl Watches {
         self: &Arc<Self>,
         env: &Arc<dyn Environment>,
         ops: Arc<dyn KubeOps>,
-        kind: KubeKind,
+        what: Watched,
         ns: Option<String>,
         filter: Option<KubeFilter>,
         grace: Duration,
@@ -150,7 +158,7 @@ impl Watches {
         let key = (
             env.id(),
             Arc::as_ptr(env) as *const () as usize,
-            kind,
+            what.clone(),
             ns.clone(),
             filter,
         );
@@ -158,7 +166,7 @@ impl Watches {
         let shared = match map.get(&key) {
             Some(s) if s.state.lock().unwrap().ended.is_none() => s.clone(),
             _ => {
-                let s = Shared::start(ops, kind, ns, filter);
+                let s = Shared::start(ops, what, ns, filter);
                 map.insert(key.clone(), s.clone());
                 s
             }
