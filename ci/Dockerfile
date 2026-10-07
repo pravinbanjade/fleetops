@@ -1,5 +1,5 @@
 # The image every CI job runs in: Rust, Node and pnpm, Playwright's system
-# libraries, kind and kubectl, and a Docker daemon the job starts itself
+# libraries, kind, kubectl and helm (tests only), and a Docker daemon the job starts itself
 # (ci/start-docker.sh). The daemon runs in the job's own container, so the
 # socket, published ports on 127.0.0.1 and kind's API server are all local,
 # as on a developer machine. GitLab's hosted runners are privileged, which
@@ -18,6 +18,8 @@ FROM docker:${DOCKER_VERSION}-dind AS docker
 FROM rust:${RUST_VERSION}-trixie
 ARG KIND_VERSION=0.33.0
 ARG KUBECTL_VERSION=1.37.1
+# Tests only (the Helm interop suite); no image ships helm.
+ARG HELM_VERSION=3.19.0
 ARG PLAYWRIGHT_VERSION=1.63.0
 
 RUN apt-get update && \
@@ -48,6 +50,9 @@ RUN arch=$(dpkg --print-architecture) && \
     fetch() { curl -fsSL --connect-timeout 20 --retry 5 --retry-all-errors -o "$1" "$2"; } && \
     fetch /usr/local/bin/kind "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-${arch}" && \
     fetch /usr/local/bin/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/${arch}/kubectl" && \
+    fetch /tmp/helm.tgz "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${arch}.tar.gz" && \
+    tar -xzf /tmp/helm.tgz -C /tmp && mv "/tmp/linux-${arch}/helm" /usr/local/bin/helm && \
+    rm -rf /tmp/helm.tgz "/tmp/linux-${arch}" && \
     chmod +x /usr/local/bin/kind /usr/local/bin/kubectl
 
 # Chromium's system libraries; the browser itself is cached per project.
