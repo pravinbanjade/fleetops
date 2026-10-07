@@ -44,6 +44,8 @@ const ATTENTION_SHOWN = 10;
 const NODES_SHOWN = 8;
 const WARNINGS_SHOWN = 8;
 const BUSIEST_SHOWN = 6;
+/** Usage readings a readout's line holds: five minutes at metrics-server's 15s. */
+const SERIES = 20;
 
 type Live = { q: UseQueryResult<KubeList>; paused: WatchPause | null; retry: () => void; forbidden: boolean };
 
@@ -112,7 +114,7 @@ export function KubeOverviewPage({ env }: { env: string }) {
         </span>
       }
       actions={
-        <div className="flex w-full flex-wrap items-end justify-end gap-2 sm:w-auto">
+        <div className="flex w-full flex-wrap items-end justify-end gap-2 sm:w-auto xl:gap-x-5">
           <NamespacePicker env={env} value={ns} onChange={setNs} />
           {nodeUsage.available && <ClusterUsage usage={nodeUsage} />}
         </div>
@@ -477,8 +479,8 @@ function NodeMeter({ label, used, alloc, title }: { label: string; used?: number
 function ClusterUsage({ usage }: { usage: ReturnType<typeof useKubeUsage> }) {
   const t = clusterTotals(usage.rows);
   const at = usage.q.dataUpdatedAt;
-  const cpu = useSeries(t.cpuShare === undefined ? undefined : t.cpuShare * 100, at);
-  const mem = useSeries(t.memory, at);
+  const cpu = useSeries(t.cpuShare === undefined ? undefined : t.cpuShare * 100, at, SERIES);
+  const mem = useSeries(t.memory, at, SERIES);
   return (
     <section aria-label="Cluster usage" className="grid w-full min-w-0 grid-cols-2 gap-2 sm:w-auto xl:w-[24rem]">
       <Readout
@@ -490,6 +492,7 @@ function ClusterUsage({ usage }: { usage: ReturnType<typeof useKubeUsage> }) {
         values={cpu}
         max={Math.max(5, ...cpu) * 1.25}
         span="the last few minutes"
+        window={SERIES}
       />
       <Readout
         label="Memory"
@@ -500,6 +503,7 @@ function ClusterUsage({ usage }: { usage: ReturnType<typeof useKubeUsage> }) {
         values={mem}
         max={t.memAlloc || Math.max(1, ...mem) * 1.25}
         span="the last few minutes"
+        window={SERIES}
       />
       <p className="sr-only">
         Used by all {usage.rows.length} {usage.rows.length === 1 ? "node" : "nodes"}, from metrics-server.

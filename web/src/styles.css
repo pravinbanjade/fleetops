@@ -43,6 +43,10 @@
   --state-wait-ink: oklch(0.25 0.07 50);
   --state-fail: oklch(0.52 0.19 27);
   --state-fail-ink: oklch(1 0 0);
+  /* A state's word on its own tint: darker than the hue so it holds 4.5:1. */
+  --state-run-text: oklch(0.45 0.11 158);
+  --state-wait-text: oklch(0.47 0.11 55);
+  --state-fail-text: oklch(0.49 0.19 27);
   --live: oklch(0.6 0.14 158);
 
   /* ANSI colours 0–15 for log lines: darker shades that read on a light background. */
@@ -92,6 +96,9 @@
   --state-wait-ink: oklch(0.22 0.06 50);
   --state-fail: oklch(0.68 0.19 25);
   --state-fail-ink: oklch(0.15 0.04 25);
+  --state-run-text: oklch(0.8 0.14 158);
+  --state-wait-text: oklch(0.82 0.13 65);
+  --state-fail-text: oklch(0.76 0.16 25);
   --live: oklch(0.76 0.15 158);
 
   --ansi-0: #3b3b3b;
@@ -146,6 +153,9 @@
   --color-state-wait-ink: var(--state-wait-ink);
   --color-state-fail: var(--state-fail);
   --color-state-fail-ink: var(--state-fail-ink);
+  --color-state-run-text: var(--state-run-text);
+  --color-state-wait-text: var(--state-wait-text);
+  --color-state-fail-text: var(--state-fail-text);
   --color-live: var(--live);
 }
 

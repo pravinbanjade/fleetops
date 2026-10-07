@@ -5,13 +5,15 @@ import { cn } from "@/lib/utils";
 
 export type Tone = "run" | "wait" | "fail" | "idle";
 
-// Holder fills and inks are theme variables chosen for at least 4.5:1
-// contrast (WCAG AA) in both themes.
+// A holder is the state's hue as a faint tint and a hairline edge, with the
+// word in a darker (light theme) or lighter (dark theme) cut of the hue that
+// holds 4.5:1 on the tint. Quiet enough that a column of them reads as a
+// column, so the failing one is what the eye finds.
 const FILL: Record<Tone, string> = {
-  run: "bg-state-run text-state-run-ink",
-  wait: "bg-state-wait text-state-wait-ink",
-  fail: "bg-state-fail text-state-fail-ink",
-  idle: "border border-input text-muted-foreground",
+  run: "border-state-run/30 bg-state-run/10 text-state-run-text",
+  wait: "border-state-wait/45 bg-state-wait/14 text-state-wait-text",
+  fail: "border-state-fail/40 bg-state-fail/12 text-state-fail-text",
+  idle: "border-input text-muted-foreground",
 };
 
 const TONE: Record<string, Tone> = {
@@ -59,7 +61,8 @@ function flash(el: HTMLElement): Keyframe[] {
 
 /**
  * A container's (or compose project's) state as a strip holder: a squared
- * tag in the state's colour, the word exactly as Docker reports it. When
+ * tag tinted in the state's colour, the word exactly as Docker or
+ * Kubernetes reports it, in its own case. When
  * Docker changes the state on screen, the holder flashes once.
  */
 export function StateBadge({
@@ -92,7 +95,7 @@ export function StateBadge({
       data-slot="state"
       data-tone={t}
       className={cn(
-        "font-holder inline-flex h-5 min-w-[4.75rem] shrink-0 items-center justify-center rounded-xs px-1.5 text-[11px] leading-none font-semibold tracking-[0.04em] whitespace-nowrap uppercase",
+        "font-holder inline-flex h-5 min-w-[4.75rem] shrink-0 items-center justify-center rounded-xs border px-1.5 text-xs leading-none font-medium whitespace-nowrap",
         FILL[t],
         className,
       )}

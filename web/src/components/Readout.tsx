@@ -16,6 +16,7 @@ export function Readout({
   values,
   max,
   span = "the last minute",
+  window,
 }: {
   label: string;
   icon: LucideIcon;
@@ -25,6 +26,8 @@ export function Readout({
   values: number[];
   max: number;
   span?: string;
+  /** Readings the line's full width holds, for a slow series; see `Sparkline`. */
+  window?: number;
 }) {
   return (
     <div
@@ -32,12 +35,15 @@ export function Readout({
       aria-label={label}
       className="font-strip grid min-w-0 gap-1 rounded-lg border bg-card px-3 py-2 sm:w-[12rem] xl:w-auto"
     >
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <div className="flex items-center gap-3">
+        <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <Icon aria-hidden className="size-3.5" />
           {label}
         </span>
-        <Sparkline values={values} max={max} label={`${label} over ${span}`} width={96} height={20} />
+        {/* Up to 96px, and never wider than what the label leaves. */}
+        <span className="ml-auto min-w-0 flex-1 basis-0 sm:max-w-24">
+          <Sparkline values={values} max={max} label={`${label} over ${span}`} width={96} height={20} window={window} minPoints={window ? 3 : undefined} fluid />
+        </span>
       </div>
       <p className="min-w-0 truncate tabular-nums">
         <span className="text-lg font-semibold">{value}</span>{" "}

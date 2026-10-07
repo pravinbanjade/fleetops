@@ -80,9 +80,12 @@ describe("Kubernetes environments", () => {
   it("asks for one namespace once it is picked, and remembers it", async () => {
     const calls = mockFetch({ ...loggedIn, ...kubeRoutes, "GET /api/v1/envs/k/k8s/pods": { json: { rows: [], truncated: false } } });
     renderApp("/envs/k/k8s/pods");
-    const picker = await screen.findByRole("combobox", { name: "Namespace" });
-    await within(picker).findByRole("option", { name: "apps" });
-    await userEvent.selectOptions(picker, "apps");
+    await userEvent.click(await screen.findByRole("combobox", { name: "Namespace" }));
+    await userEvent.type(screen.getByRole("combobox", { name: "Search namespaces" }), "ap");
+    // The search narrows the list; "default" no longer matches.
+    expect(screen.queryByRole("option", { name: "default" })).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("option", { name: "apps" }));
+    expect(screen.getByRole("combobox", { name: "Namespace" })).toHaveTextContent("apps");
     await screen.findByRole("table", { name: "Pods" });
     expect(calls.some((c) => c.path === "/api/v1/envs/k/k8s/pods?namespace=apps")).toBe(true);
     expect(localStorage.getItem("fleetops.ns.k")).toBe("apps");
@@ -144,8 +147,9 @@ describe("credentials that cannot list namespaces", () => {
       "GET /api/v1/envs/k/k8s/namespaces": { status: 403, json: { code: "forbidden", message: "namespaces is forbidden", request_id: null } },
     });
     renderApp("/envs/k/k8s/pods");
-    const input = await screen.findByRole("textbox", { name: "Namespace" });
-    await userEvent.type(input, "apps{Enter}");
+    await userEvent.click(await screen.findByRole("combobox", { name: "Namespace" }));
+    await screen.findByText(/may not list namespaces/);
+    await userEvent.type(screen.getByRole("combobox", { name: "Search namespaces" }), "apps{Enter}");
     await screen.findByRole("table", { name: "Pods" });
     await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/envs/k/k8s/pods?namespace=apps")).toBe(true));
   });
