@@ -26,6 +26,7 @@ axum = { version = "0.8", features = ["ws", "multipart"] }
 axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
 clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
+flate2 = "1"
 hex = "0.4"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "server", "http1"] }
@@ -33,6 +34,7 @@ hyper-rustls = { version = "0.27", default-features = false, features = ["http1"
 hyper-util = { version = "0.1", features = ["client-legacy", "server", "http1", "tokio"] }
 k8s-openapi = { version = "0.28", features = ["v1_32"] }
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "ring", "ws", "runtime"] }
+jiff = "0.2.37"
 jsonschema = { version = "0.58", default-features = false }
 mime_guess = "2"
 rand = "0.8"
