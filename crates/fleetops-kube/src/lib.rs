@@ -6,6 +6,7 @@ pub mod client;
 pub mod discovery;
 pub mod env;
 pub mod errors;
+mod generic;
 pub mod helm;
 pub mod kinds;
 pub mod kubeconfig;

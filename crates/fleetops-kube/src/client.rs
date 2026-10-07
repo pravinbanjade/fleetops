@@ -4,7 +4,7 @@
 use crate::{errors, kinds::api_resource, mask, summaries};
 use async_trait::async_trait;
 use fleetops_core::kube::{
-    ApplyAction, ApplyError, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeExec,
+    ApiKind, ApplyAction, ApplyError, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeExec,
     KubeFilter, KubeKind, KubeList, KubeObject, KubeOps, KubeRef, KubeVersion, WatchEvent,
     FIELD_MANAGER, LIST_CAP, PAGE_SIZE, SUSPENDED_ANNOTATION,
 };
@@ -318,7 +318,7 @@ impl KubeOps for KubeClient {
             return Box::pin(futures_util::stream::once(async move { Err(e) }));
         }
         let config = kube::runtime::watcher::Config::default().fields(filter.field_selector());
-        crate::watch::watch_with(self.api(kind, ns), kind, config)
+        crate::watch::watch_with(self.api(kind, ns), crate::watch::curated(kind), config)
     }
 
     async fn count(&self, kind: KubeKind, ns: Option<&str>) -> Result<u64> {
@@ -342,33 +342,8 @@ impl KubeOps for KubeClient {
     }
 
     async fn events(&self, kind: KubeKind, ns: &str, name: &str) -> Result<Vec<KubeEvent>> {
-        let events: Api<Event> = if kind.cluster_scoped() {
-            Api::all(self.client.clone())
-        } else {
-            Api::namespaced(self.client.clone(), ns)
-        };
-        let fields = format!(
-            "involvedObject.name={name},involvedObject.kind={}",
-            kind.kind_name()
-        );
-        let list = timed(events.list(&ListParams::default().fields(&fields))).await?;
-        let mut out: Vec<KubeEvent> = list
-            .items
-            .into_iter()
-            .map(|e| KubeEvent {
-                type_: e.type_.unwrap_or_else(|| "Normal".into()),
-                reason: e.reason.unwrap_or_default(),
-                message: e.message.unwrap_or_default(),
-                count: e.count.unwrap_or(1),
-                last_seen: e
-                    .last_timestamp
-                    .map(|t| t.0.as_second())
-                    .or_else(|| e.event_time.map(|t| t.0.as_second())),
-                source: e.source.and_then(|s| s.component),
-            })
-            .collect();
-        out.sort_by_key(|e| std::cmp::Reverse(e.last_seen));
-        Ok(out)
+        self.object_events(kind.kind_name(), !kind.cluster_scoped(), ns, name)
+            .await
     }
 
     async fn delete(&self, kind: KubeKind, ns: &str, name: &str) -> Result<()> {
@@ -601,7 +576,7 @@ impl KubeOps for KubeClient {
     }
 
     fn watch(&self, kind: KubeKind, ns: Option<&str>) -> BoxStream<WatchEvent> {
-        crate::watch::watch(self.api(kind, ns), kind)
+        crate::watch::watch(self.api(kind, ns), crate::watch::curated(kind))
     }
 
     async fn get_editable(&self, kind: KubeKind, ns: &str, name: &str) -> Result<EditableObject> {
@@ -648,55 +623,17 @@ impl KubeOps for KubeClient {
         resource_version: &str,
         mode: ApplyMode,
     ) -> Result<ApplyResult> {
-        if resource_version.trim().is_empty() {
-            return Err(Error::Invalid(
-                "an edit needs the resource version it was opened at".into(),
-            ));
-        }
-        let mut docs = crate::apply::split(yaml)?;
-        if docs.len() != 1 {
-            return Err(Error::Invalid("edit one object at a time".into()));
-        }
-        let mut doc = docs.remove(0);
-        if doc.kind != kind.kind_name() || doc.name != name {
-            return Err(Error::Invalid(format!(
-                "the YAML names {} {}, but this is {} {name}",
-                doc.kind,
-                doc.name,
-                kind.kind_name()
-            )));
-        }
-        let ns_opt = (!kind.cluster_scoped()).then_some(ns);
-        if doc.namespace.is_some() && doc.namespace.as_deref() != ns_opt {
-            return Err(Error::Invalid(
-                "an edit cannot move an object to another namespace".into(),
-            ));
-        }
-        crate::apply::set_namespace(&mut doc, !kind.cluster_scoped(), ns);
-        let api = self.api(kind, Some(ns));
-        let live = serde_json::to_value(timed(api.get(name)).await?).unwrap_or_default();
-        crate::mask::unmask(&mut doc.value, Some(&live)).map_err(Error::Invalid)?;
-        crate::mask::restore_hidden(&mut doc.value, &live);
-        doc.value["metadata"]["resourceVersion"] = resource_version.into();
-        let obj: DynamicObject = serde_json::from_value(doc.value.clone())
-            .map_err(|e| Error::Invalid(format!("not a Kubernetes object: {e}")))?;
-        let pp = PostParams {
-            dry_run: mode.dry_run(),
-            field_manager: Some(FIELD_MANAGER.into()),
-        };
-        let out = match timed(api.replace(name, &pp, &obj)).await {
-            Err(Error::Conflict(_)) => {
-                return Err(Error::Conflict("changed since you opened it".into()))
-            }
-            r => r?,
-        };
-        let (action, before, after) =
-            outcome(Some(live), serde_json::to_value(out).unwrap_or_default())?;
-        let mut res = doc.result();
-        res.action = Some(action);
-        res.before = before;
-        res.after = Some(after);
-        Ok(res)
+        self.replace_in(
+            self.api(kind, Some(ns)),
+            kind.kind_name(),
+            !kind.cluster_scoped(),
+            ns,
+            name,
+            yaml,
+            resource_version,
+            mode,
+        )
+        .await
     }
 
     async fn usage(
@@ -709,6 +646,43 @@ impl KubeOps for KubeClient {
 
     async fn discover(&self, refresh: bool) -> Result<fleetops_core::kube::Discovery> {
         self.discover_impl(refresh).await
+    }
+
+    async fn generic_list(&self, k: &ApiKind, ns: Option<&str>) -> Result<KubeList> {
+        self.generic_list_impl(k, ns).await
+    }
+
+    async fn generic_get(&self, k: &ApiKind, ns: &str, name: &str) -> Result<KubeObject> {
+        self.generic_get_impl(k, ns, name).await
+    }
+
+    fn generic_watch(&self, k: &ApiKind, ns: Option<&str>) -> BoxStream<WatchEvent> {
+        self.generic_watch_impl(k, ns)
+    }
+
+    async fn generic_events(&self, k: &ApiKind, ns: &str, name: &str) -> Result<Vec<KubeEvent>> {
+        self.generic_events_impl(k, ns, name).await
+    }
+
+    async fn generic_delete(&self, k: &ApiKind, ns: &str, name: &str) -> Result<()> {
+        self.generic_delete_impl(k, ns, name).await
+    }
+
+    async fn generic_editable(&self, k: &ApiKind, ns: &str, name: &str) -> Result<EditableObject> {
+        self.generic_editable_impl(k, ns, name).await
+    }
+
+    async fn generic_replace(
+        &self,
+        k: &ApiKind,
+        ns: &str,
+        name: &str,
+        yaml: &str,
+        resource_version: &str,
+        mode: ApplyMode,
+    ) -> Result<ApplyResult> {
+        self.generic_replace_impl(k, ns, name, yaml, resource_version, mode)
+            .await
     }
 
     async fn helm_list(&self, ns: Option<&str>) -> Result<Vec<fleetops_core::helm::HelmRelease>> {
@@ -766,7 +740,17 @@ impl KubeClient {
         ns: Option<&str>,
         fields: Option<&str>,
     ) -> Result<KubeList> {
-        let api = self.api(kind, ns);
+        self.list_rows(self.api(kind, ns), fields, &|o| summaries::row(kind, o))
+            .await
+    }
+
+    /// Every row through `api`, up to the cap, optionally narrowed by a field selector.
+    pub(crate) async fn list_rows(
+        &self,
+        api: Api<DynamicObject>,
+        fields: Option<&str>,
+        row: &(dyn Fn(&DynamicObject) -> fleetops_core::kube::KubeRow + Sync),
+    ) -> Result<KubeList> {
         let page = (self.list_cap as u32).clamp(1, PAGE_SIZE);
         let mut rows = Vec::new();
         let mut cont: Option<String> = None;
@@ -780,7 +764,7 @@ impl KubeClient {
                 lp = lp.continue_token(c);
             }
             let list = timed(api.list(&lp)).await?;
-            rows.extend(list.items.iter().map(|o| summaries::row(kind, o)));
+            rows.extend(list.items.iter().map(row));
             cont = list.metadata.continue_.filter(|c| !c.is_empty());
             if rows.len() >= self.list_cap {
                 truncated = rows.len() > self.list_cap || cont.is_some();
@@ -793,6 +777,102 @@ impl KubeClient {
         }
         rows.sort_by(|a, b| (&a.namespace, &a.name).cmp(&(&b.namespace, &b.name)));
         Ok(KubeList { rows, truncated })
+    }
+
+    /// Events about one object of `kind_name`, newest first.
+    pub(crate) async fn object_events(
+        &self,
+        kind_name: &str,
+        namespaced: bool,
+        ns: &str,
+        name: &str,
+    ) -> Result<Vec<KubeEvent>> {
+        let events: Api<Event> = if namespaced {
+            Api::namespaced(self.client.clone(), ns)
+        } else {
+            Api::all(self.client.clone())
+        };
+        let fields = format!("involvedObject.name={name},involvedObject.kind={kind_name}");
+        let list = timed(events.list(&ListParams::default().fields(&fields))).await?;
+        let mut out: Vec<KubeEvent> = list
+            .items
+            .into_iter()
+            .map(|e| KubeEvent {
+                type_: e.type_.unwrap_or_else(|| "Normal".into()),
+                reason: e.reason.unwrap_or_default(),
+                message: e.message.unwrap_or_default(),
+                count: e.count.unwrap_or(1),
+                last_seen: e
+                    .last_timestamp
+                    .map(|t| t.0.as_second())
+                    .or_else(|| e.event_time.map(|t| t.0.as_second())),
+                source: e.source.and_then(|s| s.component),
+            })
+            .collect();
+        out.sort_by_key(|e| std::cmp::Reverse(e.last_seen));
+        Ok(out)
+    }
+
+    /// Replaces one object through `api`, refusing with `Conflict` when it
+    /// changed since `resource_version`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn replace_in(
+        &self,
+        api: Api<DynamicObject>,
+        kind_name: &str,
+        namespaced: bool,
+        ns: &str,
+        name: &str,
+        yaml: &str,
+        resource_version: &str,
+        mode: ApplyMode,
+    ) -> Result<ApplyResult> {
+        if resource_version.trim().is_empty() {
+            return Err(Error::Invalid(
+                "an edit needs the resource version it was opened at".into(),
+            ));
+        }
+        let mut docs = crate::apply::split(yaml)?;
+        if docs.len() != 1 {
+            return Err(Error::Invalid("edit one object at a time".into()));
+        }
+        let mut doc = docs.remove(0);
+        if doc.kind != kind_name || doc.name != name {
+            return Err(Error::Invalid(format!(
+                "the YAML names {} {}, but this is {} {name}",
+                doc.kind, doc.name, kind_name
+            )));
+        }
+        let ns_opt = namespaced.then_some(ns);
+        if doc.namespace.is_some() && doc.namespace.as_deref() != ns_opt {
+            return Err(Error::Invalid(
+                "an edit cannot move an object to another namespace".into(),
+            ));
+        }
+        crate::apply::set_namespace(&mut doc, namespaced, ns);
+        let live = serde_json::to_value(timed(api.get(name)).await?).unwrap_or_default();
+        crate::mask::unmask(&mut doc.value, Some(&live)).map_err(Error::Invalid)?;
+        crate::mask::restore_hidden(&mut doc.value, &live);
+        doc.value["metadata"]["resourceVersion"] = resource_version.into();
+        let obj: DynamicObject = serde_json::from_value(doc.value.clone())
+            .map_err(|e| Error::Invalid(format!("not a Kubernetes object: {e}")))?;
+        let pp = PostParams {
+            dry_run: mode.dry_run(),
+            field_manager: Some(FIELD_MANAGER.into()),
+        };
+        let out = match timed(api.replace(name, &pp, &obj)).await {
+            Err(Error::Conflict(_)) => {
+                return Err(Error::Conflict("changed since you opened it".into()))
+            }
+            r => r?,
+        };
+        let (action, before, after) =
+            outcome(Some(live), serde_json::to_value(out).unwrap_or_default())?;
+        let mut res = doc.result();
+        res.action = Some(action);
+        res.before = before;
+        res.after = Some(after);
+        Ok(res)
     }
 
     /// Counts from metadata only: one page of one item usually carries

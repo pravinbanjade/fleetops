@@ -9,7 +9,19 @@ use futures_util::{Stream, StreamExt};
 use kube::api::DynamicObject;
 use kube::runtime::watcher::{self, Event};
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
 use std::time::Duration;
+
+/// How one object becomes a row: a curated kind's summary, or a generic one.
+pub type RowFn = Arc<dyn Fn(&DynamicObject) -> KubeRow + Send + Sync>;
+
+pub fn curated(kind: KubeKind) -> RowFn {
+    Arc::new(move |o| summaries::row(kind, o))
+}
+
+pub fn generic(k: fleetops_core::kube::ApiKind) -> RowFn {
+    Arc::new(move |o| summaries::generic_row(&k, o))
+}
 
 pub const MAX_FAILURES: u32 = 5;
 pub const BACKOFF_START: Duration = Duration::from_secs(1);
@@ -24,7 +36,7 @@ fn key(r: &KubeRow) -> Key {
 /// The rows of one watched list, kept to tell `Added` from `Modified` and
 /// to build snapshots.
 pub struct Fold {
-    kind: KubeKind,
+    row: RowFn,
     rows: BTreeMap<Key, KubeRow>,
     /// Rows of a list in progress (between `Init` and `InitDone`).
     listing: Option<BTreeMap<Key, KubeRow>>,
@@ -33,9 +45,9 @@ pub struct Fold {
 }
 
 impl Fold {
-    pub fn new(kind: KubeKind) -> Self {
+    pub fn new(row: RowFn) -> Self {
         Self {
-            kind,
+            row,
             rows: BTreeMap::new(),
             listing: None,
             synced: false,
@@ -53,7 +65,7 @@ impl Fold {
                 }
             }
             Event::InitApply(o) => {
-                let r = summaries::row(self.kind, &o);
+                let r = (self.row)(&o);
                 if let Some(l) = self.listing.as_mut() {
                     l.insert(key(&r), r);
                 }
@@ -67,7 +79,7 @@ impl Fold {
                 }]
             }
             Event::Apply(o) => {
-                let r = summaries::row(self.kind, &o);
+                let r = (self.row)(&o);
                 match self.rows.insert(key(&r), r.clone()) {
                     Some(old) if old == r => vec![],
                     Some(_) => vec![WatchEvent::Modified { row: r }],
@@ -75,7 +87,7 @@ impl Fold {
                 }
             }
             Event::Delete(o) => {
-                let r = summaries::row(self.kind, &o);
+                let r = (self.row)(&o);
                 self.rows.remove(&key(&r));
                 vec![WatchEvent::Deleted {
                     namespace: r.namespace,
@@ -121,13 +133,13 @@ struct State<S> {
 /// `upstream` (a kube-rs watcher) as FleetOps watch events. Transient
 /// errors back off and resume; 401/403, or `MAX_FAILURES` in a row, end
 /// the stream with the error.
-pub fn stream<S>(upstream: S, kind: KubeKind, backoff_start: Duration) -> BoxStream<WatchEvent>
+pub fn stream<S>(upstream: S, row: RowFn, backoff_start: Duration) -> BoxStream<WatchEvent>
 where
     S: Stream<Item = Result<Event<DynamicObject>, watcher::Error>> + Send + Unpin + 'static,
 {
     let st = State {
         upstream,
-        fold: Fold::new(kind),
+        fold: Fold::new(row),
         queue: VecDeque::new(),
         failures: 0,
         backoff: backoff_start,
@@ -165,18 +177,18 @@ where
     }))
 }
 
-/// A live list of `kind` through `api`.
-pub fn watch(api: kube::Api<DynamicObject>, kind: KubeKind) -> BoxStream<WatchEvent> {
-    watch_with(api, kind, watcher::Config::default())
+/// A live list through `api`, each object made a row by `row`.
+pub fn watch(api: kube::Api<DynamicObject>, row: RowFn) -> BoxStream<WatchEvent> {
+    watch_with(api, row, watcher::Config::default())
 }
 
 /// `watch` with the apiserver narrowing the objects, e.g. by field selector.
 pub fn watch_with(
     api: kube::Api<DynamicObject>,
-    kind: KubeKind,
+    row: RowFn,
     config: watcher::Config,
 ) -> BoxStream<WatchEvent> {
-    stream(watcher::watcher(api, config).boxed(), kind, BACKOFF_START)
+    stream(watcher::watcher(api, config).boxed(), row, BACKOFF_START)
 }
 
 #[cfg(test)]
@@ -201,7 +213,7 @@ mod tests {
 
     #[test]
     fn the_initial_list_becomes_one_snapshot() {
-        let mut f = Fold::new(KubeKind::Pods);
+        let mut f = Fold::new(curated(KubeKind::Pods));
         assert!(f.step(Event::Init).is_empty());
         assert!(f.step(Event::InitApply(pod("b", "Running"))).is_empty());
         assert!(f.step(Event::InitApply(pod("a", "Running"))).is_empty());
@@ -212,7 +224,7 @@ mod tests {
 
     #[test]
     fn later_changes_are_added_modified_or_deleted() {
-        let mut f = Fold::new(KubeKind::Pods);
+        let mut f = Fold::new(curated(KubeKind::Pods));
         f.step(Event::Init);
         f.step(Event::InitApply(pod("a", "Running")));
         f.step(Event::InitDone);
@@ -230,7 +242,7 @@ mod tests {
 
     #[test]
     fn a_relist_is_a_resync_then_a_fresh_snapshot() {
-        let mut f = Fold::new(KubeKind::Pods);
+        let mut f = Fold::new(curated(KubeKind::Pods));
         f.step(Event::Init);
         f.step(Event::InitApply(pod("a", "Running")));
         f.step(Event::InitDone);
@@ -249,7 +261,7 @@ mod tests {
     #[tokio::test]
     async fn a_forbidden_watch_ends_at_once_with_the_reason() {
         let up = futures_util::stream::iter(vec![Err(status(403))]);
-        let mut s = stream(up, KubeKind::Pods, Duration::from_millis(1));
+        let mut s = stream(up, curated(KubeKind::Pods), Duration::from_millis(1));
         match s.next().await {
             Some(Err(Error::Forbidden(m))) => assert!(m.contains("forbidden")),
             other => panic!("{other:?}"),
@@ -264,7 +276,7 @@ mod tests {
             .collect();
         let mut s = stream(
             futures_util::stream::iter(errs),
-            KubeKind::Pods,
+            curated(KubeKind::Pods),
             Duration::from_millis(1),
         );
         assert!(matches!(s.next().await, Some(Err(Error::Upstream { .. }))));
@@ -284,7 +296,7 @@ mod tests {
         }
         let s = stream(
             futures_util::stream::iter(items),
-            KubeKind::Pods,
+            curated(KubeKind::Pods),
             Duration::from_millis(1),
         );
         let out: Vec<_> = s.collect().await;

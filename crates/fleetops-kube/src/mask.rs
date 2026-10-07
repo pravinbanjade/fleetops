@@ -15,7 +15,12 @@ pub fn yaml(kind: KubeKind, obj: &DynamicObject) -> String {
     // for: a Secret must never render unmasked.
     let secret =
         kind == KubeKind::Secrets || obj.types.as_ref().is_some_and(|t| t.kind == "Secret");
-    let mut v = typed_json(kind, obj);
+    object_yaml(typed_json(kind, obj), secret)
+}
+
+/// An object as the YAML tab shows it: `managedFields` gone, a Secret's
+/// values masked, cut at `YAML_CAP`.
+pub fn object_yaml(mut v: Value, secret: bool) -> String {
     if let Some(meta) = v.get_mut("metadata").and_then(Value::as_object_mut) {
         meta.remove("managedFields");
     }
