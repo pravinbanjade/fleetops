@@ -14,5 +14,5 @@ spec:
     spec:
       containers:
         - name: main
-          image: busybox:1.37
+          image: {{ .Values.image }}
           command: ["sh", "-c", "sleep 3600"]

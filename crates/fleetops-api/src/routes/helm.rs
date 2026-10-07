@@ -164,27 +164,38 @@ async fn hinted(s: &AppState, k8: &KubeCtx, mut plan: HelmPlan) -> HelmPlan {
 /// One row per committed rollback or uninstall. Never values.
 async fn audit(
     s: &AppState,
-    cu: &CurrentUser,
-    k8: &KubeCtx,
+    user_id: i64,
+    env_id: i64,
     action: &str,
-    p: &ReleasePath,
+    target: &str,
     detail: serde_json::Value,
     ok: bool,
 ) {
-    let target = p.target();
     let entry = NewAudit {
         ts: now_unix(),
-        user_id: Some(cu.user.id),
-        environment_id: Some(k8.env.id()),
+        user_id: Some(user_id),
+        environment_id: Some(env_id),
         action,
         target_type: Some("helm"),
-        target_id: Some(&target),
+        target_id: Some(target),
         result: if ok { "success" } else { "failure" },
         detail: Some(detail),
     };
     if let Err(e) = s.store.insert_audit(&entry).await {
         tracing::error!(error = %e, "failed to write audit log");
     }
+}
+
+/// Runs a rollback or uninstall, and its audit row, on a task of its own:
+/// a caller that disconnects mid-commit must not leave the release
+/// half-written and locked `pending-rollback`.
+async fn detached<F>(f: F) -> Result<HelmPlan>
+where
+    F: std::future::Future<Output = Result<HelmPlan>> + Send + 'static,
+{
+    tokio::spawn(f)
+        .await
+        .map_err(|e| Error::Internal(format!("the Helm operation stopped: {e}")))?
 }
 
 #[utoipa::path(post, path = "/envs/{env}/k8s/helm/releases/{ns}/{name}/rollback", operation_id = "rollbackHelmRelease", tag = "helm",
@@ -197,32 +208,36 @@ pub async fn rollback(
     ApiJson(body): ApiJson<RollbackBody>,
 ) -> ApiResult<Json<HelmPlan>> {
     let k8 = writable(&s, &cu, &p).await?;
-    let r = k8
-        .ops
-        .helm_rollback(
-            &p.ns,
-            &p.name,
-            body.revision,
-            body.expected_current,
-            body.dry_run,
-            k8.grant.namespaces.as_ref(),
-        )
-        .await;
-    let r = crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.write", r).await;
-    if !body.dry_run {
-        let from = body.expected_current;
-        let (ok, detail) = match &r {
-            Ok(plan) => (
-                plan.status.as_deref() == Some("deployed"),
-                json!({"from": from, "to": body.revision, "revision": plan.revision, "status": plan.status}),
-            ),
-            Err(e) => (
-                false,
-                json!({"from": from, "to": body.revision, "error": e.to_string()}),
-            ),
-        };
-        audit(&s, &cu, &k8, "helm.rollback", &p, detail, ok).await;
-    }
+    let (ops, allowed, env_id) = (k8.ops.clone(), k8.grant.namespaces.clone(), k8.env.id());
+    let (st, user_id, ns, name, target) = (
+        s.clone(),
+        cu.user.id,
+        p.ns.clone(),
+        p.name.clone(),
+        p.target(),
+    );
+    let r = detached(async move {
+        let r = ops
+            .helm_rollback(&ns, &name, body.revision, body.expected_current, body.dry_run, allowed.as_ref())
+            .await;
+        if !body.dry_run {
+            let from = body.expected_current;
+            let (ok, detail) = match &r {
+                Ok(plan) => (
+                    plan.status.as_deref() == Some("deployed"),
+                    json!({"from": from, "to": body.revision, "revision": plan.revision, "status": plan.status}),
+                ),
+                Err(e) => (
+                    false,
+                    json!({"from": from, "to": body.revision, "error": e.to_string()}),
+                ),
+            };
+            audit(&st, user_id, env_id, "helm.rollback", &target, detail, ok).await;
+        }
+        r
+    })
+    .await;
+    let r = crate::authz::deny_audited(&s, &cu, env_id, "k8s.write", r).await;
     Ok(Json(hinted(&s, &k8, r?).await))
 }
 
@@ -236,27 +251,38 @@ pub async fn uninstall(
     ApiJson(body): ApiJson<UninstallBody>,
 ) -> ApiResult<Json<HelmPlan>> {
     let k8 = writable(&s, &cu, &p).await?;
-    let r = k8
-        .ops
-        .helm_uninstall(
-            &p.ns,
-            &p.name,
-            body.expected_current,
-            body.dry_run,
-            k8.grant.namespaces.as_ref(),
-        )
-        .await;
-    let r = crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.write", r).await;
-    if !body.dry_run {
-        let rev = body.expected_current;
-        let (ok, detail) = match &r {
-            Ok(plan) => (
-                plan.status.as_deref() == Some("uninstalled"),
-                json!({"revision": rev, "status": plan.status}),
-            ),
-            Err(e) => (false, json!({"revision": rev, "error": e.to_string()})),
-        };
-        audit(&s, &cu, &k8, "helm.uninstall", &p, detail, ok).await;
-    }
+    let (ops, allowed, env_id) = (k8.ops.clone(), k8.grant.namespaces.clone(), k8.env.id());
+    let (st, user_id, ns, name, target) = (
+        s.clone(),
+        cu.user.id,
+        p.ns.clone(),
+        p.name.clone(),
+        p.target(),
+    );
+    let r = detached(async move {
+        let r = ops
+            .helm_uninstall(
+                &ns,
+                &name,
+                body.expected_current,
+                body.dry_run,
+                allowed.as_ref(),
+            )
+            .await;
+        if !body.dry_run {
+            let rev = body.expected_current;
+            let (ok, detail) = match &r {
+                Ok(plan) => (
+                    plan.status.as_deref() == Some("uninstalled"),
+                    json!({"revision": rev, "status": plan.status}),
+                ),
+                Err(e) => (false, json!({"revision": rev, "error": e.to_string()})),
+            };
+            audit(&st, user_id, env_id, "helm.uninstall", &target, detail, ok).await;
+        }
+        r
+    })
+    .await;
+    let r = crate::authz::deny_audited(&s, &cu, env_id, "k8s.write", r).await;
     Ok(Json(hinted(&s, &k8, r?).await))
 }

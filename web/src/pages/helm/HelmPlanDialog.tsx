@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { rollbackHelmRelease, uninstallHelmRelease } from "@/api/gen/sdk.gen";
 import type { HelmPlan } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +28,7 @@ export default function HelmPlanDialog({
 }) {
   const qc = useQueryClient();
   const [typed, setTyped] = useState("");
+  const [anyway, setAnyway] = useState(false);
   const send = async (dry_run: boolean, expected_current: number): Promise<HelmPlan> => {
     const path = { env, ns, name };
     const r =
@@ -46,7 +48,11 @@ export default function HelmPlanDialog({
   const shown = commit.data ?? review.data;
   const verb = action.kind === "rollback" ? "Roll back" : "Uninstall";
   const title = action.kind === "rollback" ? `Roll back ${name} to revision ${action.revision}` : `Uninstall ${name}`;
-  const ready = !!review.data && !commit.data && (action.kind === "rollback" || typed === name);
+  // A plan the cluster already refuses in part would leave the release
+  // half-changed: committing it takes an explicit choice.
+  const failing = review.data?.changes.filter((c) => c.error).length ?? 0;
+  const ready =
+    !!review.data && !commit.data && (action.kind === "rollback" || typed === name) && (failing === 0 || anyway);
   const changed = !!commit.error && errorMessage(commit.error).includes("review again");
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -85,6 +91,14 @@ export default function HelmPlanDialog({
             </li>
           ))}
         </ul>
+        {failing > 0 && !commit.data && (
+          <div className="flex items-center gap-2 text-sm">
+            <Checkbox id="helm-anyway" checked={anyway} onCheckedChange={(v) => setAnyway(v === true)} />
+            <Label htmlFor="helm-anyway">
+              Commit anyway: {failing} object{failing === 1 ? "" : "s"} will fail and the release will be marked failed
+            </Label>
+          </div>
+        )}
         {action.kind === "uninstall" && review.data && !commit.data && (
           <div className="grid gap-1">
             <Label htmlFor="helm-confirm">Type {name} to confirm</Label>

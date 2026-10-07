@@ -298,3 +298,32 @@ async fn a_cluster_refusal_passes_through_per_object() {
     assert_eq!(r.status, 200, "{:?}", r.json);
     assert_eq!(r.json["changes"][0]["error"]["code"], "forbidden");
 }
+
+#[tokio::test]
+async fn a_commit_finishes_even_when_the_caller_leaves() {
+    let (t, admin) = helm_app().await;
+    *t.fake.kube.helm_commit_delay.lock().unwrap() = Some(std::time::Duration::from_millis(300));
+    let r = req(
+        "POST",
+        &format!("{DEMO}/rollback"),
+        Some(json!({"revision": 1, "expected_current": 2, "dry_run": false})),
+        Some(&admin),
+    );
+    // The client gives up long before the commit is done.
+    let gone = tokio::time::timeout(std::time::Duration::from_millis(50), t.send(r)).await;
+    assert!(gone.is_err(), "the request should still have been running");
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    assert!(
+        t.fake
+            .kube
+            .calls()
+            .iter()
+            .any(|c| c.contains("finished dry=false")),
+        "{:?}",
+        t.fake.kube.calls()
+    );
+    assert!(t
+        .audit_actions()
+        .await
+        .contains(&"helm.rollback".to_string()));
+}

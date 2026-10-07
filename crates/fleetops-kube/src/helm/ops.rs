@@ -55,6 +55,31 @@ fn truncate(mut s: String) -> String {
     s
 }
 
+/// One list row: an unreadable record is a row saying so; one removed
+/// since the metadata list (an uninstall racing the poll) is no row.
+fn list_row(ns: &str, name: &str, v: u32, r: Result<Release>) -> Result<Option<HelmRelease>> {
+    match r {
+        Ok(r) => Ok(Some(storage::summary(&r))),
+        Err(Error::Upstream {
+            status: 422,
+            message,
+        }) => Ok(Some(storage::unreadable(name, ns, v, message))),
+        Err(Error::NotFound(_)) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Whether `live` carries this release's ownership metadata.
+fn owned_by(live: &serde_json::Value, release: &str, release_ns: &str) -> bool {
+    let ann = |k: &str| {
+        live.pointer("/metadata/annotations")
+            .and_then(|a| a.get(k))
+            .and_then(serde_json::Value::as_str)
+    };
+    ann("meta.helm.sh/release-name") == Some(release)
+        && ann("meta.helm.sh/release-namespace") == Some(release_ns)
+}
+
 fn new_plan(current: u32) -> HelmPlan {
     HelmPlan {
         current,
@@ -231,6 +256,21 @@ impl KubeClient {
                     outcome(Some(live), serde_json::to_value(out).unwrap_or_default())?;
                 Ok((before, Some(after)))
             }
+            // Ours already (kept by an upgrade, or left by a partly failed
+            // operation): Helm takes it back, so do we.
+            (HelmChange::Create, Some(live)) if owned_by(&live, release, release_ns) => {
+                plan::adopt(&mut step.doc.value, release, release_ns);
+                let pp = PatchParams {
+                    dry_run,
+                    field_manager: Some(FIELD_MANAGER.into()),
+                    ..PatchParams::default()
+                };
+                let out =
+                    timed(api.patch(&step.doc.name, &pp, &Patch::Merge(&step.doc.value))).await?;
+                let (_, before, after) =
+                    outcome(Some(live), serde_json::to_value(out).unwrap_or_default())?;
+                Ok((before, Some(after)))
+            }
             (HelmChange::Create, Some(_)) => Err(Error::Conflict(format!(
                 "{} '{}' already exists outside this release",
                 step.doc.kind, step.doc.name
@@ -294,14 +334,8 @@ impl KubeClient {
         let metas = self.release_metas(ns, storage::OWNER_SELECTOR).await?;
         let mut out = Vec::new();
         for (ns, name, v) in storage::latest_versions(metas) {
-            out.push(match self.read_release(&ns, &name, v).await {
-                Ok(r) => storage::summary(&r),
-                Err(Error::Upstream {
-                    status: 422,
-                    message,
-                }) => storage::unreadable(&name, &ns, v, message),
-                Err(e) => return Err(e),
-            });
+            let r = self.read_release(&ns, &name, v).await;
+            out.extend(list_row(&ns, &name, v, r)?);
         }
         Ok(out)
     }
@@ -370,7 +404,7 @@ impl KubeClient {
         dry_run: bool,
         allowed: Option<&BTreeSet<String>>,
     ) -> Result<HelmPlan> {
-        let mut cur = self.current(ns, name, expected, dry_run).await?;
+        let cur = self.current(ns, name, expected, dry_run).await?;
         if to == cur.version {
             return Err(Error::Invalid(format!(
                 "revision {to} is already the current one"
@@ -399,8 +433,16 @@ impl KubeClient {
             next.info.status = "deployed".into();
             next.info.description = format!("Rollback to {to} (FleetOps; hooks not run)");
             self.write_release(&next, false).await?;
-            cur.info.status = "superseded".into();
-            self.write_release(&cur, false).await?;
+            // As Helm does: every other deployed revision is superseded; a
+            // failed one keeps its status.
+            let sel = format!("{},status=deployed", release_selector(name));
+            for (_, _, v) in self.release_metas(Some(ns), &sel).await? {
+                if v != next.version {
+                    let mut old = self.read_release(ns, name, v).await?;
+                    old.info.status = "superseded".into();
+                    self.write_release(&old, false).await?;
+                }
+            }
         } else {
             next.info.status = "failed".into();
             next.info.description =
@@ -453,5 +495,35 @@ impl KubeClient {
             plan.status = Some("failed".into());
         }
         Ok(plan)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rec() -> Release {
+        storage::decode(
+            &base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                r#"{"name":"a","namespace":"apps","version":2,"info":{"status":"deployed"}}"#,
+            )
+            .into_bytes(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_list_row_survives_an_unreadable_or_vanished_release() {
+        let ok = list_row("apps", "a", 2, Ok(rec())).unwrap().unwrap();
+        assert_eq!(ok.status, "deployed");
+        let bad = list_row("apps", "a", 2, Err(unreadable_err("not gzip".into())))
+            .unwrap()
+            .unwrap();
+        assert_eq!(bad.status, UNREADABLE);
+        // Uninstalled between the metadata list and the read: not a row, not an error.
+        let gone = list_row("apps", "a", 2, Err(Error::NotFound("gone".into()))).unwrap();
+        assert!(gone.is_none());
+        assert!(list_row("apps", "a", 2, Err(Error::Forbidden("no".into()))).is_err());
     }
 }
