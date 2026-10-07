@@ -62,3 +62,33 @@ export const kubeRoutes = {
     json: { rows: [kubeRow("web-1", "apps", { ready: "1/1", restarts: "0", node: "n1", ip: "" })], truncated: false },
   },
 };
+
+/** A custom resource kind, as discovery lists it. */
+export const WIDGETS = {
+  api: { group: "example.fleetops.io", version: "v1", resource: "widgets" },
+  kind: "Widget",
+  namespaced: true,
+  verbs: ["get", "list", "watch", "update", "delete"],
+  columns: [
+    { name: "Size", json_path: ".spec.size", type: "integer" },
+    { name: "Expires", json_path: ".status.notAfter", type: "date" },
+  ],
+  crd: "widgets.example.fleetops.io",
+};
+
+/** Discovery and one Widget for `k`, on top of `kubeRoutes`. */
+export const genericRoutes = {
+  "GET /api/v1/envs/k/k8s/discovery": { json: { kinds: [WIDGETS], failed_groups: ["metrics.k8s.io"] } },
+  "GET /api/v1/envs/k/k8s/r/example.fleetops.io/v1/widgets": {
+    json: { rows: [{ ...kubeRow("w1", "apps", { Size: "3", Expires: "1790812800" }), status: "Ready" }], truncated: false },
+  },
+  "GET /api/v1/envs/k/k8s/r/example.fleetops.io/v1/widgets/apps/w1": {
+    json: {
+      row: { ...kubeRow("w1", "apps", { Size: "3" }), status: "Ready" },
+      yaml: "kind: Widget\n",
+      conditions: [{ type: "Ready", status: "True", reason: null, message: null }],
+      owners: [],
+      containers: [],
+    },
+  },
+};

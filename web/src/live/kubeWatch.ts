@@ -50,7 +50,8 @@ interface WatchState {
  */
 export function useKubeWatch(
   env: string,
-  kind: KubeKind,
+  /** A curated kind, or a discovered one's `r/<group>/<version>/<resource>`. */
+  kind: KubeKind | string,
   ns: string | undefined,
   onEvent?: (ev: WatchEvent) => void,
   filter?: KubeFilter,

@@ -1,5 +1,6 @@
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { ApiError, setCsrfToken } from "./client";
+import { refKind, type Ref } from "@/pages/kube/generic/ref";
 import type { ContainerInspect, ImageInspect, ImageLayer, NetworkInspect, VolumeInspect } from "./docker";
 import {
   getAuthStatus,
@@ -22,6 +23,10 @@ import {
   listKube,
   getKube,
   kubeEvents,
+  kubeDiscovery,
+  listGenericKube,
+  getGenericKube,
+  genericKubeEvents,
   kubeUsage,
   kubeCounts,
   listHelmReleases,
@@ -185,6 +190,33 @@ export const kubeEventsQuery = (env: string, kind: KubeKind, ns: string, name: s
   queryOptions({
     queryKey: [...keys.kubeObject(env, kind, ns, name), "events"] as const,
     queryFn: async () => (await kubeEvents({ path: { env, kind, ns, name } })).data,
+  });
+
+/** The cluster's discovered kinds; the server caches them for a minute too. */
+export const discoveryQuery = (env: string) =>
+  queryOptions({
+    queryKey: ["env", env, "k8s-discovery"] as const,
+    queryFn: async () => (await kubeDiscovery({ path: { env } })).data,
+    staleTime: 60_000,
+  });
+
+export const genericListQuery = (env: string, r: Ref, ns?: string) =>
+  queryOptions({
+    queryKey: keys.kube(env, refKind(r), ns),
+    queryFn: async () => (await listGenericKube({ path: { env, ...r }, query: ns ? { namespace: ns } : {} })).data,
+    retry: (failures, err) => !(err instanceof ApiError && (err.status === 403 || err.status === 404)) && failures < 1,
+  });
+
+export const genericObjectQuery = (env: string, r: Ref, ns: string, name: string) =>
+  queryOptions({
+    queryKey: keys.kubeObject(env, refKind(r), ns, name),
+    queryFn: async () => (await getGenericKube({ path: { env, ...r, ns, name } })).data,
+  });
+
+export const genericEventsQuery = (env: string, r: Ref, ns: string, name: string) =>
+  queryOptions({
+    queryKey: [...keys.kubeObject(env, refKind(r), ns, name), "events"] as const,
+    queryFn: async () => (await genericKubeEvents({ path: { env, ...r, ns, name } })).data,
   });
 
 export const infoQuery = (env: string) =>

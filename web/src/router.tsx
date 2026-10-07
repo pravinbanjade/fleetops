@@ -161,6 +161,19 @@ const kubeObjectRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/kube/KubeObjectPage"), "KubeObjectPage"),
 });
 
+const genericListRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "k8s/r/$group/$version/$resource",
+  component: lazyRouteComponent(() => import("@/pages/kube/generic/GenericListPage"), "GenericListPage"),
+});
+
+const genericObjectRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "k8s/r/$group/$version/$resource/$ns/$name",
+  validateSearch: (s: Record<string, unknown>): { tab?: KubeTab } => ({ tab: KUBE_TABS.find((t) => t === s.tab) }),
+  component: lazyRouteComponent(() => import("@/pages/kube/generic/GenericObjectPage"), "GenericObjectPage"),
+});
+
 const containersRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "containers",
@@ -296,6 +309,8 @@ const routeTree = rootRoute.addChildren([
         helmReleaseRoute,
         kubeListRoute,
         kubeObjectRoute,
+    genericListRoute,
+    genericObjectRoute,
       ]),
       adminRoute.addChildren([usersRoute, envsAdminRoute, auditRoute]),
       accountRoute,

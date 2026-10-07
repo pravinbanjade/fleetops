@@ -2,13 +2,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ApiError } from "@/api/client";
-import { applyKube, editableKube, kubeTemplates, replaceKube } from "@/api/gen/sdk.gen";
+import { applyKube, editableGenericKube, editableKube, kubeTemplates, replaceGenericKube, replaceKube } from "@/api/gen/sdk.gen";
 import type { ApplyResult, KubeKind } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { errorMessage } from "@/lib/errors";
 import { KIND_LABEL } from "@/pages/kube/kinds";
+import type { Ref } from "@/pages/kube/generic/ref";
 import { yamlErrors } from "./check";
 import { DiffView } from "./DiffView";
 
@@ -16,13 +17,34 @@ const CodeMirrorField = lazy(() => import("./CodeMirrorField"));
 
 export type YamlTarget =
   | { mode: "edit"; kind: KubeKind; ns: string; name: string }
+  | { mode: "edit-generic"; ref: Ref; kind: string; ns: string; name: string }
   | { mode: "create"; kind: KubeKind; namespace: string }
   | { mode: "apply"; namespace: string };
 
 type Stage = "edit" | "review" | "failed";
 
+type EditTarget = Extract<YamlTarget, { mode: "edit" | "edit-generic" }>;
+const isEdit = (t: YamlTarget): t is EditTarget => t.mode === "edit" || t.mode === "edit-generic";
+
+/** The object as the editor opens it, curated or discovered. */
+async function editable(env: string, t: EditTarget) {
+  const { data } =
+    t.mode === "edit"
+      ? await editableKube({ path: { env, kind: t.kind, ns: t.ns, name: t.name }, throwOnError: true })
+      : await editableGenericKube({ path: { env, ...t.ref, ns: t.ns, name: t.name }, throwOnError: true });
+  return data;
+}
+
+async function replace(env: string, t: EditTarget, body: { yaml: string; resource_version: string; dry_run: boolean }) {
+  const { data } =
+    t.mode === "edit"
+      ? await replaceKube({ path: { env, kind: t.kind, ns: t.ns, name: t.name }, body, throwOnError: true })
+      : await replaceGenericKube({ path: { env, ...t.ref, ns: t.ns, name: t.name }, body, throwOnError: true });
+  return data;
+}
+
 const title = (t: YamlTarget) =>
-  t.mode === "edit" ? `Edit ${t.name}` : t.mode === "create" ? `Create ${KIND_LABEL[t.kind].replace(/s$/, "")}` : "Apply YAML";
+  isEdit(t) ? `Edit ${t.name}` : t.mode === "create" ? `Create ${KIND_LABEL[t.kind].replace(/s$/, "")}` : "Apply YAML";
 
 /**
  * Edit, create or apply Kubernetes YAML (spec §4.2–4.3): Review sends a dry
@@ -48,8 +70,8 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
     const target = JSON.parse(targetKey) as YamlTarget;
     void (async () => {
       try {
-        if (target.mode === "edit") {
-          const { data } = await editableKube({ path: { env, kind: target.kind, ns: target.ns, name: target.name }, throwOnError: true });
+        if (isEdit(target)) {
+          const data = await editable(env, target);
           setText(data.yaml);
           setLoaded(data.yaml);
           setRv(data.resource_version);
@@ -67,21 +89,16 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
 
   /** Fetches the object as it is now, for the conflict view. */
   const live = async () => {
-    if (target.mode !== "edit") return;
-    const { data } = await editableKube({ path: { env, kind: target.kind, ns: target.ns, name: target.name }, throwOnError: true });
+    if (!isEdit(target)) return;
+    const data = await editable(env, target);
     setConflict({ yaml: data.yaml, rv: data.resource_version });
   };
 
   /** The results, or null when an edit hit a conflict. */
   const send = async (dryRun: boolean, force: boolean, version: string): Promise<ApplyResult[] | null> => {
-    if (target.mode === "edit") {
+    if (isEdit(target)) {
       try {
-        const { data } = await replaceKube({
-          path: { env, kind: target.kind, ns: target.ns, name: target.name },
-          body: { yaml: text, resource_version: version, dry_run: dryRun },
-          throwOnError: true,
-        });
-        return [data];
+        return [await replace(env, target, { yaml: text, resource_version: version, dry_run: dryRun })];
       } catch (e) {
         if (e instanceof ApiError && e.status === 409) {
           await live();
@@ -124,7 +141,7 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
     onClose();
   };
 
-  const forceable = target.mode !== "edit" && results.some((r) => r.error?.code === "conflict");
+  const forceable = !isEdit(target) && results.some((r) => r.error?.code === "conflict");
 
   return (
     <Dialog open onOpenChange={(o) => !o && close()}>
