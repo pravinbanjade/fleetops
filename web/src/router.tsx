@@ -147,6 +147,10 @@ const helmReleaseRoute = createRoute({
 const kubeListRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "k8s/$kind",
+  // `q` starts the list's filter, for links such as the overview's "2 CrashLoopBackOff".
+  validateSearch: (s: Record<string, unknown>): { q?: string } => ({
+    q: typeof s.q === "string" && s.q ? s.q : undefined,
+  }),
   component: lazyRouteComponent(() => import("@/pages/kube/KubeListPage"), "KubeListPage"),
 });
 

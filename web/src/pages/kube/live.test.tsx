@@ -99,7 +99,7 @@ describe("live Kubernetes pages", () => {
     const { sock, sub } = await watchSub("pods/-");
     act(() => sock.receive({ sub, type: "end", reason: "error", message: "pods is forbidden" }));
     await screen.findByText(/Live updates paused/);
-    await userEvent.click(within(screen.getByRole("navigation", { name: "Environment" })).getByRole("link", { name: /Workloads/ }));
+    await userEvent.click(within(screen.getByRole("navigation", { name: "Environment" })).getByRole("link", { name: /Deployments/ }));
     await watchSub("deployments/-");
     expect(screen.queryByText(/Live updates paused/)).not.toBeInTheDocument();
   });

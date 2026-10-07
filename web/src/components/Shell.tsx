@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
-import { Boxes, Check, ChevronsUpDown, LogOut, Menu, Monitor, Moon, RefreshCw, Settings2, Sun, X } from "lucide-react";
+import { Boxes, Check, ChevronRight, ChevronsUpDown, LogOut, Menu, Monitor, Moon, RefreshCw, Settings2, Sun, X } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { accessOf, useEnvAccess } from "@/api/access";
@@ -21,8 +21,7 @@ import { envHue, envInitials, isKube } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { CommandPalette, typing } from "./CommandPalette";
-import { ADMIN_NAV, KUBE_NAV, NAV, navHref, type NavItem } from "./nav";
-import { WORKLOADS } from "@/pages/kube/kinds";
+import { ADMIN_NAV, KUBE_NAV, KUBE_SIDEBAR, NAV, isGroup, kubeGroupOf, navHref, type NavItem } from "./nav";
 import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
 import { openApplyYaml } from "@/components/yaml-editor/applyYaml";
@@ -80,8 +79,6 @@ function navParams(item: NavItem, env: string) {
 }
 
 function Rail({ env, kube }: { env?: string; kube: boolean }) {
-  const { pathname } = useLocation();
-  const items: readonly NavItem[] = kube ? KUBE_NAV : NAV;
   return (
     <div className="relative flex h-full flex-col gap-5 overflow-y-auto p-3 pt-4">
       <EnvBand env={env} />
@@ -92,23 +89,7 @@ function Rail({ env, kube }: { env?: string; kube: boolean }) {
       <EnvSwitcher current={env} kube={kube} />
       {env && (
         <nav className="grid gap-0.5" aria-label="Environment">
-          {items.map((item) => {
-            const { to, label, icon: Icon, key } = item;
-            const workloads =
-              "kind" in item && item.kind === "deployments" && WORKLOADS.some((k) => pathname.startsWith(`/envs/${encodeURIComponent(env)}/k8s/${k}`));
-            return (
-            <Link key={label} to={to} params={navParams(item, env)} activeOptions={{ exact: to === "/envs/$env" }} className={LINK} {...(workloads ? { "data-status": "active" } : {})}>
-              <Icon className="size-4 shrink-0" strokeWidth={1.75} />
-              {label}
-              <kbd
-                aria-hidden
-                className="ml-auto hidden font-mono text-[10px] text-muted-foreground/80 group-hover/link:inline"
-              >
-                G {key.toUpperCase()}
-              </kbd>
-            </Link>
-            );
-          })}
+          {kube ? <KubeSidebar env={env} /> : NAV.map((item) => <NavRow key={item.label} item={item} env={env} />)}
         </nav>
       )}
       <AdminNav />
@@ -117,6 +98,95 @@ function Rail({ env, kube }: { env?: string; kube: boolean }) {
       </div>
     </div>
   );
+}
+
+/** One page in the rail: icon, label, and its g-chord legend on hover. */
+function NavRow({ item, env, nested }: { item: NavItem; env: string; nested?: boolean }) {
+  const { to, label, icon: Icon, key } = item;
+  return (
+    <Link to={to} params={navParams(item, env)} activeOptions={{ exact: to === "/envs/$env" }} className={cn(LINK, nested && "h-7 pl-2.5")}>
+      {!nested && <Icon className="size-4 shrink-0" strokeWidth={1.75} />}
+      {label}
+      {key && (
+        <kbd aria-hidden className="ml-auto hidden font-mono text-[10px] text-muted-foreground/80 group-hover/link:inline">
+          G {key.toUpperCase()}
+        </kbd>
+      )}
+    </Link>
+  );
+}
+
+const GROUPS_KEY = "fleetops.nav.groups";
+
+/** Which groups the operator opened or closed by hand; the rest follow the current page. */
+function useGroupToggles(): [Record<string, boolean>, (id: string, open: boolean) => void] {
+  const [toggles, setToggles] = useState<Record<string, boolean>>(() => {
+    try {
+      const v: unknown = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? "{}");
+      return v && typeof v === "object" ? (v as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
+  const set = (id: string, open: boolean) =>
+    setToggles((t) => {
+      const next = { ...t, [id]: open };
+      try {
+        localStorage.setItem(GROUPS_KEY, JSON.stringify(next));
+      } catch {
+        /* storage blocked: the choice lasts this page only */
+      }
+      return next;
+    });
+  return [toggles, set];
+}
+
+/**
+ * The Kubernetes rail: the overview, then each API group folded under its
+ * name. A group opens by itself while one of its pages is shown, so the
+ * rail stays short and the current page is never hidden behind a fold.
+ */
+function KubeSidebar({ env }: { env: string }) {
+  const { pathname } = useLocation();
+  const [toggles, setToggle] = useGroupToggles();
+  const here = (item: NavItem) => {
+    const href = navHref(item, env);
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+  return KUBE_SIDEBAR.map((entry) => {
+    if (!isGroup(entry)) return <NavRow key={entry.label} item={entry} env={env} />;
+    const current = entry.items.some(here);
+    const open = toggles[entry.id] ?? current;
+    const { icon: Icon } = entry;
+    const id = `nav-${entry.id}`;
+    return (
+      <div key={entry.id} className="grid gap-0.5">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => setToggle(entry.id, !open)}
+          className={cn(LINK, "w-full text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35", current && !open && "text-foreground [&_svg]:text-primary")}
+        >
+          <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+          {entry.label}
+          {!open && <span className="ml-auto font-mono text-[10px] text-muted-foreground/80 tabular-nums">{entry.items.length}</span>}
+          <ChevronRight
+            aria-hidden
+            className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 ease-out", open ? "ml-auto rotate-90" : "")}
+            strokeWidth={1.75}
+          />
+        </button>
+        {open && (
+          <div id={id} className="mb-1 ml-[1.0625rem] grid gap-px border-l pl-1.5">
+            {entry.items.map((item) => (
+              <NavRow key={item.label} item={item} env={env} nested />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  });
 }
 
 /** The FleetOps mark, drawn from the favicon's geometry in the theme's colours. */
@@ -194,6 +264,7 @@ function TopBar({ env, kube, onMenu }: { env?: string; kube: boolean; onMenu: ()
     [...items].reverse().find((n) => env && pathname.startsWith(navHref(n, env))) ??
     ADMIN_NAV.find((n) => pathname.startsWith(n.to));
   const SectionIcon = section?.icon;
+  const group = kube && section && "kind" in section ? kubeGroupOf(section) : undefined;
   const { canWrite } = useEnvAccess(env);
   return (
     <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur-md md:px-6">
@@ -212,6 +283,14 @@ function TopBar({ env, kube, onMenu }: { env?: string; kube: boolean; onMenu: ()
           <span aria-hidden className="text-muted-foreground/60">
             /
           </span>
+        )}
+        {group && (
+          <>
+            <span className="hidden text-muted-foreground sm:inline">{group.label}</span>
+            <span aria-hidden className="hidden text-muted-foreground/60 sm:inline">
+              /
+            </span>
+          </>
         )}
         {section && SectionIcon && (
           <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">

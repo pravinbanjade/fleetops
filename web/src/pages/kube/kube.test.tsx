@@ -5,16 +5,63 @@ import { kubeRoutes, kubeRow, loggedIn, renderApp } from "@/test/app";
 import { mockFetch } from "@/test/fetch";
 
 describe("Kubernetes environments", () => {
-  it("shows the Kubernetes pages in the sidebar, not Docker's", async () => {
+  it("shows the Kubernetes pages in the sidebar, grouped and folded", async () => {
     mockFetch({ ...loggedIn, ...kubeRoutes });
     renderApp("/envs/k");
     const nav = await screen.findByRole("navigation", { name: "Environment" });
-    for (const label of ["Overview", "Workloads", "Pods", "Services", "Ingresses", "ConfigMaps", "Secrets", "Namespaces", "Nodes"]) {
+    for (const label of ["Overview", "Helm releases"]) {
       expect(within(nav).getByRole("link", { name: new RegExp(label) })).toBeInTheDocument();
     }
+    // Groups start folded on the overview; opening one shows its pages.
+    for (const group of ["Workloads", "Network", "Config", "Cluster"]) {
+      expect(within(nav).getByRole("button", { name: new RegExp(group) })).toHaveAttribute("aria-expanded", "false");
+    }
+    expect(within(nav).queryByRole("link", { name: /Pods/ })).not.toBeInTheDocument();
+    await userEvent.click(within(nav).getByRole("button", { name: /Workloads/ }));
+    for (const label of ["Pods", "Deployments", "StatefulSets", "DaemonSets", "Jobs", "CronJobs"]) {
+      expect(within(nav).getByRole("link", { name: label })).toBeInTheDocument();
+    }
+    await userEvent.click(within(nav).getByRole("button", { name: /Cluster/ }));
+    expect(within(nav).getByRole("link", { name: /Nodes/ })).toHaveAttribute("href", "/envs/k/k8s/nodes");
     expect(within(nav).queryByRole("link", { name: /Containers/ })).not.toBeInTheDocument();
     expect(await screen.findByText("v1.32.0")).toBeInTheDocument();
     expect(screen.getByText("3 of 3 nodes ready")).toBeInTheDocument();
+  });
+
+  it("opens the group of the page shown", async () => {
+    mockFetch({ ...loggedIn, ...kubeRoutes });
+    renderApp("/envs/k/k8s/secrets");
+    const nav = await screen.findByRole("navigation", { name: "Environment" });
+    expect(within(nav).getByRole("button", { name: /Config/ })).toHaveAttribute("aria-expanded", "true");
+    expect(within(nav).getByRole("link", { name: /Secrets/ })).toHaveAttribute("data-status", "active");
+    expect(within(nav).getByRole("button", { name: /Workloads/ })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("puts what needs attention first on the overview", async () => {
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      "GET /api/v1/envs/k/k8s/pods": {
+        json: {
+          rows: [
+            kubeRow("web-1", "apps", { ready: "1/1", restarts: "0" }),
+            { ...kubeRow("api-7", "apps", { ready: "0/1", restarts: "4" }, "bad"), status: "CrashLoopBackOff" },
+          ],
+          truncated: false,
+        },
+      },
+    });
+    renderApp("/envs/k");
+    const bay = await screen.findByRole("list", { name: "Needs attention" });
+    expect(within(bay).getByRole("link", { name: "api-7" })).toHaveAttribute("href", "/envs/k/k8s/pods/apps/api-7?tab=logs");
+    expect(within(bay).getByText("4 restarts")).toBeInTheDocument();
+    // The deployment short of replicas is listed too.
+    expect(within(bay).getByRole("link", { name: "web" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "2 things need attention" })).toBeInTheDocument();
+    expect(within(screen.getByRole("list", { name: "Pods by status" })).getByRole("link", { name: /CrashLoopBackOff/ })).toHaveAttribute(
+      "href",
+      "/envs/k/k8s/pods?q=CrashLoopBackOff",
+    );
   });
 
   it("lists a kind with its own columns", async () => {
@@ -26,7 +73,7 @@ describe("Kubernetes environments", () => {
     }
     expect(await within(table).findByRole("link", { name: "web" })).toHaveAttribute("href", "/envs/k/k8s/deployments/apps/web");
     expect(within(table).getAllByText("2/3").length).toBeGreaterThan(0);
-    // Workload kinds share tabs.
+    // The other workload kinds sit beside it in the sidebar.
     expect(screen.getByRole("link", { name: "StatefulSets" })).toHaveAttribute("href", "/envs/k/k8s/statefulsets");
   });
 
@@ -85,7 +132,7 @@ describe("a cluster whose credentials cannot list nodes", () => {
       },
     });
     renderApp("/envs/k");
-    expect(await screen.findByText("Not visible to these credentials")).toBeInTheDocument();
+    expect(await screen.findByText("Nodes not visible to these credentials")).toBeInTheDocument();
   });
 });
 

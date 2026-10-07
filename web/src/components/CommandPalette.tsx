@@ -21,7 +21,7 @@ import {
 import { errorMessage } from "@/lib/errors";
 import { shortId } from "@/lib/format";
 import { ACTIONS, actionsFor } from "@/pages/containers/actions";
-import { ADMIN_NAV, NAV } from "./nav";
+import { ADMIN_NAV, KUBE_NAV, NAV, kubeGroupOf, navHref } from "./nav";
 import { openApplyYaml } from "@/components/yaml-editor/applyYaml";
 import { isKube } from "@/lib/env";
 
@@ -88,10 +88,13 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
   const envs = useQuery(envsQuery);
   const on = !!env;
   const e = env ?? "";
-  const containers = useQuery({ ...containersQuery(e), enabled: on });
-  const images = useQuery({ ...imagesQuery(e), enabled: on });
-  const volumes = useQuery({ ...volumesQuery(e), enabled: on });
-  const networks = useQuery({ ...networksQuery(e), enabled: on });
+  const kube = on && isKube(envs.data?.find((x) => x.name === e)?.kind);
+  // A Kubernetes environment has no Docker resources to search.
+  const docker = on && !!envs.data && !kube;
+  const containers = useQuery({ ...containersQuery(e), enabled: docker });
+  const images = useQuery({ ...imagesQuery(e), enabled: docker });
+  const volumes = useQuery({ ...volumesQuery(e), enabled: docker });
+  const networks = useQuery({ ...networksQuery(e), enabled: docker });
 
   /** Closes the palette, then navigates. */
   const go = (nav: () => Promise<void>) => {
@@ -117,7 +120,18 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
       <CommandList>
         <CommandEmpty>Nothing found.</CommandEmpty>
         <CommandGroup heading="Pages">
-          {on &&
+          {kube &&
+            KUBE_NAV.map((n) => {
+              const group = kubeGroupOf(n);
+              return (
+                <CommandItem key={n.label} value={`page ${group?.label ?? ""} ${n.label}`} onSelect={() => go(() => navigate({ href: navHref(n, e) }))}>
+                  <n.icon />
+                  {n.label}
+                  {group && <span className="ml-auto text-xs text-muted-foreground">{group.label}</span>}
+                </CommandItem>
+              );
+            })}
+          {docker &&
             NAV.map((n) => (
               <CommandItem key={n.to} value={`page ${n.label}`} onSelect={() => go(() => navigate({ to: n.to, params: { env: e } }))}>
                 <n.icon />
@@ -131,7 +145,7 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
                 {n.label}
               </CommandItem>
             ))}
-          {on && isKube(envs.data?.find((x) => x.name === e)?.kind) && accessOf(envs.data?.find((x) => x.name === e)).canWrite && (
+          {kube && accessOf(envs.data?.find((x) => x.name === e)).canWrite && (
             <CommandItem value="Apply YAML" onSelect={() => go(async () => openApplyYaml(e))}>
               <FileUp />
               Apply YAML

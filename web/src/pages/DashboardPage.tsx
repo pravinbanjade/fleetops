@@ -13,7 +13,7 @@ import {
   Waypoints,
   type LucideIcon,
 } from "lucide-react";
-import { useId, type KeyboardEvent, type ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import {
   containersQuery,
   dfQuery,
@@ -33,6 +33,7 @@ import { Page } from "@/components/Page";
 import { Sparkline } from "@/components/Sparkline";
 import { ContainerState, StateBadge, stateTone } from "@/components/StateBadge";
 import { Usage } from "@/components/Usage";
+import { walk } from "@/components/walk";
 import { summarizeDiskUsage, type DiskSummary, type Usage as DiskUse } from "@/lib/df";
 import { errorMessage } from "@/lib/errors";
 import { formatBytes, formatPercent } from "@/lib/format";
@@ -146,20 +147,6 @@ function Unavailable({ reason }: { reason: string }) {
       </p>
     </div>
   );
-}
-
-/** Moves focus between the links of a strip list with j/k and the arrow keys. */
-function walk(e: KeyboardEvent<HTMLElement>) {
-  const next = e.key === "j" || e.key === "ArrowDown";
-  const prev = e.key === "k" || e.key === "ArrowUp";
-  if (!next && !prev) return;
-  const links = [...e.currentTarget.querySelectorAll<HTMLAnchorElement>("a[data-strip]")];
-  const at = links.indexOf(document.activeElement as HTMLAnchorElement);
-  const to = links[Math.min(links.length - 1, Math.max(0, at + (next ? 1 : -1)))];
-  if (to) {
-    e.preventDefault();
-    to.focus();
-  }
 }
 
 /** The tones a shown state's share of the bar is drawn in. */
