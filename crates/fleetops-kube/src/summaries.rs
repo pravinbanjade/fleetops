@@ -10,8 +10,13 @@ use k8s_openapi::api::{
     apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet},
     autoscaling::v2::HorizontalPodAutoscaler,
     batch::v1::{CronJob, Job},
-    core::v1::{ConfigMap, Event, Namespace, Node, Pod, Secret, Service},
+    core::v1::{
+        ConfigMap, Event, Namespace, Node, PersistentVolume, PersistentVolumeClaim, Pod, Secret,
+        Service, ServiceAccount,
+    },
     networking::v1::{Ingress, NetworkPolicy},
+    rbac::v1::{ClusterRole, ClusterRoleBinding, PolicyRule, Role, RoleBinding, RoleRef, Subject},
+    storage::v1::StorageClass,
 };
 use kube::api::DynamicObject;
 use serde::de::DeserializeOwned;
@@ -76,7 +81,18 @@ pub fn row(kind: KubeKind, obj: &DynamicObject) -> KubeRow {
             typed::<HorizontalPodAutoscaler>(kind, obj).map(hpa)
         }
         KubeKind::NetworkPolicies => typed::<NetworkPolicy>(kind, obj).map(network_policy),
-        _ => None,
+        KubeKind::PersistentVolumeClaims => typed::<PersistentVolumeClaim>(kind, obj).map(pvc),
+        KubeKind::PersistentVolumes => typed::<PersistentVolume>(kind, obj).map(pv),
+        KubeKind::StorageClasses => typed::<StorageClass>(kind, obj).map(storage_class),
+        KubeKind::ServiceAccounts => typed::<ServiceAccount>(kind, obj).map(service_account),
+        KubeKind::Roles => typed::<Role>(kind, obj).map(|r| rules(r.rules)),
+        KubeKind::ClusterRoles => typed::<ClusterRole>(kind, obj).map(|r| rules(r.rules)),
+        KubeKind::RoleBindings => {
+            typed::<RoleBinding>(kind, obj).map(|b| binding(b.role_ref, b.subjects))
+        }
+        KubeKind::ClusterRoleBindings => {
+            typed::<ClusterRoleBinding>(kind, obj).map(|b| binding(b.role_ref, b.subjects))
+        }
     };
     match summary {
         Some((status, health, columns)) => KubeRow {
@@ -570,6 +586,145 @@ fn network_policy(n: NetworkPolicy) -> Summary {
         cols([
             ("pod_selector", selector),
             ("policy_types", types.join(", ")),
+        ]),
+    )
+}
+
+/// kubectl's short access modes: RWO, ROX, RWX, RWOP.
+fn access_modes(modes: Option<Vec<String>>) -> String {
+    modes
+        .unwrap_or_default()
+        .iter()
+        .map(|m| match m.as_str() {
+            "ReadWriteOnce" => "RWO",
+            "ReadOnlyMany" => "ROX",
+            "ReadWriteMany" => "RWX",
+            "ReadWriteOncePod" => "RWOP",
+            other => other,
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn storage(
+    q: Option<&BTreeMap<String, k8s_openapi::apimachinery::pkg::api::resource::Quantity>>,
+) -> String {
+    q.and_then(|m| m.get("storage"))
+        .map(|q| q.0.clone())
+        .unwrap_or_default()
+}
+
+fn pvc(c: PersistentVolumeClaim) -> Summary {
+    let spec = c.spec.unwrap_or_default();
+    let st = c.status.unwrap_or_default();
+    let phase = st.phase.unwrap_or_else(|| "Pending".into());
+    let h = match phase.as_str() {
+        "Bound" => RowHealth::Ok,
+        "Lost" => RowHealth::Bad,
+        _ => RowHealth::Warn,
+    };
+    (
+        phase,
+        h,
+        cols([
+            ("volume", spec.volume_name.unwrap_or_default()),
+            ("capacity", storage(st.capacity.as_ref())),
+            ("access_modes", access_modes(spec.access_modes)),
+            ("storage_class", spec.storage_class_name.unwrap_or_default()),
+        ]),
+    )
+}
+
+fn pv(v: PersistentVolume) -> Summary {
+    let spec = v.spec.unwrap_or_default();
+    let phase = v
+        .status
+        .and_then(|s| s.phase)
+        .unwrap_or_else(|| "Pending".into());
+    let h = match phase.as_str() {
+        "Bound" | "Available" => RowHealth::Ok,
+        "Failed" => RowHealth::Bad,
+        _ => RowHealth::Warn,
+    };
+    let claim = spec.claim_ref.clone().unwrap_or_default();
+    (
+        phase,
+        h,
+        cols([
+            ("claim", claim.name.unwrap_or_default()),
+            ("claim_namespace", claim.namespace.unwrap_or_default()),
+            ("capacity", storage(spec.capacity.as_ref())),
+            ("access_modes", access_modes(spec.access_modes)),
+            (
+                "reclaim_policy",
+                spec.persistent_volume_reclaim_policy
+                    .unwrap_or_else(|| "Retain".into()),
+            ),
+            ("storage_class", spec.storage_class_name.unwrap_or_default()),
+        ]),
+    )
+}
+
+fn storage_class(s: StorageClass) -> Summary {
+    let default = s
+        .metadata
+        .annotations
+        .unwrap_or_default()
+        .get("storageclass.kubernetes.io/is-default-class")
+        .is_some_and(|v| v == "true");
+    (
+        s.provisioner.clone(),
+        RowHealth::Ok,
+        cols([
+            ("provisioner", s.provisioner),
+            (
+                "reclaim_policy",
+                s.reclaim_policy.unwrap_or_else(|| "Delete".into()),
+            ),
+            (
+                "binding_mode",
+                s.volume_binding_mode.unwrap_or_else(|| "Immediate".into()),
+            ),
+            ("default", if default { "Yes" } else { "" }.into()),
+        ]),
+    )
+}
+
+fn service_account(a: ServiceAccount) -> Summary {
+    let n = a.secrets.map(|s| s.len()).unwrap_or(0);
+    (
+        String::new(),
+        RowHealth::Ok,
+        cols([("secrets", n.to_string())]),
+    )
+}
+
+fn rules(r: Option<Vec<PolicyRule>>) -> Summary {
+    let n = r.map(|r| r.len()).unwrap_or(0);
+    (
+        format!("{n} rules"),
+        RowHealth::Ok,
+        cols([("rules", n.to_string())]),
+    )
+}
+
+fn binding(role: RoleRef, subjects: Option<Vec<Subject>>) -> Summary {
+    let subjects = subjects
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| format!("{}/{}", s.kind, s.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let role_kind = KubeKind::from_kind_name(&role.kind)
+        .map(|k| k.as_str().to_string())
+        .unwrap_or_default();
+    (
+        role.name.clone(),
+        RowHealth::Ok,
+        cols([
+            ("role", role.name),
+            ("role_kind", role_kind),
+            ("subjects", subjects),
         ]),
     )
 }

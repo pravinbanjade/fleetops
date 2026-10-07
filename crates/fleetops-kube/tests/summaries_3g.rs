@@ -95,3 +95,94 @@ fn a_network_policy_shows_its_selector_and_types() {
     assert_eq!(all.columns["pod_selector"], "(all pods)");
     assert_eq!(all.columns["policy_types"], "Ingress");
 }
+
+fn cmeta(name: &str) -> serde_json::Value {
+    json!({"name": name, "creationTimestamp": "2026-10-01T00:00:00Z"})
+}
+
+#[test]
+fn pvc_health_follows_its_phase() {
+    let pvc = |phase: &str| {
+        row(
+            KubeKind::PersistentVolumeClaims,
+            &obj(json!({"metadata": meta("data"),
+            "spec": {"accessModes": ["ReadWriteOnce"], "storageClassName": "standard", "volumeName": "pv-1",
+                     "resources": {"requests": {"storage": "1Gi"}}},
+            "status": {"phase": phase, "capacity": {"storage": "1Gi"}}})),
+        )
+    };
+    let bound = pvc("Bound");
+    assert_eq!(
+        (bound.status.as_str(), bound.health),
+        ("Bound", RowHealth::Ok)
+    );
+    assert_eq!(bound.columns["volume"], "pv-1");
+    assert_eq!(bound.columns["capacity"], "1Gi");
+    assert_eq!(bound.columns["access_modes"], "RWO");
+    assert_eq!(bound.columns["storage_class"], "standard");
+    assert_eq!(pvc("Pending").health, RowHealth::Warn);
+    assert_eq!(pvc("Lost").health, RowHealth::Bad);
+}
+
+#[test]
+fn a_pv_is_cluster_scoped_and_names_its_claim() {
+    let r = row(
+        KubeKind::PersistentVolumes,
+        &obj(json!({"metadata": cmeta("pv-1"),
+        "spec": {"capacity": {"storage": "5Gi"}, "accessModes": ["ReadWriteMany", "ReadOnlyMany"],
+                 "persistentVolumeReclaimPolicy": "Delete", "storageClassName": "nfs",
+                 "claimRef": {"name": "data", "namespace": "apps"}},
+        "status": {"phase": "Released"}})),
+    );
+    assert_eq!(r.namespace, None);
+    assert_eq!((r.status.as_str(), r.health), ("Released", RowHealth::Warn));
+    assert_eq!(r.columns["claim"], "data");
+    assert_eq!(r.columns["claim_namespace"], "apps");
+    assert_eq!(r.columns["access_modes"], "RWX, ROX");
+    assert_eq!(r.columns["reclaim_policy"], "Delete");
+}
+
+#[test]
+fn the_default_storage_class_says_so() {
+    let mut m = cmeta("standard");
+    m["annotations"] = json!({"storageclass.kubernetes.io/is-default-class": "true"});
+    let r = row(
+        KubeKind::StorageClasses,
+        &obj(json!({"metadata": m,
+        "provisioner": "rancher.io/local-path", "volumeBindingMode": "WaitForFirstConsumer"})),
+    );
+    assert_eq!(r.columns["provisioner"], "rancher.io/local-path");
+    assert_eq!(r.columns["reclaim_policy"], "Delete");
+    assert_eq!(r.columns["binding_mode"], "WaitForFirstConsumer");
+    assert_eq!(r.columns["default"], "Yes");
+}
+
+#[test]
+fn rbac_rows_count_rules_and_list_subjects() {
+    let role = row(
+        KubeKind::Roles,
+        &obj(json!({"metadata": meta("reader"),
+        "rules": [{"apiGroups": [""], "resources": ["pods"], "verbs": ["get"]},
+                  {"apiGroups": [""], "resources": ["services"], "verbs": ["get"]}]})),
+    );
+    assert_eq!(role.columns["rules"], "2");
+    let cr = row(
+        KubeKind::ClusterRoles,
+        &obj(json!({"metadata": cmeta("admin")})),
+    );
+    assert_eq!(cr.columns["rules"], "0");
+    let rb = row(
+        KubeKind::RoleBindings,
+        &obj(json!({"metadata": meta("read"),
+        "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "view"},
+        "subjects": [{"kind": "ServiceAccount", "name": "app", "namespace": "apps"}, {"kind": "User", "name": "ana"}]})),
+    );
+    assert_eq!(rb.columns["role"], "view");
+    assert_eq!(rb.columns["role_kind"], "clusterroles");
+    assert_eq!(rb.columns["subjects"], "ServiceAccount/app, User/ana");
+    let sa = row(
+        KubeKind::ServiceAccounts,
+        &obj(json!({"metadata": meta("app"), "secrets": [{"name": "t"}]})),
+    );
+    assert_eq!(sa.columns["secrets"], "1");
+}
