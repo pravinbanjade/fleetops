@@ -271,7 +271,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                   // The bay's label is the row group's name; drawn here for sighted readers.
                   <tr aria-hidden data-bay={g.id} className="border-b bg-muted/30">
                     <td colSpan={width} className="h-7 px-3 text-xs font-medium text-muted-foreground">
-                      {g.label} <span className="ml-1 tabular-nums opacity-70">{g.rows.length}</span>
+                      {g.label} <span className="ml-1 font-normal tabular-nums">{g.rows.length}</span>
                     </td>
                   </tr>
                 )}

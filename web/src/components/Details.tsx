@@ -1,3 +1,4 @@
+import { CircleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { ApiError } from "@/api/client";
 import { errorMessage } from "@/lib/errors";
@@ -27,10 +28,12 @@ export function DetailError({ error, what, back }: { error: unknown; what: strin
   const gone = error instanceof ApiError && error.status === 404;
   return (
     <div className="m-4 grid max-w-xl gap-2 rounded-lg border border-destructive/40 bg-destructive/8 p-4 md:m-6">
-      <p role="alert" className="text-sm font-medium text-destructive">
+      {/* Ink text on the tint: destructive text on it falls just under 4.5:1 in light. */}
+      <p role="alert" className="flex items-start gap-2 text-sm font-medium">
+        <CircleAlert aria-hidden className="mt-px size-4 shrink-0 text-destructive" />
         {gone ? `This ${what} no longer exists.` : errorMessage(error)}
       </p>
-      <div className="text-sm">{back}</div>
+      <div className="pl-6 text-sm">{back}</div>
     </div>
   );
 }

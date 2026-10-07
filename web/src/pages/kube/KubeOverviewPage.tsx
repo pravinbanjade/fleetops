@@ -291,7 +291,7 @@ function AttentionPanel({
           {shown.map((t) => (
             <li
               key={t.key}
-              className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 has-[a:focus-visible]:bg-cord-soft @2xl:grid-cols-[auto_minmax(0,1fr)_7rem_minmax(0,10rem)_8rem]"
+              className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 strip-focus @2xl:grid-cols-[auto_minmax(0,1fr)_7rem_minmax(0,10rem)_8rem]"
             >
               <StateBadge state={t.status} tone={t.tone} track={t.key} />
               {t.link}
@@ -425,7 +425,7 @@ function NodesPanel({ env, nodes, usage }: { env: string; nodes: Live; usage?: M
             {rows.slice(0, NODES_SHOWN).map((r) => {
               const u = usage?.get(`-/${r.name}`);
               return (
-                <li key={r.name} className={cn(usage ? NODE_GRID : "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 px-4", "border-b py-2.5 last:border-b-0 has-[a:focus-visible]:bg-cord-soft")}>
+                <li key={r.name} className={cn(usage ? NODE_GRID : "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 px-4", "border-b py-2.5 last:border-b-0 strip-focus")}>
                   <StateBadge state={r.status} tone={TONE[r.health]} track={`nodes/${r.name}`} />
                   <Link
                     data-strip
@@ -545,7 +545,7 @@ function WarningsPanel({ env, events, where }: { env: string; events: Live; wher
             return (
               <li
                 key={`${e.namespace ?? "-"}/${e.name}`}
-                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 has-[a:focus-visible]:bg-cord-soft"
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 strip-focus"
               >
                 <StateBadge state={c.reason || "Warning"} tone="wait" track={`events/${e.namespace}/${e.name}/${c.count}`} />
                 {kind && c.object_name ? (
@@ -610,7 +610,7 @@ function BusiestPanel({ env, rows }: { env: string; rows: KubeUsageRow[] }) {
           {top.map((r) => (
             <li
               key={`${r.namespace}/${r.name}`}
-              className="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2 last:border-b-0 has-[a:focus-visible]:bg-cord-soft"
+              className="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2 last:border-b-0 strip-focus"
             >
               <Link
                 data-strip

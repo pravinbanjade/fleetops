@@ -153,6 +153,18 @@
  * Strip fields: the interface face at its normal width with readout numerals. Condensing it made
  * names and tags read as one cramped run; identifiers carry the density instead, in mono.
  */
+/*
+ * A strip that holds a keyboard-walked link: the focused strip takes the
+ * cord-soft wash plus a 1px cord edge, so focus reads at 3:1 in both themes
+ * (the wash alone does not).
+ */
+@utility strip-focus {
+  &:has(a:focus-visible) {
+    background-color: var(--cord-soft);
+    box-shadow: inset 0 0 0 1px var(--ring);
+  }
+}
+
 @utility font-strip {
   font-variant-numeric: tabular-nums;
 }

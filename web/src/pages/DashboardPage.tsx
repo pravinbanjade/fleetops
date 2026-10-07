@@ -189,7 +189,7 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
           {attention.map((c) => (
             <li
               key={c.id}
-              className="font-strip grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 text-sm last:border-b-0 has-[a:focus-visible]:bg-cord-soft sm:grid-cols-[auto_minmax(0,16rem)_minmax(0,1fr)_auto]"
+              className="font-strip grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 text-sm last:border-b-0 strip-focus sm:grid-cols-[auto_minmax(0,16rem)_minmax(0,1fr)_auto]"
             >
               <ContainerState container={c} />
               <Link
@@ -269,7 +269,7 @@ function RunningBay({ env, list }: { env: string; list: ContainerSummary[] }) {
         {shownList.map((c) => (
           <li
             key={c.id}
-            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b px-4 py-2 last:border-b-0 has-[a:focus-visible]:bg-cord-soft @md:grid-cols-[minmax(0,1fr)_8.5rem_9.5rem] @xl:grid-cols-[auto_minmax(0,1fr)_8.5rem_9.5rem] @3xl:grid-cols-[auto_minmax(10rem,18rem)_minmax(0,1fr)_8.5rem_9.5rem]"
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-b px-4 py-2 last:border-b-0 strip-focus @md:grid-cols-[minmax(0,1fr)_8.5rem_9.5rem] @xl:grid-cols-[auto_minmax(0,1fr)_8.5rem_9.5rem] @3xl:grid-cols-[auto_minmax(10rem,18rem)_minmax(0,1fr)_8.5rem_9.5rem]"
           >
             <ContainerState container={c} className="hidden @xl:inline-flex" />
             <Link
