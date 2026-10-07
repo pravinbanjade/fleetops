@@ -1,17 +1,20 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { FileText, Info, ListTree, ScrollText, TerminalSquare } from "lucide-react";
-import { Fragment, lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
+import type { KubeCondition, KubeEvent, KubeKind, KubeRow } from "@/api/gen/types.gen";
 import { useEnvAccess } from "@/api/access";
 import { keys, kubeEventsQuery, kubeObjectQuery } from "@/api/queries";
 import { useKubeWatch } from "@/live/kubeWatch";
-import { DetailError } from "@/components/Details";
+import { DetailError, Details } from "@/components/Details";
+import { StateBadge, type Tone } from "@/components/StateBadge";
+import { errorMessage } from "@/lib/errors";
 import { Page } from "@/components/Page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "@/lib/format";
 import { KubeActions } from "./KubeActions";
 import { KubeHealth } from "./KubeHealth";
-import { asKind, CLUSTER_SCOPED, KIND_LABEL } from "./kinds";
+import { asKind, CLUSTER_SCOPED, KIND_COLUMNS, KIND_LABEL } from "./kinds";
 import { useKubeUsage, usageKey } from "./usage";
 import { LivePaused } from "./LivePaused";
 import type { KubeTab } from "./tabs";
@@ -40,6 +43,7 @@ export function KubeObjectPage() {
     }
     if (ev.type === "deleted" && ev.name === name) setGone(true);
   });
+  const usage = useUsageItems(env, kind, ns, name);
   if (obj.error)
     return (
       <DetailError
@@ -106,24 +110,8 @@ export function KubeObjectPage() {
         <TabsContent value="summary">
           {o && (
             <div className="grid gap-4">
-              <dl className="grid grid-cols-[10rem_1fr] gap-y-1 text-sm">
-                <dt className="text-muted-foreground">Kind</dt><dd>{KIND_LABEL[kind].replace(/s$/, "")}</dd>
-                {o.row.namespace && (<><dt className="text-muted-foreground">Namespace</dt><dd>{o.row.namespace}</dd></>)}
-                <dt className="text-muted-foreground">Age</dt><dd>{formatAgo(o.row.created)}</dd>
-                {(kind === "pods" || kind === "nodes") && <UsageRows env={env} kind={kind} ns={ns} name={name} />}
-                {Object.entries(o.row.columns).map(([k, v]) => (
-                  <Fragment key={k}>
-                    <dt className="text-muted-foreground">{k.replace(/_/g, " ")}</dt>
-                    <dd>{v || "—"}</dd>
-                  </Fragment>
-                ))}
-              </dl>
-              {o.conditions.length > 0 && (
-                <table className="text-sm" aria-label="Conditions">
-                  <thead><tr><th className="text-left">Condition</th><th className="text-left">Status</th><th className="text-left">Reason</th><th className="text-left">Message</th></tr></thead>
-                  <tbody>{o.conditions.map((c) => (<tr key={c.type}><td>{c.type}</td><td>{c.status}</td><td>{c.reason}</td><td>{c.message}</td></tr>))}</tbody>
-                </table>
-              )}
+              <Details label="Summary" items={[...summaryItems(kind, o.row), ...usage]} />
+              {o.conditions.length > 0 && <Conditions conditions={o.conditions} />}
             </div>
           )}
         </TabsContent>
@@ -131,15 +119,7 @@ export function KubeObjectPage() {
           {o && <pre aria-label="Object YAML" className="overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">{o.yaml}</pre>}
         </TabsContent>
         <TabsContent value="events">
-          <ul className="grid gap-2 text-sm">
-            {(events.data ?? []).map((e, i) => (
-              <li key={i} className={e.type === "Warning" ? "text-state-fail" : undefined}>
-                <span className="font-medium">{e.reason}</span> {e.message}{" "}
-                <span className="text-muted-foreground">{e.last_seen ? formatAgo(e.last_seen) : ""} ×{e.count}</span>
-              </li>
-            ))}
-            {events.data?.length === 0 && <li className="text-muted-foreground">No recent events.</li>}
-          </ul>
+          <EventStrips events={events.data} pending={events.isPending} error={events.error} />
         </TabsContent>
         {isPod && o && (
           <>
@@ -175,18 +155,85 @@ function ContainerPicker({ containers, value, onChange, hidden }: { containers: 
   );
 }
 
-/** CPU and memory now, when metrics-server reports them. */
-function UsageRows({ env, kind, ns, name }: { env: string; kind: "pods" | "nodes"; ns: string; name: string }) {
-  const usage = useKubeUsage(env, kind, kind === "pods" ? ns : undefined);
+/** CPU and memory now as summary rows, when metrics-server reports them. */
+function useUsageItems(env: string, kind: KubeKind, ns: string, name: string): [string, ReactNode][] {
+  const metered = kind === "pods" || kind === "nodes";
+  const usage = useKubeUsage(env, kind === "nodes" ? "nodes" : "pods", kind === "pods" ? ns : undefined, metered);
   const u = usage.index.get(usageKey(kind === "pods" ? ns : null, name));
-  if (!usage.available || !u) return null;
+  if (!metered || !usage.available || !u) return [];
   const of = (alloc: number | null | undefined, f: (n: number) => string, used: number) => (alloc ? ` of ${f(alloc)} (${formatPercent((used / alloc) * 100)})` : "");
+  return [
+    ["CPU", <span className="tabular-nums">{formatCpu(u.cpu)}{of(u.cpu_allocatable, (n) => `${formatCores(n)} cores`, u.cpu)}</span>],
+    ["Memory", <span className="tabular-nums">{formatMemory(u.memory)}{of(u.memory_allocatable, formatMemory, u.memory)}</span>],
+  ];
+}
+
+/** Kind, namespace and age, then the kind's own columns under the list's headers. */
+function summaryItems(kind: KubeKind, row: KubeRow): [string, ReactNode][] {
+  const header = new Map(KIND_COLUMNS[kind]);
+  const label = (k: string) => header.get(k) ?? k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, " ");
+  const value = (k: string, v: string) => (k === "last_seen" && Number(v) ? formatAgo(Number(v)) : v || "—");
+  return [
+    ["Kind", KIND_LABEL[kind].replace(/s$/, "")],
+    ["Namespace", row.namespace ? <span className="font-ident">{row.namespace}</span> : undefined],
+    ["Age", formatAgo(row.created)],
+    ...Object.entries(row.columns).map(([k, v]): [string, ReactNode] => [label(k), value(k, v)]),
+  ];
+}
+
+/** Conditions whose True is bad news; for the rest True is the healthy reading. */
+const BAD_WHEN_TRUE = new Set(["MemoryPressure", "DiskPressure", "PIDPressure", "NetworkUnavailable", "Failed", "ReplicaFailure", "Stalled"]);
+
+function conditionTone(c: KubeCondition): Tone {
+  if (c.status === "Unknown") return "idle";
+  const good = (c.status === "True") !== BAD_WHEN_TRUE.has(c.type);
+  return good ? "run" : "fail";
+}
+
+/** Each condition as a strip: its reading as a holder, the type, and why. */
+function Conditions({ conditions }: { conditions: KubeCondition[] }) {
   return (
-    <>
-      <dt className="text-muted-foreground">CPU</dt>
-      <dd className="tabular-nums">{formatCpu(u.cpu)}{of(u.cpu_allocatable, (n) => `${formatCores(n)} cores`, u.cpu)}</dd>
-      <dt className="text-muted-foreground">Memory</dt>
-      <dd className="tabular-nums">{formatMemory(u.memory)}{of(u.memory_allocatable, formatMemory, u.memory)}</dd>
-    </>
+    <section aria-label="Conditions" className="overflow-hidden rounded-lg border bg-card">
+      <h2 className="border-b bg-muted/40 px-4 py-2 text-sm font-semibold">Conditions</h2>
+      <ul className="font-strip text-sm">
+        {conditions.map((c) => (
+          <li key={c.type} className="grid grid-cols-[4rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 sm:grid-cols-[4rem_minmax(0,14rem)_minmax(0,1fr)]">
+            <StateBadge state={c.status} tone={conditionTone(c)} track={c.type} />
+            <span className="font-ident font-medium">{c.type}</span>
+            <span className="col-start-2 min-w-0 text-muted-foreground sm:col-start-auto">
+              {c.reason && <span className="font-ident text-foreground">{c.reason}</span>}
+              {c.reason && c.message && " · "}
+              {c.message}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** An object's events, newest first, in the strips the overview uses. */
+function EventStrips({ events, pending, error }: { events: KubeEvent[] | undefined; pending: boolean; error: unknown }) {
+  if (error) return <p className="text-sm text-destructive">{errorMessage(error)}</p>;
+  if (pending) return <p className="text-sm text-muted-foreground">Loading events…</p>;
+  if (!events?.length) return <p className="text-sm text-muted-foreground">No recent events.</p>;
+  return (
+    <ul aria-label="Events" className="font-strip overflow-hidden rounded-lg border bg-card text-sm">
+      {events.map((e, i) => {
+        const when = [e.count > 1 && `×${e.count}`, e.last_seen && formatAgo(e.last_seen)].filter(Boolean).join(" · ");
+        return (
+          <li key={i} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+            <StateBadge state={e.reason || e.type} tone={e.type === "Warning" ? "wait" : "idle"} />
+            <span className="min-w-0 break-words">{e.message}</span>
+            <span className="hidden text-xs whitespace-nowrap text-muted-foreground tabular-nums sm:inline">{when}</span>
+            {/* On a phone the count and age join the source line: the message keeps the width. */}
+            <span className="col-start-2 text-xs text-muted-foreground sm:col-end-4">
+              {e.source && <span className="font-ident">{e.source}</span>}
+              <span className="tabular-nums sm:hidden">{e.source && when && " · "}{when}</span>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
