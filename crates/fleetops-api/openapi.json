@@ -2585,6 +2585,71 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/metrics/{kind}": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "CPU and memory now, for nodes or pods, from metrics-server",
+        "operationId": "kubeUsage",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "Plural lowercase kind, e.g. `deployments`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "description": "Omit for all namespaces.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage; `available` is false when the cluster has no metrics API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeUsage"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/k8s/templates": {
       "get": {
         "tags": [
@@ -6161,7 +6226,8 @@
           "services",
           "ingresses",
           "configmaps",
-          "secrets"
+          "secrets",
+          "events"
         ]
       },
       "KubeList": {
@@ -6289,6 +6355,82 @@
           "status": {
             "type": "string",
             "description": "e.g. \"Running\", \"2/3\", \"Complete\"."
+          }
+        }
+      },
+      "KubeUsage": {
+        "type": "object",
+        "description": "Usage of one kind (nodes or pods). `available` is false when the\ncluster has no metrics API, which is common and not an error.",
+        "required": [
+          "available",
+          "rows"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why there are no metrics, when `available` is false."
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KubeUsageRow"
+            }
+          }
+        }
+      },
+      "KubeUsageRow": {
+        "type": "object",
+        "description": "Live CPU and memory of one node or pod, from metrics-server.",
+        "required": [
+          "name",
+          "cpu",
+          "memory"
+        ],
+        "properties": {
+          "cpu": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Millicores in use; a pod's is the sum of its containers.",
+            "minimum": 0
+          },
+          "cpu_allocatable": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Nodes only: allocatable millicores, when the node is visible.",
+            "minimum": 0
+          },
+          "memory": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes of working set.",
+            "minimum": 0
+          },
+          "memory_allocatable": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Nodes only: allocatable bytes.",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

@@ -30,7 +30,7 @@ export function Page({
           <h1 className="font-callsign min-w-0 truncate text-[1.375rem] leading-tight font-semibold">{title}</h1>
           {meta && <div className="text-sm text-muted-foreground">{meta}</div>}
         </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        {actions && <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>}
       </div>
       {children}
     </div>

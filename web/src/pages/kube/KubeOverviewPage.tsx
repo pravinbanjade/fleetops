@@ -5,28 +5,35 @@ import {
   CircleCheck,
   Cpu,
   FileCog,
+  Flame,
   FolderTree,
   Globe,
+  History,
   KeyRound,
+  MemoryStick,
   Package,
   TriangleAlert,
   Waypoints,
   type LucideIcon,
 } from "lucide-react";
-import { useId, type ReactNode } from "react";
-import type { HelmRelease, KubeKind, KubeList, KubeRow, RowHealth } from "@/api/gen/types.gen";
+import { useId, useState, type ReactNode } from "react";
+import type { HelmRelease, KubeKind, KubeList, KubeRow, KubeUsageRow, RowHealth } from "@/api/gen/types.gen";
 import { ApiError } from "@/api/client";
 import { envStatusQuery, helmReleasesQuery, kubeListQuery } from "@/api/queries";
 import { Page } from "@/components/Page";
+import { Readout } from "@/components/Readout";
 import { StateBadge, type Tone } from "@/components/StateBadge";
 import { walk } from "@/components/walk";
 import { errorMessage } from "@/lib/errors";
+import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useLive } from "@/live/LiveProvider";
 import { useKubeWatch, type WatchPause } from "@/live/kubeWatch";
-import { HEALTH_RANK, KIND_LABEL } from "./kinds";
+import { HEALTH_RANK, KIND_LABEL, asKind } from "./kinds";
+import { Meter } from "./Meter";
 import { LivePaused } from "./LivePaused";
 import { NamespacePicker, useNamespace } from "./NamespacePicker";
+import { clusterTotals, share, useKubeUsage, useSeries } from "./usage";
 
 /** A row's health as a holder tone: the same readings the Docker board uses. */
 const TONE: Record<RowHealth, Tone> = { bad: "fail", warn: "wait", ok: "run", unknown: "idle" };
@@ -35,6 +42,8 @@ const FILL: Record<RowHealth, string> = { bad: "bg-state-fail", warn: "bg-state-
 /** Strips shown in the attention bay before the full lists take over. */
 const ATTENTION_SHOWN = 10;
 const NODES_SHOWN = 8;
+const WARNINGS_SHOWN = 8;
+const BUSIEST_SHOWN = 6;
 
 type Live = { q: UseQueryResult<KubeList>; paused: WatchPause | null; retry: () => void; forbidden: boolean };
 
@@ -62,7 +71,10 @@ export function KubeOverviewPage({ env }: { env: string }) {
   const jobs = useLiveKind(env, "jobs", ns);
   const cronjobs = useLiveKind(env, "cronjobs", ns);
   const nodes = useLiveKind(env, "nodes", undefined);
+  const events = useLiveKind(env, "events", ns);
   const helm = useQuery(helmReleasesQuery(env, ns));
+  const nodeUsage = useKubeUsage(env, "nodes");
+  const podUsage = useKubeUsage(env, "pods", ns);
   const workloads: [KubeKind, Live][] = [
     ["deployments", deployments],
     ["statefulsets", statefulsets],
@@ -70,7 +82,7 @@ export function KubeOverviewPage({ env }: { env: string }) {
     ["jobs", jobs],
     ["cronjobs", cronjobs],
   ];
-  const lives = [pods, nodes, ...workloads.map(([, l]) => l)];
+  const lives = [pods, nodes, events, ...workloads.map(([, l]) => l)];
   const paused = lives.find((l) => l.paused)?.paused ?? null;
   const s = status.data;
   const down = s?.state === "down" ? s.reason : null;
@@ -94,9 +106,15 @@ export function KubeOverviewPage({ env }: { env: string }) {
               <span>{version.nodes == null ? "Nodes not visible to these credentials" : `${version.nodes_ready} of ${version.nodes} nodes ready`}</span>
             </span>
           )}
+          {nodeUsage.reason && <span>No CPU or memory figures: {nodeUsage.reason}.</span>}
         </span>
       }
-      actions={<NamespacePicker env={env} value={ns} onChange={setNs} />}
+      actions={
+        <div className="flex w-full flex-wrap items-end justify-end gap-2 sm:w-auto">
+          <NamespacePicker env={env} value={ns} onChange={setNs} />
+          {nodeUsage.available && <ClusterUsage usage={nodeUsage} />}
+        </div>
+      }
     >
       {down !== null && (
         <div role="alert" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-destructive/50 bg-destructive/8 p-4">
@@ -109,10 +127,12 @@ export function KubeOverviewPage({ env }: { env: string }) {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div className="grid min-w-0 content-start gap-5">
           <AttentionPanel env={env} pods={pods} workloads={workloads} nodes={nodes} helm={helm.data} where={where} />
+          <WarningsPanel env={env} events={events} where={where} />
           <WorkloadsPanel env={env} workloads={workloads} />
         </div>
         <div className="grid min-w-0 content-start gap-5">
-          <NodesPanel env={env} nodes={nodes} />
+          <NodesPanel env={env} nodes={nodes} usage={nodeUsage.available ? nodeUsage.index : undefined} />
+          {podUsage.available && <BusiestPanel env={env} rows={podUsage.rows} />}
           <InventoryPanel env={env} ns={ns} helm={helm} />
         </div>
       </div>
@@ -366,7 +386,7 @@ function WorkloadsPanel({ env, workloads }: { env: string; workloads: [KubeKind,
   );
 }
 
-function NodesPanel({ env, nodes }: { env: string; nodes: Live }) {
+function NodesPanel({ env, nodes, usage }: { env: string; nodes: Live; usage?: Map<string, KubeUsageRow> }) {
   const rows = [...(nodes.q.data?.rows ?? [])].sort((a, b) => HEALTH_RANK[a.health] - HEALTH_RANK[b.health] || a.name.localeCompare(b.name));
   const ready = rows.filter((r) => r.health === "ok").length;
   return (
@@ -393,25 +413,221 @@ function NodesPanel({ env, nodes }: { env: string; nodes: Live }) {
       ) : rows.length === 0 ? (
         <p className="px-4 py-3 text-sm text-muted-foreground">{nodes.q.error ? errorMessage(nodes.q.error) : "No nodes reported."}</p>
       ) : (
-        <ul aria-label="Nodes" onKeyDown={walk} className="font-strip text-sm">
-          {rows.slice(0, NODES_SHOWN).map((r) => (
-            <li
-              key={r.name}
-              className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 has-[a:focus-visible]:bg-cord-soft"
+        <>
+          {usage && (
+            <div aria-hidden className={cn(NODE_GRID, "border-b bg-muted/25 py-1.5 text-xs text-muted-foreground")}>
+              <span className="col-span-2">Node</span>
+              <span>CPU</span>
+              <span>Memory</span>
+            </div>
+          )}
+          <ul aria-label="Nodes" onKeyDown={walk} className="font-strip text-sm">
+            {rows.slice(0, NODES_SHOWN).map((r) => {
+              const u = usage?.get(`-/${r.name}`);
+              return (
+                <li key={r.name} className={cn(usage ? NODE_GRID : "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 px-4", "border-b py-2.5 last:border-b-0 has-[a:focus-visible]:bg-cord-soft")}>
+                  <StateBadge state={r.status} tone={TONE[r.health]} track={`nodes/${r.name}`} />
+                  <Link
+                    data-strip
+                    to="/envs/$env/k8s/$kind/$ns/$name"
+                    params={{ env, kind: "nodes", ns: "-", name: r.name }}
+                    className="truncate font-ident font-medium hover:underline focus-visible:outline-none"
+                  >
+                    {r.name}
+                  </Link>
+                  {usage ? (
+                    <>
+                      <NodeMeter label="CPU" used={u?.cpu} alloc={u?.cpu_allocatable} title={u && `${formatCpu(u.cpu)}${u.cpu_allocatable ? ` of ${formatCores(u.cpu_allocatable)} cores` : ""}`} />
+                      <NodeMeter label="Memory" used={u?.memory} alloc={u?.memory_allocatable} title={u && `${formatMemory(u.memory)}${u.memory_allocatable ? ` of ${formatMemory(u.memory_allocatable)}` : ""}`} />
+                    </>
+                  ) : (
+                    <span className="font-ident text-xs text-muted-foreground">{r.columns.version ?? ""}</span>
+                  )}
+                  <span className={cn("col-start-2 truncate text-xs text-muted-foreground", usage ? "col-end-5" : "col-end-4")}>
+                    {[r.columns.roles, r.columns.internal_ip, usage && r.columns.version].filter((v) => v && v !== "<none>").join(" · ")}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </Section>
+  );
+}
+
+const NODE_GRID = "grid grid-cols-[auto_minmax(0,1fr)_3.5rem_3.5rem] items-center gap-x-3 gap-y-0.5 px-4";
+
+function NodeMeter({ label, used, alloc, title }: { label: string; used?: number; alloc?: number | null; title?: string }) {
+  if (used === undefined) return <span className="text-xs text-muted-foreground">—</span>;
+  const s = share(used, alloc);
+  return (
+    <Meter
+      className="text-xs"
+      value={s === undefined ? (label === "CPU" ? formatCpu(used) : formatMemory(used)) : formatPercent(s * 100)}
+      share={s}
+      title={title ? `${label}: ${title}` : undefined}
+    />
+  );
+}
+
+/** The whole cluster's CPU and memory against what its nodes can allocate. */
+function ClusterUsage({ usage }: { usage: ReturnType<typeof useKubeUsage> }) {
+  const t = clusterTotals(usage.rows);
+  const at = usage.q.dataUpdatedAt;
+  const cpu = useSeries(t.cpuShare === undefined ? undefined : t.cpuShare * 100, at);
+  const mem = useSeries(t.memory, at);
+  return (
+    <section aria-label="Cluster usage" className="grid w-full min-w-0 grid-cols-2 gap-2 sm:w-auto xl:w-[24rem]">
+      <Readout
+        label="CPU"
+        icon={Cpu}
+        value={t.cpuShare === undefined ? formatCpu(t.cpu) : formatPercent(t.cpuShare * 100)}
+        detail={t.cpuAlloc ? `of ${formatCores(t.cpuAlloc)} cores` : "in use"}
+        share={t.cpuShare}
+        values={cpu}
+        max={Math.max(5, ...cpu) * 1.25}
+        span="the last few minutes"
+      />
+      <Readout
+        label="Memory"
+        icon={MemoryStick}
+        value={formatMemory(t.memory)}
+        detail={t.memAlloc ? `of ${formatMemory(t.memAlloc)}` : "in use"}
+        share={t.memShare}
+        values={mem}
+        max={t.memAlloc || Math.max(1, ...mem) * 1.25}
+        span="the last few minutes"
+      />
+      <p className="sr-only">
+        Used by all {usage.rows.length} {usage.rows.length === 1 ? "node" : "nodes"}, from metrics-server.
+      </p>
+    </section>
+  );
+}
+
+/** The newest warnings the cluster has written, as they arrive. */
+function WarningsPanel({ env, events, where }: { env: string; events: Live; where: string }) {
+  const warnings = (events.q.data?.rows ?? [])
+    .filter((e) => e.status === "Warning")
+    .sort((a, b) => Number(b.columns.last_seen ?? 0) - Number(a.columns.last_seen ?? 0));
+  return (
+    <Section
+      title="Recent warnings"
+      icon={History}
+      aside={
+        <Link to="/envs/$env/k8s/$kind" params={{ env, kind: "events" }} className="hover:text-foreground hover:underline">
+          {warnings.length > WARNINGS_SHOWN ? `All ${warnings.length} warnings` : "All events"}
+        </Link>
+      }
+      flush
+    >
+      {events.forbidden ? (
+        <p className="px-4 py-3 text-sm text-muted-foreground">No permission to list events in {where}.</p>
+      ) : events.q.isPending ? (
+        <div className="p-4">
+          <Loading label="Loading events" bare />
+        </div>
+      ) : warnings.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-muted-foreground">{events.q.error ? errorMessage(events.q.error) : `No warnings in ${where}.`}</p>
+      ) : (
+        <ul aria-label="Recent warnings" onKeyDown={walk} className="font-strip text-sm">
+          {warnings.slice(0, WARNINGS_SHOWN).map((e) => {
+            const c = e.columns;
+            const kind = asKind(c.object_link ?? "");
+            const count = Number(c.count ?? 1);
+            const object = (
+              <>
+                <span className="text-muted-foreground">{c.object_kind}/</span>
+                {c.object_name}
+              </>
+            );
+            return (
+              <li
+                key={`${e.namespace ?? "-"}/${e.name}`}
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 has-[a:focus-visible]:bg-cord-soft"
+              >
+                <StateBadge state={c.reason || "Warning"} tone="wait" track={`events/${e.namespace}/${e.name}/${c.count}`} />
+                {kind && c.object_name ? (
+                  <Link
+                    data-strip
+                    to="/envs/$env/k8s/$kind/$ns/$name"
+                    params={{ env, kind, ns: c.object_namespace || "-", name: c.object_name }}
+                    search={{ tab: "events" }}
+                    className="truncate font-ident font-medium hover:underline focus-visible:outline-none"
+                  >
+                    {object}
+                  </Link>
+                ) : (
+                  <span className="truncate font-ident font-medium">{object}</span>
+                )}
+                <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+                  {count > 1 && `×${count} · `}
+                  {formatAgo(Number(c.last_seen ?? 0))}
+                </span>
+                <span className="col-start-2 col-end-4 truncate text-xs text-muted-foreground" title={c.message}>
+                  {c.message}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
+/** The pods using the most CPU or memory right now. */
+function BusiestPanel({ env, rows }: { env: string; rows: KubeUsageRow[] }) {
+  const [by, setBy] = useState<"cpu" | "memory">("cpu");
+  const top = [...rows].sort((a, b) => b[by] - a[by]).slice(0, BUSIEST_SHOWN);
+  const peak = top[0]?.[by] || 1;
+  return (
+    <Section
+      title="Busiest pods"
+      icon={Flame}
+      aside={
+        <span role="group" aria-label="Rank by" className="flex gap-0.5">
+          {(["cpu", "memory"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              aria-pressed={by === k}
+              onClick={() => setBy(k)}
+              className="rounded-sm px-1.5 py-0.5 transition-colors hover:text-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
             >
-              <StateBadge state={r.status} tone={TONE[r.health]} track={`nodes/${r.name}`} />
+              {k === "cpu" ? "CPU" : "Memory"}
+            </button>
+          ))}
+        </span>
+      }
+      flush
+    >
+      {top.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-muted-foreground">No pods are reporting usage.</p>
+      ) : (
+        <ul aria-label={`Busiest pods by ${by === "cpu" ? "CPU" : "memory"}`} onKeyDown={walk} className="font-strip text-sm">
+          {top.map((r) => (
+            <li
+              key={`${r.namespace}/${r.name}`}
+              className="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-x-3 gap-y-0.5 border-b px-4 py-2 last:border-b-0 has-[a:focus-visible]:bg-cord-soft"
+            >
               <Link
                 data-strip
                 to="/envs/$env/k8s/$kind/$ns/$name"
-                params={{ env, kind: "nodes", ns: "-", name: r.name }}
+                params={{ env, kind: "pods", ns: r.namespace ?? "-", name: r.name }}
                 className="truncate font-ident font-medium hover:underline focus-visible:outline-none"
               >
                 {r.name}
               </Link>
-              <span className="font-ident text-xs text-muted-foreground">{r.columns.version ?? ""}</span>
-              <span className="col-start-2 col-end-4 truncate text-xs text-muted-foreground">
-                {[r.columns.roles, r.columns.internal_ip].filter((v) => v && v !== "<none>").join(" · ")}
-              </span>
+              <Meter
+                plain
+                className="text-xs"
+                value={by === "cpu" ? formatCpu(r.cpu) : formatMemory(r.memory)}
+                share={r[by] / peak}
+                title={`${formatCpu(r.cpu)} CPU · ${formatMemory(r.memory)} memory`}
+              />
+              <span className="truncate font-ident text-xs text-muted-foreground">{r.namespace}</span>
             </li>
           ))}
         </ul>

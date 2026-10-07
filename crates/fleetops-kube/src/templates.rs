@@ -16,7 +16,7 @@ pub fn get(kind: KubeKind) -> Option<&'static str> {
         KubeKind::ConfigMaps => include_str!("templates/configmaps.yaml"),
         KubeKind::Secrets => include_str!("templates/secrets.yaml"),
         KubeKind::Namespaces => include_str!("templates/namespaces.yaml"),
-        KubeKind::Nodes => return None,
+        KubeKind::Nodes | KubeKind::Events => return None,
     })
 }
 
@@ -38,5 +38,6 @@ mod tests {
             );
         }
         assert!(get(KubeKind::Nodes).is_none());
+        assert!(get(KubeKind::Events).is_none());
     }
 }

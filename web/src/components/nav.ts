@@ -12,6 +12,7 @@ import {
   FolderTree,
   Gauge,
   Globe,
+  History,
   HardDrive,
   KeyRound,
   Layers,
@@ -68,6 +69,7 @@ const list = (kind: KubeKind, label: string, icon: LucideIcon, key?: string): Ku
  */
 export const KUBE_SIDEBAR: readonly (KubeLink | KubeGroup)[] = [
   { to: "/envs/$env", label: "Overview", icon: Gauge, key: "d" },
+  list("events", "Events", History, "v"),
   {
     id: "workloads",
     label: "Workloads",

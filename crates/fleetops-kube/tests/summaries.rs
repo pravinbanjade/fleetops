@@ -120,3 +120,36 @@ fn owners_link_kinds_fleetops_has_pages_for() {
         ("ReplicaSet", "web-7d9", None)
     );
 }
+
+#[test]
+fn a_warning_event_names_its_object_and_when_it_was_last_seen() {
+    let e = obj(
+        json!({"metadata": meta("api-7.17f"), "type": "Warning", "reason": "BackOff",
+        "message": "Back-off restarting failed container", "count": 14,
+        "lastTimestamp": "2026-10-01T00:05:00Z",
+        "involvedObject": {"kind": "Pod", "name": "api-7", "namespace": "apps"},
+        "source": {"component": "kubelet"}}),
+    );
+    let r = row(KubeKind::Events, &e);
+    assert_eq!((r.status.as_str(), r.health), ("Warning", RowHealth::Warn));
+    assert_eq!(r.columns["reason"], "BackOff");
+    assert_eq!(r.columns["object_kind"], "Pod");
+    assert_eq!(r.columns["object_name"], "api-7");
+    assert_eq!(r.columns["object_link"], "pods");
+    assert_eq!(r.columns["count"], "14");
+    assert_eq!(r.columns["last_seen"], "1790813100");
+    assert_eq!(r.columns["source"], "kubelet");
+}
+
+#[test]
+fn an_event_without_a_last_timestamp_falls_back_to_its_event_time() {
+    let e = obj(json!({"metadata": meta("x.1"), "reason": "Scheduled",
+        "eventTime": "2026-10-01T00:01:00.000000Z", "reportingComponent": "default-scheduler",
+        "involvedObject": {"kind": "Lease", "name": "x"}}));
+    let r = row(KubeKind::Events, &e);
+    assert_eq!((r.status.as_str(), r.health), ("Normal", RowHealth::Ok));
+    assert_eq!(r.columns["last_seen"], "1790812860");
+    assert_eq!(r.columns["object_link"], "");
+    assert_eq!(r.columns["count"], "1");
+    assert_eq!(r.columns["source"], "default-scheduler");
+}

@@ -22,6 +22,7 @@ import {
   listKube,
   getKube,
   kubeEvents,
+  kubeUsage,
   listHelmReleases,
   getHelmRelease,
   helmHistory,
@@ -71,6 +72,8 @@ export const keys = {
   composeProjects: (env: string) => ["env", env, "compose-projects"] as const,
   kube: (env: string, kind: string, ns?: string) => ["env", env, "k8s", kind, ns ?? "*"] as const,
   kubeObject: (env: string, kind: string, ns: string, name: string) => ["env", env, "k8s", kind, ns, name] as const,
+  /** Outside the `k8s` prefix: a write's invalidation should not refetch usage. */
+  kubeUsage: (env: string, kind: "nodes" | "pods", ns?: string) => ["env", env, "k8s-usage", kind, ns ?? "*"] as const,
   helm: (env: string, ns?: string) => ["env", env, "helm", ns ?? "*"] as const,
   helmRelease: (env: string, ns: string, name: string) => ["env", env, "helm", ns, name] as const,
   /** The newest Docker events seen over the websocket; filled by the live layer, never fetched. */
@@ -145,6 +148,15 @@ export const kubeListQuery = (env: string, kind: KubeKind, ns?: string) =>
   queryOptions({
     queryKey: keys.kube(env, kind, ns),
     queryFn: async () => (await listKube({ path: { env, kind }, query: ns ? { namespace: ns } : {} })).data,
+    retry: (failures, err) => !(err instanceof ApiError && err.status === 403) && failures < 1,
+  });
+
+/** metrics-server samples every 15s; a cluster without it is asked again each minute. */
+export const kubeUsageQuery = (env: string, kind: "nodes" | "pods", ns?: string) =>
+  queryOptions({
+    queryKey: keys.kubeUsage(env, kind, ns),
+    queryFn: async () => (await kubeUsage({ path: { env, kind }, query: ns ? { namespace: ns } : {} })).data,
+    refetchInterval: (q) => (q.state.data?.available === false ? 60_000 : 15_000),
     retry: (failures, err) => !(err instanceof ApiError && err.status === 403) && failures < 1,
   });
 

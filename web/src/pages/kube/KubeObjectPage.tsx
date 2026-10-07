@@ -8,10 +8,11 @@ import { useKubeWatch } from "@/live/kubeWatch";
 import { DetailError } from "@/components/Details";
 import { Page } from "@/components/Page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatAgo } from "@/lib/format";
+import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "@/lib/format";
 import { KubeActions } from "./KubeActions";
 import { KubeHealth } from "./KubeHealth";
 import { asKind, CLUSTER_SCOPED, KIND_LABEL } from "./kinds";
+import { useKubeUsage, usageKey } from "./usage";
 import { LivePaused } from "./LivePaused";
 import type { KubeTab } from "./tabs";
 
@@ -109,6 +110,7 @@ export function KubeObjectPage() {
                 <dt className="text-muted-foreground">Kind</dt><dd>{KIND_LABEL[kind].replace(/s$/, "")}</dd>
                 {o.row.namespace && (<><dt className="text-muted-foreground">Namespace</dt><dd>{o.row.namespace}</dd></>)}
                 <dt className="text-muted-foreground">Age</dt><dd>{formatAgo(o.row.created)}</dd>
+                {(kind === "pods" || kind === "nodes") && <UsageRows env={env} kind={kind} ns={ns} name={name} />}
                 {Object.entries(o.row.columns).map(([k, v]) => (
                   <Fragment key={k}>
                     <dt className="text-muted-foreground">{k.replace(/_/g, " ")}</dt>
@@ -170,5 +172,21 @@ function ContainerPicker({ containers, value, onChange, hidden }: { containers: 
         {containers.map((c) => (<option key={c} value={c}>{c}</option>))}
       </select>
     </label>
+  );
+}
+
+/** CPU and memory now, when metrics-server reports them. */
+function UsageRows({ env, kind, ns, name }: { env: string; kind: "pods" | "nodes"; ns: string; name: string }) {
+  const usage = useKubeUsage(env, kind, kind === "pods" ? ns : undefined);
+  const u = usage.index.get(usageKey(kind === "pods" ? ns : null, name));
+  if (!usage.available || !u) return null;
+  const of = (alloc: number | null | undefined, f: (n: number) => string, used: number) => (alloc ? ` of ${f(alloc)} (${formatPercent((used / alloc) * 100)})` : "");
+  return (
+    <>
+      <dt className="text-muted-foreground">CPU</dt>
+      <dd className="tabular-nums">{formatCpu(u.cpu)}{of(u.cpu_allocatable, (n) => `${formatCores(n)} cores`, u.cpu)}</dd>
+      <dt className="text-muted-foreground">Memory</dt>
+      <dd className="tabular-nums">{formatMemory(u.memory)}{of(u.memory_allocatable, formatMemory, u.memory)}</dd>
+    </>
   );
 }

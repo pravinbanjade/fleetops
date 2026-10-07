@@ -15,7 +15,7 @@ use axum::{
 use fleetops_core::env::{EnvKind, Environment};
 use fleetops_core::kube::{
     ApplyAction, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeKind, KubeList, KubeObject,
-    KubeOps, APPLY_MAX_BYTES,
+    KubeOps, KubeUsage, APPLY_MAX_BYTES,
 };
 use fleetops_core::{now_unix, Error, Grant, Result};
 use fleetops_store::NewAudit;
@@ -254,6 +254,41 @@ pub async fn events(
     Ok(Json(ops.events(k, &p.ns, &p.name).await?))
 }
 
+#[utoipa::path(get, path = "/envs/{env}/k8s/metrics/{kind}", operation_id = "kubeUsage", tag = "kubernetes",
+    summary = "CPU and memory now, for nodes or pods, from metrics-server", params(KindPath, ListQuery),
+    responses((status = 200, description = "Usage; `available` is false when the cluster has no metrics API", body = KubeUsage)))]
+pub async fn usage(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<KindPath>,
+    Query(q): Query<ListQuery>,
+) -> ApiResult<Json<KubeUsage>> {
+    let k = p.checked()?;
+    if !matches!(k, KubeKind::Nodes | KubeKind::Pods) {
+        return Err(Error::Invalid(format!("there are no metrics for {}", k.as_str())).into());
+    }
+    let ns = q.namespace.as_deref().filter(|n| !n.is_empty());
+    if let Some(ns) = ns {
+        check_namespace(ns)?;
+    }
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.read", k8.grant.check_list(k, ns))
+        .await?;
+    let mut u = k8.ops.usage(k, ns).await?;
+    u.rows
+        .retain(|r| r.namespace.as_deref().is_none_or(|n| k8.grant.allows_ns(n)));
+    Ok(Json(u))
+}
+
+/// Events are the cluster's own record: FleetOps reads them, never edits.
+fn writable(k: KubeKind) -> Result<()> {
+    if k.read_only() {
+        Err(Error::Invalid(format!("{} are read-only", k.as_str())))
+    } else {
+        Ok(())
+    }
+}
+
 fn target(k: KubeKind, p: &ObjectPath) -> String {
     format!("{}/{}/{}", k.as_str(), p.ns, p.name)
 }
@@ -267,6 +302,7 @@ pub async fn delete(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<StatusCode> {
     let k = p.checked()?;
+    writable(k)?;
     let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
     check_object(&s, &cu, &k8, k, &p, true).await?;
     let KubeCtx { env, ops, .. } = k8;
@@ -422,6 +458,7 @@ pub async fn replace(
     ApiJson(body): ApiJson<ReplaceBody>,
 ) -> ApiResult<Json<ApplyResult>> {
     let k = p.checked()?;
+    writable(k)?;
     check_size(&body.yaml)?;
     // An empty version would make the PUT unconditional: a silent overwrite.
     if body.resource_version.trim().is_empty() {

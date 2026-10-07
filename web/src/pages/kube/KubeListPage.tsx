@@ -3,14 +3,17 @@ import { Link, getRouteApi } from "@tanstack/react-router";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
-import type { KubeKind, KubeRow } from "@/api/gen/types.gen";
+import type { KubeKind, KubeRow, KubeUsageRow } from "@/api/gen/types.gen";
 import { ApiError } from "@/api/client";
 import { kubeListQuery } from "@/api/queries";
 import { DataTable, columns } from "@/components/DataTable";
 import { Page } from "@/components/Page";
-import { formatAgo } from "@/lib/format";
+import { StateBadge } from "@/components/StateBadge";
+import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "@/lib/format";
 import { KubeHealth } from "./KubeHealth";
-import { CLUSTER_SCOPED, HEALTH_BAYS, HEALTH_KINDS, HEALTH_RANK, KIND_COLUMNS, KIND_LABEL, STATUS_HEADER, asKind } from "./kinds";
+import { CLUSTER_SCOPED, HEALTH_BAYS, HEALTH_KINDS, HEALTH_RANK, KIND_COLUMNS, KIND_LABEL, READ_ONLY, STATUS_HEADER, asKind } from "./kinds";
+import { Meter } from "./Meter";
+import { share, useKubeUsage, usageKey } from "./usage";
 import { LivePaused } from "./LivePaused";
 import { NamespacePicker, useNamespace } from "./NamespacePicker";
 import { useKubeWatch } from "@/live/kubeWatch";
@@ -18,8 +21,133 @@ import { useKubeWatch } from "@/live/kubeWatch";
 const route = getRouteApi("/authed/shell/envs/$env/k8s/$kind");
 const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
 
-function kindColumns(env: string, kind: KubeKind) {
-  const col = columns<KubeRow>();
+/** A row with its CPU and memory now, on the kinds metrics-server reports. */
+type Row = KubeRow & { usage?: KubeUsageRow };
+
+const byNumber = (f: (r: Row) => number) => (a: { original: Row }, b: { original: Row }) => f(a.original) - f(b.original);
+
+function usageColumns(kind: KubeKind) {
+  const col = columns<Row>();
+  if (kind === "nodes") {
+    const meter = (used: number, alloc: number | null | undefined, title: string) => {
+      const s = share(used, alloc);
+      return <Meter className="w-20" value={s === undefined ? title : formatPercent(s * 100)} share={s} title={title} />;
+    };
+    return [
+      col.accessor((r) => (r.usage ? (share(r.usage.cpu, r.usage.cpu_allocatable) ?? 0) : -1), {
+        id: "cpu",
+        header: "CPU",
+        cell: (c) => {
+          const u = c.row.original.usage;
+          if (!u) return <span className="text-muted-foreground">—</span>;
+          return meter(u.cpu, u.cpu_allocatable, `${formatCpu(u.cpu)}${u.cpu_allocatable ? ` of ${formatCores(u.cpu_allocatable)} cores` : ""}`);
+        },
+      }),
+      col.accessor((r) => (r.usage ? (share(r.usage.memory, r.usage.memory_allocatable) ?? 0) : -1), {
+        id: "memory",
+        header: "Memory",
+        cell: (c) => {
+          const u = c.row.original.usage;
+          if (!u) return <span className="text-muted-foreground">—</span>;
+          return meter(u.memory, u.memory_allocatable, `${formatMemory(u.memory)}${u.memory_allocatable ? ` of ${formatMemory(u.memory_allocatable)}` : ""}`);
+        },
+      }),
+    ];
+  }
+  return [
+    col.accessor((r) => r.usage?.cpu ?? -1, {
+      id: "cpu",
+      header: "CPU",
+      cell: (c) => <span className="tabular-nums">{c.row.original.usage ? formatCpu(c.getValue()) : "—"}</span>,
+    }),
+    col.accessor((r) => r.usage?.memory ?? -1, {
+      id: "memory",
+      header: "Memory",
+      cell: (c) => <span className="tabular-nums">{c.row.original.usage ? formatMemory(c.getValue()) : "—"}</span>,
+    }),
+  ];
+}
+
+/** What happened, to what, how often and when: the newest warnings first. */
+function eventColumns(env: string) {
+  const col = columns<Row>();
+  return [
+    col.accessor("status", {
+      header: "Type",
+      enableHiding: false,
+      cell: (c) => <StateBadge state={c.getValue()} tone={c.getValue() === "Warning" ? "wait" : "idle"} />,
+      sortFn: byNumber((r) => (r.status === "Warning" ? 0 : 1)),
+    }),
+    col.accessor((r) => r.columns.reason ?? "", {
+      id: "reason",
+      header: "Reason",
+      cell: (c) => <span className="font-ident">{c.getValue()}</span>,
+    }),
+    col.accessor((r) => `${r.columns.object_kind ?? ""}/${r.columns.object_name ?? ""}`, {
+      id: "object",
+      header: "Object",
+      cell: (c) => {
+        const k = asKind(c.row.original.columns.object_link ?? "");
+        const name = c.row.original.columns.object_name ?? "";
+        const label = (
+          <>
+            <span className="text-muted-foreground">{c.row.original.columns.object_kind}/</span>
+            {name}
+          </>
+        );
+        return k && name ? (
+          <Link
+            to="/envs/$env/k8s/$kind/$ns/$name"
+            params={{ env, kind: k, ns: c.row.original.columns.object_namespace || "-", name }}
+            className="font-ident font-medium hover:underline"
+          >
+            {label}
+          </Link>
+        ) : (
+          <span className="font-ident">{label}</span>
+        );
+      },
+    }),
+    col.accessor((r) => r.namespace ?? "", {
+      id: "namespace",
+      header: "Namespace",
+      cell: (c) => <span className="font-ident text-muted-foreground">{c.getValue()}</span>,
+    }),
+    col.accessor((r) => r.columns.message ?? "", {
+      id: "message",
+      header: "Message",
+      cell: (c) => {
+        const r = c.row.original.columns;
+        return (
+          <span className="grid gap-0.5">
+            {/* On a phone the object rides above the message: the table keeps two columns. */}
+            <span className="font-ident text-xs text-muted-foreground sm:hidden">
+              {r.reason} · {r.object_kind}/{r.object_name}
+            </span>
+            <span className="line-clamp-2 max-w-[44ch] whitespace-normal">{c.getValue()}</span>
+          </span>
+        );
+      },
+    }),
+    col.accessor((r) => Number(r.columns.count ?? 1), {
+      id: "count",
+      header: "Count",
+      cell: (c) => <span className="tabular-nums">{c.getValue() > 1 ? `×${c.getValue()}` : ""}</span>,
+    }),
+    col.accessor((r) => Number(r.columns.last_seen ?? 0), {
+      id: "last_seen",
+      header: "Last seen",
+      cell: (c) => <span title={new Date(c.getValue() * 1000).toLocaleString()}>{formatAgo(c.getValue())}</span>,
+    }),
+    col.accessor((r) => r.columns.source ?? "", { id: "source", header: "Source" }),
+  ];
+}
+
+const EVENT_BAYS = { warning: { id: "warning", label: "Warnings" }, normal: { id: "normal", label: "Normal" } };
+
+function kindColumns(env: string, kind: KubeKind, withUsage: boolean) {
+  if (kind === "events") return eventColumns(env);
+  const col = columns<Row>();
   const scoped = !CLUSTER_SCOPED.includes(kind);
   return [
     col.accessor("name", {
@@ -43,9 +171,10 @@ function kindColumns(env: string, kind: KubeKind) {
     col.accessor("status", {
       header: STATUS_HEADER[kind] ?? "Status",
       cell: (c) => <KubeHealth health={c.row.original.health} label={c.getValue()} />,
-      ...(HEALTH_KINDS.includes(kind) ? { sortFn: (a: { original: KubeRow }, b: { original: KubeRow }) => HEALTH_RANK[a.original.health] - HEALTH_RANK[b.original.health] } : {}),
+      ...(HEALTH_KINDS.includes(kind) ? { sortFn: byNumber((r) => HEALTH_RANK[r.health]) } : {}),
     }),
     ...KIND_COLUMNS[kind].map(([key, header]) => col.accessor((r) => r.columns[key] ?? "", { id: key, header })),
+    ...(withUsage ? usageColumns(kind) : []),
     col.accessor("created", { header: "Age", cell: (c) => formatAgo(c.getValue()) }),
   ];
 }
@@ -62,16 +191,24 @@ export function KubeListPage() {
   // refetch (after a write, on focus) would race it with older rows.
   const list = useQuery({ ...kubeListQuery(env, kind, scoped ? ns : undefined), enabled: !live.synced });
   const [creating, setCreating] = useState(false);
-  const cols = useMemo(() => kindColumns(env, kind), [env, kind]);
+  const metered = kind === "pods" || kind === "nodes";
+  const usage = useKubeUsage(env, kind === "nodes" ? "nodes" : "pods", kind === "pods" ? ns : undefined, metered);
+  const withUsage = metered && usage.available;
+  const cols = useMemo(() => kindColumns(env, kind, withUsage), [env, kind, withUsage]);
+  const rows = useMemo<Row[] | undefined>(
+    () => (withUsage ? list.data?.rows.map((r) => ({ ...r, usage: usage.index.get(usageKey(r.namespace, r.name)) })) : list.data?.rows),
+    [withUsage, list.data, usage.index],
+  );
   const forbidden = list.error instanceof ApiError && list.error.status === 403;
   const where = ns ? `namespace ${ns}` : "all namespaces";
   return (
     <Page
       title={KIND_LABEL[kind]}
+      meta={metered && usage.reason ? <span>No CPU or memory figures: {usage.reason}.</span> : undefined}
       actions={
         <div className="flex items-center gap-2">
           {scoped && <NamespacePicker env={env} value={ns} onChange={setNs} />}
-          {canWrite && kind !== "nodes" && (
+          {canWrite && kind !== "nodes" && !READ_ONLY.includes(kind) && (
             <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
               Create
             </Button>
@@ -92,17 +229,22 @@ export function KubeListPage() {
       )}
       <DataTable
         label={KIND_LABEL[kind]}
-        data={forbidden ? [] : list.data?.rows}
+        data={forbidden ? [] : rows}
         columns={cols}
         getRowId={(r) => `${r.namespace ?? "-"}/${r.name}`}
         initialFilter={q}
-        {...(HEALTH_KINDS.includes(kind)
+        {...(kind === "events"
+          ? {
+              initialSorting: [{ id: "status", desc: false }, { id: "last_seen", desc: true }],
+              bays: { column: "status", of: (r: Row) => (r.status === "Warning" ? EVENT_BAYS.warning : EVENT_BAYS.normal) },
+            }
+          : HEALTH_KINDS.includes(kind)
           ? {
               initialSorting: [{ id: "status", desc: false }, { id: "name", desc: false }],
-              bays: { column: "status", of: (r: KubeRow) => HEALTH_BAYS[HEALTH_RANK[r.health]] },
+              bays: { column: "status", of: (r: Row) => HEALTH_BAYS[HEALTH_RANK[r.health]] },
             }
           : {})}
-        phoneColumns={["name", "status"]}
+        phoneColumns={kind === "events" ? ["status", "message"] : ["name", "status"]}
         error={forbidden ? undefined : list.error}
         empty={forbidden ? `No permission to list ${KIND_LABEL[kind]} in ${scoped ? where : "this cluster"}` : `No ${KIND_LABEL[kind].toLowerCase()} in ${scoped ? where : "this cluster"}`}
       />

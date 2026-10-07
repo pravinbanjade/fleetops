@@ -24,6 +24,9 @@ const READ_ONLY_RULES: &str = r#"  - apiGroups: [""]
   - apiGroups: [networking.k8s.io]
     resources: [ingresses]
     verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [nodes, pods]
+    verbs: [get, list]
   - nonResourceURLs: [/version]
     verbs: [get]"#;
 
@@ -57,6 +60,9 @@ const STANDARD_RULES: &str = r#"  - apiGroups: [""]
   - apiGroups: [networking.k8s.io]
     resources: [ingresses]
     verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [metrics.k8s.io]
+    resources: [nodes, pods]
+    verbs: [get, list]
   - nonResourceURLs: [/version]
     verbs: [get]"#;
 
@@ -311,6 +317,19 @@ mod tests {
         }
         assert!(!r.contains("pods/exec"));
         assert!(!m.contains("name: fleetops-agent-cluster-admin\n"));
+    }
+
+    #[test]
+    fn every_level_can_read_metrics() {
+        for access in [KubeAccess::ReadOnly, KubeAccess::Standard] {
+            let m = manifest("https://f", "fj_x", access);
+            assert!(
+                rules(&m).contains(
+                    "apiGroups: [metrics.k8s.io]\n    resources: [nodes, pods]\n    verbs: [get, list]"
+                ),
+                "{access:?}"
+            );
+        }
     }
 
     #[test]

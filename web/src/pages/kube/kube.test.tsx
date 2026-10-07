@@ -9,7 +9,7 @@ describe("Kubernetes environments", () => {
     mockFetch({ ...loggedIn, ...kubeRoutes });
     renderApp("/envs/k");
     const nav = await screen.findByRole("navigation", { name: "Environment" });
-    for (const label of ["Overview", "Helm releases"]) {
+    for (const label of ["Overview", "Events", "Helm releases"]) {
       expect(within(nav).getByRole("link", { name: new RegExp(label) })).toBeInTheDocument();
     }
     // Groups start folded on the overview; opening one shows its pages.

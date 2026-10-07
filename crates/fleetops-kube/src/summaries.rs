@@ -7,7 +7,7 @@ use fleetops_core::kube::{KubeCondition, KubeKind, KubeRef, KubeRow, RowHealth};
 use k8s_openapi::api::{
     apps::v1::{DaemonSet, Deployment, StatefulSet},
     batch::v1::{CronJob, Job},
-    core::v1::{ConfigMap, Namespace, Node, Pod, Secret, Service},
+    core::v1::{ConfigMap, Event, Namespace, Node, Pod, Secret, Service},
     networking::v1::Ingress,
 };
 use kube::api::DynamicObject;
@@ -67,6 +67,7 @@ pub fn row(kind: KubeKind, obj: &DynamicObject) -> KubeRow {
         KubeKind::Ingresses => typed::<Ingress>(kind, obj).map(ingress),
         KubeKind::ConfigMaps => typed::<ConfigMap>(kind, obj).map(configmap),
         KubeKind::Secrets => typed::<Secret>(kind, obj).map(secret),
+        KubeKind::Events => typed::<Event>(kind, obj).map(event),
     };
     match summary {
         Some((status, health, columns)) => KubeRow {
@@ -357,6 +358,53 @@ fn secret(s: Secret) -> Summary {
         s.type_.unwrap_or_else(|| "Opaque".into()),
         RowHealth::Ok,
         cols([("keys", n.to_string())]),
+    )
+}
+
+/// An event: its type as the status, what it is about, and when it was
+/// last seen (unix seconds) so the list can put the newest first.
+fn event(e: Event) -> Summary {
+    let type_ = e.type_.unwrap_or_else(|| "Normal".into());
+    let h = if type_ == "Warning" {
+        RowHealth::Warn
+    } else {
+        RowHealth::Ok
+    };
+    let last_seen = e
+        .last_timestamp
+        .map(|t| t.0.as_second())
+        .or_else(|| {
+            e.series
+                .and_then(|s| s.last_observed_time)
+                .map(|t| t.0.as_second())
+        })
+        .or_else(|| e.event_time.map(|t| t.0.as_second()))
+        .or_else(|| e.metadata.creation_timestamp.map(|t| t.0.as_second()))
+        .unwrap_or(0);
+    let o = e.involved_object;
+    let object_kind = o.kind.unwrap_or_default();
+    let link = KubeKind::from_kind_name(&object_kind)
+        .map(|k| k.as_str().to_string())
+        .unwrap_or_default();
+    let source = e
+        .source
+        .and_then(|s| s.component)
+        .or(e.reporting_component)
+        .unwrap_or_default();
+    (
+        type_,
+        h,
+        cols([
+            ("reason", e.reason.unwrap_or_default()),
+            ("object_kind", object_kind),
+            ("object_name", o.name.unwrap_or_default()),
+            ("object_namespace", o.namespace.unwrap_or_default()),
+            ("object_link", link),
+            ("message", e.message.unwrap_or_default()),
+            ("count", e.count.unwrap_or(1).max(1).to_string()),
+            ("last_seen", last_seen.to_string()),
+            ("source", source),
+        ]),
     )
 }
 

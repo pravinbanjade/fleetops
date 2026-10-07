@@ -585,3 +585,36 @@ async fn a_limited_apply_sends_only_documents_in_its_namespaces() {
     let cms: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
     cms.delete(&name, &Default::default()).await.unwrap();
 }
+
+#[tokio::test]
+async fn events_name_the_objects_they_are_about() {
+    let ops = common::ops();
+    let events = ops.list(KubeKind::Events, Some(NS)).await.unwrap();
+    // The fixtures' pods were scheduled, so the scheduler wrote about them.
+    let about_pod = events
+        .rows
+        .iter()
+        .find(|r| r.columns["object_kind"] == "Pod")
+        .unwrap_or_else(|| panic!("{:?}", events.rows));
+    assert_eq!(about_pod.columns["object_link"], "pods");
+    assert!(about_pod.columns["last_seen"].parse::<i64>().unwrap() > 0);
+    assert!(matches!(about_pod.status.as_str(), "Normal" | "Warning"));
+}
+
+#[tokio::test]
+async fn usage_without_metrics_server_is_unavailable_not_an_error() {
+    let ops = common::ops();
+    for kind in [KubeKind::Nodes, KubeKind::Pods] {
+        let u = ops.usage(kind, Some(NS)).await.unwrap();
+        if u.available {
+            // A cluster with metrics-server: every node reports.
+            assert!(kind == KubeKind::Pods || !u.rows.is_empty());
+        } else {
+            assert!(u.reason.unwrap().contains("metrics-server"));
+        }
+    }
+    assert!(matches!(
+        ops.usage(KubeKind::Secrets, None).await,
+        Err(Error::Invalid(_))
+    ));
+}

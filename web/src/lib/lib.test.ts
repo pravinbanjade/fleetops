@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/api/client";
 import { errorMessage } from "./errors";
-import { formatBytes, formatPercent } from "./format";
+import { formatBytes, formatCores, formatCpu, formatMemory, formatPercent } from "./format";
 
 describe("formatBytes", () => {
   it("scales by 1000 with one decimal", () => {
@@ -37,5 +37,28 @@ describe("errorMessage", () => {
       "name in use",
     );
     expect(errorMessage(new TypeError("Failed to fetch"))).toBe("Failed to fetch");
+  });
+});
+
+describe("Kubernetes quantities", () => {
+  it("shows CPU in millicores like kubectl top", () => {
+    expect(formatCpu(0)).toBe("0m");
+    expect(formatCpu(124.6)).toBe("125m");
+    expect(formatCpu(1250)).toBe("1250m");
+    expect(formatCpu(undefined)).toBe("—");
+  });
+  it("shows memory in binary units", () => {
+    expect(formatMemory(512)).toBe("512B");
+    expect(formatMemory(16 * 1024)).toBe("16Ki");
+    expect(formatMemory(64 * 1024 ** 2)).toBe("64Mi");
+    expect(formatMemory(1.5 * 1024 ** 3)).toBe("1.5Gi");
+    expect(formatMemory(24 * 1024 ** 3)).toBe("24Gi");
+    expect(formatMemory(-1)).toBe("—");
+  });
+  it("shows capacity in cores", () => {
+    expect(formatCores(4000)).toBe("4");
+    expect(formatCores(1500)).toBe("1.5");
+    expect(formatCores(250)).toBe("0.25");
+    expect(formatCores(15500)).toBe("15.5");
   });
 });

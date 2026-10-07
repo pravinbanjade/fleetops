@@ -8,7 +8,7 @@ import { keys } from "@/api/queries";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { FormDialog } from "@/pages/admin/FormDialog";
-import { KIND_LABEL, RESTARTABLE, SCALABLE } from "./kinds";
+import { KIND_LABEL, READ_ONLY, RESTARTABLE, SCALABLE } from "./kinds";
 
 const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
 
@@ -29,7 +29,7 @@ export function KubeActions({ env, kind, ns, name, replicas }: { env: string; ki
     },
   });
   const label = KIND_LABEL[kind].replace(/s$/, "");
-  if (!canWrite) return null;
+  if (!canWrite || READ_ONLY.includes(kind)) return null;
   return (
     <div className="flex gap-2">
       <Button variant="outline" size="sm" onClick={() => setOpen("edit")}>Edit YAML</Button>

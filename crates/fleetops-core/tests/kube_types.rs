@@ -4,7 +4,7 @@ use fleetops_core::Error;
 
 #[test]
 fn every_kind_round_trips_through_its_path_name() {
-    assert_eq!(KubeKind::ALL.len(), 12);
+    assert_eq!(KubeKind::ALL.len(), 13);
     for k in KubeKind::ALL {
         assert_eq!(k.as_str().parse::<KubeKind>().unwrap(), k);
         assert_eq!(serde_json::to_value(k).unwrap(), k.as_str());
@@ -37,6 +37,11 @@ fn scope_and_actions_follow_the_spec() {
         .filter(|k| k.restartable())
         .collect();
     assert_eq!(restartable, [Deployments, StatefulSets, DaemonSets]);
+    let read_only: Vec<_> = KubeKind::ALL
+        .into_iter()
+        .filter(|k| k.read_only())
+        .collect();
+    assert_eq!(read_only, [Events]);
 }
 
 #[test]

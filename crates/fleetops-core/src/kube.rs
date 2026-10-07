@@ -41,10 +41,11 @@ pub enum KubeKind {
     Ingresses,
     ConfigMaps,
     Secrets,
+    Events,
 }
 
 impl KubeKind {
-    pub const ALL: [KubeKind; 12] = [
+    pub const ALL: [KubeKind; 13] = [
         KubeKind::Namespaces,
         KubeKind::Nodes,
         KubeKind::Deployments,
@@ -57,6 +58,7 @@ impl KubeKind {
         KubeKind::Ingresses,
         KubeKind::ConfigMaps,
         KubeKind::Secrets,
+        KubeKind::Events,
     ];
 
     /// The plural lowercase name used in URLs.
@@ -74,6 +76,7 @@ impl KubeKind {
             KubeKind::Ingresses => "ingresses",
             KubeKind::ConfigMaps => "configmaps",
             KubeKind::Secrets => "secrets",
+            KubeKind::Events => "events",
         }
     }
 
@@ -92,6 +95,7 @@ impl KubeKind {
             KubeKind::Ingresses => "Ingress",
             KubeKind::ConfigMaps => "ConfigMap",
             KubeKind::Secrets => "Secret",
+            KubeKind::Events => "Event",
         }
     }
 
@@ -105,6 +109,12 @@ impl KubeKind {
 
     pub fn scalable(self) -> bool {
         matches!(self, KubeKind::Deployments | KubeKind::StatefulSets)
+    }
+
+    /// Records the cluster writes about other objects: listed and watched,
+    /// never created or edited from FleetOps.
+    pub fn read_only(self) -> bool {
+        self == KubeKind::Events
     }
 
     pub fn restartable(self) -> bool {
@@ -207,6 +217,41 @@ pub struct KubeVersion {
     /// `None` when the credentials may not list nodes.
     pub nodes: Option<u32>,
     pub nodes_ready: Option<u32>,
+}
+
+/// Live CPU and memory of one node or pod, from metrics-server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct KubeUsageRow {
+    pub namespace: Option<String>,
+    pub name: String,
+    /// Millicores in use; a pod's is the sum of its containers.
+    pub cpu: u64,
+    /// Bytes of working set.
+    pub memory: u64,
+    /// Nodes only: allocatable millicores, when the node is visible.
+    pub cpu_allocatable: Option<u64>,
+    /// Nodes only: allocatable bytes.
+    pub memory_allocatable: Option<u64>,
+}
+
+/// Usage of one kind (nodes or pods). `available` is false when the
+/// cluster has no metrics API, which is common and not an error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct KubeUsage {
+    pub available: bool,
+    /// Why there are no metrics, when `available` is false.
+    pub reason: Option<String>,
+    pub rows: Vec<KubeUsageRow>,
+}
+
+impl KubeUsage {
+    pub fn unavailable(reason: impl Into<String>) -> Self {
+        Self {
+            available: false,
+            reason: Some(reason.into()),
+            rows: vec![],
+        }
+    }
 }
 
 /// A running TTY exec in a pod.
@@ -354,6 +399,13 @@ pub trait KubeOps: Send + Sync {
         resource_version: &str,
         mode: ApplyMode,
     ) -> Result<ApplyResult>;
+    /// CPU and memory now, for `Nodes` or `Pods` (spec 3e §3). `ns` limits
+    /// pods to one namespace.
+    async fn usage(&self, _kind: KubeKind, _ns: Option<&str>) -> Result<KubeUsage> {
+        Ok(KubeUsage::unavailable(
+            "metrics are not available for this environment",
+        ))
+    }
     /// Helm releases at their latest revision; `None` is every namespace.
     async fn helm_list(&self, _ns: Option<&str>) -> Result<Vec<crate::helm::HelmRelease>> {
         Err(helm_unsupported())

@@ -46,7 +46,10 @@ pub struct KubeClient {
     list_cap: usize,
     nodes: Mutex<Option<(Instant, (u32, u32))>>,
     discovery: Mutex<HashMap<(String, String), (Instant, Resolved)>>,
+    pub(crate) usage_cache: Mutex<UsageCache>,
 }
+
+type UsageCache = HashMap<(KubeKind, Option<String>), (Instant, fleetops_core::kube::KubeUsage)>;
 
 impl KubeClient {
     pub fn new(client: kube::Client) -> Self {
@@ -55,6 +58,7 @@ impl KubeClient {
             list_cap: LIST_CAP,
             nodes: Mutex::new(None),
             discovery: Mutex::new(HashMap::new()),
+            usage_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -589,6 +593,14 @@ impl KubeOps for KubeClient {
         res.before = before;
         res.after = Some(after);
         Ok(res)
+    }
+
+    async fn usage(
+        &self,
+        kind: KubeKind,
+        ns: Option<&str>,
+    ) -> Result<fleetops_core::kube::KubeUsage> {
+        self.usage_impl(kind, ns).await
     }
 
     async fn helm_list(&self, ns: Option<&str>) -> Result<Vec<fleetops_core::helm::HelmRelease>> {

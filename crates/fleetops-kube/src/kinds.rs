@@ -4,7 +4,7 @@ use fleetops_core::kube::KubeKind;
 use k8s_openapi::api::{
     apps::v1::{DaemonSet, Deployment, StatefulSet},
     batch::v1::{CronJob, Job},
-    core::v1::{ConfigMap, Namespace, Node, Pod, Secret, Service},
+    core::v1::{ConfigMap, Event, Namespace, Node, Pod, Secret, Service},
     networking::v1::Ingress,
 };
 use kube::discovery::ApiResource;
@@ -23,6 +23,7 @@ pub fn api_resource(kind: KubeKind) -> ApiResource {
         KubeKind::Ingresses => ApiResource::erase::<Ingress>(&()),
         KubeKind::ConfigMaps => ApiResource::erase::<ConfigMap>(&()),
         KubeKind::Secrets => ApiResource::erase::<Secret>(&()),
+        KubeKind::Events => ApiResource::erase::<Event>(&()),
     }
 }
 

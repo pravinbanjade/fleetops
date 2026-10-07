@@ -93,6 +93,7 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(helm::history))
         .routes(routes!(helm::rollback))
         .routes(routes!(helm::uninstall))
+        .routes(routes!(kube::usage))
         .routes(routes!(kube::list))
         .routes(routes!(kube::get, kube::delete, kube::replace))
         .routes(routes!(kube::editable))

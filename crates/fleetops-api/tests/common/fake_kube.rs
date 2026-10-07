@@ -48,6 +48,8 @@ pub struct FakeKube {
     pub helm_objects: Mutex<Vec<(bool, Option<String>)>>,
     /// How long a committed rollback takes, to test a caller that leaves.
     pub helm_commit_delay: Mutex<Option<std::time::Duration>>,
+    /// What `usage` answers; `None` is a cluster without metrics-server.
+    pub usage: Mutex<Option<KubeUsage>>,
 }
 
 type WatchTx = (
@@ -228,6 +230,13 @@ impl KubeOps for FakeKube {
     async fn get(&self, kind: KubeKind, ns: &str, name: &str) -> Result<KubeObject> {
         self.gate(kind)?;
         self.find(kind, ns, name)
+    }
+    async fn usage(&self, kind: KubeKind, ns: Option<&str>) -> Result<KubeUsage> {
+        self.gate(kind)?;
+        self.call(format!("usage {} {}", kind.as_str(), ns.unwrap_or("*")));
+        Ok(self.usage.lock().unwrap().clone().unwrap_or_else(|| {
+            KubeUsage::unavailable("metrics-server is not installed in this cluster")
+        }))
     }
     async fn events(&self, kind: KubeKind, ns: &str, name: &str) -> Result<Vec<KubeEvent>> {
         self.find(kind, ns, name)?;

@@ -37,3 +37,30 @@ export function formatPercent(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "—";
   return n < 10 ? `${n.toFixed(1)}%` : `${Math.round(n)}%`;
 }
+
+/** CPU in millicores as `kubectl top` shows it: 0m, 250m, 1250m. */
+export function formatCpu(millicores: number | null | undefined): string {
+  if (millicores == null || !Number.isFinite(millicores) || millicores < 0) return "—";
+  return `${Math.round(millicores)}m`;
+}
+
+const BINARY = ["Ki", "Mi", "Gi", "Ti", "Pi"];
+
+/** Memory in the binary units Kubernetes uses: 512Ki, 64Mi, 1.5Gi. */
+export function formatMemory(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return "—";
+  if (bytes < 1024) return `${bytes}B`;
+  let n = bytes / 1024;
+  let i = 0;
+  while (n >= 1024 && i < BINARY.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n < 10 && i > 1 ? n.toFixed(1) : Math.round(n)}${BINARY[i]}`;
+}
+
+/** Millicores as cores, for capacity: 4, 1.5, 0.25. */
+export function formatCores(millicores: number): string {
+  const c = millicores / 1000;
+  return Number.isInteger(c) ? String(c) : c < 10 ? c.toFixed(2).replace(/0$/, "") : c.toFixed(1);
+}

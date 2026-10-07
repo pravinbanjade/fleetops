@@ -618,7 +618,7 @@ export type KubeEvent = {
     type: string;
 };
 
-export type KubeKind = 'namespaces' | 'nodes' | 'deployments' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs' | 'pods' | 'services' | 'ingresses' | 'configmaps' | 'secrets';
+export type KubeKind = 'namespaces' | 'nodes' | 'deployments' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs' | 'pods' | 'services' | 'ingresses' | 'configmaps' | 'secrets' | 'events';
 
 export type KubeList = {
     rows: Array<KubeRow>;
@@ -676,6 +676,43 @@ export type KubeRow = {
      * e.g. "Running", "2/3", "Complete".
      */
     status: string;
+};
+
+/**
+ * Usage of one kind (nodes or pods). `available` is false when the
+ * cluster has no metrics API, which is common and not an error.
+ */
+export type KubeUsage = {
+    available: boolean;
+    /**
+     * Why there are no metrics, when `available` is false.
+     */
+    reason?: string | null;
+    rows: Array<KubeUsageRow>;
+};
+
+/**
+ * Live CPU and memory of one node or pod, from metrics-server.
+ */
+export type KubeUsageRow = {
+    /**
+     * Millicores in use; a pod's is the sum of its containers.
+     */
+    cpu: number;
+    /**
+     * Nodes only: allocatable millicores, when the node is visible.
+     */
+    cpu_allocatable?: number | null;
+    /**
+     * Bytes of working set.
+     */
+    memory: number;
+    /**
+     * Nodes only: allocatable bytes.
+     */
+    memory_allocatable?: number | null;
+    name: string;
+    namespace?: string | null;
 };
 
 export type KubeVersion = {
@@ -2541,6 +2578,45 @@ export type UninstallHelmReleaseResponses = {
 };
 
 export type UninstallHelmReleaseResponse = UninstallHelmReleaseResponses[keyof UninstallHelmReleaseResponses];
+
+export type KubeUsageData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Plural lowercase kind, e.g. `deployments`.
+         */
+        kind: string;
+    };
+    query?: {
+        /**
+         * Omit for all namespaces.
+         */
+        namespace?: string;
+    };
+    url: '/api/v1/envs/{env}/k8s/metrics/{kind}';
+};
+
+export type KubeUsageErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type KubeUsageError = KubeUsageErrors[keyof KubeUsageErrors];
+
+export type KubeUsageResponses = {
+    /**
+     * Usage; `available` is false when the cluster has no metrics API
+     */
+    200: KubeUsage;
+};
+
+export type KubeUsageResponse = KubeUsageResponses[keyof KubeUsageResponses];
 
 export type KubeTemplatesData = {
     body?: never;
