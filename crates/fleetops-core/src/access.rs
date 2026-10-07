@@ -136,6 +136,9 @@ impl Grant {
     /// A list request: one namespace must be in the set; all namespaces and
     /// the two readable cluster-scoped kinds are filtered instead.
     pub fn check_list(&self, kind: KubeKind, ns: Option<&str>) -> Result<()> {
+        if self.namespaces.is_some() && closed_cluster_kind(kind) {
+            return Err(cluster_scoped_denied());
+        }
         match ns {
             Some(ns) if !kind.cluster_scoped() => self.check_ns(ns),
             _ => Ok(()),
@@ -151,8 +154,42 @@ impl Grant {
             KubeKind::Nodes | KubeKind::Namespaces if write => Err(cluster_scoped_denied()),
             KubeKind::Nodes => Ok(()),
             KubeKind::Namespaces => self.check_ns(name),
+            k if k.cluster_scoped() => Err(cluster_scoped_denied()),
             _ => self.check_ns(ns),
         }
+    }
+
+    /// A list of a discovered kind: cluster-scoped ones need the whole
+    /// environment; namespaced ones, as any namespaced kind.
+    pub fn check_list_in(&self, namespaced: bool, ns: Option<&str>) -> Result<()> {
+        if self.namespaces.is_none() {
+            return Ok(());
+        }
+        if !namespaced {
+            return Err(cluster_scoped_denied());
+        }
+        ns.map_or(Ok(()), |ns| self.check_ns(ns))
+    }
+
+    pub fn check_object_in(&self, namespaced: bool, ns: &str) -> Result<()> {
+        self.check_list_in(namespaced, Some(ns))
+    }
+
+    fn visible_in(&self, namespaced: bool, ns: Option<&str>) -> bool {
+        match &self.namespaces {
+            None => true,
+            Some(set) => namespaced && ns.is_some_and(|n| set.contains(n)),
+        }
+    }
+
+    pub fn filter_list_in(&self, namespaced: bool, mut list: KubeList) -> KubeList {
+        list.rows
+            .retain(|r| self.visible_in(namespaced, r.namespace.as_deref()));
+        list
+    }
+
+    pub fn filter_event_in(&self, namespaced: bool, ev: WatchEvent) -> Option<WatchEvent> {
+        filter_by(ev, |ns, _| self.visible_in(namespaced, ns))
     }
 
     fn row_visible(&self, kind: KubeKind, ns: Option<&str>, name: &str) -> bool {
@@ -175,23 +212,29 @@ impl Grant {
     /// The event as this grant sees it; `None` when it is about an object
     /// outside the grant.
     pub fn filter_event(&self, kind: KubeKind, ev: WatchEvent) -> Option<WatchEvent> {
-        match ev {
-            WatchEvent::Snapshot { mut rows } => {
-                rows.retain(|r| self.row_visible(kind, r.namespace.as_deref(), &r.name));
-                Some(WatchEvent::Snapshot { rows })
-            }
-            WatchEvent::Added { row } | WatchEvent::Modified { row }
-                if !self.row_visible(kind, row.namespace.as_deref(), &row.name) =>
-            {
-                None
-            }
-            WatchEvent::Deleted { namespace, name }
-                if !self.row_visible(kind, namespace.as_deref(), &name) =>
-            {
-                None
-            }
-            other => Some(other),
+        filter_by(ev, |ns, name| self.row_visible(kind, ns, name))
+    }
+}
+
+/// A curated cluster-scoped kind other than the two everyone may read.
+fn closed_cluster_kind(kind: KubeKind) -> bool {
+    kind.cluster_scoped() && !matches!(kind, KubeKind::Nodes | KubeKind::Namespaces)
+}
+
+/// A watch event narrowed to the rows `visible` keeps.
+fn filter_by(ev: WatchEvent, visible: impl Fn(Option<&str>, &str) -> bool) -> Option<WatchEvent> {
+    match ev {
+        WatchEvent::Snapshot { mut rows } => {
+            rows.retain(|r| visible(r.namespace.as_deref(), &r.name));
+            Some(WatchEvent::Snapshot { rows })
         }
+        WatchEvent::Added { row } | WatchEvent::Modified { row }
+            if !visible(row.namespace.as_deref(), &row.name) =>
+        {
+            None
+        }
+        WatchEvent::Deleted { namespace, name } if !visible(namespace.as_deref(), &name) => None,
+        other => Some(other),
     }
 }
 
@@ -396,5 +439,73 @@ mod tests {
         );
         let many = (0..=NAMESPACES_MAX).map(|i| format!("ns{i}")).collect();
         assert!(matches!(normalize_namespaces(many), Err(Error::Invalid(m)) if m.contains("50")));
+    }
+
+    #[test]
+    fn a_limited_grant_is_refused_the_new_cluster_scoped_kinds() {
+        let g = limited(&["team-a"]);
+        for k in [
+            KubeKind::PersistentVolumes,
+            KubeKind::StorageClasses,
+            KubeKind::ClusterRoles,
+            KubeKind::ClusterRoleBindings,
+        ] {
+            let e = g.check_list(k, None).unwrap_err();
+            assert_eq!(e.to_string(), cluster_scoped_denied().to_string(), "{k:?}");
+            assert!(g.check_object(k, "-", "x", false).is_err(), "{k:?}");
+        }
+        // Nodes keep today's rule: readable, never writable.
+        assert!(g.check_list(KubeKind::Nodes, None).is_ok());
+        assert!(Grant::full(EnvRole::Viewer)
+            .check_list(KubeKind::PersistentVolumes, None)
+            .is_ok());
+    }
+
+    #[test]
+    fn generic_kinds_follow_their_scope() {
+        let g = limited(&["team-a"]);
+        assert!(g.check_list_in(true, Some("team-a")).is_ok());
+        assert!(g.check_list_in(true, None).is_ok());
+        assert!(g.check_list_in(true, Some("team-b")).is_err());
+        assert_eq!(
+            g.check_list_in(false, None).unwrap_err().to_string(),
+            cluster_scoped_denied().to_string()
+        );
+        assert!(g.check_object_in(true, "team-a").is_ok());
+        assert!(g.check_object_in(true, "team-b").is_err());
+        assert!(g.check_object_in(false, "-").is_err());
+        let full = Grant::full(EnvRole::Viewer);
+        assert!(
+            full.check_list_in(false, None).is_ok() && full.check_object_in(false, "-").is_ok()
+        );
+
+        let list = KubeList {
+            rows: vec![row("a", Some("team-a")), row("b", Some("team-b"))],
+            truncated: false,
+        };
+        let kept = g.filter_list_in(true, list);
+        assert_eq!(
+            kept.rows
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>(),
+            ["a"]
+        );
+        assert!(g
+            .filter_event_in(
+                true,
+                WatchEvent::Added {
+                    row: row("b", Some("team-b"))
+                }
+            )
+            .is_none());
+        assert!(g
+            .filter_event_in(
+                true,
+                WatchEvent::Added {
+                    row: row("a", Some("team-a"))
+                }
+            )
+            .is_some());
     }
 }
