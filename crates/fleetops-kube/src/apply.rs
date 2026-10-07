@@ -35,7 +35,7 @@ impl Doc {
 
 /// The text of each document. A line of `---` (optionally followed by a
 /// space or comment) separates documents.
-fn documents(yaml: &str) -> Vec<String> {
+pub(crate) fn documents(yaml: &str) -> Vec<String> {
     let mut out = vec![String::new()];
     for line in yaml.lines() {
         if line == "---" || line.starts_with("--- ") || line.starts_with("---\t") {
