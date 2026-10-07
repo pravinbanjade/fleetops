@@ -50,6 +50,36 @@ pub struct FakeKube {
     pub helm_commit_delay: Mutex<Option<std::time::Duration>>,
     /// What `usage` answers; `None` is a cluster without metrics-server.
     pub usage: Mutex<Option<KubeUsage>>,
+    generic: Mutex<BTreeMap<(KindRef, String, String), KubeObject>>,
+    /// What a refreshing `discover` answers.
+    discovery: Mutex<Discovery>,
+    /// What a cached `discover` answers: the last refresh.
+    discovery_cached: Mutex<Option<Discovery>>,
+    generic_watches: Mutex<Vec<GenericWatchTx>>,
+}
+
+type GenericWatchTx = (KindRef, mpsc::UnboundedSender<Result<WatchEvent>>);
+
+/// `example.fleetops.io/v1/widgets`, a custom resource with one printer column.
+pub fn widgets(namespaced: bool) -> ApiKind {
+    ApiKind {
+        api: KindRef {
+            group: "example.fleetops.io".into(),
+            version: "v1".into(),
+            resource: "widgets".into(),
+        },
+        kind: "Widget".into(),
+        namespaced,
+        verbs: ["get", "list", "watch", "update", "delete"]
+            .map(String::from)
+            .to_vec(),
+        columns: vec![PrinterColumn {
+            name: "Size".into(),
+            json_path: ".spec.size".into(),
+            type_: "integer".into(),
+        }],
+        crd: Some("widgets.example.fleetops.io".into()),
+    }
 }
 
 type WatchTx = (
@@ -70,6 +100,41 @@ pub fn row(name: &str, ns: Option<&str>) -> KubeRow {
 }
 
 impl FakeKube {
+    pub fn set_discovery(&self, d: Discovery) {
+        *self.discovery.lock().unwrap() = d;
+    }
+    /// An object of a discovered kind; `ns` is `-` when cluster-scoped.
+    pub fn generic_object(&self, k: &ApiKind, ns: &str, name: &str) {
+        let obj = KubeObject {
+            row: KubeRow {
+                columns: BTreeMap::from([("Size".to_string(), "3".to_string())]),
+                ..row(name, k.namespaced.then_some(ns))
+            },
+            yaml: format!(
+                "apiVersion: {}\nkind: {}\nmetadata:\n  name: {name}\n",
+                k.api.api_version(),
+                k.kind
+            ),
+            conditions: vec![],
+            owners: vec![],
+            containers: vec![],
+        };
+        self.generic
+            .lock()
+            .unwrap()
+            .insert((k.api.clone(), ns.into(), name.into()), obj);
+    }
+    /// Sends `ev` to every open watch of `r`.
+    pub fn emit_generic_watch(&self, r: &KindRef, ev: Result<WatchEvent>) {
+        let mut w = self.generic_watches.lock().unwrap();
+        w.retain(|(_, tx)| !tx.is_closed());
+        for (_, tx) in w.iter().filter(|(k, _)| k == r) {
+            let _ = tx.send(match &ev {
+                Ok(e) => Ok(e.clone()),
+                Err(e) => Err(Error::Forbidden(e.detail())),
+            });
+        }
+    }
     pub fn helm_release(&self, ns: &str, name: &str, revision: u32, status: &str) {
         self.helm_releases.lock().unwrap().push(HelmRelease {
             name: name.into(),
@@ -531,6 +596,96 @@ impl KubeOps for FakeKube {
             "helm_uninstall {ns}/{name} at {expected} dry={dry_run}"
         ));
         self.helm_write(dry_run, expected, allowed, None)
+    }
+    async fn discover(&self, refresh: bool) -> Result<Discovery> {
+        self.call(format!("discover {refresh}"));
+        let mut cached = self.discovery_cached.lock().unwrap();
+        if refresh || cached.is_none() {
+            *cached = Some(self.discovery.lock().unwrap().clone());
+        }
+        Ok(cached.clone().unwrap())
+    }
+    async fn generic_list(&self, k: &ApiKind, ns: Option<&str>) -> Result<KubeList> {
+        self.call(format!("glist {} {}", k.api.path(), ns.unwrap_or("*")));
+        let rows = self
+            .generic
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|((r, n, _), _)| *r == k.api && (!k.namespaced || ns.is_none_or(|ns| ns == n)))
+            .map(|(_, o)| o.row.clone())
+            .collect();
+        Ok(KubeList {
+            rows,
+            truncated: false,
+        })
+    }
+    async fn generic_get(&self, k: &ApiKind, ns: &str, name: &str) -> Result<KubeObject> {
+        self.generic
+            .lock()
+            .unwrap()
+            .get(&(k.api.clone(), ns.into(), name.into()))
+            .cloned()
+            .ok_or_else(|| Error::NotFound(format!("{} \"{name}\" not found", k.api.resource)))
+    }
+    fn generic_watch(&self, k: &ApiKind, ns: Option<&str>) -> BoxStream<WatchEvent> {
+        self.call(format!("gwatch {} {}", k.api.path(), ns.unwrap_or("*")));
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.generic_watches
+            .lock()
+            .unwrap()
+            .push((k.api.clone(), tx));
+        Box::pin(futures_util::stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|v| (v, rx))
+        }))
+    }
+    async fn generic_events(&self, k: &ApiKind, ns: &str, name: &str) -> Result<Vec<KubeEvent>> {
+        self.generic_get(k, ns, name).await?;
+        Ok(vec![])
+    }
+    async fn generic_delete(&self, k: &ApiKind, ns: &str, name: &str) -> Result<()> {
+        self.call(format!("gdelete {} {ns}/{name}", k.api.path()));
+        self.generic
+            .lock()
+            .unwrap()
+            .remove(&(k.api.clone(), ns.into(), name.into()))
+            .map(|_| ())
+            .ok_or_else(|| Error::NotFound(name.into()))
+    }
+    async fn generic_editable(&self, k: &ApiKind, ns: &str, name: &str) -> Result<EditableObject> {
+        let o = self.generic_get(k, ns, name).await?;
+        Ok(EditableObject {
+            yaml: o.yaml,
+            resource_version: "1".into(),
+        })
+    }
+    async fn generic_replace(
+        &self,
+        k: &ApiKind,
+        ns: &str,
+        name: &str,
+        yaml: &str,
+        _rv: &str,
+        mode: ApplyMode,
+    ) -> Result<ApplyResult> {
+        self.call(format!("greplace {} {ns}/{name}", k.api.path()));
+        self.applied.lock().unwrap().push((
+            format!("{}/{ns}/{name}", k.api.path()),
+            yaml.into(),
+            mode,
+            None,
+        ));
+        Ok(ApplyResult {
+            index: 0,
+            api_version: k.api.api_version(),
+            kind: k.kind.clone(),
+            namespace: k.namespaced.then(|| ns.to_string()),
+            name: name.into(),
+            action: Some(ApplyAction::Configured),
+            before: None,
+            after: Some(yaml.into()),
+            error: None,
+        })
     }
 }
 
