@@ -154,7 +154,7 @@ Audit: `helm.rollback` (env, namespace, release, from C, to N, outcome) and `hel
 ## 10. Build and delivery
 
 - README: a *Helm releases* section (what is shown, masking, rollback and uninstall, hooks not run, Secrets driver only) replacing "Helm comes later"; the roadmap marks 3d done.
-- No new runtime dependencies beyond `flate2` (gzip) if not already in the workspace.
+- One new dependency: `flate2` (gzip) in `fleetops-kube`.
 
 ## 11. Out of scope
 
