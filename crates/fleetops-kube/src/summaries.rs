@@ -7,10 +7,11 @@ use fleetops_core::kube::{
     KubeCondition, KubeKind, KubeRef, KubeRow, RowHealth, SUSPENDED_ANNOTATION,
 };
 use k8s_openapi::api::{
-    apps::v1::{DaemonSet, Deployment, StatefulSet},
+    apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet},
+    autoscaling::v2::HorizontalPodAutoscaler,
     batch::v1::{CronJob, Job},
     core::v1::{ConfigMap, Event, Namespace, Node, Pod, Secret, Service},
-    networking::v1::Ingress,
+    networking::v1::{Ingress, NetworkPolicy},
 };
 use kube::api::DynamicObject;
 use serde::de::DeserializeOwned;
@@ -70,6 +71,11 @@ pub fn row(kind: KubeKind, obj: &DynamicObject) -> KubeRow {
         KubeKind::ConfigMaps => typed::<ConfigMap>(kind, obj).map(configmap),
         KubeKind::Secrets => typed::<Secret>(kind, obj).map(secret),
         KubeKind::Events => typed::<Event>(kind, obj).map(event),
+        KubeKind::ReplicaSets => typed::<ReplicaSet>(kind, obj).map(replicaset),
+        KubeKind::HorizontalPodAutoscalers => {
+            typed::<HorizontalPodAutoscaler>(kind, obj).map(hpa)
+        }
+        KubeKind::NetworkPolicies => typed::<NetworkPolicy>(kind, obj).map(network_policy),
         _ => None,
     };
     match summary {
@@ -441,6 +447,129 @@ fn event(e: Event) -> Summary {
             ("count", e.count.unwrap_or(1).max(1).to_string()),
             ("last_seen", last_seen.to_string()),
             ("source", source),
+        ]),
+    )
+}
+
+fn replicaset(r: ReplicaSet) -> Summary {
+    let want = r.spec.as_ref().and_then(|s| s.replicas).unwrap_or(1);
+    let ready = r.status.as_ref().and_then(|s| s.ready_replicas).unwrap_or(0);
+    let owner = r
+        .metadata
+        .owner_references
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+        .map(|o| o.name)
+        .unwrap_or_default();
+    // A Deployment keeps its old ReplicaSets at 0: history, not a fault.
+    let (status, h) = if want == 0 {
+        ("0/0".to_string(), RowHealth::Off)
+    } else {
+        replicas(ready, want)
+    };
+    (
+        status,
+        h,
+        cols([
+            ("desired", want.to_string()),
+            ("ready", ready.to_string()),
+            ("owner", owner),
+        ]),
+    )
+}
+
+/// `metric: current/target` for each metric the HPA scales on.
+fn hpa_targets(h: &HorizontalPodAutoscaler) -> String {
+    let current = h
+        .status
+        .as_ref()
+        .and_then(|s| s.current_metrics.clone())
+        .unwrap_or_default();
+    h.spec
+        .as_ref()
+        .and_then(|s| s.metrics.clone())
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|m| {
+            let r = m.resource?;
+            let want = r.target.average_utilization?;
+            let now = current
+                .iter()
+                .filter_map(|c| c.resource.as_ref())
+                .find(|c| c.name == r.name)
+                .and_then(|c| c.current.average_utilization)
+                .map(|v| format!("{v}%"))
+                .unwrap_or_else(|| "?".into());
+            Some(format!("{}: {now}/{want}%", r.name))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn hpa(h: HorizontalPodAutoscaler) -> Summary {
+    let targets = hpa_targets(&h);
+    let spec = h.spec.unwrap_or_default();
+    let st = h.status.unwrap_or_default();
+    let min = spec.min_replicas.unwrap_or(1);
+    let max = spec.max_replicas;
+    let current = st.current_replicas.unwrap_or(0);
+    let stuck = st
+        .conditions
+        .unwrap_or_default()
+        .into_iter()
+        .find(|c| c.type_ == "ScalingActive" && c.status == "False");
+    let target_kind = KubeKind::from_kind_name(&spec.scale_target_ref.kind)
+        .map(|k| k.as_str().to_string())
+        .unwrap_or_default();
+    let (status, health) = match stuck {
+        Some(c) => (
+            c.reason.unwrap_or_else(|| "ScalingInactive".into()),
+            RowHealth::Bad,
+        ),
+        None if max > 0 && current >= max => (format!("{current}/{max}"), RowHealth::Warn),
+        None => (format!("{current}/{max}"), RowHealth::Ok),
+    };
+    (
+        status,
+        health,
+        cols([
+            ("target", spec.scale_target_ref.name),
+            ("target_kind", target_kind),
+            ("min", min.to_string()),
+            ("max", max.to_string()),
+            ("current", current.to_string()),
+            ("targets", targets),
+        ]),
+    )
+}
+
+fn network_policy(n: NetworkPolicy) -> Summary {
+    let spec = n.spec.unwrap_or_default();
+    let labels = spec
+        .pod_selector
+        .and_then(|s| s.match_labels)
+        .unwrap_or_default();
+    let selector = if labels.is_empty() {
+        "(all pods)".to_string()
+    } else {
+        labels
+            .into_iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    };
+    // Kubernetes' own default when policyTypes is unset.
+    let types = spec
+        .policy_types
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| vec!["Ingress".into()]);
+    (
+        types.join(", "),
+        RowHealth::Ok,
+        cols([
+            ("pod_selector", selector),
+            ("policy_types", types.join(", ")),
         ]),
     )
 }
