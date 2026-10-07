@@ -11,6 +11,9 @@ use std::io::{Read, Write};
 pub const SECRET_TYPE: &str = "helm.sh/release.v1";
 pub const OWNER_SELECTOR: &str = "owner=helm";
 const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
+/// Largest decoded record accepted: a planted record cannot inflate into
+/// the server's memory.
+pub const DECODED_MAX: usize = 64 << 20;
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
 /// A release record. Fields FleetOps does not read are kept in `rest`, so
@@ -58,8 +61,15 @@ pub fn decode(raw: &[u8]) -> Result<Release, String> {
     let json = if bytes.starts_with(&GZIP_MAGIC) {
         let mut out = Vec::new();
         flate2::read::GzDecoder::new(&bytes[..])
+            .take(DECODED_MAX as u64 + 1)
             .read_to_end(&mut out)
             .map_err(|e| format!("not gzip: {e}"))?;
+        if out.len() > DECODED_MAX {
+            return Err(format!(
+                "larger than {} MiB once decoded",
+                DECODED_MAX >> 20
+            ));
+        }
         out
     } else {
         bytes
@@ -224,6 +234,14 @@ mod tests {
             .encode(FIXTURE)
             .into_bytes();
         assert_eq!(decode(&raw).unwrap().version, 2);
+    }
+
+    #[test]
+    fn a_record_that_inflates_past_the_cap_is_refused() {
+        let bomb = stored(&" ".repeat(DECODED_MAX + 1));
+        assert!(bomb.len() < 1 << 20, "compresses small: {}", bomb.len());
+        let e = decode(&bomb).unwrap_err();
+        assert!(e.contains("larger than"), "{e}");
     }
 
     #[test]

@@ -46,6 +46,8 @@ pub struct FakeKube {
     pub helm_plan: Mutex<Option<HelmPlan>>,
     /// (namespaced, namespace) of each object a rollback or uninstall touches.
     pub helm_objects: Mutex<Vec<(bool, Option<String>)>>,
+    /// How long a committed rollback takes, to test a caller that leaves.
+    pub helm_commit_delay: Mutex<Option<std::time::Duration>>,
 }
 
 type WatchTx = (
@@ -470,7 +472,13 @@ impl KubeOps for FakeKube {
         self.call(format!(
             "helm_rollback {ns}/{name} to {revision} at {expected} dry={dry_run}"
         ));
-        self.helm_write(dry_run, expected, allowed, Some(expected + 1))
+        let plan = self.helm_write(dry_run, expected, allowed, Some(expected + 1))?;
+        let delay = *self.helm_commit_delay.lock().unwrap();
+        if let (false, Some(d)) = (dry_run, delay) {
+            tokio::time::sleep(d).await;
+        }
+        self.call(format!("helm_rollback {ns}/{name} finished dry={dry_run}"));
+        Ok(plan)
     }
     async fn helm_uninstall(
         &self,

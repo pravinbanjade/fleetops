@@ -194,3 +194,112 @@ async fn rollback_and_uninstall_leave_a_history_helm_can_continue() {
     })
     .await;
 }
+
+/// A fresh release named `name`, removed first if a previous run left it.
+fn reinstall(name: &str, args: &[&str]) {
+    let _ = helm_cmd()
+        .args([
+            "uninstall",
+            name,
+            "--namespace",
+            NS,
+            "--ignore-not-found",
+            "--wait",
+        ])
+        .status();
+    let chart_dir = chart();
+    let mut a = vec!["install", name, &chart_dir];
+    a.extend_from_slice(args);
+    helm(&a);
+}
+
+fn history_of(name: &str) -> serde_json::Value {
+    serde_json::from_str(&helm(&["history", name, "-o", "json"])).unwrap()
+}
+
+#[tokio::test]
+async fn rolling_back_a_failed_upgrade_keeps_it_failed_and_supersedes_the_deployed_one() {
+    let ops = common::ops();
+    let name = &format!("{}-failed", release());
+    reinstall(name, &[]);
+    // An image that never pulls: `--wait` gives up and Helm marks revision 2 failed.
+    let out = helm_cmd()
+        .args([
+            "upgrade",
+            name,
+            &chart(),
+            "--namespace",
+            NS,
+            "--set",
+            "image=busybox:no-such-tag",
+            "--wait",
+            "--timeout",
+            "5s",
+        ])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "the upgrade was meant to fail");
+    let h = history_of(name);
+    assert_eq!(
+        (h[0]["status"].as_str(), h[1]["status"].as_str()),
+        (Some("deployed"), Some("failed"))
+    );
+
+    let done = ops
+        .helm_rollback(NS, name, 1, 2, false, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        done.status.as_deref(),
+        Some("deployed"),
+        "{:?}",
+        done.changes
+    );
+    let h = history_of(name);
+    let statuses: Vec<_> = h
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["status"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(statuses, ["superseded", "failed", "deployed"], "{h}");
+    helm(&["uninstall", name, "--wait"]);
+}
+
+#[tokio::test]
+async fn an_object_kept_by_an_upgrade_is_taken_back_by_a_rollback() {
+    let ops = common::ops();
+    let name = &format!("{}-keep", release());
+    reinstall(name, &["--set", "extra=true", "--set", "keep=true"]);
+    // Revision 2 drops the ConfigMap, but its keep policy leaves it in the cluster.
+    helm(&["upgrade", name, &chart(), "--set", "extra=false"]);
+    let cms: Api<ConfigMap> = Api::namespaced(common::kube_client(), NS);
+    assert!(cms
+        .get_opt(&format!("{name}-extra"))
+        .await
+        .unwrap()
+        .is_some());
+
+    let plan = ops.helm_rollback(NS, name, 1, 2, true, None).await.unwrap();
+    assert!(
+        plan.changes.iter().all(|c| c.error.is_none()),
+        "{:?}",
+        plan.changes
+    );
+    let done = ops
+        .helm_rollback(NS, name, 1, 2, false, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        done.status.as_deref(),
+        Some("deployed"),
+        "{:?}",
+        done.changes
+    );
+    let _ = helm_cmd()
+        .args(["uninstall", name, "--namespace", NS, "--wait"])
+        .status();
+    let _ = cms
+        .delete(&format!("{name}-extra"), &DeleteParams::default())
+        .await;
+}

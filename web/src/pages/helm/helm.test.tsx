@@ -101,6 +101,25 @@ describe("Helm releases", () => {
     expect(within(dialog).getByRole("button", { name: "Review again" })).toBeInTheDocument();
   });
 
+  it("needs an explicit choice to commit a plan with errors", async () => {
+    const failing = plan();
+    failing.changes[0] = { ...failing.changes[0], error: { code: "forbidden", message: "configmaps is forbidden" } } as never;
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      ...helmRoutes,
+      "POST /api/v1/envs/k/k8s/helm/releases/apps/demo/rollback": () => ({ json: failing }),
+    });
+    renderApp("/envs/k/k8s/helm/apps/demo?tab=history");
+    await userEvent.click(await screen.findByRole("button", { name: "Roll back to 1" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("configmaps is forbidden")).toBeInTheDocument();
+    const confirm = within(dialog).getByRole("button", { name: "Roll back" });
+    expect(confirm).toBeDisabled();
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /1 object will fail/ }));
+    expect(confirm).toBeEnabled();
+  });
+
   it("hides rollback and uninstall from viewers", async () => {
     mockFetch({
       ...loggedIn,
