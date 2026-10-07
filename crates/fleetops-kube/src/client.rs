@@ -4,9 +4,9 @@
 use crate::{errors, kinds::api_resource, mask, summaries};
 use async_trait::async_trait;
 use fleetops_core::kube::{
-    ApplyAction, ApplyError, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeExec, KubeKind,
-    KubeList, KubeObject, KubeOps, KubeRef, KubeVersion, WatchEvent, FIELD_MANAGER, LIST_CAP,
-    PAGE_SIZE,
+    ApplyAction, ApplyError, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeExec,
+    KubeFilter, KubeKind, KubeList, KubeObject, KubeOps, KubeRef, KubeVersion, WatchEvent,
+    FIELD_MANAGER, LIST_CAP, PAGE_SIZE,
 };
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions, LogStream};
 use fleetops_core::{now_unix, Error, Result};
@@ -290,30 +290,35 @@ impl KubeOps for KubeClient {
     }
 
     async fn list(&self, kind: KubeKind, ns: Option<&str>) -> Result<KubeList> {
-        let api = self.api(kind, ns);
-        let page = (self.list_cap as u32).clamp(1, PAGE_SIZE);
-        let mut rows = Vec::new();
-        let mut cont: Option<String> = None;
-        let mut truncated = false;
-        loop {
-            let mut lp = ListParams::default().limit(page);
-            if let Some(c) = &cont {
-                lp = lp.continue_token(c);
-            }
-            let list = timed(api.list(&lp)).await?;
-            rows.extend(list.items.iter().map(|o| summaries::row(kind, o)));
-            cont = list.metadata.continue_.filter(|c| !c.is_empty());
-            if rows.len() >= self.list_cap {
-                truncated = rows.len() > self.list_cap || cont.is_some();
-                rows.truncate(self.list_cap);
-                break;
-            }
-            if cont.is_none() {
-                break;
-            }
+        self.list_where(kind, ns, None).await
+    }
+
+    async fn list_filtered(
+        &self,
+        kind: KubeKind,
+        ns: Option<&str>,
+        filter: KubeFilter,
+    ) -> Result<KubeList> {
+        filter.check(kind)?;
+        self.list_where(kind, ns, Some(filter.field_selector()))
+            .await
+    }
+
+    fn watch_filtered(
+        &self,
+        kind: KubeKind,
+        ns: Option<&str>,
+        filter: KubeFilter,
+    ) -> BoxStream<WatchEvent> {
+        if let Err(e) = filter.check(kind) {
+            return Box::pin(futures_util::stream::once(async move { Err(e) }));
         }
-        rows.sort_by(|a, b| (&a.namespace, &a.name).cmp(&(&b.namespace, &b.name)));
-        Ok(KubeList { rows, truncated })
+        let config = kube::runtime::watcher::Config::default().fields(filter.field_selector());
+        crate::watch::watch_with(self.api(kind, ns), kind, config)
+    }
+
+    async fn count(&self, kind: KubeKind, ns: Option<&str>) -> Result<u64> {
+        self.count_impl(kind, ns).await
     }
 
     async fn get(&self, kind: KubeKind, ns: &str, name: &str) -> Result<KubeObject> {
@@ -647,5 +652,67 @@ impl KubeOps for KubeClient {
     ) -> Result<fleetops_core::helm::HelmPlan> {
         self.helm_uninstall_impl(ns, name, expected_current, dry_run, allowed)
             .await
+    }
+}
+
+impl KubeClient {
+    /// Every row of `kind`, up to the cap, optionally narrowed by a field selector.
+    async fn list_where(
+        &self,
+        kind: KubeKind,
+        ns: Option<&str>,
+        fields: Option<&str>,
+    ) -> Result<KubeList> {
+        let api = self.api(kind, ns);
+        let page = (self.list_cap as u32).clamp(1, PAGE_SIZE);
+        let mut rows = Vec::new();
+        let mut cont: Option<String> = None;
+        let mut truncated = false;
+        loop {
+            let mut lp = ListParams::default().limit(page);
+            if let Some(f) = fields {
+                lp = lp.fields(f);
+            }
+            if let Some(c) = &cont {
+                lp = lp.continue_token(c);
+            }
+            let list = timed(api.list(&lp)).await?;
+            rows.extend(list.items.iter().map(|o| summaries::row(kind, o)));
+            cont = list.metadata.continue_.filter(|c| !c.is_empty());
+            if rows.len() >= self.list_cap {
+                truncated = rows.len() > self.list_cap || cont.is_some();
+                rows.truncate(self.list_cap);
+                break;
+            }
+            if cont.is_none() {
+                break;
+            }
+        }
+        rows.sort_by(|a, b| (&a.namespace, &a.name).cmp(&(&b.namespace, &b.name)));
+        Ok(KubeList { rows, truncated })
+    }
+
+    /// Counts from metadata only: one page of one item usually carries
+    /// `remainingItemCount`; when it doesn't, page through names.
+    async fn count_impl(&self, kind: KubeKind, ns: Option<&str>) -> Result<u64> {
+        let api = self.api(kind, ns);
+        let first = timed(api.list_metadata(&ListParams::default().limit(1))).await?;
+        let mut cont = first.metadata.continue_.clone().filter(|c| !c.is_empty());
+        if cont.is_none() {
+            return Ok(first.items.len() as u64);
+        }
+        if let Some(rest) = first.metadata.remaining_item_count {
+            return Ok(first.items.len() as u64 + rest.max(0) as u64);
+        }
+        let mut n = first.items.len() as u64;
+        while let Some(c) = cont {
+            let page = timed(
+                api.list_metadata(&ListParams::default().limit(PAGE_SIZE).continue_token(&c)),
+            )
+            .await?;
+            n += page.items.len() as u64;
+            cont = page.metadata.continue_.filter(|c| !c.is_empty());
+        }
+        Ok(n)
     }
 }

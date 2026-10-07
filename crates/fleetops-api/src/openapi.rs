@@ -39,6 +39,7 @@ pub const API_BASE: &str = "/api/v1";
         fleetops_core::streams::StatsSample,
         fleetops_core::streams::LogLine,
         fleetops_core::kube::WatchEvent,
+        fleetops_core::kube::KubeFilter,
         crate::agents::KubeAccess,
         fleetops_core::kube::EditableObject,
         fleetops_core::kube::ApplyResult,

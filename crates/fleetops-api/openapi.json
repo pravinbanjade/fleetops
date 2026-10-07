@@ -2234,6 +2234,77 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/counts": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "How many objects of each kind, without their bodies",
+        "operationId": "kubeCounts",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kinds",
+            "in": "query",
+            "description": "Plural kinds, comma-separated, e.g. `services,secrets`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "namespace",
+            "in": "query",
+            "description": "Omit for all namespaces.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "By plural kind; a kind the cluster refuses has `error` instead of `count`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/KubeCount"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/k8s/helm/releases": {
       "get": {
         "tags": [
@@ -2733,6 +2804,15 @@
             "name": "namespace",
             "in": "query",
             "description": "Omit for all namespaces.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "description": "`warnings` (events only): just the Warning events, filtered by the cluster.",
             "required": false,
             "schema": {
               "type": "string"
@@ -6173,6 +6253,27 @@
           }
         }
       },
+      "KubeCount": {
+        "type": "object",
+        "description": "How many objects of one kind there are, or why that is unknown.",
+        "properties": {
+          "count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "An `ErrorBody` code (`forbidden`, `upstream`…) when `count` is absent."
+          }
+        }
+      },
       "KubeEvent": {
         "type": "object",
         "required": [
@@ -6211,6 +6312,13 @@
             "description": "\"Normal\" or \"Warning\"."
           }
         }
+      },
+      "KubeFilter": {
+        "type": "string",
+        "description": "A server-side narrowing of a list or watch (spec 3e §4). Only Events\nhave one: their warnings, the rows an overview shows.",
+        "enum": [
+          "warnings"
+        ]
       },
       "KubeKind": {
         "type": "string",

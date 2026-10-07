@@ -219,6 +219,82 @@ pub struct KubeVersion {
     pub nodes_ready: Option<u32>,
 }
 
+/// A server-side narrowing of a list or watch (spec 3e §4). Only Events
+/// have one: their warnings, the rows an overview shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum KubeFilter {
+    Warnings,
+}
+
+impl KubeFilter {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            KubeFilter::Warnings => "warnings",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        match s {
+            "warnings" => Ok(KubeFilter::Warnings),
+            _ => Err(Error::Invalid(format!("unknown filter '{s}'"))),
+        }
+    }
+
+    /// The kinds the filter applies to.
+    pub fn check(self, kind: KubeKind) -> Result<()> {
+        if kind == KubeKind::Events {
+            Ok(())
+        } else {
+            Err(Error::Invalid(format!(
+                "the {} filter is for events, not {}",
+                self.as_str(),
+                kind.as_str()
+            )))
+        }
+    }
+
+    /// The apiserver field selector that does the same.
+    pub fn field_selector(self) -> &'static str {
+        match self {
+            KubeFilter::Warnings => "type=Warning",
+        }
+    }
+
+    pub fn keeps(self, row: &KubeRow) -> bool {
+        match self {
+            KubeFilter::Warnings => row.status == "Warning",
+        }
+    }
+
+    /// A watch event as the filtered list sees it.
+    pub fn event(self, ev: WatchEvent) -> Option<WatchEvent> {
+        match ev {
+            WatchEvent::Snapshot { mut rows } => {
+                rows.retain(|r| self.keeps(r));
+                Some(WatchEvent::Snapshot { rows })
+            }
+            WatchEvent::Added { row } if !self.keeps(&row) => None,
+            WatchEvent::Modified { row } if !self.keeps(&row) => {
+                // Left the filtered set: gone, as far as its viewers know.
+                Some(WatchEvent::Deleted {
+                    namespace: row.namespace,
+                    name: row.name,
+                })
+            }
+            other => Some(other),
+        }
+    }
+}
+
+/// How many objects of one kind there are, or why that is unknown.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct KubeCount {
+    pub count: Option<u64>,
+    /// An `ErrorBody` code (`forbidden`, `upstream`…) when `count` is absent.
+    pub error: Option<String>,
+}
+
 /// Live CPU and memory of one node or pod, from metrics-server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct KubeUsageRow {
@@ -399,6 +475,38 @@ pub trait KubeOps: Send + Sync {
         resource_version: &str,
         mode: ApplyMode,
     ) -> Result<ApplyResult>;
+    /// The rows `filter` keeps. The default lists everything and filters
+    /// here; a client that can ask the apiserver to filter should.
+    async fn list_filtered(
+        &self,
+        kind: KubeKind,
+        ns: Option<&str>,
+        filter: KubeFilter,
+    ) -> Result<KubeList> {
+        let mut l = self.list(kind, ns).await?;
+        l.rows.retain(|r| filter.keeps(r));
+        Ok(l)
+    }
+    /// `watch`, narrowed by `filter`; the default filters here.
+    fn watch_filtered(
+        &self,
+        kind: KubeKind,
+        ns: Option<&str>,
+        filter: KubeFilter,
+    ) -> BoxStream<WatchEvent> {
+        use futures_util::StreamExt;
+        Box::pin(self.watch(kind, ns).filter_map(move |r| async move {
+            match r {
+                Ok(ev) => filter.event(ev).map(Ok),
+                Err(e) => Some(Err(e)),
+            }
+        }))
+    }
+    /// How many objects of `kind` there are (spec 3e §5), without their
+    /// bodies where the client can manage it. The default counts a list.
+    async fn count(&self, kind: KubeKind, ns: Option<&str>) -> Result<u64> {
+        Ok(self.list(kind, ns).await?.rows.len() as u64)
+    }
     /// CPU and memory now, for `Nodes` or `Pods` (spec 3e §3). `ns` limits
     /// pods to one namespace.
     async fn usage(&self, _kind: KubeKind, _ns: Option<&str>) -> Result<KubeUsage> {

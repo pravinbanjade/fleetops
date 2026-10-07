@@ -14,8 +14,8 @@ use axum::{
 };
 use fleetops_core::env::{EnvKind, Environment};
 use fleetops_core::kube::{
-    ApplyAction, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeKind, KubeList, KubeObject,
-    KubeOps, KubeUsage, APPLY_MAX_BYTES,
+    ApplyAction, ApplyMode, ApplyResult, EditableObject, KubeCount, KubeEvent, KubeFilter,
+    KubeKind, KubeList, KubeObject, KubeOps, KubeUsage, APPLY_MAX_BYTES,
 };
 use fleetops_core::{now_unix, Error, Grant, Result};
 use fleetops_store::NewAudit;
@@ -140,6 +140,24 @@ pub struct ListQuery {
     pub namespace: Option<String>,
 }
 
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct KubeListQuery {
+    /// Omit for all namespaces.
+    pub namespace: Option<String>,
+    /// `warnings` (events only): just the Warning events, filtered by the cluster.
+    pub filter: Option<String>,
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct CountsQuery {
+    /// Plural kinds, comma-separated, e.g. `services,secrets`.
+    pub kinds: String,
+    /// Omit for all namespaces.
+    pub namespace: Option<String>,
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct ScaleBody {
     pub replicas: u32,
@@ -205,23 +223,112 @@ async fn audit(
 }
 
 #[utoipa::path(get, path = "/envs/{env}/k8s/{kind}", operation_id = "listKube", tag = "kubernetes",
-    summary = "List objects of one kind", params(KindPath, ListQuery),
+    summary = "List objects of one kind", params(KindPath, KubeListQuery),
     responses((status = 200, description = "Rows", body = KubeList)))]
 pub async fn list(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath(p): ApiPath<KindPath>,
-    Query(q): Query<ListQuery>,
+    Query(q): Query<KubeListQuery>,
 ) -> ApiResult<Json<KubeList>> {
     let k = p.checked()?;
     let ns = q.namespace.as_deref().filter(|n| !n.is_empty());
     if let Some(ns) = ns {
         check_namespace(ns)?;
     }
+    let filter = q
+        .filter
+        .as_deref()
+        .filter(|f| !f.is_empty())
+        .map(KubeFilter::parse)
+        .transpose()?;
+    if let Some(f) = filter {
+        f.check(k)?;
+    }
     let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
     crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.read", k8.grant.check_list(k, ns))
         .await?;
-    Ok(Json(k8.grant.filter_list(k, k8.ops.list(k, ns).await?)))
+    let rows = match filter {
+        Some(f) => k8.ops.list_filtered(k, ns, f).await?,
+        None => k8.ops.list(k, ns).await?,
+    };
+    Ok(Json(k8.grant.filter_list(k, rows)))
+}
+
+/// How many `kind` this grant can see, without listing bodies where the
+/// client can avoid it. A namespace-limited grant sums its namespaces.
+async fn count_one(k8: &KubeCtx, kind: KubeKind, ns: Option<&str>) -> Result<u64> {
+    let Some(set) = &k8.grant.namespaces else {
+        return k8.ops.count(kind, ns).await;
+    };
+    match kind {
+        KubeKind::Nodes => k8.ops.count(kind, None).await,
+        KubeKind::Namespaces => Ok(k8
+            .grant
+            .filter_list(kind, k8.ops.list(kind, None).await?)
+            .rows
+            .len() as u64),
+        _ if ns.is_some() => k8.ops.count(kind, ns).await,
+        _ => {
+            let counts =
+                futures_util::future::try_join_all(set.iter().map(|n| k8.ops.count(kind, Some(n))))
+                    .await?;
+            Ok(counts.into_iter().sum())
+        }
+    }
+}
+
+#[utoipa::path(get, path = "/envs/{env}/k8s/counts", operation_id = "kubeCounts", tag = "kubernetes",
+    summary = "How many objects of each kind, without their bodies", params(EnvParam, CountsQuery),
+    responses((status = 200, description = "By plural kind; a kind the cluster refuses has `error` instead of `count`", body = std::collections::BTreeMap<String, KubeCount>)))]
+pub async fn counts(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(env_name): ApiPath<String>,
+    Query(q): Query<CountsQuery>,
+) -> ApiResult<Json<std::collections::BTreeMap<String, KubeCount>>> {
+    let mut kinds: Vec<KubeKind> = q
+        .kinds
+        .split(',')
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .map(kind)
+        .collect::<Result<_>>()?;
+    kinds.sort();
+    kinds.dedup();
+    if kinds.is_empty() {
+        return Err(Error::Invalid("name at least one kind to count".into()).into());
+    }
+    let ns = q.namespace.as_deref().filter(|n| !n.is_empty());
+    if let Some(ns) = ns {
+        check_namespace(ns)?;
+    }
+    let k8 = kube_for(&s, &cu, &env_name, Action::KubeRead).await?;
+    for &k in &kinds {
+        crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.read", k8.grant.check_list(k, ns))
+            .await?;
+    }
+    let results =
+        futures_util::future::join_all(kinds.iter().map(|&k| count_one(&k8, k, ns))).await;
+    Ok(Json(
+        kinds
+            .into_iter()
+            .zip(results)
+            .map(|(k, r)| {
+                let c = match r {
+                    Ok(n) => KubeCount {
+                        count: Some(n),
+                        error: None,
+                    },
+                    Err(e) => KubeCount {
+                        count: None,
+                        error: Some(e.code().into()),
+                    },
+                };
+                (k.as_str().to_string(), c)
+            })
+            .collect(),
+    ))
 }
 
 #[utoipa::path(get, path = "/envs/{env}/k8s/{kind}/{ns}/{name}", operation_id = "getKube", tag = "kubernetes",

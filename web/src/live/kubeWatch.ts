@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import type { KubeKind, KubeList, KubeRow, WatchEvent } from "@/api/gen/types.gen";
+import type { KubeFilter, KubeKind, KubeList, KubeRow, WatchEvent } from "@/api/gen/types.gen";
 import { keys } from "@/api/queries";
 import { useSubscription } from "./LiveProvider";
 
@@ -45,11 +45,18 @@ interface WatchState {
  * from the shared `kube-watch` topic. While `synced`, the REST list must
  * not refetch over it (a late response would bring back old rows). When
  * the watch ends, the page shows the data as paused (spec §6) until
- * `retry`; another list starts fresh.
+ * `retry`; another list starts fresh. With `filter`, the cluster sends only
+ * the rows it keeps (e.g. warning events), cached apart from the whole list.
  */
-export function useKubeWatch(env: string, kind: KubeKind, ns: string | undefined, onEvent?: (ev: WatchEvent) => void) {
+export function useKubeWatch(
+  env: string,
+  kind: KubeKind,
+  ns: string | undefined,
+  onEvent?: (ev: WatchEvent) => void,
+  filter?: KubeFilter,
+) {
   const qc = useQueryClient();
-  const id = `${kind}/${ns || "-"}`;
+  const id = `${kind}/${ns || "-"}${filter ? `/${filter}` : ""}`;
   const key = `${env}:${id}`;
   const [stored, setState] = useState<WatchState>({ key, paused: null, synced: false });
   const state: WatchState = stored.key === key ? stored : { key, paused: null, synced: false };
@@ -60,7 +67,7 @@ export function useKubeWatch(env: string, kind: KubeKind, ns: string | undefined
     onData: (d) => {
       const ev = d as WatchEvent;
       last.current = Date.now();
-      qc.setQueryData<KubeList>(keys.kube(env, kind, ns), (old) => applyWatchEvent(old, ev));
+      qc.setQueryData<KubeList>(keys.kube(env, kind, ns, filter), (old) => applyWatchEvent(old, ev));
       if (ev.type === "snapshot") setState((s) => (s.key === key && s.synced ? s : { key, paused: null, synced: true }));
       onEvent?.(ev);
     },

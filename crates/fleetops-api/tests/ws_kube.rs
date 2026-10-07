@@ -327,3 +327,32 @@ async fn topics_outside_the_set_are_refused() {
         assert_eq!(e["message"], "namespace 'team-b' is not in your access");
     }
 }
+
+#[tokio::test]
+async fn a_filtered_watch_is_its_own_upstream_and_keeps_only_warnings() {
+    let (t, _admin, mut ws) = kube_ws().await;
+    watch_sub(&mut ws, 1, "events/-/warnings").await;
+    watch_sub(&mut ws, 2, "events/-").await;
+    opened(&t, 2).await;
+    let mut warn = common::fake_kube::row("a.1", Some("apps"));
+    warn.status = "Warning".into();
+    let mut normal = common::fake_kube::row("b.1", Some("apps"));
+    normal.status = "Normal".into();
+    t.fake.kube.emit_watch(
+        KubeKind::Events,
+        Ok(WatchEvent::Snapshot {
+            rows: vec![warn, normal],
+        }),
+    );
+    let m = ws.until(|m| m["type"] == "data" && m["sub"] == 1).await;
+    let names: Vec<_> = m["data"]["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].clone())
+        .collect();
+    assert_eq!(names, [json!("a.1")]);
+    watch_sub(&mut ws, 3, "pods/-/warnings").await;
+    let e = ws.until(|m| m["type"] == "error" && m["sub"] == 3).await;
+    assert_eq!(e["code"], "invalid");
+}

@@ -23,6 +23,7 @@ import {
   getKube,
   kubeEvents,
   kubeUsage,
+  kubeCounts,
   listHelmReleases,
   getHelmRelease,
   helmHistory,
@@ -34,7 +35,7 @@ import {
   listRecentEvents,
   listVolumes,
 } from "./gen/sdk.gen";
-import type { DockerEvent, KubeKind } from "./gen/types.gen";
+import type { DockerEvent, KubeFilter, KubeKind } from "./gen/types.gen";
 import { mergeEvents } from "@/live/noise";
 
 /**
@@ -70,7 +71,10 @@ export const keys = {
   networks: (env: string) => ["env", env, "networks"] as const,
   network: (env: string, id: string) => ["env", env, "networks", id] as const,
   composeProjects: (env: string) => ["env", env, "compose-projects"] as const,
-  kube: (env: string, kind: string, ns?: string) => ["env", env, "k8s", kind, ns ?? "*"] as const,
+  /** A filtered list (`filter`) is cached apart from the whole one. */
+  kube: (env: string, kind: string, ns?: string, filter?: KubeFilter) =>
+    (filter ? ["env", env, "k8s", kind, ns ?? "*", filter] : ["env", env, "k8s", kind, ns ?? "*"]) as readonly string[],
+  kubeCounts: (env: string, kinds: readonly KubeKind[], ns?: string) => ["env", env, "k8s-counts", kinds.join(","), ns ?? "*"] as const,
   kubeObject: (env: string, kind: string, ns: string, name: string) => ["env", env, "k8s", kind, ns, name] as const,
   /** Outside the `k8s` prefix: a write's invalidation should not refetch usage. */
   kubeUsage: (env: string, kind: "nodes" | "pods", ns?: string) => ["env", env, "k8s-usage", kind, ns ?? "*"] as const,
@@ -144,10 +148,11 @@ export const envStatusQuery = (env: string, kube = false) =>
       q.state.data?.state === "down" ? ENV_DOWN_POLL_MS : kube ? KUBE_STATUS_POLL_MS : false,
   });
 
-export const kubeListQuery = (env: string, kind: KubeKind, ns?: string) =>
+export const kubeListQuery = (env: string, kind: KubeKind, ns?: string, filter?: KubeFilter) =>
   queryOptions({
-    queryKey: keys.kube(env, kind, ns),
-    queryFn: async () => (await listKube({ path: { env, kind }, query: ns ? { namespace: ns } : {} })).data,
+    queryKey: keys.kube(env, kind, ns, filter),
+    queryFn: async () =>
+      (await listKube({ path: { env, kind }, query: { ...(ns ? { namespace: ns } : {}), ...(filter ? { filter } : {}) } })).data,
     retry: (failures, err) => !(err instanceof ApiError && err.status === 403) && failures < 1,
   });
 
@@ -158,6 +163,15 @@ export const kubeUsageQuery = (env: string, kind: "nodes" | "pods", ns?: string)
     queryFn: async () => (await kubeUsage({ path: { env, kind }, query: ns ? { namespace: ns } : {} })).data,
     refetchInterval: (q) => (q.state.data?.available === false ? 60_000 : 15_000),
     retry: (failures, err) => !(err instanceof ApiError && err.status === 403) && failures < 1,
+  });
+
+/** Counts without bodies, for an overview's inventory; they change slowly. */
+export const kubeCountsQuery = (env: string, kinds: readonly KubeKind[], ns?: string) =>
+  queryOptions({
+    queryKey: keys.kubeCounts(env, kinds, ns),
+    queryFn: async () => (await kubeCounts({ path: { env }, query: { kinds: kinds.join(","), ...(ns ? { namespace: ns } : {}) } })).data,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
 export const kubeObjectQuery = (env: string, kind: KubeKind, ns: string, name: string) =>

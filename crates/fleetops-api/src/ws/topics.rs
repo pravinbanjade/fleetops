@@ -13,7 +13,7 @@ use crate::{
 };
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
-use fleetops_core::kube::KubeKind;
+use fleetops_core::kube::{KubeFilter, KubeKind};
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions};
 use fleetops_core::{now_unix, Error, Result, Role};
 use fleetops_store::NewAudit;
@@ -377,17 +377,23 @@ async fn audit_kube_exec(
     }
 }
 
-/// `<kind>/<namespace>`, with `-` for all namespaces or a cluster-scoped kind.
-fn watch_id(id: &Option<String>) -> Result<(KubeKind, Option<String>)> {
+/// `<kind>/<namespace>[/<filter>]`, with `-` for all namespaces or a
+/// cluster-scoped kind, e.g. `events/-/warnings`.
+fn watch_id(id: &Option<String>) -> Result<(KubeKind, Option<String>, Option<KubeFilter>)> {
     let id = required(id, "id")?;
-    let (kind, ns) = id
-        .split_once('/')
-        .ok_or_else(|| Error::Invalid("a watch id is <kind>/<namespace or ->".into()))?;
-    let kind: KubeKind = kind.parse()?;
+    let bad = || Error::Invalid("a watch id is <kind>/<namespace or ->[/<filter>]".into());
+    let mut parts = id.splitn(3, '/');
+    let kind: KubeKind = parts.next().ok_or_else(bad)?.parse()?;
+    let ns = parts.next().ok_or_else(bad)?;
     crate::routes::kube::check_namespace(ns)?;
+    let filter = parts.next().map(KubeFilter::parse).transpose()?;
+    if let Some(f) = filter {
+        f.check(kind)?;
+    }
     Ok((
         kind,
         (ns != "-" && !kind.cluster_scoped()).then(|| ns.to_string()),
+        filter,
     ))
 }
 
@@ -402,7 +408,7 @@ pub(super) async fn kube_watch(
     let (s, cu, sub) = (c.s, c.cu, c.sub);
     let crate::routes::kube::KubeCtx { env, ops, grant } =
         crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead).await?;
-    let (kind, ns) = watch_id(&id)?;
+    let (kind, ns, filter) = watch_id(&id)?;
     crate::authz::deny_audited(
         s,
         cu,
@@ -411,10 +417,14 @@ pub(super) async fn kube_watch(
         grant.check_list(kind, ns.as_deref()),
     )
     .await?;
-    let mut w = s
-        .hubs
-        .kube_watches
-        .subscribe(&env, ops, kind, ns, s.config.kube_watch_grace);
+    let mut w = s.hubs.kube_watches.subscribe_filtered(
+        &env,
+        ops,
+        kind,
+        ns,
+        filter,
+        s.config.kube_watch_grace,
+    );
     let q = c.queue(Policy::Block);
     let qq = q.clone();
     let task = tokio::spawn(async move {

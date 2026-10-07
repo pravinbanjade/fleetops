@@ -139,6 +139,17 @@ impl FakeKube {
             .insert((kind, ns.into(), name.into()), obj);
     }
 
+    /// Sets one object's listed status, e.g. an event's `Warning`.
+    pub fn set_status(&self, kind: KubeKind, ns: &str, name: &str, status: &str) {
+        if let Some(o) =
+            self.objects
+                .lock()
+                .unwrap()
+                .get_mut(&(kind, ns.to_string(), name.to_string()))
+        {
+            o.row.status = status.into();
+        }
+    }
     pub fn set_forbidden(&self, kind: KubeKind) {
         self.forbidden.lock().unwrap().insert(kind);
     }

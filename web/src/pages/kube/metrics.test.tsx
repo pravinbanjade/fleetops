@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { kubeRoutes, kubeRow, loggedIn, renderApp } from "@/test/app";
 import { mockFetch } from "@/test/fetch";
@@ -128,5 +128,42 @@ describe("Kubernetes metrics and events", () => {
     expect(await within(table).findByText("125m")).toBeInTheDocument();
     expect(within(table).getByText("64Mi")).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: /CPU/ })).toBeInTheDocument();
+  });
+
+  it("counts the inventory from one request and watches only warnings", async () => {
+    const calls = mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      ...noMetrics,
+      "GET /api/v1/envs/k/k8s/counts": {
+        json: {
+          services: { count: 14 },
+          ingresses: { count: 1 },
+          configmaps: { count: 31 },
+          secrets: { count: null, error: "forbidden" },
+          namespaces: { count: 6 },
+        },
+      },
+    });
+    renderApp("/envs/k");
+    const resources = await screen.findByRole("heading", { name: "Resources" });
+    const panel = resources.closest("section")!;
+    expect(await within(panel).findByText("14")).toBeInTheDocument();
+    expect(within(panel).getByText("31")).toBeInTheDocument();
+    expect(within(panel).getByTitle("No permission")).toHaveTextContent("—");
+    const paths = calls.map((c) => c.path);
+    expect(paths).toContain("/api/v1/envs/k/k8s/counts?kinds=services%2Cingresses%2Cconfigmaps%2Csecrets%2Cnamespaces");
+    for (const kind of ["services", "ingresses", "configmaps", "secrets"]) {
+      expect(paths.some((p) => p.startsWith(`/api/v1/envs/k/k8s/${kind}`))).toBe(false);
+    }
+    expect(paths).toContain("/api/v1/envs/k/k8s/events?filter=warnings");
+    const { FakeWebSocket } = await import("@/test/fake-ws");
+    await waitFor(() => {
+      const sock = FakeWebSocket.latest();
+      if (sock && sock.readyState !== FakeWebSocket.OPEN) act(() => sock.open());
+      const ids = sock?.frames().filter((m) => m.topic === "kube-watch").map((m) => m.id) ?? [];
+      expect(ids).toContain("events/-/warnings");
+      expect(ids).not.toContain("events/-");
+    });
   });
 });

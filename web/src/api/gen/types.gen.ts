@@ -603,6 +603,17 @@ export type KubeContexts = {
     current?: string | null;
 };
 
+/**
+ * How many objects of one kind there are, or why that is unknown.
+ */
+export type KubeCount = {
+    count?: number | null;
+    /**
+     * An `ErrorBody` code (`forbidden`, `upstream`…) when `count` is absent.
+     */
+    error?: string | null;
+};
+
 export type KubeEvent = {
     count: number;
     /**
@@ -617,6 +628,12 @@ export type KubeEvent = {
      */
     type: string;
 };
+
+/**
+ * A server-side narrowing of a list or watch (spec 3e §4). Only Events
+ * have one: their warnings, the rows an overview shows.
+ */
+export type KubeFilter = 'warnings';
 
 export type KubeKind = 'namespaces' | 'nodes' | 'deployments' | 'statefulsets' | 'daemonsets' | 'jobs' | 'cronjobs' | 'pods' | 'services' | 'ingresses' | 'configmaps' | 'secrets' | 'events';
 
@@ -2399,6 +2416,47 @@ export type ApplyKubeResponses = {
 
 export type ApplyKubeResponse = ApplyKubeResponses[keyof ApplyKubeResponses];
 
+export type KubeCountsData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query: {
+        /**
+         * Plural kinds, comma-separated, e.g. `services,secrets`.
+         */
+        kinds: string;
+        /**
+         * Omit for all namespaces.
+         */
+        namespace?: string;
+    };
+    url: '/api/v1/envs/{env}/k8s/counts';
+};
+
+export type KubeCountsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type KubeCountsError = KubeCountsErrors[keyof KubeCountsErrors];
+
+export type KubeCountsResponses = {
+    /**
+     * By plural kind; a kind the cluster refuses has `error` instead of `count`
+     */
+    200: {
+        [key: string]: KubeCount;
+    };
+};
+
+export type KubeCountsResponse = KubeCountsResponses[keyof KubeCountsResponses];
+
 export type ListHelmReleasesData = {
     body?: never;
     path: {
@@ -2667,6 +2725,10 @@ export type ListKubeData = {
          * Omit for all namespaces.
          */
         namespace?: string;
+        /**
+         * `warnings` (events only): just the Warning events, filtered by the cluster.
+         */
+        filter?: string;
     };
     url: '/api/v1/envs/{env}/k8s/{kind}';
 };

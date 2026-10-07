@@ -130,3 +130,108 @@ async fn events_are_read_only() {
     assert!(d.json["message"].as_str().unwrap().contains("read-only"));
     assert!(t.fake.kube.calls().iter().all(|c| !c.starts_with("delete")));
 }
+
+#[tokio::test]
+async fn counts_answer_per_kind_and_a_refusal_is_per_kind_too() {
+    let (t, admin) = kube_app().await;
+    let k = &t.fake.kube;
+    k.object(KubeKind::Services, "team-a", "web");
+    k.object(KubeKind::Services, "team-b", "db");
+    k.object(KubeKind::ConfigMaps, "team-a", "cfg");
+    k.set_forbidden(KubeKind::Secrets);
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/counts?kinds=services,configmaps,secrets,services",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json["services"]["count"], 2);
+    assert_eq!(r.json["configmaps"]["count"], 1);
+    assert_eq!(r.json["secrets"]["count"], serde_json::Value::Null);
+    assert_eq!(r.json["secrets"]["error"], "forbidden");
+    let one = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/counts?kinds=services&namespace=team-b",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(one.json["services"]["count"], 1);
+    let bad = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/counts?kinds=widgets",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(bad.status, 404);
+}
+
+#[tokio::test]
+async fn a_namespace_limited_count_sums_only_its_namespaces() {
+    let (t, admin) = kube_app().await;
+    let k = &t.fake.kube;
+    k.object(KubeKind::Services, "team-a", "web");
+    k.object(KubeKind::Services, "team-b", "db");
+    k.object(KubeKind::Namespaces, "-", "team-a");
+    k.object(KubeKind::Namespaces, "-", "team-b");
+    t.create_user(&admin, "bob", "bob-password-1", "user").await;
+    t.grant("bob", "k", "operator", Some(&["team-a"])).await;
+    let bob = session_from(&t.login("bob", "bob-password-1").await);
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/counts?kinds=services,namespaces",
+            None,
+            Some(&bob),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json["services"]["count"], 1);
+    assert_eq!(r.json["namespaces"]["count"], 1);
+    let other = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/counts?kinds=services&namespace=team-b",
+            None,
+            Some(&bob),
+        ))
+        .await;
+    assert_eq!(other.status, 403);
+}
+
+#[tokio::test]
+async fn the_warnings_filter_keeps_warning_events_and_is_for_events_only() {
+    let (t, admin) = kube_app().await;
+    let k = &t.fake.kube;
+    k.object(KubeKind::Events, "team-a", "a.1");
+    k.object(KubeKind::Events, "team-a", "b.1");
+    k.set_status(KubeKind::Events, "team-a", "a.1", "Warning");
+    k.set_status(KubeKind::Events, "team-a", "b.1", "Normal");
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/events?filter=warnings",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    let rows = r.json["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["name"], "a.1");
+    let pods = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/pods?filter=warnings",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(pods.status, 400);
+}

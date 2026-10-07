@@ -3,7 +3,7 @@
 //! the current rows so a late or lagging subscriber starts from a snapshot.
 
 use fleetops_core::env::Environment;
-use fleetops_core::kube::{KubeKind, KubeOps, KubeRow, WatchEvent};
+use fleetops_core::kube::{KubeFilter, KubeKind, KubeOps, KubeRow, WatchEvent};
 use futures_util::StreamExt;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, Weak};
@@ -62,7 +62,12 @@ struct Shared {
 }
 
 impl Shared {
-    fn start(ops: Arc<dyn KubeOps>, kind: KubeKind, ns: Option<String>) -> Arc<Shared> {
+    fn start(
+        ops: Arc<dyn KubeOps>,
+        kind: KubeKind,
+        ns: Option<String>,
+        filter: Option<KubeFilter>,
+    ) -> Arc<Shared> {
         let shared = Arc::new(Shared {
             tx: broadcast::channel(FEED_BUFFER).0,
             state: Mutex::new(State::default()),
@@ -70,7 +75,10 @@ impl Shared {
         });
         let s = shared.clone();
         let handle = tokio::spawn(async move {
-            let mut stream = ops.watch(kind, ns.as_deref());
+            let mut stream = match filter {
+                Some(f) => ops.watch_filtered(kind, ns.as_deref(), f),
+                None => ops.watch(kind, ns.as_deref()),
+            };
             let end = loop {
                 match stream.next().await {
                     Some(Ok(ev)) => {
@@ -107,7 +115,7 @@ impl Shared {
     }
 }
 
-type Key = (i64, usize, KubeKind, Option<String>);
+type Key = (i64, usize, KubeKind, Option<String>, Option<KubeFilter>);
 
 #[derive(Default)]
 pub struct Watches {
@@ -123,6 +131,20 @@ impl Watches {
         ns: Option<String>,
         grace: Duration,
     ) -> WatchSub {
+        self.subscribe_filtered(env, ops, kind, ns, None, grace)
+    }
+
+    /// `subscribe` to the rows `filter` keeps: a separate upstream watch,
+    /// narrowed by the apiserver, shared by everyone asking for the same.
+    pub fn subscribe_filtered(
+        self: &Arc<Self>,
+        env: &Arc<dyn Environment>,
+        ops: Arc<dyn KubeOps>,
+        kind: KubeKind,
+        ns: Option<String>,
+        filter: Option<KubeFilter>,
+        grace: Duration,
+    ) -> WatchSub {
         // The instance pointer is part of the key: a re-created environment
         // gets a fresh watch, as Docker event hubs do.
         let key = (
@@ -130,12 +152,13 @@ impl Watches {
             Arc::as_ptr(env) as *const () as usize,
             kind,
             ns.clone(),
+            filter,
         );
         let mut map = self.map.lock().unwrap();
         let shared = match map.get(&key) {
             Some(s) if s.state.lock().unwrap().ended.is_none() => s.clone(),
             _ => {
-                let s = Shared::start(ops, kind, ns);
+                let s = Shared::start(ops, kind, ns, filter);
                 map.insert(key.clone(), s.clone());
                 s
             }

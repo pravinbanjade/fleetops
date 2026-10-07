@@ -17,9 +17,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
-import type { HelmRelease, KubeKind, KubeList, KubeRow, KubeUsageRow, RowHealth } from "@/api/gen/types.gen";
+import type { HelmRelease, KubeCount, KubeFilter, KubeKind, KubeList, KubeRow, KubeUsageRow, RowHealth } from "@/api/gen/types.gen";
 import { ApiError } from "@/api/client";
-import { envStatusQuery, helmReleasesQuery, kubeListQuery } from "@/api/queries";
+import { envStatusQuery, helmReleasesQuery, kubeCountsQuery, kubeListQuery } from "@/api/queries";
 import { Page } from "@/components/Page";
 import { Readout } from "@/components/Readout";
 import { StateBadge, type Tone } from "@/components/StateBadge";
@@ -48,9 +48,9 @@ const BUSIEST_SHOWN = 6;
 type Live = { q: UseQueryResult<KubeList>; paused: WatchPause | null; retry: () => void; forbidden: boolean };
 
 /** A kind's list, kept live from the cluster's watch once its snapshot lands. */
-function useLiveKind(env: string, kind: KubeKind, ns: string | undefined): Live {
-  const live = useKubeWatch(env, kind, ns);
-  const q = useQuery({ ...kubeListQuery(env, kind, ns), enabled: !live.synced });
+function useLiveKind(env: string, kind: KubeKind, ns: string | undefined, filter?: KubeFilter): Live {
+  const live = useKubeWatch(env, kind, ns, undefined, filter);
+  const q = useQuery({ ...kubeListQuery(env, kind, ns, filter), enabled: !live.synced });
   const forbidden = q.error instanceof ApiError && q.error.status === 403;
   return { q, paused: forbidden ? null : live.paused, retry: live.retry, forbidden };
 }
@@ -71,7 +71,9 @@ export function KubeOverviewPage({ env }: { env: string }) {
   const jobs = useLiveKind(env, "jobs", ns);
   const cronjobs = useLiveKind(env, "cronjobs", ns);
   const nodes = useLiveKind(env, "nodes", undefined);
-  const events = useLiveKind(env, "events", ns);
+  // Only warnings, filtered by the cluster: a busy cluster writes many
+  // Normal events a second, and this panel shows none of them.
+  const events = useLiveKind(env, "events", ns, "warnings");
   const helm = useQuery(helmReleasesQuery(env, ns));
   const nodeUsage = useKubeUsage(env, "nodes");
   const podUsage = useKubeUsage(env, "pods", ns);
@@ -395,7 +397,7 @@ function NodesPanel({ env, nodes, usage }: { env: string; nodes: Live; usage?: M
       icon={Cpu}
       aside={
         rows.length > NODES_SHOWN ? (
-          <Link to="/envs/$env/k8s/$kind" params={{ env, kind: "nodes" }} className="hover:text-foreground hover:underline">
+          <Link to="/envs/$env/k8s/$kind" params={{ env, kind: "nodes" }} className="-mx-1 -my-1.5 inline-flex min-h-8 items-center rounded-sm px-1 hover:text-foreground hover:underline">
             All {rows.length}
           </Link>
         ) : rows.length ? (
@@ -516,7 +518,7 @@ function WarningsPanel({ env, events, where }: { env: string; events: Live; wher
       title="Recent warnings"
       icon={History}
       aside={
-        <Link to="/envs/$env/k8s/$kind" params={{ env, kind: "events" }} className="hover:text-foreground hover:underline">
+        <Link to="/envs/$env/k8s/$kind" params={{ env, kind: "events" }} className="-mx-1 -my-1.5 inline-flex min-h-8 items-center rounded-sm px-1 hover:text-foreground hover:underline">
           {warnings.length > WARNINGS_SHOWN ? `All ${warnings.length} warnings` : "All events"}
         </Link>
       }
@@ -587,14 +589,15 @@ function BusiestPanel({ env, rows }: { env: string; rows: KubeUsageRow[] }) {
       title="Busiest pods"
       icon={Flame}
       aside={
-        <span role="group" aria-label="Rank by" className="flex gap-0.5">
+        // 32px targets; the negative margin keeps the header as tall as its neighbours'.
+        <span role="group" aria-label="Rank by" className="-my-2 -mr-1.5 flex gap-0.5">
           {(["cpu", "memory"] as const).map((k) => (
             <button
               key={k}
               type="button"
               aria-pressed={by === k}
               onClick={() => setBy(k)}
-              className="rounded-sm px-1.5 py-0.5 transition-colors hover:text-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
+              className="inline-flex h-8 items-center rounded-sm px-2.5 transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 aria-pressed:bg-accent aria-pressed:text-foreground"
             >
               {k === "cpu" ? "CPU" : "Memory"}
             </button>
@@ -636,9 +639,14 @@ function BusiestPanel({ env, rows }: { env: string; rows: KubeUsageRow[] }) {
   );
 }
 
+const COUNTED: readonly KubeKind[] = ["services", "ingresses", "configmaps", "secrets", "namespaces"];
+
 /** Counts of everything else, each a door to its list. */
 function InventoryPanel({ env, ns, helm }: { env: string; ns?: string; helm: UseQueryResult<HelmRelease[]> }) {
-  const count = (kind: KubeKind, scoped = true) => <KindCount env={env} kind={kind} ns={scoped ? ns : undefined} />;
+  // One request for every count, from metadata only: no Secret data or
+  // ConfigMap bodies cross the wire to draw five numbers.
+  const counts = useQuery(kubeCountsQuery(env, COUNTED, ns));
+  const count = (kind: KubeKind, scoped = true) => <KindCount env={env} kind={kind} ns={scoped ? ns : undefined} counts={counts} />;
   const items: [ReactNode, string, LucideIcon, ReactNode][] = [
     [count("services"), "Services", Waypoints, <KindLink env={env} kind="services" />],
     [count("ingresses"), "Ingresses", Globe, <KindLink env={env} kind="ingresses" />],
@@ -671,10 +679,14 @@ function InventoryPanel({ env, ns, helm }: { env: string; ns?: string; helm: Use
   );
 }
 
-function KindCount({ env, kind, ns }: { env: string; kind: KubeKind; ns?: string }) {
-  const { data, error, isPending } = useQuery(kubeListQuery(env, kind, ns));
-  if (data) return <>{data.truncated ? `${data.rows.length}+` : data.rows.length}</>;
-  return <span title={error ? errorMessage(error) : undefined}>{isPending ? "" : "—"}</span>;
+function KindCount({ env, kind, ns, counts }: { env: string; kind: KubeKind; ns?: string; counts: UseQueryResult<Record<string, KubeCount>> }) {
+  // A list already in the cache (its page was open) is live and exact; prefer it.
+  const cached = useQuery({ ...kubeListQuery(env, kind, ns), enabled: false }).data;
+  if (cached && !cached.truncated) return <>{cached.rows.length}</>;
+  const c = counts.data?.[kind];
+  if (c?.count != null) return <>{c.count}</>;
+  const why = c?.error === "forbidden" ? "No permission" : c?.error ? c.error : counts.error ? errorMessage(counts.error) : undefined;
+  return <span title={why}>{counts.isPending ? "" : "—"}</span>;
 }
 
 function KindLink({ env, kind }: { env: string; kind: KubeKind }) {

@@ -618,3 +618,37 @@ async fn usage_without_metrics_server_is_unavailable_not_an_error() {
         Err(Error::Invalid(_))
     ));
 }
+
+#[tokio::test]
+async fn counts_match_the_list_without_reading_bodies() {
+    let ops = common::ops();
+    for kind in [KubeKind::Pods, KubeKind::ConfigMaps, KubeKind::Secrets] {
+        let listed = ops.list(kind, Some(NS)).await.unwrap().rows.len() as u64;
+        assert_eq!(ops.count(kind, Some(NS)).await.unwrap(), listed, "{kind:?}");
+    }
+    // Past one page, the count comes from remainingItemCount.
+    let all = ops.list(KubeKind::Pods, None).await.unwrap().rows.len() as u64;
+    assert!(all > 1);
+    assert_eq!(ops.count(KubeKind::Pods, None).await.unwrap(), all);
+}
+
+#[tokio::test]
+async fn the_warnings_filter_runs_on_the_apiserver() {
+    use fleetops_core::kube::KubeFilter;
+    let ops = common::ops();
+    let all = ops.list(KubeKind::Events, None).await.unwrap();
+    let warnings = ops
+        .list_filtered(KubeKind::Events, None, KubeFilter::Warnings)
+        .await
+        .unwrap();
+    assert!(warnings.rows.iter().all(|r| r.status == "Warning"));
+    assert_eq!(
+        warnings.rows.len(),
+        all.rows.iter().filter(|r| r.status == "Warning").count()
+    );
+    assert!(matches!(
+        ops.list_filtered(KubeKind::Pods, None, KubeFilter::Warnings)
+            .await,
+        Err(Error::Invalid(_))
+    ));
+}

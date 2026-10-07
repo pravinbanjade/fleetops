@@ -167,11 +167,16 @@ where
 
 /// A live list of `kind` through `api`.
 pub fn watch(api: kube::Api<DynamicObject>, kind: KubeKind) -> BoxStream<WatchEvent> {
-    stream(
-        watcher::watcher(api, watcher::Config::default()).boxed(),
-        kind,
-        BACKOFF_START,
-    )
+    watch_with(api, kind, watcher::Config::default())
+}
+
+/// `watch` with the apiserver narrowing the objects, e.g. by field selector.
+pub fn watch_with(
+    api: kube::Api<DynamicObject>,
+    kind: KubeKind,
+    config: watcher::Config,
+) -> BoxStream<WatchEvent> {
+    stream(watcher::watcher(api, config).boxed(), kind, BACKOFF_START)
 }
 
 #[cfg(test)]
