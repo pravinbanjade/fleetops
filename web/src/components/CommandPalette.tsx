@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Container, FileUp, HardDrive, Layers, Play, RotateCw, Search, Server, Square, UserRound, Waypoints } from "lucide-react";
+import { Container, FileUp, HardDrive, Layers, Play, RotateCw, Search, Server, Square, UserRound, Waypoints, Puzzle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { accessOf } from "@/api/access";
-import { containersQuery, envsQuery, imagesQuery, keys, networksQuery, volumesQuery } from "@/api/queries";
+import { containersQuery, envsQuery, imagesQuery, keys, networksQuery, volumesQuery, discoveryQuery } from "@/api/queries";
 import { containerAction } from "@/api/gen/sdk.gen";
 import type { ContainerActionName, ContainerSummary } from "@/api/gen/types.gen";
 import { useSession } from "@/auth/session";
@@ -22,6 +22,7 @@ import { errorMessage } from "@/lib/errors";
 import { shortId } from "@/lib/format";
 import { ACTIONS, actionsFor } from "@/pages/containers/actions";
 import { ADMIN_NAV, KUBE_NAV, NAV, kubeGroupOf, navHref } from "./nav";
+import { refOf } from "@/pages/kube/generic/ref";
 import { openApplyYaml } from "@/components/yaml-editor/applyYaml";
 import { isKube } from "@/lib/env";
 
@@ -95,6 +96,7 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
   const images = useQuery({ ...imagesQuery(e), enabled: docker });
   const volumes = useQuery({ ...volumesQuery(e), enabled: docker });
   const networks = useQuery({ ...networksQuery(e), enabled: docker });
+  const discovered = useQuery({ ...discoveryQuery(e), enabled: kube });
 
   /** Closes the palette, then navigates. */
   const go = (nav: () => Promise<void>) => {
@@ -128,6 +130,20 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
                   <n.icon />
                   {n.label}
                   {group && <span className="ml-auto text-xs text-muted-foreground">{group.label}</span>}
+                </CommandItem>
+              );
+            })}
+          {kube &&
+            discovered.data?.kinds.map((k) => {
+              const label = `${k.kind} (${k.api.group || "core"})`;
+              return (
+                <CommandItem
+                  key={`${k.api.group}/${k.api.resource}`}
+                  value={`page custom resource ${label}`}
+                  onSelect={() => go(() => navigate({ to: "/envs/$env/k8s/r/$group/$version/$resource", params: { env: e, ...refOf(k) } }))}
+                >
+                  <Puzzle />
+                  {label}
                 </CommandItem>
               );
             })}

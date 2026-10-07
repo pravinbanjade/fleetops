@@ -69,4 +69,41 @@ describe("custom resources", () => {
     renderApp("/envs/k/k8s/r/example.fleetops.io/v1/widgets");
     expect(await screen.findByText(/credentials can't list Widget/)).toBeInTheDocument();
   });
+
+  it("lists discovered kinds under Custom Resources, by API group", async () => {
+    mockFetch({ ...loggedIn, ...kubeRoutes, ...genericRoutes });
+    renderApp("/envs/k");
+    const nav = await screen.findByRole("navigation", { name: "Environment" });
+    await userEvent.click(await within(nav).findByRole("button", { name: /Custom Resources/ }));
+    expect(within(nav).getByRole("link", { name: "Definitions" })).toHaveAttribute(
+      "href",
+      "/envs/k/k8s/r/apiextensions.k8s.io/v1/customresourcedefinitions",
+    );
+    await userEvent.click(within(nav).getByRole("button", { name: /example\.fleetops\.io/ }));
+    expect(within(nav).getByRole("link", { name: "Widget" })).toHaveAttribute("href", "/envs/k/k8s/r/example.fleetops.io/v1/widgets");
+    expect(within(nav).getByRole("status")).toHaveTextContent("Couldn't load: metrics.k8s.io");
+  });
+
+  it("says when discovery fails and offers a retry, leaving curated kinds alone", async () => {
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      "GET /api/v1/envs/k/k8s/discovery": { status: 502, json: { code: "upstream", message: "down", request_id: null } },
+    });
+    renderApp("/envs/k");
+    const nav = await screen.findByRole("navigation", { name: "Environment" });
+    expect(await within(nav).findByText(/Couldn't discover API resources/, {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: /Workloads/ })).toBeInTheDocument();
+  });
+
+  it("finds a discovered kind from the command palette", async () => {
+    mockFetch({ ...loggedIn, ...kubeRoutes, ...genericRoutes });
+    renderApp("/envs/k");
+    await screen.findByRole("navigation", { name: "Environment" });
+    await userEvent.keyboard("{Control>}k{/Control}");
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByRole("combobox"), "Widget");
+    expect(await within(dialog).findByRole("option", { name: /Widget \(example\.fleetops\.io\)/ })).toBeInTheDocument();
+  });
 });

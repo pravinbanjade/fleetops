@@ -26,9 +26,8 @@ import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
 import { openApplyYaml } from "@/components/yaml-editor/applyYaml";
 import { ApplyYamlHost } from "@/components/yaml-editor/ApplyYamlHost";
-
-const LINK =
-  "group/link relative flex h-8 items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-cord-soft data-[status=active]:font-medium data-[status=active]:text-foreground [&[data-status=active]_svg]:text-primary";
+import { CustomResourcesNav } from "@/pages/kube/generic/CustomResourcesNav";
+import { LINK, useGroupToggles } from "./sidebar";
 
 export function Shell() {
   const { env } = useParams({ strict: false });
@@ -116,31 +115,6 @@ function NavRow({ item, env, nested }: { item: NavItem; env: string; nested?: bo
   );
 }
 
-const GROUPS_KEY = "fleetops.nav.groups";
-
-/** Which groups the operator opened or closed by hand; the rest follow the current page. */
-function useGroupToggles(): [Record<string, boolean>, (id: string, open: boolean) => void] {
-  const [toggles, setToggles] = useState<Record<string, boolean>>(() => {
-    try {
-      const v: unknown = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? "{}");
-      return v && typeof v === "object" ? (v as Record<string, boolean>) : {};
-    } catch {
-      return {};
-    }
-  });
-  const set = (id: string, open: boolean) =>
-    setToggles((t) => {
-      const next = { ...t, [id]: open };
-      try {
-        localStorage.setItem(GROUPS_KEY, JSON.stringify(next));
-      } catch {
-        /* storage blocked: the choice lasts this page only */
-      }
-      return next;
-    });
-  return [toggles, set];
-}
-
 /**
  * The Kubernetes rail: the overview, then each API group folded under its
  * name. A group opens by itself while one of its pages is shown, so the
@@ -153,7 +127,7 @@ function KubeSidebar({ env }: { env: string }) {
     const href = navHref(item, env);
     return pathname === href || pathname.startsWith(`${href}/`);
   };
-  return KUBE_SIDEBAR.map((entry) => {
+  const curated = KUBE_SIDEBAR.map((entry) => {
     if (!isGroup(entry)) return <NavRow key={entry.label} item={entry} env={env} />;
     const current = entry.items.some(here);
     const open = toggles[entry.id] ?? current;
@@ -187,6 +161,12 @@ function KubeSidebar({ env }: { env: string }) {
       </div>
     );
   });
+  return (
+    <>
+      {curated}
+      <CustomResourcesNav env={env} />
+    </>
+  );
 }
 
 /** The FleetOps mark, drawn from the favicon's geometry in the theme's colours. */

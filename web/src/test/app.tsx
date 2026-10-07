@@ -61,6 +61,7 @@ export const kubeRoutes = {
   "GET /api/v1/envs/k/k8s/pods": {
     json: { rows: [kubeRow("web-1", "apps", { ready: "1/1", restarts: "0", node: "n1", ip: "" })], truncated: false },
   },
+  "GET /api/v1/envs/k/k8s/discovery": { json: { kinds: [], failed_groups: [] } },
 };
 
 /** A custom resource kind, as discovery lists it. */
