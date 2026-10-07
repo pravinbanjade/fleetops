@@ -23,6 +23,7 @@ docker save --platform "$plat" busybox:1.37 |
   docker exec -i "$node" ctr --namespace=k8s.io images import --digests --snapshotter=overlayfs - >/dev/null 2>&1 ||
   echo "busybox preload failed; the cluster will pull it"
 kubectl apply -f "$(dirname "$0")/kube-it-fixtures.yaml" >/dev/null
+kubectl wait --for=condition=Established crd/widgets.example.fleetops.io --timeout=60s >/dev/null
 kubectl -n fleetops-it rollout status deploy/web --timeout=120s >/dev/null
 kubectl -n fleetops-it wait --for=condition=Ready pod/ticker --timeout=120s >/dev/null
 kubectl -n fleetops-it create token fleetops-it --duration=2h > "$out/token"

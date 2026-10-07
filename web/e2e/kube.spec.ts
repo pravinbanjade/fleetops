@@ -47,7 +47,8 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
 
   await test.step("browse deployments in a namespace", async () => {
     await page.goto(`/envs/${ENV}/k8s/deployments`);
-    await page.getByRole("combobox", { name: "Namespace" }).selectOption("fleetops-it");
+    await page.getByRole("combobox", { name: "Namespace", exact: true }).click();
+    await page.getByRole("option", { name: "fleetops-it", exact: true }).click();
     await expect(page.getByRole("link", { name: "web", exact: true })).toBeVisible();
   });
 
@@ -143,9 +144,13 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
     await op.getByRole("button", { name: "Log in" }).click();
     await expect(op.getByRole("navigation", { name: "Environment" })).toBeVisible();
     await op.goto(`/envs/${ENV}/k8s/pods`);
-    await op.getByRole("combobox", { name: "Namespace" }).selectOption("");
+    await op.getByRole("combobox", { name: "Namespace", exact: true }).click();
+    await op.getByRole("option", { name: "All namespaces" }).click();
     await expect(op.getByRole("link", { name: "ticker", exact: true })).toBeVisible();
-    await expect(op.getByRole("combobox", { name: "Namespace" }).locator("option")).toHaveText(["All namespaces", "fleetops-it"]);
+    // The picker offers only the namespaces in the grant.
+    await op.getByRole("combobox", { name: "Namespace", exact: true }).click();
+    await expect(op.getByRole("option")).toHaveText([/^All namespaces/, "fleetops-it"]);
+    await op.keyboard.press("Escape");
     const outside = `e2e-out-${Date.now().toString(36)}`;
     const inside = `e2e-in-${Date.now().toString(36)}`;
     const kc = join(process.env.FLEETOPS_KUBE_IT ?? "../target/kube-it", "kubeconfig");
@@ -158,6 +163,39 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
       execFileSync("kubectl", ["--kubeconfig", kc, "-n", "default", "delete", "pod", outside, "--wait=false"]);
       execFileSync("kubectl", ["--kubeconfig", kc, "-n", "fleetops-it", "delete", "pod", inside, "--wait=false"]);
       await ctx.close();
+    }
+  });
+
+  await test.step("browse to a custom resource and edit it", async () => {
+    const kc = join(process.env.FLEETOPS_KUBE_IT ?? "../target/kube-it", "kubeconfig");
+    const name = `e2e-w-${Date.now().toString(36)}`;
+    execFileSync("kubectl", ["--kubeconfig", kc, "-n", "fleetops-it", "apply", "-f", "-"], {
+      input: `apiVersion: example.fleetops.io/v1\nkind: Widget\nmetadata: {name: ${name}}\nspec: {size: 2}\n`,
+    });
+    try {
+      await page.goto(`/envs/${ENV}`);
+      const nav = page.getByRole("navigation", { name: "Environment" });
+      await nav.getByRole("button", { name: /Custom Resources/ }).click();
+      await nav.getByRole("button", { name: /example\.fleetops\.io/ }).click();
+      await nav.getByRole("link", { name: "Widget", exact: true }).click();
+      const row = page.getByRole("row").filter({ has: page.getByRole("link", { name, exact: true }) });
+      await expect(row).toContainText("2");
+      await row.getByRole("link", { name, exact: true }).click();
+      await page.getByRole("button", { name: "Edit YAML" }).click();
+      const dialog = page.getByRole("dialog");
+      const editor = dialog.getByRole("textbox", { name: "YAML" });
+      await expect(editor).toContainText("size: 2");
+      const yaml = await editor.innerText();
+      await editor.click();
+      await page.keyboard.press("ControlOrMeta+A");
+      await page.keyboard.insertText(yaml.replace("size: 2", "size: 9"));
+      await dialog.getByRole("button", { name: "Review" }).click();
+      await dialog.getByRole("button", { name: "Apply" }).click();
+      await expect(dialog).toBeHidden();
+      await page.getByRole("navigation", { name: "Environment" }).getByRole("link", { name: "Widget", exact: true }).click();
+      await expect(page.getByRole("row").filter({ has: page.getByRole("link", { name, exact: true }) })).toContainText("9");
+    } finally {
+      execFileSync("kubectl", ["--kubeconfig", kc, "-n", "fleetops-it", "delete", "widget", name, "--wait=false"]);
     }
   });
 

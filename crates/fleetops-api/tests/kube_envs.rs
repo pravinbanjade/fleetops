@@ -281,7 +281,10 @@ async fn a_kube_agent_can_read_custom_resources_and_keeps_it_across_rotation() {
     let rotated = t
         .send(post("/api/v1/envs/kc/agent/rotate", json!({}), &admin))
         .await;
-    assert!(rotated.json["command"].as_str().unwrap().contains(everything));
+    assert!(rotated.json["command"]
+        .as_str()
+        .unwrap()
+        .contains(everything));
     let plain = t
         .send(post(
             "/api/v1/envs",

@@ -771,3 +771,151 @@ async fn cordon_marks_the_node_and_uncordon_clears_it() {
     let r = ops.get(KubeKind::Nodes, "-", &node).await.unwrap().row;
     assert_eq!((r.status.as_str(), r.health), ("Ready", RowHealth::Ok));
 }
+
+// ---- slice 3g: the new curated kinds and custom resources ----------------
+
+async fn widgets(ops: &fleetops_kube::KubeClient) -> fleetops_core::kube::ApiKind {
+    let d = ops.discover(true).await.unwrap();
+    d.kinds
+        .into_iter()
+        .find(|k| k.kind == "Widget")
+        .expect("Widget discovered")
+}
+
+/// A fresh Widget `name` of `size` in the test namespace.
+async fn make_widget(name: &str, size: i64) {
+    use kube::api::DynamicObject;
+    let ar = kube::discovery::ApiResource::from_gvk_with_plural(
+        &kube::core::GroupVersionKind::gvk("example.fleetops.io", "v1", "Widget"),
+        "widgets",
+    );
+    let api: Api<DynamicObject> = Api::namespaced_with(common::kube_client(), NS, &ar);
+    let obj: DynamicObject = serde_json::from_value(serde_json::json!({
+        "apiVersion": "example.fleetops.io/v1", "kind": "Widget",
+        "metadata": {"name": name}, "spec": {"size": size}}))
+    .unwrap();
+    let _ = api.delete(name, &Default::default()).await;
+    common::eventually("the old widget to go", || async {
+        api.get_opt(name).await.unwrap().is_none()
+    })
+    .await;
+    api.create(&PostParams::default(), &obj).await.unwrap();
+}
+
+#[tokio::test]
+async fn every_new_curated_kind_lists() {
+    use KubeKind::*;
+    let ops = common::ops();
+    for kind in [
+        ReplicaSets,
+        HorizontalPodAutoscalers,
+        NetworkPolicies,
+        PersistentVolumeClaims,
+        PersistentVolumes,
+        StorageClasses,
+        ServiceAccounts,
+        Roles,
+        RoleBindings,
+        ClusterRoles,
+        ClusterRoleBindings,
+    ] {
+        let ns = (!kind.cluster_scoped()).then_some(NS);
+        ops.list(kind, ns)
+            .await
+            .unwrap_or_else(|e| panic!("{kind:?}: {e}"));
+    }
+    let pvc = ops.list(PersistentVolumeClaims, Some(NS)).await.unwrap();
+    assert!(pvc.rows.iter().any(|r| r.name == "data"), "{pvc:?}");
+    assert!(!ops
+        .list(StorageClasses, None)
+        .await
+        .unwrap()
+        .rows
+        .is_empty());
+    let rs = ops.list(ReplicaSets, Some(NS)).await.unwrap();
+    assert!(
+        rs.rows
+            .iter()
+            .any(|r| r.columns.get("owner").map(String::as_str) == Some("web")),
+        "{rs:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_custom_resource_is_discovered_listed_with_columns_edited_and_deleted() {
+    let ops = common::ops();
+    let k = widgets(&ops).await;
+    assert!(k.namespaced);
+    assert_eq!(
+        k.columns
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Size"]
+    );
+    make_widget("w-crud", 3).await;
+    let list = ops.generic_list(&k, Some(NS)).await.unwrap();
+    let row = list
+        .rows
+        .iter()
+        .find(|r| r.name == "w-crud")
+        .expect("listed");
+    assert_eq!(row.columns["Size"], "3");
+    let ed = ops.generic_editable(&k, NS, "w-crud").await.unwrap();
+    let yaml = ed.yaml.replace("size: 3", "size: 7");
+    assert_ne!(yaml, ed.yaml, "{}", ed.yaml);
+    ops.generic_replace(
+        &k,
+        NS,
+        "w-crud",
+        &yaml,
+        &ed.resource_version,
+        fleetops_core::kube::ApplyMode::Commit { force: false },
+    )
+    .await
+    .unwrap();
+    let got = ops.generic_get(&k, NS, "w-crud").await.unwrap();
+    assert_eq!(got.row.columns["Size"], "7");
+    assert!(got.yaml.contains("kind: Widget"), "{}", got.yaml);
+    ops.generic_delete(&k, NS, "w-crud").await.unwrap();
+    common::eventually("the widget to be deleted", || async {
+        ops.generic_list(&k, Some(NS))
+            .await
+            .unwrap()
+            .rows
+            .iter()
+            .all(|r| r.name != "w-crud")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_custom_resource_watch_sees_it_arrive() {
+    use fleetops_core::kube::WatchEvent;
+    use futures_util::StreamExt;
+    let ops = common::ops();
+    let k = widgets(&ops).await;
+    let mut w = ops.generic_watch(&k, Some(NS));
+    assert!(matches!(
+        timeout(WAIT, w.next()).await.unwrap(),
+        Some(Ok(WatchEvent::Snapshot { .. }))
+    ));
+    make_widget("w-watch", 1).await;
+    loop {
+        match timeout(WAIT, w.next()).await.unwrap() {
+            Some(Ok(WatchEvent::Added { row })) if row.name == "w-watch" => break,
+            Some(Ok(_)) => continue,
+            other => panic!("{other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_narrow_token_cannot_list_custom_resources() {
+    let k = widgets(&common::ops()).await;
+    let narrow = fleetops_kube::KubeClient::new(common::tunnel_client_with("narrow-token"));
+    assert!(matches!(
+        narrow.generic_list(&k, Some(NS)).await,
+        Err(Error::Forbidden(_))
+    ));
+}

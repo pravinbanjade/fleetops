@@ -138,19 +138,22 @@ When you add an agent cluster you pick what its ClusterRole allows:
 
 | Access level | Grants |
 |---|---|
-| **Read-only** | `get`, `list` and `watch` on namespaces, nodes, pods, services, configmaps, secrets, events, deployments, statefulsets, daemonsets, jobs, cronjobs and ingresses; `get` on `pods/log`; `get` and `list` on `metrics.k8s.io` nodes and pods. No changes and no terminal. |
-| **Standard** (default) | Read-only, plus `create`, `update` and `patch` on those kinds, `delete` on the namespaced ones, the `scale` subresources, and `create` on `pods/exec`. |
+| **Read-only** | `get`, `list` and `watch` on namespaces, nodes, pods, services, configmaps, secrets, events, deployments, statefulsets, daemonsets, replicasets, jobs, cronjobs, ingresses, network policies, HPAs, PVCs, PVs, storage classes, service accounts and RBAC roles and bindings; `get` on `pods/log`; `get` and `list` on `metrics.k8s.io` nodes and pods. No changes and no terminal. |
+| **Standard** (default) | Read-only, plus `create`, `update` and `patch` on the workload, network, config, PVC, HPA and service-account kinds, `delete` on the namespaced ones, the `scale` subresources, and `create` on `pods/exec`. PVs, storage classes and RBAC objects stay read-only. |
 | **Cluster admin** | Standard, plus a second binding, `fleetops-agent-cluster-admin`, to the built-in `cluster-admin` role. Needed to apply other kinds (CRDs, RBAC objects): full control of the cluster. |
+
+Tick **Read custom resources** to also grant `get`, `list` and `watch` on every kind (`apiGroups: ["*"]`), which custom resources need. It is off by default because it also reads every built-in kind, Secrets included. Writing custom resources needs cluster admin.
 
 The level is kept across key rotations. Raising it is a re-apply of the new command. A binding's role cannot change, so lowering it from cluster admin also needs `kubectl delete clusterrolebinding fleetops-agent-cluster-admin`; the lower manifests say so in a comment. When the cluster refuses a write, its 403 reason is shown with the level that would allow it.
 
-What you can do: browse the 12 common kinds and the cluster's events in one namespace or all of them. Open an object to see a summary, its YAML (`managedFields` stripped) and its events. Follow pod logs and open a pod terminal. Scale, restart or delete objects.
+What you can do: browse the common kinds (workloads, ReplicaSets, services, ingresses, network policies, config, HPAs, storage, RBAC) and the cluster's events in one namespace or all of them. Open an object to see a summary, its YAML (`managedFields` stripped) and its events. Follow pod logs and open a pod terminal. Scale, restart or delete objects.
 
 - **Live updates.** Lists and object pages follow the cluster through watch streams, shared between everyone viewing the same list and stopped 30 s after the last viewer leaves. When a watch cannot continue (for example the cluster forbids it), the page says *Live updates paused* with the reason and a Retry button, and never presents old data as live.
 - **Editing.** *Edit YAML* on an object page, *Create* on a list (from a starter template), and *Apply YAML* (top bar or command palette) for any YAML, several documents at once and any kind the cluster serves. Every write is a dry run first, shown as a diff; nothing is written until you apply. Create and apply use server-side apply as field manager `fleetops`; a field owned by another manager is a conflict you can force. An edit is refused if the object changed since you opened it, and offers to reapply your edit on top of the new version.
 - **Overview.** A cluster's home page lists what needs attention first (failing pods, workloads short of replicas, failed Helm releases, nodes not ready), then the newest warning events, each workload kind's health, the nodes and counts of everything else.
 - **Suspend and resume.** A Deployment or StatefulSet you don't need for now can be suspended: it scales to 0 and FleetOps remembers its replica count (annotation `fleetops.io/suspended-replicas`), so Resume brings back exactly that many. A CronJob suspends with its own `spec.suspend`. Suspend from the object's page, from a list (several at once), or straight from *Needs attention* on the overview. Suspended workloads sit in their own bay and never count as failing.
 - **Act on a selection.** Every list you can write to has checkboxes; the bar above the table offers what fits the rows you picked, each counted for its own rows: Restart, Scale (one replica count for all), Suspend/Resume, Run now (CronJobs: a Job from the template, as `kubectl create job --from=cronjob` does), Cordon/Uncordon (nodes) and Delete. Actions run one after another; if one fails, the dialog says how far it got and trying again picks up from there. The object page offers the same set. Cordon, uncordon and run now are audited as `k8s.cordon`, `k8s.uncordon` and `k8s.trigger`.
+- **Custom resources.** *Custom Resources* in the sidebar lists every other kind the cluster serves, found by API discovery: *Definitions* (the CRDs themselves), then one fold per API group. A custom resource's list shows the columns its CRD declares for `kubectl get`, follows the cluster live, and racks rows by their `Ready` condition. Its page shows conditions, YAML and events; *Edit YAML* and *Delete* appear when the cluster's verbs allow them. A CRD installed a moment ago is found at once; an API group that cannot be read (often an aggregated API that is down) is named at the top of the group. The command palette finds them by kind.
 - **Events.** *Events* in the sidebar lists the cluster's events, warnings first and newest first, each linked to the object it is about. Events are read-only.
 - **CPU and memory.** When the cluster runs [metrics-server](https://github.com/kubernetes-sigs/metrics-server), the overview shows the cluster's CPU and memory against what its nodes can allocate and the busiest pods, and the Nodes and Pods lists gain CPU and Memory columns. Figures refresh every 15 s. Without metrics-server the pages say so; nothing else changes. An agent installed before this release needs its command re-applied to read metrics.
 - **Secrets.** Values are never shown, including the copy kubectl keeps in the `last-applied-configuration` annotation. Leave a masked value unchanged and the real one is kept; change it and the new value is written.
@@ -245,6 +248,7 @@ Design documents live in `docs/superpowers/`:
 - `specs/2026-10-06-fleetops-kube-live-writable-design.md` is slice 3b (live and writable Kubernetes).
 - `specs/2026-10-07-fleetops-kube-events-metrics-design.md` is slice 3e (events and CPU and memory).
 - `specs/2026-10-07-fleetops-kube-suspend-design.md` is slice 3f (suspend and resume).
+- `specs/2026-10-08-fleetops-kube-crds-generic-kinds-design.md` is slice 3g (custom resources and the missing core kinds), with the Lens-parity roadmap.
 - `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), one for sub-project 2, and one for sub-project 3.
 
 ## Architecture
@@ -319,6 +323,11 @@ The full protocol is in section 5.2 of the spec.
 | **3c** | **RBAC** (done) | Per-environment viewer and operator roles for Docker and Kubernetes environments, with namespace scoping inside clusters |
 | **3d** | **Helm** (done) | Releases in Kubernetes environments: history, masked values and manifest, rollback, uninstall |
 | **3e** | **Events and metrics** (done) | Cluster events as a live, read-only kind; CPU and memory from metrics-server on the overview, Nodes and Pods |
+| **3g** | **Custom resources** (done) | Every kind the cluster serves, CRDs included, by discovery; storage, RBAC, ReplicaSets, HPAs and network policies as curated kinds |
+| 3h | Port-forward | A local port on the FleetOps host, or an HTTP proxy through FleetOps for a remote server |
+| 3i | Workload logs and exec | Logs merged across a workload's pods, previous-container logs, exec from a workload |
+| 3j | Helm install and upgrade | Chart repositories and OCI, values editing, upgrade with a diff |
+| 3k | Exec-plugin kubeconfigs | EKS, GKE and AKS kubeconfigs (`aws`, `gcloud`, `kubelogin`) where FleetOps runs |
 | 4 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
 | 5 | Teams & enterprise (free) | Teams, OIDC/SSO, LDAP, API tokens, backup and restore |
 
