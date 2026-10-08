@@ -33,7 +33,7 @@ describe("a viewer", () => {
     });
     renderApp("/envs/k/k8s/deployments");
     expect(await screen.findByText(/No permission to list Deployments in namespace team-b/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Namespace")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Namespace" })).toBeInTheDocument();
     localStorage.clear();
   });
 });

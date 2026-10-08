@@ -1,6 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { Button } from "@/components/ui/button";
 import { columns, DataTable } from "./DataTable";
 
@@ -111,5 +111,56 @@ describe("DataTable", () => {
     expect(screen.getByText("No boxes yet")).toBeInTheDocument();
     rerender(<DataTable {...props} data={undefined} error={new Error("engine gone")} />);
     expect(screen.getByRole("alert")).toHaveTextContent("engine gone");
+  });
+
+  describe("column widths", () => {
+    beforeEach(() => localStorage.clear());
+    const table = () => <DataTable label="Boxes" data={BOXES} columns={COLS} getRowId={(b) => b.id} empty="No boxes" />;
+    const handle = (name: string) => screen.getByRole("separator", { name: `Resize ${name} column` });
+
+    it("resizes a column from the keyboard and remembers it", async () => {
+      const { unmount } = render(table());
+      // Nothing is frozen until the operator resizes: the table keeps its natural layout.
+      expect(screen.getByRole("table").querySelector("col")).toBeNull();
+      handle("Name").focus();
+      await userEvent.keyboard("{ArrowRight}{ArrowRight}");
+      // jsdom lays nothing out, so the column starts from the 48px floor.
+      expect(handle("Name")).toHaveAttribute("aria-valuenow", "80");
+      expect(screen.getByRole("table")).toHaveClass("sm:table-fixed");
+      expect(JSON.parse(localStorage.getItem("fleetops.columns.Boxes") ?? "{}")).toMatchObject({ name: 80 });
+      unmount();
+      render(table());
+      expect(handle("Name")).toHaveAttribute("aria-valuenow", "80");
+    });
+
+    it("resizes a column by dragging its edge, never below the floor", () => {
+      render(table());
+      fireEvent.pointerDown(handle("Size"), { clientX: 100, pointerId: 1 });
+      fireEvent.pointerMove(handle("Size"), { clientX: 160, pointerId: 1 });
+      fireEvent.pointerUp(handle("Size"), { clientX: 160, pointerId: 1 });
+      expect(handle("Size")).toHaveAttribute("aria-valuenow", "108");
+      fireEvent.pointerDown(handle("Size"), { clientX: 160, pointerId: 1 });
+      fireEvent.pointerMove(handle("Size"), { clientX: -400, pointerId: 1 });
+      fireEvent.pointerUp(handle("Size"), { clientX: -400, pointerId: 1 });
+      expect(handle("Size")).toHaveAttribute("aria-valuenow", "48");
+    });
+
+    it("dragging an edge does not sort the column", () => {
+      render(table());
+      fireEvent.pointerDown(handle("Name"), { clientX: 0, pointerId: 1 });
+      fireEvent.pointerUp(handle("Name"), { clientX: 30, pointerId: 1 });
+      fireEvent.click(handle("Name"));
+      expect(screen.getByRole("columnheader", { name: /Name/ })).not.toHaveAttribute("aria-sort");
+    });
+
+    it("resets every width from the Columns menu", async () => {
+      render(table());
+      handle("Color").focus();
+      await userEvent.keyboard("{ArrowRight}");
+      await userEvent.click(screen.getByRole("button", { name: "Columns" }));
+      await userEvent.click(await screen.findByRole("menuitem", { name: "Reset widths" }));
+      expect(screen.getByRole("table").querySelector("col")).toBeNull();
+      expect(localStorage.getItem("fleetops.columns.Boxes")).toBeNull();
+    });
   });
 });

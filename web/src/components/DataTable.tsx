@@ -20,19 +20,23 @@ import {
   type ColumnVisibilityState,
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Search } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { errorMessage } from "@/lib/errors";
+import { cn } from "@/lib/utils";
+import { MIN_WIDTH, NEW_COLUMN_WIDTH, useColumnWidths, type Widths } from "./columnWidths";
 
 export const features = tableFeatures({
   rowSortingFeature,
@@ -84,9 +88,15 @@ interface DataTableProps<T extends RowData> {
 
 const EMPTY: never[] = [];
 
+/** One keypress on a column edge: 16px, or 64px with Shift. */
+const STEP = 16;
+
+const clampWidth = (w: number) => Math.max(MIN_WIDTH, Math.ceil(w));
+
 /**
  * A resource list: text filter over every column, sorting on header click,
- * column visibility, and optional row selection for bulk actions.
+ * column visibility, resizable columns, and optional row selection for bulk
+ * actions.
  */
 export function DataTable<T extends RowData>(props: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>(props.initialSorting ?? []);
@@ -95,6 +105,12 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
     Object.fromEntries((props.initialHidden ?? []).map((id) => [id, false])),
   );
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [widths, setWidths] = useColumnWidths(props.label);
+  const tableRef = useRef<HTMLTableElement>(null);
+  /** Ends the drag in progress: set while the pointer is down on a column edge. */
+  const endDrag = useRef<(() => void) | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  useEffect(() => () => endDrag.current?.(), []);
   const data = props.data ?? (EMPTY as T[]);
   const table = useTable({
     features,
@@ -114,7 +130,77 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
   const selected = rows.filter((r) => r.getIsSelected()).map((r) => r.original);
   const clear = () => setRowSelection({});
   const hideable = table.getAllLeafColumns().filter((c) => c.getCanHide());
-  const width = table.getVisibleLeafColumns().length + (props.selectable ? 1 : 0);
+  const visible = table.getVisibleLeafColumns();
+  // A frozen table adds a spacer column after the last, so each column stays
+  // exactly as wide as it was dragged.
+  const width = visible.length + (props.selectable ? 1 : 0) + (widths ? 1 : 0);
+  const headerOf = (id: string) => {
+    const h = visible.find((c) => c.id === id)?.columnDef.header;
+    return typeof h === "string" ? h : id;
+  };
+
+  /** Every visible column at the width it is drawn now: what the first resize freezes. */
+  const measured = (): Widths => {
+    const out: Widths = {};
+    for (const c of visible) {
+      const th = tableRef.current?.querySelector<HTMLElement>(`th[data-col="${CSS.escape(c.id)}"]`);
+      out[c.id] = clampWidth(widths?.[c.id] ?? th?.getBoundingClientRect().width ?? 0);
+    }
+    return out;
+  };
+  const frozen = (): Widths => ({ ...measured(), ...widths });
+  const resize = (id: string, w: number, from: Widths = frozen()) => setWidths({ ...from, [id]: clampWidth(w) });
+  /** Fits a column to its widest cell, header included. */
+  const fit = (id: string) => {
+    const cells = tableRef.current?.querySelectorAll<HTMLElement>(`[data-col="${CSS.escape(id)}"]`) ?? [];
+    // scrollWidth rounds down and leaves out the cell's left rule.
+    const widest = Math.max(0, ...Array.from(cells, (el) => el.scrollWidth));
+    resize(id, widest + 2);
+  };
+  const edge = (id: string) => ({
+    // The drag follows the window, not the handle: the pointer leaves the
+    // handle at once, and capture can be lost while the rows update live.
+    onPointerDown: (e: PointerEvent<HTMLElement>) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      endDrag.current?.();
+      const from = frozen();
+      const x = e.clientX;
+      const root = document.documentElement;
+      const move = (ev: globalThis.PointerEvent) => setWidths({ ...from, [id]: clampWidth(from[id] + ev.clientX - x) });
+      const end = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+        root.style.removeProperty("cursor");
+        root.style.removeProperty("user-select");
+        endDrag.current = null;
+        setDragging(null);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", end);
+      window.addEventListener("pointercancel", end);
+      root.style.cursor = "col-resize";
+      root.style.userSelect = "none";
+      endDrag.current = end;
+      setDragging(id);
+    },
+    onDoubleClick: () => fit(id),
+    onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
+      const step = e.shiftKey ? STEP * 4 : STEP;
+      const now = frozen();
+      if (e.key === "ArrowRight") resize(id, now[id] + step, now);
+      else if (e.key === "ArrowLeft") resize(id, now[id] - step, now);
+      else if (e.key === "Enter") fit(id);
+      else return;
+      e.preventDefault();
+    },
+  });
+  const sized = widths ? visible.map((c) => widths[c.id] ?? NEW_COLUMN_WIDTH) : [];
+  const tableStyle = widths
+    ? ({ "--table-min": `${sized.reduce((a, b) => a + b, 0) + (props.selectable ? 40 : 0)}px` } as CSSProperties)
+    : undefined;
   const phone = (id: string) =>
     !props.phoneColumns ? undefined : props.phoneColumns.includes(id) ? "max-sm:whitespace-normal max-sm:break-words" : "max-sm:hidden";
   const bays = props.bays;
@@ -184,13 +270,33 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                     {typeof c.columnDef.header === "string" ? c.columnDef.header : c.id}
                   </DropdownMenuCheckboxItem>
                 ))}
+                {widths && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => setWidths(null)}>Reset widths</DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
         </div>
       </div>
       <div>
-        <Table aria-label={props.label}>
+        <Table
+          ref={tableRef}
+          aria-label={props.label}
+          style={tableStyle}
+          className={widths ? "sm:min-w-(--table-min) sm:table-fixed [&_td]:sm:overflow-hidden [&_td]:sm:text-ellipsis [&_th]:sm:overflow-hidden [&_th]:sm:text-ellipsis" : undefined}
+        >
+          {widths && (
+            <colgroup>
+              {props.selectable && <col className="sm:w-10" />}
+              {visible.map((c, i) => (
+                <col key={c.id} className="sm:w-(--w)" style={{ "--w": `${sized[i]}px` } as CSSProperties} />
+              ))}
+              <col />
+            </colgroup>
+          )}
           <TableHeader>
             {table.getHeaderGroups().map((group) => (
               <TableRow key={group.id}>
@@ -210,7 +316,10 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                   return (
                     <TableHead
                       key={header.id}
-                      className={phone(header.column.id)}
+                      data-col={header.column.id}
+                      // Named by its header alone: the resize handle inside is not part of the name.
+                      aria-label={typeof header.column.columnDef.header === "string" ? header.column.columnDef.header : undefined}
+                      className={cn("relative", phone(header.column.id))}
                       aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
                     >
                       {header.isPlaceholder ? null : header.column.getCanSort() ? (
@@ -231,9 +340,22 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                       ) : (
                         <table.FlexRender header={header} />
                       )}
+                      <span
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={`Resize ${headerOf(header.column.id)} column`}
+                        aria-valuemin={MIN_WIDTH}
+                        aria-valuenow={widths ? (widths[header.column.id] ?? NEW_COLUMN_WIDTH) : undefined}
+                        tabIndex={0}
+                        data-active={dragging === header.column.id || undefined}
+                        title="Drag to resize · double-click to fit"
+                        className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize touch-none outline-none select-none after:absolute after:inset-y-1.5 after:right-0 after:w-0.5 after:rounded-full after:transition-colors hover:after:bg-muted-foreground/60 focus-visible:after:bg-primary data-active:after:bg-primary max-sm:hidden"
+                        {...edge(header.column.id)}
+                      />
                     </TableHead>
                   );
                 })}
+                {widths && <TableHead aria-hidden className="max-sm:hidden" />}
               </TableRow>
             ))}
           </TableHeader>
@@ -309,10 +431,11 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                       </TableCell>
                     )}
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className={phone(cell.column.id)}>
+                      <TableCell key={cell.id} data-col={cell.column.id} className={phone(cell.column.id)}>
                         <table.FlexRender cell={cell} />
                       </TableCell>
                     ))}
+                    {widths && <TableCell aria-hidden className="max-sm:hidden" />}
                   </TableRow>
                 ))}
               </TableBody>
