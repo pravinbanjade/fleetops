@@ -102,7 +102,13 @@ describe("Kubernetes environments", () => {
   });
 
   it("draws a square per container in place of the Ready count", async () => {
-    const containers = "i:migrate:done:Completed;c:app:ready:;c:side:error:CrashLoopBackOff;c:new:unknown:";
+    const c = (name: string, state: string, reason = "", message = "", init = false) => ({ name, init, state, reason, message });
+    const containers = JSON.stringify([
+      c("migrate", "done", "Completed", "", true),
+      c("app", "ready"),
+      c("side", "error", "CrashLoopBackOff", "back-off 5m0s restarting failed container=side"),
+      c("new", "unknown"),
+    ]);
     mockFetch({
       ...loggedIn,
       ...kubeRoutes,
@@ -117,9 +123,20 @@ describe("Kubernetes environments", () => {
       "side: error, CrashLoopBackOff",
       "new: unknown",
     ]);
-    expect(each.map((s) => s.dataset.state)).toEqual(["done", "ready", "error", "unknown"]);
+    expect(each.map((s) => s.dataset.stateName)).toEqual(["done", "ready", "error", "unknown"]);
     expect(screen.getByRole("columnheader", { name: /Containers/ })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: /^Ready/ })).not.toBeInTheDocument();
+    // Pods are not racked into health bays: the squares already say it.
+    expect(screen.queryByRole("rowgroup", { name: "Needs attention" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("rowgroup", { name: "Healthy" })).not.toBeInTheDocument();
+
+    // Hovering a square shows its name, state, reason and message.
+    await userEvent.hover(each[2]);
+    const tip = await screen.findByRole("tooltip");
+    expect(tip).toHaveTextContent("side");
+    expect(tip).toHaveTextContent("error");
+    expect(tip).toHaveTextContent("ReasonCrashLoopBackOff");
+    expect(tip).toHaveTextContent("Messageback-off 5m0s restarting failed container=side");
   });
 
   it("says when a list is truncated", async () => {

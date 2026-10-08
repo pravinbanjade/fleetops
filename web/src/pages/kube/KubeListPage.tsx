@@ -296,7 +296,8 @@ export function KubeListPage() {
               initialSorting: [{ id: "status", desc: false }, { id: "last_seen", desc: true }],
               bays: { column: "status", of: (r: Row) => (r.status === "Warning" ? EVENT_BAYS.warning : EVENT_BAYS.normal) },
             }
-          : HEALTH_KINDS.includes(kind)
+          : // A pod's squares already say what is wrong: pods stay one list.
+            HEALTH_KINDS.includes(kind) && kind !== "pods"
           ? {
               initialSorting: [{ id: "status", desc: false }, { id: "name", desc: false }],
               bays: { column: "status", of: (r: Row) => HEALTH_BAYS[HEALTH_RANK[r.health]] },

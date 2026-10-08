@@ -254,15 +254,30 @@ fn a_pod_lists_each_container_state_init_containers_first() {
                 {"name": "migrate", "ready": false, "restartCount": 0, "image": "x", "imageID": "", "state": {"terminated": {"exitCode": 0, "reason": "Completed"}}}],
             "containerStatuses": [
                 {"name": "app", "ready": true, "restartCount": 0, "image": "x", "imageID": "", "state": {"running": {}}},
-                {"name": "side", "ready": false, "restartCount": 3, "image": "x", "imageID": "", "state": {"waiting": {"reason": "CrashLoopBackOff"}}},
+                {"name": "side", "ready": false, "restartCount": 3, "image": "x", "imageID": "", "state": {"waiting": {"reason": "CrashLoopBackOff", "message": "back-off 5m0s restarting failed container=side pod=mixed_apps(1)"}}},
                 {"name": "boot", "ready": false, "restartCount": 0, "image": "x", "imageID": "", "state": {"waiting": {"reason": "ContainerCreating"}}},
                 {"name": "slow", "ready": false, "restartCount": 0, "image": "x", "imageID": "", "state": {"running": {}}},
                 {"name": "dead", "ready": false, "restartCount": 0, "image": "x", "imageID": "", "state": {"terminated": {"exitCode": 137}}}]}}));
     let r = row(KubeKind::Pods, &p);
+    let got: serde_json::Value = serde_json::from_str(&r.columns["containers"]).unwrap();
+    let c = |init: bool, name: &str, state: &str, reason: &str, message: &str| json!({"name": name, "init": init, "state": state, "reason": reason, "message": message});
     assert_eq!(
-        r.columns["containers"],
-        "i:migrate:done:Completed;c:app:ready:;c:side:error:CrashLoopBackOff;c:boot:waiting:ContainerCreating;\
-         c:slow:running:;c:dead:error:exit 137;c:new:unknown:"
+        got,
+        json!([
+            c(true, "migrate", "done", "Completed", ""),
+            c(false, "app", "ready", "", ""),
+            c(
+                false,
+                "side",
+                "error",
+                "CrashLoopBackOff",
+                "back-off 5m0s restarting failed container=side pod=mixed_apps(1)"
+            ),
+            c(false, "boot", "waiting", "ContainerCreating", ""),
+            c(false, "slow", "running", "", ""),
+            c(false, "dead", "error", "exit 137", ""),
+            c(false, "new", "unknown", "", ""),
+        ])
     );
     assert_eq!(r.columns["ready"], "1/6");
 }

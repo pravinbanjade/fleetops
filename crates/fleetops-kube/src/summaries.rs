@@ -343,57 +343,63 @@ fn pod(p: Pod) -> Summary {
     )
 }
 
-/// One `kind:name:state:reason` entry per container, init containers (`i`)
-/// before the rest (`c`), joined by `;`; container names are DNS labels, so
-/// neither separator can appear in one. A state is `ready`, `running` (not
-/// ready yet), `waiting` (on its way up), `error`, `done` or `unknown` (no
-/// status reported yet).
+/// The pod's containers as a JSON array, init containers first: each with
+/// its `name`, `init`, `state` and the `reason` and `message` Kubernetes gave.
+/// A state is `ready`, `running` (not ready yet), `waiting` (on its way up),
+/// `error`, `done` or `unknown` (no status reported yet).
 fn container_states(spec: Option<&PodSpec>, st: &PodStatus) -> String {
-    let entry = |kind: &str, name: &str, cs: Option<&ContainerStatus>| {
-        let (state, reason) = cs.map_or(("unknown", String::new()), container_state);
-        format!("{kind}:{name}:{state}:{reason}")
-    };
     fn find<'a>(all: &'a Option<Vec<ContainerStatus>>, name: &str) -> Option<&'a ContainerStatus> {
         all.as_ref()?.iter().find(|c| c.name == name)
     }
+    let entry = |init: bool, name: &str, cs: Option<&ContainerStatus>| {
+        let (state, reason, message) = cs.map_or(("unknown", None, None), container_state);
+        serde_json::json!({
+            "name": name,
+            "init": init,
+            "state": state,
+            "reason": reason.unwrap_or_default(),
+            "message": message.unwrap_or_default(),
+        })
+    };
     let Some(spec) = spec else {
-        return String::new();
+        return "[]".into();
     };
     let init = spec
         .init_containers
         .iter()
         .flatten()
-        .map(|c| entry("i", &c.name, find(&st.init_container_statuses, &c.name)));
+        .map(|c| entry(true, &c.name, find(&st.init_container_statuses, &c.name)));
     let main = spec
         .containers
         .iter()
-        .map(|c| entry("c", &c.name, find(&st.container_statuses, &c.name)));
-    init.chain(main).collect::<Vec<_>>().join(";")
+        .map(|c| entry(false, &c.name, find(&st.container_statuses, &c.name)));
+    serde_json::Value::Array(init.chain(main).collect()).to_string()
 }
 
-fn container_state(c: &ContainerStatus) -> (&'static str, String) {
+fn container_state(c: &ContainerStatus) -> (&'static str, Option<String>, Option<String>) {
     let Some(state) = c.state.as_ref() else {
-        return ("unknown", String::new());
+        return ("unknown", None, None);
     };
     if let Some(t) = &state.terminated {
         let reason = t
             .reason
             .clone()
             .unwrap_or_else(|| format!("exit {}", t.exit_code));
-        return (if t.exit_code == 0 { "done" } else { "error" }, reason);
+        let state = if t.exit_code == 0 { "done" } else { "error" };
+        return (state, Some(reason), t.message.clone());
     }
     if let Some(w) = &state.waiting {
-        let reason = w.reason.clone().unwrap_or_default();
         let normal = matches!(
-            reason.as_str(),
-            "" | "ContainerCreating" | "PodInitializing"
+            w.reason.as_deref(),
+            None | Some("" | "ContainerCreating" | "PodInitializing")
         );
-        return (if normal { "waiting" } else { "error" }, reason);
+        let state = if normal { "waiting" } else { "error" };
+        return (state, w.reason.clone(), w.message.clone());
     }
     if state.running.is_some() {
-        return (if c.ready { "ready" } else { "running" }, String::new());
+        return (if c.ready { "ready" } else { "running" }, None, None);
     }
-    ("unknown", String::new())
+    ("unknown", None, None)
 }
 
 fn service(s: Service) -> Summary {
