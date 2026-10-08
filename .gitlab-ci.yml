@@ -72,7 +72,8 @@ ci-image:
   image: docker:29
   services: [docker:29-dind]
   variables:
-    DOCKER_TLS_CERTDIR: /certs
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     # The dind daemon is reached over TLS from DOCKER_HOST/DOCKER_CERT_PATH;
