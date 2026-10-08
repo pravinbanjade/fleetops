@@ -28,6 +28,7 @@ import { openApplyYaml } from "@/components/yaml-editor/applyYaml";
 import { ApplyYamlHost } from "@/components/yaml-editor/ApplyYamlHost";
 import { CustomResourcesNav } from "@/pages/kube/generic/CustomResourcesNav";
 import { LINK, useGroupToggles } from "./sidebar";
+import { TopBarSlot } from "./topBarSlot";
 
 export function Shell() {
   const { env } = useParams({ strict: false });
@@ -39,6 +40,7 @@ export function Shell() {
   const { data: envs = [] } = useQuery(envsQuery);
   const kube = isKube(envs.find((e) => e.name === env)?.kind);
   const { canWrite } = useEnvAccess(env);
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   useGoKeys(env, kube);
   return (
     <div className="min-h-svh md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
@@ -61,11 +63,13 @@ export function Shell() {
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
       <main className="min-w-0">
-        <TopBar env={env} kube={kube} onMenu={() => setDrawer(true)} />
+        <TopBar env={env} kube={kube} onMenu={() => setDrawer(true)} slotRef={setSlot} />
         <ConnectionBanner />
         {env && !kube && <EnvLive env={env} />}
         {env && kube && canWrite && <ApplyYamlHost env={env} />}
-        <Outlet />
+        <TopBarSlot.Provider value={slot}>
+          <Outlet />
+        </TopBarSlot.Provider>
       </main>
     </div>
   );
@@ -237,7 +241,17 @@ function EnvBand({ env }: { env?: string }) {
   );
 }
 
-function TopBar({ env, kube, onMenu }: { env?: string; kube: boolean; onMenu: () => void }) {
+function TopBar({
+  env,
+  kube,
+  onMenu,
+  slotRef,
+}: {
+  env?: string;
+  kube: boolean;
+  onMenu: () => void;
+  slotRef: (el: HTMLElement | null) => void;
+}) {
   const { pathname } = useLocation();
   const items: readonly NavItem[] = kube ? KUBE_NAV : NAV;
   const section =
@@ -280,7 +294,8 @@ function TopBar({ env, kube, onMenu }: { env?: string; kube: boolean; onMenu: ()
         )}
       </nav>
       <div className="ml-auto flex items-center gap-3">
-        {env && kube && canWrite && (
+        <div ref={slotRef} className="flex items-center gap-2 empty:hidden" />
+        {env && kube && canWrite && section?.to !== "/envs/$env" && (
           <Button variant="outline" size="sm" onClick={() => openApplyYaml(env)}>
             Apply YAML
           </Button>

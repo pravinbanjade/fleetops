@@ -36,6 +36,7 @@ import { useEnvAccess } from "@/api/access";
 import { Meter } from "./Meter";
 import { LivePaused } from "./LivePaused";
 import { NamespacePicker, useNamespace } from "./NamespacePicker";
+import { TopBarActions } from "@/components/topBarSlot";
 import { clusterTotals, share, useKubeUsage, useSeries } from "./usage";
 
 /** A row's health as a holder tone: the same readings the Docker board uses. */
@@ -117,10 +118,16 @@ export function KubeOverviewPage({ env }: { env: string }) {
         </span>
       }
       actions={
-        <div className="flex w-full flex-wrap items-end justify-end gap-2 sm:w-auto xl:gap-x-5">
-          <NamespacePicker env={env} value={ns} onChange={setNs} />
-          {nodeUsage.available && <ClusterUsage usage={nodeUsage} />}
-        </div>
+        <>
+          <TopBarActions>
+            <NamespacePicker env={env} value={ns} onChange={setNs} />
+          </TopBarActions>
+          {nodeUsage.available && (
+            <div className="flex w-full flex-wrap items-end justify-end gap-2 sm:w-auto xl:gap-x-5">
+              <ClusterUsage usage={nodeUsage} />
+            </div>
+          )}
+        </>
       }
     >
       {down !== null && (
