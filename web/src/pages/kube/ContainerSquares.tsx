@@ -10,14 +10,7 @@ export interface ContainerSquare {
   reason: string;
 }
 
-const STATES: readonly string[] = [
-  "ready",
-  "running",
-  "waiting",
-  "error",
-  "done",
-  "unknown",
-];
+const STATES: readonly string[] = ["ready", "running", "waiting", "error", "done", "unknown"];
 
 /** Reads the `kind:name:state:reason;…` column the server writes for a pod. */
 export function parseContainers(column: string | undefined): ContainerSquare[] {
@@ -25,14 +18,7 @@ export function parseContainers(column: string | undefined): ContainerSquare[] {
   return column.split(";").flatMap((entry) => {
     const [kind, name, state, ...rest] = entry.split(":");
     if (!name) return [];
-    return [
-      {
-        init: kind === "i",
-        name,
-        state: (STATES.includes(state) ? state : "unknown") as State,
-        reason: rest.join(":"),
-      },
-    ];
+    return [{ init: kind === "i", name, state: (STATES.includes(state) ? state : "unknown") as State, reason: rest.join(":") }];
   });
 }
 
@@ -45,28 +31,15 @@ const FILL: Record<State, string> = {
   unknown: "border-muted-foreground/60 bg-transparent",
 };
 
-const label = (c: ContainerSquare) =>
-  `${c.name}${c.init ? " (init)" : ""}: ${c.state}${c.reason ? `, ${c.reason}` : ""}`;
+const label = (c: ContainerSquare) => `${c.name}${c.init ? " (init)" : ""}: ${c.state}${c.reason ? `, ${c.reason}` : ""}`;
 
 /** A pod's containers as a row of squares, init containers first and fainter. */
-export function ContainerSquares({
-  column,
-  ready,
-}: {
-  column?: string;
-  ready?: string;
-}) {
+export function ContainerSquares({ column, ready }: { column?: string; ready?: string }) {
   const all = parseContainers(column);
-  if (all.length === 0)
-    return <span className="text-muted-foreground">{ready ?? "—"}</span>;
+  if (all.length === 0) return <span className="text-muted-foreground">{ready ?? "—"}</span>;
   const [up, of] = (ready ?? "").split("/");
   return (
-    <span
-      role="group"
-      aria-label={`Containers: ${up ?? 0} of ${of ?? all.length} ready`}
-      title={ready}
-      className="inline-flex items-center gap-1"
-    >
+    <span role="group" aria-label={`Containers: ${up ?? 0} of ${of ?? all.length} ready`} title={ready} className="inline-flex items-center gap-1">
       {all.map((c) => (
         <span
           key={`${c.init ? "i" : "c"}:${c.name}`}
@@ -74,11 +47,7 @@ export function ContainerSquares({
           aria-label={label(c)}
           title={label(c)}
           data-state={c.state}
-          className={cn(
-            "size-2.5 shrink-0 rounded-[2px] border",
-            FILL[c.state],
-            c.init && "opacity-55",
-          )}
+          className={cn("size-2.5 shrink-0 rounded-[2px] border", FILL[c.state], c.init && "opacity-55")}
         />
       ))}
     </span>
@@ -86,5 +55,4 @@ export function ContainerSquares({
 }
 
 /** How many containers are ready, from the `ready/want` column: what the squares sort by. */
-export const readyCount = (ready: string | undefined) =>
-  Number((ready ?? "").split("/")[0]) || 0;
+export const readyCount = (ready: string | undefined) => Number((ready ?? "").split("/")[0]) || 0;
