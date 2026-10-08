@@ -410,58 +410,30 @@ impl KubeOps for KubeClient {
             timed(api.patch(name, &pp, &patch)).await?;
             return Ok(());
         }
-        let obj = timed(api.get(name)).await?;
-        let want = obj.data["spec"]["replicas"].as_i64().unwrap_or(1);
-        let kept = obj
-            .metadata
-            .annotations
-            .as_ref()
-            .and_then(|a| a.get(SUSPENDED_ANNOTATION))
-            .cloned();
-        // The version read is a precondition: a scale in between is a
-        // conflict, never a silent overwrite of someone else's count.
-        let rv = obj.metadata.resource_version.clone();
-        let patch = match (on, kept) {
-            (true, Some(_)) if want == 0 => return Ok(()),
-            (true, _) if want == 0 => {
-                return Err(Error::Invalid(format!(
-                    "{name} is already at 0 replicas; there is nothing to suspend"
-                )))
+        // The version read is a precondition, so a scale in between is a
+        // conflict, never a silent overwrite of someone else's count. The
+        // controller also writes status (pods counted, rollout progress),
+        // which moves the version too: when the replicas and the note are
+        // still as first read, only status moved, and the write is retried.
+        let mut first: Option<ScaleState> = None;
+        for attempt in 1..=SUSPEND_ATTEMPTS {
+            let obj = timed(api.get(name)).await?;
+            let state = scale_state(&obj);
+            match &first {
+                None => first = Some(state.clone()),
+                Some(f) if *f != state => return Err(suspend_conflict(name, on)),
+                Some(_) => {}
             }
-            (true, _) => json!({
-                "metadata": { "resourceVersion": rv, "annotations": { SUSPENDED_ANNOTATION: want.to_string() } },
-                "spec": { "replicas": 0 },
-            }),
-            (false, None) => {
-                return Err(Error::Invalid(format!(
-                    "{name} was not suspended by FleetOps; scale it instead"
-                )))
+            let Some(patch) = suspend_patch(name, on, &obj, state)? else {
+                return Ok(());
+            };
+            match timed(api.patch(name, &pp, &Patch::Merge(patch))).await {
+                Err(Error::Conflict(_)) if attempt < SUSPEND_ATTEMPTS => continue,
+                Err(Error::Conflict(_)) => return Err(suspend_conflict(name, on)),
+                r => return r.map(|_| ()),
             }
-            (false, Some(n)) => {
-                let n: i64 = n.trim().parse().ok().filter(|n| *n > 0).ok_or_else(|| {
-                    Error::Invalid(format!(
-                        "{name} has an unreadable {SUSPENDED_ANNOTATION} ('{n}'); scale it instead"
-                    ))
-                })?;
-                // Scaled up by hand since: only the note is left to clear.
-                let spec = if want == 0 {
-                    json!({ "replicas": n })
-                } else {
-                    json!({})
-                };
-                json!({
-                    "metadata": { "resourceVersion": rv, "annotations": { SUSPENDED_ANNOTATION: null } },
-                    "spec": spec,
-                })
-            }
-        };
-        match timed(api.patch(name, &pp, &Patch::Merge(patch))).await {
-            Err(Error::Conflict(_)) => Err(Error::Conflict(format!(
-                "{name} changed while it was being {}; try again",
-                if on { "suspended" } else { "resumed" }
-            ))),
-            r => r.map(|_| ()),
         }
+        Err(suspend_conflict(name, on))
     }
 
     async fn cordon(&self, node: &str, on: bool) -> Result<()> {
@@ -898,6 +870,77 @@ impl KubeClient {
         }
         Ok(n)
     }
+}
+
+/// What a suspend or resume decides from: the replicas asked for and the
+/// count a FleetOps suspend kept. Status and the version are not part of it.
+pub type ScaleState = (i64, Option<String>);
+
+/// How often a suspend retries when only status moved under it.
+const SUSPEND_ATTEMPTS: u32 = 5;
+
+pub fn scale_state(obj: &DynamicObject) -> ScaleState {
+    let want = obj.data["spec"]["replicas"].as_i64().unwrap_or(1);
+    let kept = obj
+        .metadata
+        .annotations
+        .as_ref()
+        .and_then(|a| a.get(SUSPENDED_ANNOTATION))
+        .cloned();
+    (want, kept)
+}
+
+fn suspend_conflict(name: &str, on: bool) -> Error {
+    Error::Conflict(format!(
+        "{name} changed while it was being {}; try again",
+        if on { "suspended" } else { "resumed" }
+    ))
+}
+
+/// The merge patch that suspends (`on`) or resumes `obj`, preconditioned on
+/// its version; `None` when there is nothing to do.
+fn suspend_patch(
+    name: &str,
+    on: bool,
+    obj: &DynamicObject,
+    (want, kept): ScaleState,
+) -> Result<Option<serde_json::Value>> {
+    let rv = obj.metadata.resource_version.clone();
+    let patch = match (on, kept) {
+        (true, Some(_)) if want == 0 => return Ok(None),
+        (true, _) if want == 0 => {
+            return Err(Error::Invalid(format!(
+                "{name} is already at 0 replicas; there is nothing to suspend"
+            )))
+        }
+        (true, _) => json!({
+            "metadata": { "resourceVersion": rv, "annotations": { SUSPENDED_ANNOTATION: want.to_string() } },
+            "spec": { "replicas": 0 },
+        }),
+        (false, None) => {
+            return Err(Error::Invalid(format!(
+                "{name} was not suspended by FleetOps; scale it instead"
+            )))
+        }
+        (false, Some(n)) => {
+            let n: i64 = n.trim().parse().ok().filter(|n| *n > 0).ok_or_else(|| {
+                Error::Invalid(format!(
+                    "{name} has an unreadable {SUSPENDED_ANNOTATION} ('{n}'); scale it instead"
+                ))
+            })?;
+            // Scaled up by hand since: only the note is left to clear.
+            let spec = if want == 0 {
+                json!({ "replicas": n })
+            } else {
+                json!({})
+            };
+            json!({
+                "metadata": { "resourceVersion": rv, "annotations": { SUSPENDED_ANNOTATION: null } },
+                "spec": spec,
+            })
+        }
+    };
+    Ok(Some(patch))
 }
 
 /// The Job `kubectl create job --from=cronjob/<name>` makes: the CronJob's

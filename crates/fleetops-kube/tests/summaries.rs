@@ -223,3 +223,23 @@ fn a_manual_job_copies_the_template_and_is_owned_by_its_cronjob() {
         Some("busybox")
     );
 }
+
+#[test]
+fn a_status_write_is_not_a_scale_but_a_replica_or_note_change_is() {
+    use fleetops_kube::client::scale_state;
+    let dep = |rv: &str, replicas: i64, note: Option<&str>, ready: i64| {
+        let mut m = json!({"name": "web", "namespace": "apps", "resourceVersion": rv});
+        if let Some(n) = note {
+            m["annotations"] = json!({ "fleetops.io/suspended-replicas": n });
+        }
+        obj(
+            json!({"metadata": m, "spec": {"replicas": replicas}, "status": {"readyReplicas": ready}}),
+        )
+    };
+    let read = scale_state(&dep("1", 2, None, 0));
+    // The controller counted pods: a new version, the same intent.
+    assert_eq!(scale_state(&dep("2", 2, None, 2)), read);
+    // Someone scaled, or another suspend got there first.
+    assert_ne!(scale_state(&dep("3", 3, None, 2)), read);
+    assert_ne!(scale_state(&dep("4", 0, Some("2"), 2)), read);
+}
