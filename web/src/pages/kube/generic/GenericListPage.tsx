@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, getRouteApi } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
+import { FileCode2, ListTree, Trash2 } from "lucide-react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import type { ApiKind, KubeRow } from "@/api/gen/types.gen";
 import { deleteGenericKube } from "@/api/gen/sdk.gen";
 import { ApiError } from "@/api/client";
@@ -9,7 +10,7 @@ import { genericListQuery } from "@/api/queries";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DataTable, columns } from "@/components/DataTable";
 import { Page } from "@/components/Page";
-import { Button } from "@/components/ui/button";
+import { QuickButtons, type QuickItem } from "@/components/RowMenu";
 import { formatAgo } from "@/lib/format";
 import { useKubeWatch } from "@/live/kubeWatch";
 import { KubeHealth } from "../KubeHealth";
@@ -20,6 +21,7 @@ import { refKind, type Ref } from "./ref";
 import { useDiscoveredKind } from "./useDiscoveredKind";
 
 const route = getRouteApi("/authed/shell/envs/$env/k8s/r/$group/$version/$resource");
+const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
 
 /** A printer column's cell: dates as ages, the rest as the cluster wrote them. */
 export const printed = (type: string, v: string | undefined) => (type === "date" && Number(v) ? formatAgo(Number(v)) : v || "");
@@ -77,6 +79,26 @@ export function GenericListPage() {
   const live = useKubeWatch(env, refKind(r), scoped ? ns : undefined);
   const list = useQuery({ ...genericListQuery(env, r, scoped ? ns : undefined), enabled: !live.synced });
   const [doomed, setDoomed] = useState<{ rows: KubeRow[]; clear: () => void } | null>(null);
+  const [editing, setEditing] = useState<{ ns: string; name: string } | null>(null);
+  const navigate = useNavigate();
+  const canEdit = canWrite && !!k?.verbs.includes("update");
+  const canDelete = canWrite && !!k?.verbs.includes("delete");
+  /** What can be done to `of`: its events and YAML need exactly one; Delete takes any number. */
+  const quick = (of: KubeRow[], clear: () => void): QuickItem[] => {
+    const out: QuickItem[] = [];
+    if (of.length === 1) {
+      const at = { ns: of[0].namespace ?? "-", name: of[0].name };
+      out.push({
+        id: "events",
+        label: "Events",
+        icon: ListTree,
+        onSelect: () => void navigate({ to: "/envs/$env/k8s/r/$group/$version/$resource/$ns/$name", params: { env, ...r, ...at }, search: { tab: "events" } }),
+      });
+      if (canEdit) out.push({ id: "edit", label: "Edit YAML", icon: FileCode2, onSelect: () => setEditing(at) });
+    }
+    if (canDelete) out.push({ id: "delete", label: "Delete", icon: Trash2, count: of.length, danger: true, onSelect: () => setDoomed({ rows: of, clear }) });
+    return out;
+  };
   const cols = useMemo(() => (k ? genericColumns(env, r, k) : []), [env, r, k]);
   const gone = list.error instanceof ApiError && list.error.status === 404;
   const forbidden = list.error instanceof ApiError && list.error.status === 403;
@@ -97,6 +119,11 @@ export function GenericListPage() {
       actions={scoped ? <NamespacePicker env={env} value={ns} onChange={setNs} /> : undefined}
     >
       {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}
+      {editing && k && (
+        <Suspense fallback={null}>
+          <YamlDialog env={env} target={{ mode: "edit-generic", ref: r, kind: k.kind, ...editing }} onClose={() => setEditing(null)} />
+        </Suspense>
+      )}
       {doomed && (
         <ConfirmDialog
           open
@@ -126,17 +153,9 @@ export function GenericListPage() {
         data={forbidden ? [] : list.data?.rows}
         columns={cols}
         getRowId={(x) => `${x.namespace ?? "-"}/${x.name}`}
-        selectable={canWrite && !!k?.verbs.includes("delete")}
-        actions={(selected, clear) => (
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-state-fail-text hover:text-state-fail-text"
-            onClick={() => setDoomed({ rows: selected, clear })}
-          >
-            Delete{selected.length > 1 ? ` ${selected.length}` : ""}
-          </Button>
-        )}
+        selectable={canDelete}
+        actions={(selected, clear) => <QuickButtons items={quick(selected, clear)} />}
+        rowMenu={{ label: (x) => x.name, items: (x) => quick([x], () => {}) }}
         initialSorting={[
           { id: "status", desc: false },
           { id: "name", desc: false },

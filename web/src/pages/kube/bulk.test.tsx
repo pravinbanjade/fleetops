@@ -96,7 +96,7 @@ describe("acting on a selection", () => {
     await within(table).findByText("web-1");
     await select(table, "apps/web-1");
     const bar = screen.getByRole("group", { name: "Selected" });
-    expect(within(bar).getAllByRole("button").map((b) => b.textContent)).toEqual(["Delete"]);
+    expect(within(bar).getAllByRole("button").map((b) => b.textContent)).toEqual(["Logs", "Terminal", "Events", "Edit YAML", "Delete"]);
     await userEvent.click(within(bar).getByRole("button", { name: "Delete" }));
     const dialog = await screen.findByRole("dialog", { name: "Delete Pod web-1?" });
     expect(dialog).toHaveTextContent("replaced by a new one");

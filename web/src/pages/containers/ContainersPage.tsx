@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getRouteApi, Link } from "@tanstack/react-router";
-import { ArrowUpRight, Plus, Trash2 } from "lucide-react";
+import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
+import { Activity, ArrowUpRight, Plus, ScrollText, SquareTerminal, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { containersQuery, keys } from "@/api/queries";
@@ -18,9 +18,17 @@ import { bulkMessage, runBulk } from "@/lib/bulk";
 import { formatAgo, formatBytes, shortId } from "@/lib/format";
 import { portLinks } from "@/lib/ports";
 import { Usage } from "@/components/Usage";
+import { QuickButtons, type QuickItem } from "@/components/RowMenu";
 import { ACTIONS, RemoveDialog } from "./actions";
+import { containerQuick } from "./quick";
 
 const route = getRouteApi("/authed/shell/envs/$env/containers");
+
+const OPEN = {
+  logs: { label: "Logs", icon: ScrollText },
+  terminal: { label: "Terminal", icon: SquareTerminal },
+  stats: { label: "Stats", icon: Activity },
+} as const;
 const col = columns<ContainerSummary>();
 
 const RANK = { fail: 0, wait: 1, run: 2, idle: 3 } as const;
@@ -140,6 +148,32 @@ export function ContainersPage() {
     },
     onSettled: refresh,
   });
+  const navigate = useNavigate();
+  /** The quick actions for `of` as bar buttons and menu items. */
+  const quick = (of: ContainerSummary[], clear: () => void): QuickItem[] =>
+    containerQuick(of, canWrite).map((q): QuickItem => {
+      switch (q.type) {
+        case "open":
+          return {
+            id: q.tab,
+            ...OPEN[q.tab],
+            onSelect: () => void navigate({ to: "/envs/$env/containers/$id", params: { env, id: of[0].id }, search: { tab: q.tab } }),
+          };
+        case "action": {
+          const a = ACTIONS.find((x) => x.action === q.action)!;
+          return {
+            id: a.action,
+            label: a.label,
+            icon: a.icon,
+            count: q.rows.length,
+            disabled: bulk.isPending,
+            onSelect: () => bulk.mutate({ items: q.rows, action: a }, { onSuccess: clear }),
+          };
+        }
+        case "remove":
+          return { id: "remove", label: "Remove", icon: Trash2, count: q.rows.length, danger: true, onSelect: () => setRemoving(q.rows) };
+      }
+    });
 
   return (
     <Page
@@ -174,30 +208,8 @@ export function ContainersPage() {
         bays={{ column: "state", of: (c) => BAYS[urgency(c)] }}
         phoneColumns={["state", "name", "status"]}
         selectable={canWrite}
-        actions={
-          canWrite
-            ? (selected, clear) => (
-                <>
-                  {ACTIONS.map((a) => (
-                    <Button
-                      key={a.action}
-                      variant="outline"
-                      size="sm"
-                      disabled={bulk.isPending}
-                      onClick={() => bulk.mutate({ items: selected, action: a }, { onSuccess: clear })}
-                    >
-                      <a.icon />
-                      {a.label}
-                    </Button>
-                  ))}
-                  <Button variant="destructive" size="sm" onClick={() => setRemoving(selected)}>
-                    <Trash2 />
-                    Remove
-                  </Button>
-                </>
-              )
-            : undefined
-        }
+        actions={(selected, clear) => <QuickButtons items={quick(selected, clear)} />}
+        rowMenu={{ label: (c) => c.name, items: (c) => quick([c], () => {}) }}
       />
       {removing && <RemoveDialog env={env} containers={removing} onDone={() => setRemoving(null)} />}
       <ConfirmDialog

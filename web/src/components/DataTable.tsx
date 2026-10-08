@@ -37,6 +37,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { errorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import { MIN_WIDTH, NEW_COLUMN_WIDTH, useColumnWidths, type Widths } from "./columnWidths";
+import { RowMenu, type QuickItem } from "./RowMenu";
 
 export const features = tableFeatures({
   rowSortingFeature,
@@ -84,6 +85,8 @@ interface DataTableProps<T extends RowData> {
   bays?: { column: string; of: (row: T) => { id: string; label: string } };
   /** The columns kept on a phone; the rest hide below 640px. */
   phoneColumns?: string[];
+  /** A ⋮ menu at the end of each row with what can be done to it; rows with nothing get none. */
+  rowMenu?: { label: (row: T) => string; items: (row: T) => QuickItem[] };
 }
 
 const EMPTY: never[] = [];
@@ -133,7 +136,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
   const visible = table.getVisibleLeafColumns();
   // A frozen table adds a spacer column after the last, so each column stays
   // exactly as wide as it was dragged.
-  const width = visible.length + (props.selectable ? 1 : 0) + (widths ? 1 : 0);
+  const width = visible.length + (props.selectable ? 1 : 0) + (widths ? 1 : 0) + (props.rowMenu ? 1 : 0);
   const headerOf = (id: string) => {
     const h = visible.find((c) => c.id === id)?.columnDef.header;
     return typeof h === "string" ? h : id;
@@ -295,6 +298,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                 <col key={c.id} className="sm:w-(--w)" style={{ "--w": `${sized[i]}px` } as CSSProperties} />
               ))}
               <col />
+              {props.rowMenu && <col className="sm:w-12" />}
             </colgroup>
           )}
           <TableHeader>
@@ -356,6 +360,11 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                   );
                 })}
                 {widths && <TableHead aria-hidden className="max-sm:hidden" />}
+                {props.rowMenu && (
+                  <TableHead className="row-end w-12">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                )}
               </TableRow>
             ))}
           </TableHeader>
@@ -436,6 +445,11 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                       </TableCell>
                     ))}
                     {widths && <TableCell aria-hidden className="max-sm:hidden" />}
+                    {props.rowMenu && (
+                      <TableCell className="row-end w-12 py-0 pr-2 pl-1 text-right">
+                        <RowMenu label={props.rowMenu.label(row.original)} items={props.rowMenu.items(row.original)} />
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

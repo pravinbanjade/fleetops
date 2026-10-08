@@ -42,6 +42,29 @@ describe("custom resources", () => {
     expect(screen.queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
   });
 
+  it("puts a custom resource's events, YAML and Delete in its row menu", async () => {
+    mockFetch({ ...loggedIn, ...kubeRoutes, ...genericRoutes });
+    const { history } = renderApp("/envs/k/k8s/r/example.fleetops.io/v1/widgets");
+    await userEvent.click(await screen.findByRole("button", { name: "Actions for w1" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Events", "Edit YAML", "Delete"]);
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Events" }));
+    expect(history.location.pathname).toBe("/envs/k/k8s/r/example.fleetops.io/v1/widgets/apps/w1");
+    expect(history.location.search).toContain("tab=events");
+  });
+
+  it("leaves only Events in the row menu when the verbs allow no change", async () => {
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      ...genericRoutes,
+      "GET /api/v1/envs/k/k8s/discovery": { json: { kinds: [{ ...WIDGETS, verbs: ["get", "list", "watch"] }], failed_groups: [] } },
+    });
+    renderApp("/envs/k/k8s/r/example.fleetops.io/v1/widgets");
+    await userEvent.click(await screen.findByRole("button", { name: "Actions for w1" }));
+    expect(within(await screen.findByRole("menu")).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Events"]);
+  });
+
   it("says when the kind no longer exists", async () => {
     mockFetch({
       ...loggedIn,

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi } from "@tanstack/react-router";
+import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
+import { FileCode2, ListTree, ScrollText, TerminalSquare } from "lucide-react";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,9 @@ import { StateBadge } from "@/components/StateBadge";
 import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "@/lib/format";
 import { KubeHealth } from "./KubeHealth";
 import { CLUSTER_SCOPED, HEALTH_BAYS, HEALTH_KINDS, HEALTH_RANK, KIND_COLUMNS, KIND_LABEL, LINK_COLUMNS, NO_CREATE, READ_ONLY, STATUS_HEADER, asKind } from "./kinds";
-import { ActDialog, actIcon, actLabel, actsFor, type Act, type ActTarget } from "./Act";
+import { ActDialog, actIcon, actLabel, type Act, type ActTarget } from "./Act";
+import { kubeQuick, type KubeQuick } from "./quick";
+import { QuickButtons, type QuickItem } from "@/components/RowMenu";
 import { Meter } from "./Meter";
 import { ContainerSquares, readyCount } from "./ContainerSquares";
 import { share, useKubeUsage, usageKey } from "./usage";
@@ -25,6 +28,12 @@ const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
 
 /** A row with its CPU and memory now, on the kinds metrics-server reports. */
 type Row = KubeRow & { usage?: KubeUsageRow };
+
+const OPEN = {
+  logs: { label: "Logs", icon: ScrollText },
+  terminal: { label: "Terminal", icon: TerminalSquare },
+  events: { label: "Events", icon: ListTree },
+} as const;
 
 const byNumber = (f: (r: Row) => number) => (a: { original: Row }, b: { original: Row }) => f(a.original) - f(b.original);
 
@@ -217,6 +226,32 @@ export function KubeListPage() {
   const list = useQuery({ ...kubeListQuery(env, kind, scoped ? ns : undefined), enabled: !live.synced });
   const [creating, setCreating] = useState(false);
   const [bulk, setBulk] = useState<{ act: Act; targets: ActTarget[]; clear: () => void } | null>(null);
+  const [editing, setEditing] = useState<{ ns: string; name: string } | null>(null);
+  const navigate = useNavigate();
+  /** The quick actions for `of` as menu items and bar buttons: opening a tab needs exactly one row. */
+  const quickItems = (qs: KubeQuick[], of: KubeRow[], clear: () => void): QuickItem[] =>
+    qs.map((q): QuickItem => {
+      const first = { ns: of[0].namespace ?? "-", name: of[0].name };
+      switch (q.type) {
+        case "open":
+          return {
+            id: q.tab,
+            ...OPEN[q.tab],
+            onSelect: () => void navigate({ to: "/envs/$env/k8s/$kind/$ns/$name", params: { env, kind, ...first }, search: { tab: q.tab } }),
+          };
+        case "edit":
+          return { id: "edit", label: "Edit YAML", icon: FileCode2, onSelect: () => setEditing(first) };
+        case "act":
+          return {
+            id: q.act,
+            label: actLabel(q.act),
+            icon: actIcon(q.act),
+            count: q.rows.length,
+            danger: q.act === "delete",
+            onSelect: () => setBulk({ act: q.act, targets: q.rows.map((r) => ({ kind, ns: r.namespace ?? "-", name: r.name, row: r })), clear }),
+          };
+      }
+    });
   const selectable = canWrite && !READ_ONLY.includes(kind);
   const metered = kind === "pods" || kind === "nodes";
   const usage = useKubeUsage(env, kind === "nodes" ? "nodes" : "pods", kind === "pods" ? ns : undefined, metered);
@@ -249,6 +284,11 @@ export function KubeListPage() {
           <YamlDialog env={env} target={{ mode: "create", kind, namespace: ns || "default" }} onClose={() => setCreating(false)} />
         </Suspense>
       )}
+      {editing && (
+        <Suspense fallback={null}>
+          <YamlDialog env={env} target={{ mode: "edit", kind, ...editing }} onClose={() => setEditing(null)} />
+        </Suspense>
+      )}
       {bulk && (
         <ActDialog
           env={env}
@@ -273,23 +313,11 @@ export function KubeListPage() {
         getRowId={(r) => `${r.namespace ?? "-"}/${r.name}`}
         initialFilter={q}
         selectable={selectable}
-        actions={(selected, clear) =>
-          actsFor(kind, selected).map(({ act, rows: of }) => {
-            const Icon = actIcon(act);
-            return (
-              <Button
-                key={act}
-                variant="outline"
-                size="sm"
-                className={act === "delete" ? "text-state-fail-text hover:text-state-fail-text" : undefined}
-                onClick={() => setBulk({ act, targets: of.map((r) => ({ kind, ns: r.namespace ?? "-", name: r.name, row: r })), clear })}
-              >
-                <Icon aria-hidden />
-                {actLabel(act)}
-                {of.length > 1 ? ` ${of.length}` : ""}
-              </Button>
-            );
-          })
+        actions={(selected, clear) => <QuickButtons items={quickItems(kubeQuick(kind, selected, canWrite), selected, clear)} />}
+        rowMenu={
+          READ_ONLY.includes(kind)
+            ? undefined
+            : { label: (r) => r.name, items: (r) => quickItems(kubeQuick(kind, [r], canWrite), [r], () => {}) }
         }
         {...(kind === "events"
           ? {

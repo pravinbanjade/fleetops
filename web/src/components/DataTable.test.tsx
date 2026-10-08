@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
+import { Paintbrush } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { columns, DataTable } from "./DataTable";
 
@@ -161,6 +162,40 @@ describe("DataTable", () => {
       await userEvent.click(await screen.findByRole("menuitem", { name: "Reset widths" }));
       expect(screen.getByRole("table").querySelector("col")).toBeNull();
       expect(localStorage.getItem("fleetops.columns.Boxes")).toBeNull();
+    });
+  });
+
+  describe("row menu", () => {
+    it("lists each row's own actions behind a menu named for the row", async () => {
+      const picked: string[] = [];
+      render(
+        <DataTable
+          label="Boxes"
+          data={BOXES}
+          columns={COLS}
+          getRowId={(b) => b.id}
+          empty="No boxes"
+          rowMenu={{
+            label: (b) => b.name,
+            items: (b) =>
+              b.color === "red"
+                ? [
+                    { id: "paint", label: "Paint", icon: Paintbrush, onSelect: () => picked.push(`paint ${b.name}`) },
+                    { id: "bin", label: "Bin", icon: Paintbrush, danger: true, onSelect: () => picked.push(`bin ${b.name}`) },
+                  ]
+                : [],
+          }}
+        />,
+      );
+      // A row with nothing to do has no menu.
+      expect(screen.queryByRole("button", { name: "Actions for alpha" })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Actions for beta" }));
+      const menu = await screen.findByRole("menu");
+      expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Paint", "Bin"]);
+      await userEvent.click(within(menu).getByRole("menuitem", { name: "Paint" }));
+      expect(picked).toEqual(["paint beta"]);
+      // Its column is not one to hide, sort or resize.
+      expect(screen.queryByRole("separator", { name: /Resize Actions/ })).not.toBeInTheDocument();
     });
   });
 });

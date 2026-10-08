@@ -57,9 +57,10 @@ describe("containers list", () => {
   });
 
   it("stops the selected containers and reports a failure by name", async () => {
+    const both = [LIST[0], { ...LIST[1], state: "running", status: "Up 1 hour" }];
     const calls = mockFetch({
       ...loggedIn,
-      "GET /api/v1/envs/local/containers": { json: LIST },
+      "GET /api/v1/envs/local/containers": { json: both },
       "POST /api/v1/envs/local/containers/c1/stop": { status: 204 },
       "POST /api/v1/envs/local/containers/c2/stop": () =>
         json(409, { code: "conflict", message: "container is not running" }),
@@ -67,13 +68,59 @@ describe("containers list", () => {
     const { screen } = renderApp("/envs/local/containers");
     await waitFor(() => expect(rows(screen)).toHaveLength(2));
     await userEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
-    await userEvent.click(within(screen.getByRole("group", { name: "Selected" })).getByRole("button", { name: "Stop" }));
+    await userEvent.click(within(screen.getByRole("group", { name: "Selected" })).getByRole("button", { name: "Stop 2" }));
     expect(await screen.findByText("Stopped 1 of 2 containers. db: container is not running")).toBeInTheDocument();
     expect(calls.filter((c) => c.method === "POST").map((c) => c.path).sort()).toEqual([
       "/api/v1/envs/local/containers/c1/stop",
       "/api/v1/envs/local/containers/c2/stop",
     ]);
     expect(calls.filter((c) => c.path === "/api/v1/envs/local/containers").length).toBeGreaterThan(1);
+  });
+
+  it("offers each action only for the selected containers whose state it fits", async () => {
+    const calls = mockFetch({
+      ...loggedIn,
+      "GET /api/v1/envs/local/containers": { json: LIST },
+      "POST /api/v1/envs/local/containers/c2/start": { status: 204 },
+    });
+    const { screen } = renderApp("/envs/local/containers");
+    await waitFor(() => expect(rows(screen)).toHaveLength(2));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+    const bar = screen.getByRole("group", { name: "Selected" });
+    expect(within(bar).getAllByRole("button").map((b) => b.textContent)).toEqual(["Start", "Stop", "Restart", "Kill", "Pause", "Remove 2"]);
+    await userEvent.click(within(bar).getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/api/v1/envs/local/containers/c2/start"]));
+  });
+
+  it("offers one selected container its logs, shell and stats", async () => {
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: LIST } });
+    const { screen, history } = renderApp("/envs/local/containers");
+    await waitFor(() => expect(rows(screen)).toHaveLength(2));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select c1" }));
+    const bar = screen.getByRole("group", { name: "Selected" });
+    expect(within(bar).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Logs",
+      "Terminal",
+      "Stats",
+      "Stop",
+      "Restart",
+      "Kill",
+      "Pause",
+      "Remove",
+    ]);
+    await userEvent.click(within(bar).getByRole("button", { name: "Logs" }));
+    await waitFor(() => expect(history.location.pathname).toBe("/envs/local/containers/c1"));
+    expect(history.location.search).toContain("tab=logs");
+  });
+
+  it("puts each container's actions in its row menu", async () => {
+    mockFetch({ ...loggedIn, "GET /api/v1/envs/local/containers": { json: LIST } });
+    const { screen } = renderApp("/envs/local/containers");
+    await userEvent.click(await screen.findByRole("button", { name: "Actions for db" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Logs", "Start", "Remove"]);
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Remove" }));
+    expect(await screen.findByRole("dialog", { name: "Remove db?" })).toBeInTheDocument();
   });
 
   it("removes containers with force after confirming", async () => {

@@ -187,6 +187,31 @@
   }
 }
 
+/*
+ * The row menu's cell, pinned to the table's right edge so ⋮ stays in reach
+ * on a table wider than the page. Cells scroll under it, so its fill is the
+ * strip, opaque, with the row's hover wash or selection tint laid over it.
+ */
+@utility row-end {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--card);
+  tr:hover > & {
+    background:
+      linear-gradient(color-mix(in oklch, var(--accent) 60%, transparent), color-mix(in oklch, var(--accent) 60%, transparent)),
+      var(--card);
+  }
+  tr[data-state="selected"] > & {
+    background: linear-gradient(var(--cord-soft), var(--cord-soft)), var(--card);
+  }
+  thead tr > & {
+    background:
+      linear-gradient(color-mix(in oklch, var(--muted) 50%, transparent), color-mix(in oklch, var(--muted) 50%, transparent)),
+      var(--card);
+  }
+}
+
 @utility font-strip {
   font-variant-numeric: tabular-nums;
 }
