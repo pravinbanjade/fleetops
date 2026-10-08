@@ -16,6 +16,7 @@ import { asKind, CLUSTER_SCOPED, KIND_COLUMNS, KIND_LABEL } from "./kinds";
 import { useKubeUsage, usageKey } from "./usage";
 import { LivePaused } from "./LivePaused";
 import { Conditions, EventStrips } from "./ObjectParts";
+import { ContainerChips, parseContainers } from "./ContainerSquares";
 import type { KubeTab } from "./tabs";
 
 const LogsTab = lazy(() => import("@/pages/containers/logs/LogsTab").then((m) => ({ default: m.LogsTab })));
@@ -57,7 +58,14 @@ export function KubeObjectPage() {
     );
   const o = obj.data;
   const isPod = kind === "pods";
-  const chosen = container ?? o?.containers[0];
+  // Logs read any container, init ones included; a shell needs one of the pod's own.
+  const listed = parseContainers(o?.row.columns.containers);
+  const all = listed.length ? listed : (o?.containers ?? []).map((c) => ({ name: c, init: false, state: "unknown" as const, reason: "", message: "" }));
+  const pickable = tab === "terminal" ? all.filter((c) => !c.init) : all;
+  const chosen = pickable.find((c) => c.name === container)?.name ?? pickable[0]?.name ?? o?.containers[0];
+  // Whether the chosen container runs, not the pod: a crashing sidecar marks the pod, not its neighbours.
+  const state = listed.find((c) => c.name === chosen && (tab !== "terminal" || !c.init))?.state;
+  const running = state ? state === "ready" || state === "running" : o?.row.status === "Running";
   const tabs: [KubeTab, string, typeof Info][] = [
     ["summary", "Summary", Info],
     ["yaml", "YAML", FileText],
@@ -121,16 +129,16 @@ export function KubeObjectPage() {
         </TabsContent>
         {isPod && o && (
           <>
-            <ContainerPicker containers={o.containers} value={chosen} onChange={setContainer} hidden={tab !== "logs" && tab !== "terminal"} />
+            {(tab === "logs" || tab === "terminal") && pickable.length > 1 && <ContainerChips containers={pickable} value={chosen} onChange={setContainer} />}
             <TabsContent value="logs">
               <Suspense fallback={null}>
-                <LogsTab key={chosen} env={env} id={`${ns}/${name}`} name={name} running={o.row.status === "Running"} container={chosen} />
+                <LogsTab key={chosen} env={env} id={`${ns}/${name}`} name={name} running={running} container={chosen} />
               </Suspense>
             </TabsContent>
             {canWrite && (
               <TabsContent value="terminal">
                 <Suspense fallback={null}>
-                  <TerminalTab key={chosen} env={env} id={`${ns}/${name}`} running={o.row.status === "Running"} container={chosen} />
+                  <TerminalTab key={chosen} env={env} id={`${ns}/${name}`} running={running} container={chosen} />
                 </Suspense>
               </TabsContent>
             )}
@@ -138,18 +146,6 @@ export function KubeObjectPage() {
         )}
       </Tabs>
     </Page>
-  );
-}
-
-function ContainerPicker({ containers, value, onChange, hidden }: { containers: string[]; value?: string; onChange: (c: string) => void; hidden: boolean }) {
-  if (hidden || containers.length < 2) return null;
-  return (
-    <label className="my-2 flex items-center gap-2 text-sm">
-      <span className="text-muted-foreground">Container</span>
-      <select aria-label="Container" className="h-8 rounded-md border bg-background px-2" value={value} onChange={(e) => onChange(e.target.value)}>
-        {containers.map((c) => (<option key={c} value={c}>{c}</option>))}
-      </select>
-    </label>
   );
 }
 

@@ -12,8 +12,13 @@ const deployment = {
   owners: [],
   containers: [],
 };
+const squares = JSON.stringify([
+  { name: "main", init: false, state: "ready", reason: "", message: "" },
+  { name: "side", init: false, state: "error", reason: "CrashLoopBackOff", message: "back-off 5m0s" },
+  { name: "migrate", init: true, state: "done", reason: "Completed", message: "" },
+]);
 const pod = {
-  row: { name: "web-1", namespace: "apps", created: 1, status: "Running", health: "ok", columns: {} },
+  row: { name: "web-1", namespace: "apps", created: 1, status: "Running", health: "ok", columns: { containers: squares } },
   yaml: "kind: Pod\n",
   conditions: [],
   owners: [{ kind: "ReplicaSet", name: "web-7d9", link: null }, { kind: "Deployment", name: "web", link: "deployments" }],
@@ -70,7 +75,18 @@ describe("a Kubernetes object's page", () => {
     expect(screen.queryByRole("button", { name: "Scale" })).not.toBeInTheDocument();
     const ws = FakeWebSocket.latest();
     if (ws.readyState !== FakeWebSocket.OPEN) act(() => ws.open());
-    await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Container" }), "side");
+    const picker = await screen.findByRole("radiogroup", { name: "Container" });
+    // Each container with its state; the init container last, its logs still worth reading.
+    expect(within(picker).getAllByRole("radio").map((r) => r.getAttribute("aria-label"))).toEqual([
+      "main: ready",
+      "side: error, CrashLoopBackOff",
+      "migrate (init): done, Completed",
+    ]);
+    expect(within(picker).getByRole("radio", { name: /^main/ })).toBeChecked();
+    // The arrow keys walk the containers, as in any radio group.
+    within(picker).getByRole("radio", { name: /^main/ }).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(within(picker).getByRole("radio", { name: /^side/ })).toBeChecked();
     let last: Record<string, unknown> | undefined;
     await waitFor(() => {
       last = ws
@@ -80,6 +96,24 @@ describe("a Kubernetes object's page", () => {
       expect(last?.opts).toMatchObject({ container: "side" });
     });
     expect(last).toMatchObject({ env: "k", id: "apps/web-1", opts: { container: "side" } });
+  });
+
+  it("judges running by the chosen container, not the pod's status", async () => {
+    // A crashing sidecar marks the whole pod, yet main still runs and takes a shell.
+    mockFetch({ ...routes, "GET /api/v1/envs/k/k8s/pods/apps/web-1": { json: { ...pod, row: { ...pod.row, status: "CrashLoopBackOff", health: "bad" } } } });
+    renderApp("/envs/k/k8s/pods/apps/web-1?tab=terminal");
+    const picker = await screen.findByRole("radiogroup", { name: "Container" });
+    expect(await screen.findByRole("button", { name: "Connect" })).toBeEnabled();
+    expect(screen.queryByText("Start the container to open a terminal.")).not.toBeInTheDocument();
+    await userEvent.click(within(picker).getByRole("radio", { name: /^side/ }));
+    expect(await screen.findByText("Start the container to open a terminal.")).toBeInTheDocument();
+  });
+
+  it("offers a shell only in a pod's own containers, not its init containers", async () => {
+    mockFetch(routes);
+    renderApp("/envs/k/k8s/pods/apps/web-1?tab=terminal");
+    const picker = await screen.findByRole("radiogroup", { name: "Container" });
+    expect(within(picker).getAllByRole("radio").map((r) => r.getAttribute("aria-label"))).toEqual(["main: ready", "side: error, CrashLoopBackOff"]);
   });
 });
 

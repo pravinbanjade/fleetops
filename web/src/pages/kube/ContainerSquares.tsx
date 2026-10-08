@@ -1,3 +1,4 @@
+import { Fragment, useId, useRef } from "react";
 import { Tooltip } from "radix-ui";
 import { cn } from "@/lib/utils";
 
@@ -115,3 +116,86 @@ export function ContainerSquares({ column, ready }: { column?: string; ready?: s
 
 /** How many containers are ready, from the `ready/want` column: what the squares sort by. */
 export const readyCount = (ready: string | undefined) => Number((ready ?? "").split("/")[0]) || 0;
+
+/**
+ * The pod's containers to pick from on Logs and Terminal: a radio strip of
+ * chips, each with its state square and name, the chosen one in the cord.
+ * A crashing container names why. Init containers come last, past a rule.
+ */
+export function ContainerChips({
+  containers,
+  value,
+  onChange,
+}: {
+  containers: ContainerSquare[];
+  value: string | undefined;
+  onChange: (name: string) => void;
+}) {
+  const id = useId();
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const at = Math.max(
+    0,
+    containers.findIndex((c) => c.name === value),
+  );
+  const move = (to: number) => {
+    const i = (to + containers.length) % containers.length;
+    onChange(containers[i].name);
+    refs.current[i]?.focus();
+  };
+  return (
+    <div className="my-3 flex flex-wrap items-center gap-1.5">
+      <span id={id} className="mr-1 text-xs font-medium text-muted-foreground">
+        Container
+      </span>
+      <div
+        role="radiogroup"
+        aria-labelledby={id}
+        className="flex flex-wrap items-center gap-1.5"
+        onKeyDown={(e) => {
+          const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+          if (step !== undefined) move(at + step);
+          else if (e.key === "Home") move(0);
+          else if (e.key === "End") move(containers.length - 1);
+          else return;
+          e.preventDefault();
+        }}
+      >
+        {containers.map((c, i) => {
+          const checked = i === at;
+          return (
+            <Fragment key={`${c.init ? "i" : "c"}:${c.name}`}>
+              {c.init && !containers[i - 1]?.init && (
+                <span aria-hidden className="mx-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="h-4 w-px bg-border" />
+                  init
+                </span>
+              )}
+              <button
+                ref={(el) => {
+                  refs.current[i] = el;
+                }}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                aria-label={label(c)}
+                title={c.message || undefined}
+                tabIndex={checked ? 0 : -1}
+                onClick={() => onChange(c.name)}
+                className={cn(
+                  "inline-flex h-7 items-center gap-1.5 rounded-md border px-2 transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35",
+                  checked
+                    ? "border-primary/60 bg-cord-soft text-foreground"
+                    : "border-input bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
+                )}
+              >
+                <span aria-hidden className={cn("size-2 shrink-0 rounded-[2px] border", FILL[c.state], c.init && "opacity-55")} />
+                <span className="font-ident text-[13px]">{c.name}</span>
+                {c.state === "error" && c.reason && <span className="font-holder text-xs text-state-fail-text">{c.reason}</span>}
+              </button>
+            </Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
