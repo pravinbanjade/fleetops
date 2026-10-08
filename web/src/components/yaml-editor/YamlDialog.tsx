@@ -18,8 +18,7 @@ const CodeMirrorField = lazy(() => import("./CodeMirrorField"));
 export type YamlTarget =
   | { mode: "edit"; kind: KubeKind; ns: string; name: string }
   | { mode: "edit-generic"; ref: Ref; kind: string; ns: string; name: string }
-  | { mode: "create"; kind: KubeKind; namespace: string }
-  | { mode: "apply"; namespace: string };
+  | { mode: "create"; kind: KubeKind; namespace: string };
 
 type Stage = "edit" | "review" | "failed";
 
@@ -44,10 +43,10 @@ async function replace(env: string, t: EditTarget, body: { yaml: string; resourc
 }
 
 const title = (t: YamlTarget) =>
-  isEdit(t) ? `Edit ${t.name}` : t.mode === "create" ? `Create ${KIND_LABEL[t.kind].replace(/s$/, "")}` : "Apply YAML";
+  isEdit(t) ? `Edit ${t.name}` : `Create ${KIND_LABEL[t.kind].replace(/s$/, "")}`;
 
 /**
- * Edit, create or apply Kubernetes YAML (spec §4.2–4.3): Review sends a dry
+ * Edit or create Kubernetes YAML (spec §4.2–4.3): Review sends a dry
  * run and shows what would change; nothing is written until Apply.
  */
 export default function YamlDialog({ env, target, onClose }: { env: string; target: YamlTarget; onClose: () => void }) {
@@ -75,7 +74,7 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
           setText(data.yaml);
           setLoaded(data.yaml);
           setRv(data.resource_version);
-        } else if (target.mode === "create") {
+        } else {
           const { data } = await kubeTemplates({ path: { env }, throwOnError: true });
           const t = (data[target.kind] ?? "").replaceAll("NAMESPACE", target.namespace);
           setText(t);

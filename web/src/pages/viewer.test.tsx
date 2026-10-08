@@ -15,12 +15,11 @@ describe("a viewer", () => {
     expect(screen.queryByRole("button", { name: /Prune/ })).toBeNull();
   });
 
-  it("sees Kubernetes lists without Create or Apply YAML", async () => {
+  it("sees Kubernetes lists without Create", async () => {
     mockFetch({ ...loggedIn, ...kubeRoutes, "GET /api/v1/envs": { json: [...ENVS, viewer(KUBE_ENV)] } });
     renderApp("/envs/k/k8s/deployments");
     await screen.findByRole("table", { name: "Deployments" });
     await waitFor(() => expect(screen.queryByRole("button", { name: "Create" })).toBeNull());
-    expect(screen.queryByRole("button", { name: /Apply YAML/ })).toBeNull();
   });
 
   it("is told about a stale namespace and can pick another", async () => {

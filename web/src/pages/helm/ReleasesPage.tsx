@@ -7,6 +7,7 @@ import { DataTable, columns } from "@/components/DataTable";
 import { Page } from "@/components/Page";
 import { formatAgo } from "@/lib/format";
 import { NamespacePicker, useNamespace } from "@/pages/kube/NamespacePicker";
+import { TopBarActions } from "@/components/topBarSlot";
 import { HelmStatus } from "./HelmStatus";
 
 const route = getRouteApi("/authed/shell/envs/$env/k8s/helm");
@@ -48,7 +49,10 @@ export function ReleasesPage() {
   const list = useQuery(helmReleasesQuery(env, ns || undefined));
   const cols = useMemo(() => releaseColumns(env), [env]);
   return (
-    <Page title="Helm releases" actions={<NamespacePicker env={env} value={ns} onChange={setNs} />}>
+    <Page title="Helm releases">
+      <TopBarActions>
+        <NamespacePicker env={env} value={ns} onChange={setNs} />
+      </TopBarActions>
       <DataTable
         label="Helm releases"
         data={list.data}

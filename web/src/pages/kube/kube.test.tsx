@@ -192,13 +192,6 @@ describe("credentials that cannot list namespaces", () => {
     await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/envs/k/k8s/pods?namespace=apps")).toBe(true));
   });
 
-  it("opens Apply YAML from the top bar of a Kubernetes environment", async () => {
-    mockFetch({ ...loggedIn, ...kubeRoutes });
-    renderApp("/envs/k/k8s/pods");
-    await userEvent.click(await screen.findByRole("button", { name: "Apply YAML" }));
-    expect(await screen.findByRole("dialog", { name: "Apply YAML" })).toBeInTheDocument();
-  });
-
   it("creates from a template on a list", async () => {
     mockFetch({
       ...loggedIn,

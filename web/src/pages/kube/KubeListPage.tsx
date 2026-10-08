@@ -21,6 +21,7 @@ import { ContainerSquares, readyCount } from "./ContainerSquares";
 import { share, useKubeUsage, usageKey } from "./usage";
 import { LivePaused } from "./LivePaused";
 import { NamespacePicker, useNamespace } from "./NamespacePicker";
+import { TopBarActions } from "@/components/topBarSlot";
 import { useKubeWatch } from "@/live/kubeWatch";
 
 const route = getRouteApi("/authed/shell/envs/$env/k8s/$kind");
@@ -268,14 +269,18 @@ export function KubeListPage() {
       title={KIND_LABEL[kind]}
       meta={metered && usage.reason ? <span>No CPU or memory figures: {usage.reason}.</span> : undefined}
       actions={
-        <div className="flex items-center gap-2">
-          {scoped && <NamespacePicker env={env} value={ns} onChange={setNs} />}
+        <>
+          {scoped && (
+            <TopBarActions>
+              <NamespacePicker env={env} value={ns} onChange={setNs} />
+            </TopBarActions>
+          )}
           {canWrite && !NO_CREATE.includes(kind) && !READ_ONLY.includes(kind) && (
             <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
               Create
             </Button>
           )}
-        </div>
+        </>
       }
     >
       {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}

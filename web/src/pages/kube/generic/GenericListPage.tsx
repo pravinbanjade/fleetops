@@ -17,6 +17,7 @@ import { KubeHealth } from "../KubeHealth";
 import { HEALTH_BAYS, HEALTH_RANK } from "../kinds";
 import { LivePaused } from "../LivePaused";
 import { NamespacePicker, useNamespace } from "../NamespacePicker";
+import { TopBarActions } from "@/components/topBarSlot";
 import { refKind, type Ref } from "./ref";
 import { useDiscoveredKind } from "./useDiscoveredKind";
 
@@ -116,8 +117,12 @@ export function GenericListPage() {
     <Page
       title={label}
       meta={k && <span className="font-ident">{`${k.api.group || "core"}/${k.api.version}`}</span>}
-      actions={scoped ? <NamespacePicker env={env} value={ns} onChange={setNs} /> : undefined}
     >
+      {scoped && (
+        <TopBarActions>
+          <NamespacePicker env={env} value={ns} onChange={setNs} />
+        </TopBarActions>
+      )}
       {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}
       {editing && k && (
         <Suspense fallback={null}>

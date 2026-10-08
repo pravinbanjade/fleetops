@@ -3,7 +3,7 @@ import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/rea
 import { Boxes, Check, ChevronRight, ChevronsUpDown, LogOut, Menu, Monitor, Moon, RefreshCw, Settings2, Sun, X } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import { accessOf, useEnvAccess } from "@/api/access";
+import { accessOf } from "@/api/access";
 import { envsQuery, envStatusQuery, meQuery } from "@/api/queries";
 import { useLogout } from "@/auth/session";
 import { Button } from "@/components/ui/button";
@@ -24,8 +24,6 @@ import { CommandPalette, typing } from "./CommandPalette";
 import { ADMIN_NAV, KUBE_NAV, KUBE_SIDEBAR, NAV, isGroup, kubeGroupOf, navHref, type NavItem } from "./nav";
 import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
-import { openApplyYaml } from "@/components/yaml-editor/applyYaml";
-import { ApplyYamlHost } from "@/components/yaml-editor/ApplyYamlHost";
 import { CustomResourcesNav } from "@/pages/kube/generic/CustomResourcesNav";
 import { LINK, useGroupToggles } from "./sidebar";
 import { TopBarSlot } from "./topBarSlot";
@@ -39,7 +37,6 @@ export function Shell() {
   const setDrawer = (open: boolean) => setDrawerOn(open ? pathname : null);
   const { data: envs = [] } = useQuery(envsQuery);
   const kube = isKube(envs.find((e) => e.name === env)?.kind);
-  const { canWrite } = useEnvAccess(env);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useGoKeys(env, kube);
   return (
@@ -66,7 +63,6 @@ export function Shell() {
         <TopBar env={env} kube={kube} onMenu={() => setDrawer(true)} slotRef={setSlot} />
         <ConnectionBanner />
         {env && !kube && <EnvLive env={env} />}
-        {env && kube && canWrite && <ApplyYamlHost env={env} />}
         <TopBarSlot.Provider value={slot}>
           <Outlet />
         </TopBarSlot.Provider>
@@ -259,7 +255,6 @@ function TopBar({
     ADMIN_NAV.find((n) => pathname.startsWith(n.to));
   const SectionIcon = section?.icon;
   const group = kube && section && "kind" in section ? kubeGroupOf(section) : undefined;
-  const { canWrite } = useEnvAccess(env);
   return (
     <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur-md md:px-6">
       <EnvBand env={env} />
@@ -295,11 +290,6 @@ function TopBar({
       </nav>
       <div className="ml-auto flex items-center gap-3">
         <div ref={slotRef} className="flex items-center gap-2 empty:hidden" />
-        {env && kube && canWrite && section?.to !== "/envs/$env" && (
-          <Button variant="outline" size="sm" onClick={() => openApplyYaml(env)}>
-            Apply YAML
-          </Button>
-        )}
         <LiveState />
         <CommandPalette env={env} />
       </div>

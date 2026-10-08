@@ -1,9 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Container, FileUp, HardDrive, Layers, Play, RotateCw, Search, Server, Square, UserRound, Waypoints, Puzzle } from "lucide-react";
+import { Container, HardDrive, Layers, Play, RotateCw, Search, Server, Square, UserRound, Waypoints, Puzzle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { accessOf } from "@/api/access";
 import { containersQuery, envsQuery, imagesQuery, keys, networksQuery, volumesQuery, discoveryQuery } from "@/api/queries";
 import { containerAction } from "@/api/gen/sdk.gen";
 import type { ContainerActionName, ContainerSummary } from "@/api/gen/types.gen";
@@ -23,7 +22,6 @@ import { shortId } from "@/lib/format";
 import { ACTIONS, actionsFor } from "@/pages/containers/actions";
 import { ADMIN_NAV, KUBE_NAV, NAV, kubeGroupOf, navHref } from "./nav";
 import { refOf } from "@/pages/kube/generic/ref";
-import { openApplyYaml } from "@/components/yaml-editor/applyYaml";
 import { isKube } from "@/lib/env";
 
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
@@ -161,12 +159,6 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
                 {n.label}
               </CommandItem>
             ))}
-          {kube && accessOf(envs.data?.find((x) => x.name === e)).canWrite && (
-            <CommandItem value="Apply YAML" onSelect={() => go(async () => openApplyYaml(e))}>
-              <FileUp />
-              Apply YAML
-            </CommandItem>
-          )}
           <CommandItem value="page Account" onSelect={() => go(() => navigate({ to: "/account" }))}>
             <UserRound />
             Account

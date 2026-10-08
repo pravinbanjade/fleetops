@@ -84,15 +84,16 @@ describe("YamlDialog", () => {
     expect(await screen.findByLabelText("Changes to Deployment web")).toBeInTheDocument();
   });
 
-  it("applies several documents, lists failures, and offers force on a conflict", async () => {
+  it("creates, lists failures, and offers force on a conflict", async () => {
     const calls = mockFetch({
+      "GET /api/v1/envs/k/k8s/templates": { json: { deployments: "" } },
       "POST /api/v1/envs/k/k8s/apply": (c) => ({
         json: (c.body as { force: boolean }).force
           ? [result({ action: "configured" })]
           : [result({ action: null, after: null, error: { code: "conflict", message: 'conflict with "kubectl": .spec.replicas' } })],
       }),
     });
-    wrap(<YamlDialog env="k" target={{ mode: "apply", namespace: "apps" }} onClose={() => {}} />);
+    wrap(<YamlDialog env="k" target={{ mode: "create", kind: "deployments", namespace: "apps" }} onClose={() => {}} />);
     await userEvent.type(await screen.findByRole("textbox", { name: "YAML" }), "kind: Deployment\n");
     await userEvent.click(screen.getByRole("button", { name: "Review" }));
     expect(await screen.findByText(/conflict with "kubectl"/)).toBeInTheDocument();
