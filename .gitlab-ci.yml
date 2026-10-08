@@ -83,7 +83,7 @@ ci-image:
     - >
       docker buildx build ci/ --push --tag "$CI_IMAGE"
       --cache-from "type=registry,ref=$CI_REGISTRY_IMAGE/ci:cache"
-      --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE/ci:cache,mode=max,image-manifest=true,oci-mediatypes=true"
+      --cache-to "type=registry,ref=$CI_REGISTRY_IMAGE/ci:cache,mode=min,image-manifest=true,oci-mediatypes=true"
 
 rust:
   extends: .test
