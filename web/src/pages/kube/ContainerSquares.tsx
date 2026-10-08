@@ -76,7 +76,7 @@ function Card({ c }: { c: ContainerSquare }) {
   );
 }
 
-/** A pod's containers as a row of squares, init containers first and fainter. */
+/** A pod's containers as a row of squares, init containers last and fainter. */
 export function ContainerSquares({ column, ready }: { column?: string; ready?: string }) {
   const all = parseContainers(column);
   if (all.length === 0) return <span className="text-muted-foreground">{ready ?? "—"}</span>;

@@ -245,7 +245,7 @@ fn a_status_write_is_not_a_scale_but_a_replica_or_note_change_is() {
 }
 
 #[test]
-fn a_pod_lists_each_container_state_init_containers_first() {
+fn a_pod_lists_each_container_state_init_containers_last() {
     let p = obj(json!({"metadata": meta("mixed"), "spec": {
             "initContainers": [{"name": "migrate"}],
             "containers": [{"name": "app"}, {"name": "side"}, {"name": "boot"}, {"name": "slow"}, {"name": "dead"}, {"name": "new"}]},
@@ -264,7 +264,6 @@ fn a_pod_lists_each_container_state_init_containers_first() {
     assert_eq!(
         got,
         json!([
-            c(true, "migrate", "done", "Completed", ""),
             c(false, "app", "ready", "", ""),
             c(
                 false,
@@ -277,6 +276,7 @@ fn a_pod_lists_each_container_state_init_containers_first() {
             c(false, "slow", "running", "", ""),
             c(false, "dead", "error", "exit 137", ""),
             c(false, "new", "unknown", "", ""),
+            c(true, "migrate", "done", "Completed", ""),
         ])
     );
     assert_eq!(r.columns["ready"], "1/6");

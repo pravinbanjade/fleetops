@@ -104,10 +104,10 @@ describe("Kubernetes environments", () => {
   it("draws a square per container in place of the Ready count", async () => {
     const c = (name: string, state: string, reason = "", message = "", init = false) => ({ name, init, state, reason, message });
     const containers = JSON.stringify([
-      c("migrate", "done", "Completed", "", true),
       c("app", "ready"),
       c("side", "error", "CrashLoopBackOff", "back-off 5m0s restarting failed container=side"),
       c("new", "unknown"),
+      c("migrate", "done", "Completed", "", true),
     ]);
     mockFetch({
       ...loggedIn,
@@ -118,12 +118,12 @@ describe("Kubernetes environments", () => {
     const squares = await screen.findByRole("group", { name: "Containers: 1 of 3 ready" });
     const each = within(squares).getAllByRole("img");
     expect(each.map((s) => s.getAttribute("aria-label"))).toEqual([
-      "migrate (init): done, Completed",
       "app: ready",
       "side: error, CrashLoopBackOff",
       "new: unknown",
+      "migrate (init): done, Completed",
     ]);
-    expect(each.map((s) => s.dataset.stateName)).toEqual(["done", "ready", "error", "unknown"]);
+    expect(each.map((s) => s.dataset.stateName)).toEqual(["ready", "error", "unknown", "done"]);
     expect(screen.getByRole("columnheader", { name: /Containers/ })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: /^Ready/ })).not.toBeInTheDocument();
     // Pods are not racked into health bays: the squares already say it.
@@ -131,7 +131,7 @@ describe("Kubernetes environments", () => {
     expect(screen.queryByRole("rowgroup", { name: "Healthy" })).not.toBeInTheDocument();
 
     // Hovering a square shows its name, state, reason and message.
-    await userEvent.hover(each[2]);
+    await userEvent.hover(each[1]);
     const tip = await screen.findByRole("tooltip");
     expect(tip).toHaveTextContent("side");
     expect(tip).toHaveTextContent("error");

@@ -343,7 +343,7 @@ fn pod(p: Pod) -> Summary {
     )
 }
 
-/// The pod's containers as a JSON array, init containers first: each with
+/// The pod's containers as a JSON array, init containers last: each with
 /// its `name`, `init`, `state` and the `reason` and `message` Kubernetes gave.
 /// A state is `ready`, `running` (not ready yet), `waiting` (on its way up),
 /// `error`, `done` or `unknown` (no status reported yet).
@@ -373,7 +373,8 @@ fn container_states(spec: Option<&PodSpec>, st: &PodStatus) -> String {
         .containers
         .iter()
         .map(|c| entry(false, &c.name, find(&st.container_statuses, &c.name)));
-    serde_json::Value::Array(init.chain(main).collect()).to_string()
+    // The containers doing the pod's work lead; finished init containers trail.
+    serde_json::Value::Array(main.chain(init).collect()).to_string()
 }
 
 fn container_state(c: &ContainerStatus) -> (&'static str, Option<String>, Option<String>) {
