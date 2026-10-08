@@ -40,7 +40,7 @@ export const KIND_COLUMNS: Record<KubeKind, [string, string][]> = {
   daemonsets: [["desired", "Desired"], ["current", "Current"], ["ready", "Ready"], ["available", "Available"]],
   jobs: [["completions", "Completions"]],
   cronjobs: [["schedule", "Schedule"], ["active", "Active"], ["last_schedule", "Last schedule"]],
-  pods: [["ready", "Ready"], ["restarts", "Restarts"], ["node", "Node"], ["ip", "IP"]],
+  pods: [["containers", "Containers"], ["restarts", "Restarts"], ["node", "Node"], ["ip", "IP"]],
   services: [["cluster_ip", "Cluster IP"], ["external_ip", "External IP"], ["ports", "Ports"]],
   ingresses: [["class", "Class"], ["hosts", "Hosts"], ["address", "Address"]],
   configmaps: [["keys", "Keys"]],

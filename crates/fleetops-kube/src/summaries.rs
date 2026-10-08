@@ -11,8 +11,8 @@ use k8s_openapi::api::{
     autoscaling::v2::HorizontalPodAutoscaler,
     batch::v1::{CronJob, Job},
     core::v1::{
-        ConfigMap, Event, Namespace, Node, PersistentVolume, PersistentVolumeClaim, Pod, Secret,
-        Service, ServiceAccount,
+        ConfigMap, ContainerStatus, Event, Namespace, Node, PersistentVolume,
+        PersistentVolumeClaim, Pod, PodSpec, PodStatus, Secret, Service, ServiceAccount,
     },
     networking::v1::{Ingress, NetworkPolicy},
     rbac::v1::{ClusterRole, ClusterRoleBinding, PolicyRule, Role, RoleBinding, RoleRef, Subject},
@@ -304,6 +304,7 @@ fn pod(p: Pod) -> Summary {
         .unwrap_or_default();
     let want = p.spec.as_ref().map(|s| s.containers.len()).unwrap_or(0);
     let st = p.status.unwrap_or_default();
+    let squares = container_states(p.spec.as_ref(), &st);
     let cs = st.container_statuses.unwrap_or_default();
     let ready = cs.iter().filter(|c| c.ready).count();
     let restarts: i32 = cs.iter().map(|c| c.restart_count).sum();
@@ -334,11 +335,65 @@ fn pod(p: Pod) -> Summary {
         health,
         cols([
             ("ready", format!("{ready}/{want}")),
+            ("containers", squares),
             ("restarts", restarts.to_string()),
             ("node", node),
             ("ip", st.pod_ip.unwrap_or_default()),
         ]),
     )
+}
+
+/// One `kind:name:state:reason` entry per container, init containers (`i`)
+/// before the rest (`c`), joined by `;`; container names are DNS labels, so
+/// neither separator can appear in one. A state is `ready`, `running` (not
+/// ready yet), `waiting` (on its way up), `error`, `done` or `unknown` (no
+/// status reported yet).
+fn container_states(spec: Option<&PodSpec>, st: &PodStatus) -> String {
+    let entry = |kind: &str, name: &str, cs: Option<&ContainerStatus>| {
+        let (state, reason) = cs.map_or(("unknown", String::new()), container_state);
+        format!("{kind}:{name}:{state}:{reason}")
+    };
+    fn find<'a>(all: &'a Option<Vec<ContainerStatus>>, name: &str) -> Option<&'a ContainerStatus> {
+        all.as_ref()?.iter().find(|c| c.name == name)
+    }
+    let Some(spec) = spec else {
+        return String::new();
+    };
+    let init = spec
+        .init_containers
+        .iter()
+        .flatten()
+        .map(|c| entry("i", &c.name, find(&st.init_container_statuses, &c.name)));
+    let main = spec
+        .containers
+        .iter()
+        .map(|c| entry("c", &c.name, find(&st.container_statuses, &c.name)));
+    init.chain(main).collect::<Vec<_>>().join(";")
+}
+
+fn container_state(c: &ContainerStatus) -> (&'static str, String) {
+    let Some(state) = c.state.as_ref() else {
+        return ("unknown", String::new());
+    };
+    if let Some(t) = &state.terminated {
+        let reason = t
+            .reason
+            .clone()
+            .unwrap_or_else(|| format!("exit {}", t.exit_code));
+        return (if t.exit_code == 0 { "done" } else { "error" }, reason);
+    }
+    if let Some(w) = &state.waiting {
+        let reason = w.reason.clone().unwrap_or_default();
+        let normal = matches!(
+            reason.as_str(),
+            "" | "ContainerCreating" | "PodInitializing"
+        );
+        return (if normal { "waiting" } else { "error" }, reason);
+    }
+    if state.running.is_some() {
+        return (if c.ready { "ready" } else { "running" }, String::new());
+    }
+    ("unknown", String::new())
 }
 
 fn service(s: Service) -> Summary {

@@ -101,6 +101,27 @@ describe("Kubernetes environments", () => {
     expect(await screen.findByText("No permission to list Secrets in all namespaces")).toBeInTheDocument();
   });
 
+  it("draws a square per container in place of the Ready count", async () => {
+    const containers = "i:migrate:done:Completed;c:app:ready:;c:side:error:CrashLoopBackOff;c:new:unknown:";
+    mockFetch({
+      ...loggedIn,
+      ...kubeRoutes,
+      "GET /api/v1/envs/k/k8s/pods": { json: { rows: [kubeRow("web-1", "apps", { ready: "1/3", containers })], truncated: false } },
+    });
+    renderApp("/envs/k/k8s/pods");
+    const squares = await screen.findByRole("group", { name: "Containers: 1 of 3 ready" });
+    const each = within(squares).getAllByRole("img");
+    expect(each.map((s) => s.getAttribute("aria-label"))).toEqual([
+      "migrate (init): done, Completed",
+      "app: ready",
+      "side: error, CrashLoopBackOff",
+      "new: unknown",
+    ]);
+    expect(each.map((s) => s.dataset.state)).toEqual(["done", "ready", "error", "unknown"]);
+    expect(screen.getByRole("columnheader", { name: /Containers/ })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: /^Ready/ })).not.toBeInTheDocument();
+  });
+
   it("says when a list is truncated", async () => {
     mockFetch({ ...loggedIn, ...kubeRoutes, "GET /api/v1/envs/k/k8s/pods": { json: { rows: [], truncated: true } } });
     renderApp("/envs/k/k8s/pods");

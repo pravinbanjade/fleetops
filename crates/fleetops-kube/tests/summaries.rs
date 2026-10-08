@@ -243,3 +243,26 @@ fn a_status_write_is_not_a_scale_but_a_replica_or_note_change_is() {
     assert_ne!(scale_state(&dep("3", 3, None, 2)), read);
     assert_ne!(scale_state(&dep("4", 0, Some("2"), 2)), read);
 }
+
+#[test]
+fn a_pod_lists_each_container_state_init_containers_first() {
+    let p = obj(json!({"metadata": meta("mixed"), "spec": {
+            "initContainers": [{"name": "migrate"}],
+            "containers": [{"name": "app"}, {"name": "side"}, {"name": "boot"}, {"name": "slow"}, {"name": "dead"}, {"name": "new"}]},
+        "status": {"phase": "Running",
+            "initContainerStatuses": [
+                {"name": "migrate", "ready": false, "restartCount": 0, "image": "x", "imageID": "", "state": {"terminated": {"exitCode": 0, "reason": "Completed"}}}],
+            "containerStatuses": [
+                {"name": "app", "ready": true, "restartCount": 0, "image": "x", "imageID": "", "state": {"running": {}}},
+                {"name": "side", "ready": false, "restartCount": 3, "image": "x", "imageID": "", "state": {"waiting": {"reason": "CrashLoopBackOff"}}},
+                {"name": "boot", "ready": false, "restartCount": 0, "image": "x", "imageID": "", "state": {"waiting": {"reason": "ContainerCreating"}}},
+                {"name": "slow", "ready": false, "restartCount": 0, "image": "x", "imageID": "", "state": {"running": {}}},
+                {"name": "dead", "ready": false, "restartCount": 0, "image": "x", "imageID": "", "state": {"terminated": {"exitCode": 137}}}]}}));
+    let r = row(KubeKind::Pods, &p);
+    assert_eq!(
+        r.columns["containers"],
+        "i:migrate:done:Completed;c:app:ready:;c:side:error:CrashLoopBackOff;c:boot:waiting:ContainerCreating;\
+         c:slow:running:;c:dead:error:exit 137;c:new:unknown:"
+    );
+    assert_eq!(r.columns["ready"], "1/6");
+}
