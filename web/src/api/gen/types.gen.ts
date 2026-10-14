@@ -698,7 +698,8 @@ export type KubeList = {
 export type KubeObject = {
     conditions: Array<KubeCondition>;
     /**
-     * Pods only: container names, first is the default.
+     * Pods: container names, first is the default. Workloads with pod
+     * logs: the pod template's.
      */
     containers: Array<string>;
     /**
@@ -806,6 +807,10 @@ export type KubeconfigText = {
 };
 
 export type LogLine = {
+    /**
+     * Kubernetes merged logs only: the pod the line came from.
+     */
+    pod?: string | null;
     stream: LogStream;
     /**
      * One line without its trailing newline. With `timestamps`, Docker's
@@ -822,6 +827,11 @@ export type LogOptions = {
     container?: string | null;
     follow?: boolean;
     /**
+     * Kubernetes only: the container's previous (terminated) run. Never
+     * follows. Docker ignores it.
+     */
+    previous?: boolean;
+    /**
      * Unix seconds.
      */
     since?: number | null;
@@ -834,7 +844,7 @@ export type LogOptions = {
     timestamps?: boolean;
 };
 
-export type LogStream = 'stdout' | 'stderr';
+export type LogStream = 'stdout' | 'stderr' | 'meta';
 
 export type NameBody = {
     name: string;
@@ -3274,6 +3284,39 @@ export type KubeEventsResponses = {
 };
 
 export type KubeEventsResponse = KubeEventsResponses[keyof KubeEventsResponses];
+
+export type WorkloadPodsData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/pods';
+};
+
+export type WorkloadPodsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type WorkloadPodsError = WorkloadPodsErrors[keyof WorkloadPodsErrors];
+
+export type WorkloadPodsResponses = {
+    /**
+     * Rows
+     */
+    200: KubeList;
+};
+
+export type WorkloadPodsResponse = WorkloadPodsResponses[keyof WorkloadPodsResponses];
 
 export type RestartKubeData = {
     body?: never;

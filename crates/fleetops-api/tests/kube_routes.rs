@@ -648,3 +648,35 @@ async fn a_viewer_cannot_cordon_or_run_now() {
         .iter()
         .any(|c| c.starts_with("cordon") || c.starts_with("trigger")));
 }
+
+#[tokio::test]
+async fn a_workloads_pods_are_listed_and_other_kinds_refused() {
+    let (t, admin) = kube_app().await;
+    t.fake.kube.object(KubeKind::Pods, "apps", "db-1");
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/deployments/apps/web/pods",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    let names: Vec<_> = r.json["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["name"].clone())
+        .collect();
+    assert_eq!(names, [json!("web-1")]);
+    t.fake.kube.object(KubeKind::Services, "apps", "web");
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/k/k8s/services/apps/web/pods",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 400, "{:?}", r.json);
+}

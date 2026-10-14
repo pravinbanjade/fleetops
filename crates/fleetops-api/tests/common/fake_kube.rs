@@ -381,6 +381,47 @@ impl KubeOps for FakeKube {
             .collect();
         Box::pin(futures_util::stream::iter(lines))
     }
+    fn workload_logs(
+        &self,
+        kind: KubeKind,
+        ns: &str,
+        name: &str,
+        opts: &LogOptions,
+    ) -> BoxStream<LogLine> {
+        self.log_opts.lock().unwrap().push(opts.clone());
+        self.call(format!("workload_logs {}/{ns}/{name}", kind.as_str()));
+        let pod = format!("{name}-abc12");
+        let lines: Vec<Result<LogLine>> = self
+            .logs
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|t| {
+                Ok(LogLine {
+                    stream: LogStream::Stdout,
+                    text: t.clone(),
+                    pod: Some(pod.clone()),
+                })
+            })
+            .collect();
+        Box::pin(futures_util::stream::iter(lines))
+    }
+    async fn workload_pods(&self, kind: KubeKind, ns: &str, name: &str) -> Result<KubeList> {
+        self.find(kind, ns, name)?;
+        let prefix = format!("{name}-");
+        let rows = self
+            .objects
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|((k, n, p), _)| *k == KubeKind::Pods && n == ns && p.starts_with(&prefix))
+            .map(|(_, o)| o.row.clone())
+            .collect();
+        Ok(KubeList {
+            rows,
+            truncated: false,
+        })
+    }
     async fn exec_start(&self, ns: &str, pod: &str, opts: &ExecOptions) -> Result<KubeExec> {
         self.find(KubeKind::Pods, ns, pod)?;
         let (out_tx, out_rx) = mpsc::channel(16);

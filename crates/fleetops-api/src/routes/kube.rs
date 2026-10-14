@@ -375,6 +375,24 @@ pub async fn events(
     Ok(Json(ops.events(k, &p.ns, &p.name).await?))
 }
 
+#[utoipa::path(get, path = "/envs/{env}/k8s/{kind}/{ns}/{name}/pods", operation_id = "workloadPods", tag = "kubernetes",
+    summary = "The pods a workload's selector matches", params(ObjectPath),
+    responses((status = 200, description = "Rows", body = KubeList)))]
+pub async fn workload_pods(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ObjectPath>,
+) -> ApiResult<Json<KubeList>> {
+    let k = p.checked()?;
+    if !k.has_pod_logs() {
+        return Err(Error::Invalid(format!("{} have no pods of their own", k.as_str())).into());
+    }
+    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    check_object(&s, &cu, &k8, k, &p, false).await?;
+    let KubeCtx { ops, .. } = k8;
+    Ok(Json(ops.workload_pods(k, &p.ns, &p.name).await?))
+}
+
 #[utoipa::path(get, path = "/envs/{env}/k8s/metrics/{kind}", operation_id = "kubeUsage", tag = "kubernetes",
     summary = "CPU and memory now, for nodes or pods, from metrics-server", params(KindPath, ListQuery),
     responses((status = 200, description = "Usage; `available` is false when the cluster has no metrics API", body = KubeUsage)))]

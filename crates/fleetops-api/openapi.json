@@ -3849,6 +3849,77 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/pods": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "The pods a workload's selector matches",
+        "operationId": "workloadPods",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubeList"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/restart": {
       "post": {
         "tags": [
@@ -7393,7 +7464,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Pods only: container names, first is the default."
+            "description": "Pods: container names, first is the default. Workloads with pod\nlogs: the pod template's."
           },
           "owners": {
             "type": "array",
@@ -7627,6 +7698,13 @@
           "text"
         ],
         "properties": {
+          "pod": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Kubernetes merged logs only: the pod the line came from."
+          },
           "stream": {
             "$ref": "#/components/schemas/LogStream"
           },
@@ -7650,6 +7728,11 @@
           "follow": {
             "type": "boolean",
             "default": true
+          },
+          "previous": {
+            "type": "boolean",
+            "description": "Kubernetes only: the container's previous (terminated) run. Never\nfollows. Docker ignores it.",
+            "default": false
           },
           "since": {
             "type": [
@@ -7688,7 +7771,8 @@
         "type": "string",
         "enum": [
           "stdout",
-          "stderr"
+          "stderr",
+          "meta"
         ]
       },
       "NameBody": {

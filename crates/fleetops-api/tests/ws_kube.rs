@@ -421,3 +421,65 @@ async fn a_generic_watch_id_must_name_group_version_resource_and_namespace() {
     let e = ws.until(|m| m["type"] == "error" && m["sub"] == 1).await;
     assert_eq!(e["code"], "invalid");
 }
+
+#[tokio::test]
+async fn a_workload_id_streams_its_pods_lines_tagged() {
+    let (t, _admin, mut ws) = kube_ws().await;
+    t.fake.kube.object(KubeKind::Deployments, "apps", "web");
+    t.fake.kube.set_logs(&["one"]);
+    ws.send(json!({"op": "sub", "sub": 1, "topic": "logs", "env": "k",
+        "id": "deployments/apps/web", "opts": {"follow": false, "previous": true}}))
+        .await;
+    let data = ws.until(|m| m["type"] == "data").await;
+    assert_eq!(
+        data["data"][0],
+        json!({"stream": "stdout", "text": "one", "pod": "web-abc12"})
+    );
+    ws.until(|m| m["type"] == "end").await;
+    assert!(t
+        .fake
+        .kube
+        .calls()
+        .contains(&"workload_logs deployments/apps/web".to_string()));
+    assert!(t.fake.kube.log_opts.lock().unwrap()[0].previous);
+}
+
+#[tokio::test]
+async fn a_pod_id_still_streams_without_a_pod_field() {
+    let (t, _admin, mut ws) = kube_ws().await;
+    t.fake.kube.set_logs(&["one"]);
+    ws.send(
+        json!({"op": "sub", "sub": 1, "topic": "logs", "env": "k", "id": "apps/web-1",
+        "opts": {"follow": false}}),
+    )
+    .await;
+    let data = ws.until(|m| m["type"] == "data").await;
+    assert_eq!(data["data"][0], json!({"stream": "stdout", "text": "one"}));
+}
+
+#[tokio::test]
+async fn a_logs_id_naming_a_kind_without_pods_is_refused() {
+    let (_t, _admin, mut ws) = kube_ws().await;
+    for (sub, id) in [
+        (1, "services/apps/web"),
+        (2, "nope/apps/web"),
+        (3, "deployments/-/web"),
+        (4, "a/b/c/d"),
+    ] {
+        ws.send(json!({"op": "sub", "sub": sub, "topic": "logs", "env": "k", "id": id}))
+            .await;
+        let e = ws.until(|m| m["type"] == "error" && m["sub"] == sub).await;
+        assert_eq!(e["code"], "invalid", "{id}");
+    }
+}
+
+#[tokio::test]
+async fn a_workload_log_outside_the_grant_is_refused() {
+    let (_t, mut ws) = limited_ws().await;
+    ws.send(
+        json!({"op": "sub", "sub": 1, "topic": "logs", "env": "k", "id": "deployments/team-b/db"}),
+    )
+    .await;
+    let e = ws.until(|m| m["type"] == "error").await;
+    assert_eq!(e["code"], "forbidden");
+}
