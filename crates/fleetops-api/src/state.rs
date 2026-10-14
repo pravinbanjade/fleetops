@@ -37,6 +37,8 @@ pub struct ApiConfig {
     pub kube_watch_grace: Duration,
     /// Which exec plugins kubeconfig users may run (spec 3k §1); off by default.
     pub kube_exec: fleetops_kube::exec_auth::ExecPolicy,
+    /// Renders charts for install and upgrade (spec 3j §2); `None` turns them off.
+    pub helm: Option<std::sync::Arc<dyn fleetops_kube::helm::render::ChartRenderer>>,
 }
 
 impl Default for ApiConfig {
@@ -51,6 +53,7 @@ impl Default for ApiConfig {
             agent_ping_interval: Duration::from_secs(15),
             kube_watch_grace: Duration::from_secs(30),
             kube_exec: Default::default(),
+            helm: None,
         }
     }
 }

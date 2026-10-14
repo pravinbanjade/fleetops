@@ -2361,6 +2361,111 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/helm/capabilities": {
+      "get": {
+        "tags": [
+          "helm"
+        ],
+        "summary": "Whether charts can be installed and upgraded here",
+        "operationId": "helmCapabilities",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Capabilities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelmCapabilities"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/helm/charts/show": {
+      "post": {
+        "tags": [
+          "helm"
+        ],
+        "summary": "A chart's metadata and default values",
+        "operationId": "showHelmChart",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShowBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The chart",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChartShow"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/k8s/helm/releases": {
       "get": {
         "tags": [
@@ -2415,6 +2520,72 @@
         },
         "security": [
           {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/helm/releases/{ns}": {
+      "post": {
+        "tags": [
+          "helm"
+        ],
+        "summary": "Plan or commit installing a chart",
+        "operationId": "installHelmChart",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "The release's namespace.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The plan, or what was done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelmPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
             "session": []
           }
         ]
@@ -2677,6 +2848,81 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/UninstallBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The plan, or what was done",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelmPlan"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/upgrade": {
+      "post": {
+        "tags": [
+          "helm"
+        ],
+        "summary": "Plan or commit upgrading a release",
+        "operationId": "upgradeHelmRelease",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "The release's namespace.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Release name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpgradeBody"
               }
             }
           },
@@ -5961,6 +6207,76 @@
           }
         }
       },
+      "ChartMeta": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "app_version",
+          "description"
+        ],
+        "properties": {
+          "app_version": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "ChartRef": {
+        "type": "object",
+        "description": "Where a chart comes from (spec 3j §5): a repository and chart name, or an OCI reference.",
+        "properties": {
+          "chart": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "oci": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "repo_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Empty for the latest."
+          }
+        }
+      },
+      "ChartShow": {
+        "type": "object",
+        "description": "A chart's metadata and default values, for the editor.",
+        "required": [
+          "meta",
+          "values"
+        ],
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/ChartMeta"
+          },
+          "values": {
+            "type": "string"
+          }
+        }
+      },
       "ClientMsg": {
         "oneOf": [
           {
@@ -7012,6 +7328,18 @@
           }
         }
       },
+      "HelmCapabilities": {
+        "type": "object",
+        "required": [
+          "install"
+        ],
+        "properties": {
+          "install": {
+            "type": "boolean",
+            "description": "Whether install and upgrade are available (the server has --helm-binary)."
+          }
+        }
+      },
       "HelmChange": {
         "type": "string",
         "enum": [
@@ -7077,7 +7405,7 @@
       },
       "HelmPlan": {
         "type": "object",
-        "description": "A rollback or uninstall: the dry run's plan, or a commit's results.",
+        "description": "A rollback, uninstall, install or upgrade: the dry run's plan, or a commit's results.",
         "required": [
           "current",
           "changes",
@@ -7090,13 +7418,33 @@
               "$ref": "#/components/schemas/HelmObjectChange"
             }
           },
+          "chart": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ChartMeta"
+              }
+            ]
+          },
           "current": {
             "type": "integer",
             "format": "int32",
             "description": "The latest revision this was computed against; a commit sends it\nback as `expected_current`.",
             "minimum": 0
           },
+          "hooks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HookStep"
+            },
+            "description": "Install and upgrade: the hooks that run, in order."
+          },
           "note": {
+            "type": "string"
+          },
+          "notes": {
             "type": "string"
           },
           "revision": {
@@ -7114,6 +7462,20 @@
               "null"
             ],
             "description": "Commit only: the release's status afterwards (`deployed`, `failed`\nor `uninstalled`)."
+          },
+          "values_after": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Install and upgrade: the new values, masked YAML."
+          },
+          "values_before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Upgrade: the current values, masked YAML."
           }
         }
       },
@@ -7204,6 +7566,41 @@
           }
         }
       },
+      "HookStep": {
+        "type": "object",
+        "description": "One hook a deploy runs, as the plan lists it.",
+        "required": [
+          "events",
+          "kind",
+          "name",
+          "weight",
+          "delete_policies"
+        ],
+        "properties": {
+          "delete_policies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "weight": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "ImageRemoved": {
         "type": "object",
         "required": [
@@ -7248,6 +7645,35 @@
           "size": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "InstallBody": {
+        "type": "object",
+        "required": [
+          "name",
+          "chart",
+          "dry_run"
+        ],
+        "properties": {
+          "chart": {
+            "$ref": "#/components/schemas/ChartRef"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "expected_current": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The plan's `current`; 0 for a new release.",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "values": {
+            "type": "string",
+            "description": "YAML; empty for none."
           }
         }
       },
@@ -8036,6 +8462,17 @@
           "manifest"
         ],
         "properties": {
+          "chart_source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ChartRef",
+                "description": "Where FleetOps last installed or upgraded the chart from (spec 3j §5)."
+              }
+            ]
+          },
           "description": {
             "type": "string"
           },
@@ -8380,6 +8817,17 @@
           }
         }
       },
+      "ShowBody": {
+        "type": "object",
+        "required": [
+          "chart"
+        ],
+        "properties": {
+          "chart": {
+            "$ref": "#/components/schemas/ChartRef"
+          }
+        }
+      },
       "StatsSample": {
         "type": "object",
         "description": "One stats sample for a container, with CPU already turned into a\npercentage of one core times the number of cores (as `docker stats`).",
@@ -8614,6 +9062,30 @@
                 "$ref": "#/components/schemas/Role"
               }
             ]
+          }
+        }
+      },
+      "UpgradeBody": {
+        "type": "object",
+        "required": [
+          "chart",
+          "dry_run"
+        ],
+        "properties": {
+          "chart": {
+            "$ref": "#/components/schemas/ChartRef"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "expected_current": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "values": {
+            "type": "string",
+            "description": "YAML; masked values sent back unchanged keep their stored value."
           }
         }
       },

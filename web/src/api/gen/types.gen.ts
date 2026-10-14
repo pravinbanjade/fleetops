@@ -168,6 +168,34 @@ export type ChangePassword = {
     new_password: string;
 };
 
+export type ChartMeta = {
+    app_version: string;
+    description: string;
+    name: string;
+    version: string;
+};
+
+/**
+ * Where a chart comes from (spec 3j §5): a repository and chart name, or an OCI reference.
+ */
+export type ChartRef = {
+    chart?: string | null;
+    oci?: string | null;
+    repo_url?: string | null;
+    /**
+     * Empty for the latest.
+     */
+    version?: string | null;
+};
+
+/**
+ * A chart's metadata and default values, for the editor.
+ */
+export type ChartShow = {
+    meta: ChartMeta;
+    values: string;
+};
+
 /**
  * A text frame from the client. Exec stdin may also arrive as a binary
  * frame of `[u32 sub id, big-endian][bytes]`.
@@ -528,6 +556,13 @@ export type Health = {
     status: string;
 };
 
+export type HelmCapabilities = {
+    /**
+     * Whether install and upgrade are available (the server has --helm-binary).
+     */
+    install: boolean;
+};
+
 export type HelmChange = 'patch' | 'create' | 'delete' | 'keep';
 
 /**
@@ -551,16 +586,22 @@ export type HelmObjectChange = {
 };
 
 /**
- * A rollback or uninstall: the dry run's plan, or a commit's results.
+ * A rollback, uninstall, install or upgrade: the dry run's plan, or a commit's results.
  */
 export type HelmPlan = {
     changes: Array<HelmObjectChange>;
+    chart?: null | ChartMeta;
     /**
      * The latest revision this was computed against; a commit sends it
      * back as `expected_current`.
      */
     current: number;
+    /**
+     * Install and upgrade: the hooks that run, in order.
+     */
+    hooks?: Array<HookStep>;
     note: string;
+    notes?: string;
     /**
      * Commit of a rollback only: the revision written.
      */
@@ -570,6 +611,14 @@ export type HelmPlan = {
      * or `uninstalled`).
      */
     status?: string | null;
+    /**
+     * Install and upgrade: the new values, masked YAML.
+     */
+    values_after?: string | null;
+    /**
+     * Upgrade: the current values, masked YAML.
+     */
+    values_before?: string | null;
 };
 
 /**
@@ -608,6 +657,17 @@ export type HelmRevision = {
     updated: number;
 };
 
+/**
+ * One hook a deploy runs, as the plan lists it.
+ */
+export type HookStep = {
+    delete_policies: Array<string>;
+    events: Array<string>;
+    kind: string;
+    name: string;
+    weight: number;
+};
+
 export type ImageRemoved = {
     /**
      * Image ids deleted and tags removed, as Docker reports them.
@@ -621,6 +681,20 @@ export type ImageSummary = {
     in_use: boolean;
     repo_tags: Array<string>;
     size: number;
+};
+
+export type InstallBody = {
+    chart: ChartRef;
+    dry_run: boolean;
+    /**
+     * The plan's `current`; 0 for a new release.
+     */
+    expected_current?: number;
+    name: string;
+    /**
+     * YAML; empty for none.
+     */
+    values?: string;
 };
 
 /**
@@ -935,6 +1009,7 @@ export type RecreateResult = {
  * One revision in full, masked.
  */
 export type ReleaseDetail = {
+    chart_source?: null | ChartRef;
     description: string;
     /**
      * The rendered manifest, Secret values masked.
@@ -1033,6 +1108,10 @@ export type SetAccess = {
     role: EnvRole;
 };
 
+export type ShowBody = {
+    chart: ChartRef;
+};
+
 /**
  * One stats sample for a container, with CPU already turned into a
  * percentage of one core times the number of cores (as `docker stats`).
@@ -1114,6 +1193,16 @@ export type UpdateEnv = {
 export type UpdateUser = {
     password?: string | null;
     role?: null | Role;
+};
+
+export type UpgradeBody = {
+    chart: ChartRef;
+    dry_run: boolean;
+    expected_current?: number;
+    /**
+     * YAML; masked values sent back unchanged keep their stored value.
+     */
+    values?: string;
 };
 
 export type User = {
@@ -2578,6 +2667,66 @@ export type KubeDiscoveryResponses = {
 
 export type KubeDiscoveryResponse = KubeDiscoveryResponses[keyof KubeDiscoveryResponses];
 
+export type HelmCapabilitiesData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/helm/capabilities';
+};
+
+export type HelmCapabilitiesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type HelmCapabilitiesError = HelmCapabilitiesErrors[keyof HelmCapabilitiesErrors];
+
+export type HelmCapabilitiesResponses = {
+    /**
+     * Capabilities
+     */
+    200: HelmCapabilities;
+};
+
+export type HelmCapabilitiesResponse = HelmCapabilitiesResponses[keyof HelmCapabilitiesResponses];
+
+export type ShowHelmChartData = {
+    body: ShowBody;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/helm/charts/show';
+};
+
+export type ShowHelmChartErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ShowHelmChartError = ShowHelmChartErrors[keyof ShowHelmChartErrors];
+
+export type ShowHelmChartResponses = {
+    /**
+     * The chart
+     */
+    200: ChartShow;
+};
+
+export type ShowHelmChartResponse = ShowHelmChartResponses[keyof ShowHelmChartResponses];
+
 export type ListHelmReleasesData = {
     body?: never;
     path: {
@@ -2612,6 +2761,37 @@ export type ListHelmReleasesResponses = {
 };
 
 export type ListHelmReleasesResponse = ListHelmReleasesResponses[keyof ListHelmReleasesResponses];
+
+export type InstallHelmChartData = {
+    body: InstallBody;
+    path: {
+        env: string;
+        /**
+         * The release's namespace.
+         */
+        ns: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/helm/releases/{ns}';
+};
+
+export type InstallHelmChartErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type InstallHelmChartError = InstallHelmChartErrors[keyof InstallHelmChartErrors];
+
+export type InstallHelmChartResponses = {
+    /**
+     * The plan, or what was done
+     */
+    200: HelmPlan;
+};
+
+export type InstallHelmChartResponse = InstallHelmChartResponses[keyof InstallHelmChartResponses];
 
 export type GetHelmReleaseData = {
     body?: never;
@@ -2757,6 +2937,41 @@ export type UninstallHelmReleaseResponses = {
 };
 
 export type UninstallHelmReleaseResponse = UninstallHelmReleaseResponses[keyof UninstallHelmReleaseResponses];
+
+export type UpgradeHelmReleaseData = {
+    body: UpgradeBody;
+    path: {
+        env: string;
+        /**
+         * The release's namespace.
+         */
+        ns: string;
+        /**
+         * Release name.
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/upgrade';
+};
+
+export type UpgradeHelmReleaseErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type UpgradeHelmReleaseError = UpgradeHelmReleaseErrors[keyof UpgradeHelmReleaseErrors];
+
+export type UpgradeHelmReleaseResponses = {
+    /**
+     * The plan, or what was done
+     */
+    200: HelmPlan;
+};
+
+export type UpgradeHelmReleaseResponse = UpgradeHelmReleaseResponses[keyof UpgradeHelmReleaseResponses];
 
 export type KubeUsageData = {
     body?: never;
