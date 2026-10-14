@@ -21,6 +21,7 @@ fn plan(current: u32) -> HelmPlan {
             error: None,
         }],
         note: HOOKS_NOTE.into(),
+        ..Default::default()
     }
 }
 

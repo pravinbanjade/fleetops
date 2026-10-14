@@ -587,6 +587,7 @@ impl KubeOps for FakeKube {
             notes: "hello".into(),
             values: format!("db:\n  password: {MASK}\n"),
             manifest: "---\nkind: ConfigMap\n".into(),
+            chart_source: None,
         })
     }
     async fn helm_history(&self, ns: &str, name: &str) -> Result<Vec<HelmRevision>> {

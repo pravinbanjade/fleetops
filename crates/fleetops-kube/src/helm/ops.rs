@@ -83,10 +83,8 @@ fn owned_by(live: &serde_json::Value, release: &str, release_ns: &str) -> bool {
 fn new_plan(current: u32) -> HelmPlan {
     HelmPlan {
         current,
-        revision: None,
-        status: None,
-        changes: vec![],
         note: HOOKS_NOTE.into(),
+        ..Default::default()
     }
 }
 
@@ -356,6 +354,7 @@ impl KubeClient {
             notes: r.info.notes.clone(),
             values: mask::values_yaml(&r.config),
             manifest: mask::manifest(&r.manifest),
+            chart_source: None,
         })
     }
 

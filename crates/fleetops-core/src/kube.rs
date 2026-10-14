@@ -751,6 +751,25 @@ pub trait KubeOps: Send + Sync {
     ) -> Result<crate::helm::HelmPlan> {
         Err(helm_unsupported())
     }
+    /// Plans or commits an install or upgrade of an already rendered chart
+    /// (spec 3j §3), with the same `allowed` rule as `helm_rollback`.
+    async fn helm_deploy(
+        &self,
+        _d: &crate::helm::Deploy,
+        _mode: crate::helm::HelmMode,
+        _allowed: Option<&std::collections::BTreeSet<String>>,
+    ) -> Result<crate::helm::HelmPlan> {
+        Err(helm_unsupported())
+    }
+    /// The latest revision's user-supplied values, unmasked. Server-side
+    /// only: never returned to a client (spec 3j §4).
+    async fn helm_config(&self, _ns: &str, _name: &str) -> Result<serde_json::Value> {
+        Err(helm_unsupported())
+    }
+    /// Every served `group/version` (`v1` for core), for helm's `--api-versions`.
+    async fn api_versions(&self) -> Result<Vec<String>> {
+        Err(helm_unsupported())
+    }
     /// The cluster's generic kinds (spec 3g §2.1). `refresh` skips the cache.
     async fn discover(&self, _refresh: bool) -> Result<Discovery> {
         Err(generic_unsupported())
