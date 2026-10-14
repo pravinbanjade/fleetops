@@ -1076,6 +1076,7 @@ dependencies = [
  "jsonpath-rust",
  "k8s-openapi",
  "kube",
+ "libc",
  "rustls",
  "serde",
  "serde-saphyr",

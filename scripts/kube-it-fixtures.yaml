@@ -172,7 +172,7 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: crashonce
+  name: crash-once
   namespace: fleetops-it
 spec:
   restartPolicy: Always
@@ -182,4 +182,4 @@ spec:
       image: busybox:1.37
       imagePullPolicy: IfNotPresent
       volumeMounts: [{ name: mark, mountPath: /mark }]
-      command: [sh, -c, 'if [ -f /mark/ran ]; then echo second-run; sleep 3600; else touch /mark/ran; echo first-run; exit 1; fi']
+      command: [sh, -c, 'if [ -f /mark/ran ]; then echo second-run; while true; do sleep 3600; done; else touch /mark/ran; echo first-run; exit 1; fi']

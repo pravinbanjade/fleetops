@@ -151,6 +151,19 @@ pub(crate) async fn audit(
     target_id: &str,
     result: &str,
 ) {
+    audit_detail(s, user_id, action, target_type, target_id, result, None).await
+}
+
+/// `audit` with a detail object.
+pub(crate) async fn audit_detail(
+    s: &AppState,
+    user_id: Option<i64>,
+    action: &str,
+    target_type: &str,
+    target_id: &str,
+    result: &str,
+    detail: Option<serde_json::Value>,
+) {
     let entry = NewAudit {
         ts: now_unix(),
         user_id,
@@ -159,7 +172,7 @@ pub(crate) async fn audit(
         target_type: Some(target_type),
         target_id: Some(target_id),
         result,
-        detail: None,
+        detail,
     };
     if let Err(e) = s.store.insert_audit(&entry).await {
         tracing::error!(error = %e, action, "failed to write audit log");

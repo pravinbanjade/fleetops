@@ -798,6 +798,10 @@ export type KubeVersion = {
  */
 export type KubeconfigSummary = {
     context: string;
+    /**
+     * Exec users only: the plugin's command name, never its arguments.
+     */
+    exec_command?: string | null;
     server: string;
     user_kind: UserKind;
 };
@@ -1120,7 +1124,7 @@ export type User = {
     username: string;
 };
 
-export type UserKind = 'token' | 'cert';
+export type UserKind = 'token' | 'cert' | 'exec';
 
 export type VolumeSpec = {
     driver?: string | null;

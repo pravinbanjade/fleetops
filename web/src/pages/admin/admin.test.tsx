@@ -360,6 +360,17 @@ describe("Kubernetes environments", () => {
     );
   });
 
+  it("names the exec plugin a kubeconfig cluster signs in with", async () => {
+    mockFetch({
+      ...routes,
+      "GET /api/v1/envs": { json: [{ id: 9, name: "eks-1", kind: "kube-config", url: "https://k:6443", created_at: 1, updated_at: 1, agent: null,
+        kube: { server: "https://k:6443", context: "prod", user_kind: "exec", exec_command: "aws" } }] },
+    });
+    const { screen } = renderApp("/admin/envs");
+    await screen.findByText("eks-1");
+    expect(within(row(screen, "eks-1")).getByText(/via aws/)).toBeInTheDocument();
+  });
+
   it("lists a kubeconfig cluster's server and context", async () => {
     mockFetch({
       ...routes,

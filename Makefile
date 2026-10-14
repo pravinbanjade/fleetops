@@ -53,8 +53,8 @@ kind-up:
 	scripts/kind-up.sh $(KUBE_IT)
 
 test-kube: kind-up
-	FLEETOPS_KUBE_IT=$(KUBE_IT) cargo test -p fleetops-kube --features kube-it --test kube_it --test helm_it -- --test-threads=4
-	FLEETOPS_KUBE_IT=$(KUBE_IT) FLEETOPS_IT_TUNNEL=1 cargo test -p fleetops-kube --features kube-it --test kube_it --test helm_it -- --test-threads=4
+	PATH=$(CURDIR)/scripts:$$PATH FLEETOPS_KUBE_IT=$(KUBE_IT) cargo test -p fleetops-kube --features kube-it --test kube_it --test helm_it -- --test-threads=4
+	PATH=$(CURDIR)/scripts:$$PATH FLEETOPS_KUBE_IT=$(KUBE_IT) FLEETOPS_IT_TUNNEL=1 cargo test -p fleetops-kube --features kube-it --test kube_it --test helm_it -- --test-threads=4
 
 # Set to a kind fixtures directory (make kind-up) to add the kube phase.
 KUBE_IT_RSS ?=

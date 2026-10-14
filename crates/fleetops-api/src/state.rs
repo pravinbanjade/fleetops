@@ -35,6 +35,8 @@ pub struct ApiConfig {
     pub agent_ping_interval: Duration,
     /// How long a Kubernetes watch outlives its last subscriber (spec §2.4).
     pub kube_watch_grace: Duration,
+    /// Which exec plugins kubeconfig users may run (spec 3k §1); off by default.
+    pub kube_exec: fleetops_kube::exec_auth::ExecPolicy,
 }
 
 impl Default for ApiConfig {
@@ -48,6 +50,7 @@ impl Default for ApiConfig {
             ws_queue_capacity: crate::ws::queue::QUEUE_CAPACITY,
             agent_ping_interval: Duration::from_secs(15),
             kube_watch_grace: Duration::from_secs(30),
+            kube_exec: Default::default(),
         }
     }
 }

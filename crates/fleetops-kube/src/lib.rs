@@ -6,6 +6,7 @@ pub mod client;
 pub mod discovery;
 pub mod env;
 pub mod errors;
+pub mod exec_auth;
 mod generic;
 pub mod helm;
 pub mod kinds;

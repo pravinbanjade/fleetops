@@ -9,7 +9,7 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 4).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b), per-environment roles (slice 3c), Helm releases (slice 3d), events and metrics (3e), suspend and resume (3f), custom resources (3g) and workload logs and exec (3i). Next is sub-project 4, stacks and GitOps.
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b), per-environment roles (slice 3c), Helm releases (slice 3d), events and metrics (3e), suspend and resume (3f), custom resources (3g), workload logs and exec (3i) and exec-plugin kubeconfigs (3k). Next is sub-project 4, stacks and GitOps.
 
 ## Contents
 
@@ -131,7 +131,9 @@ The agent must reach the server over HTTPS (start the server with `--tls-bind`).
 
 There are two ways in, both under **Admin → Environments → Add environment**:
 
-- **Kubernetes cluster (kubeconfig).** Paste a kubeconfig and pick a context. Its user must authenticate with a bearer token (a ServiceAccount token works well) or a client certificate, and every certificate and key must be inline (`*-data`). `exec` plugins such as `aws eks get-token` and `auth-provider` users are refused: the server image has no CLIs. The server checks that the cluster answers before saving, unless you tick **Save without checking**. The kubeconfig is stored encrypted and never shown again.
+- **Kubernetes cluster (kubeconfig).** Paste a kubeconfig and pick a context. Its user must authenticate with a bearer token (a ServiceAccount token works well) or a client certificate, and every certificate and key must be inline (`*-data`). `auth-provider` users are refused. Exec-plugin users (EKS, GKE, AKS) need the opt-in below. The server checks that the cluster answers before saving, unless you tick **Save without checking**. The kubeconfig is stored encrypted and never shown again.
+
+  **EKS, GKE and AKS kubeconfigs.** Kubeconfigs whose user runs an exec plugin are accepted when the server is started with `--kube-exec-plugins=default` (or `FLEETOPS_KUBE_EXEC_PLUGINS=default`). The server then runs `aws eks get-token`, `aws-iam-authenticator token`, `gke-gcloud-auth-plugin` or `kubelogin get-token --login <azurecli|spn|msi|workloadidentity|azd>` itself, found on its own `PATH` and signed in as the user running FleetOps. A plugin must finish within 30 s (it and anything it started are then killed) and never gets a terminal. A kubeconfig's `env` may not set variables that redirect code or config loading (`PATH`, `LD_*`, `PYTHON*`, `NODE_OPTIONS`, `HOME`, `AWS_CONFIG_FILE` and the like): set those on the server. Other plugins can be listed by name (`--kube-exec-plugins=default,my-auth`). This suits FleetOps running as a binary on a machine that is already logged in. The container image ships no plugins, so use the in-cluster agent there.
 - **Kubernetes cluster (in-cluster agent).** You get a `kubectl apply` command. Run it with a context for the target cluster. It installs `fleetops-agent --kube` in the `fleetops` namespace. The agent dials out to this server, so the cluster needs no inbound access, and the server never holds the cluster's credentials. The agent keeps its key in the Secret `fleetops-agent-key`. Rotating the key gives a new command; re-applying it restarts the agent with the new join token.
 
 When you add an agent cluster you pick what its ClusterRole allows:
@@ -193,6 +195,7 @@ Configuration comes from CLI flags or environment variables. There is no config 
 | `--tls-cert` / `--tls-key` | `FLEETOPS_TLS_CERT` / `FLEETOPS_TLS_KEY` | unset | PEM certificate and key; pass both or neither. When unset, a self-signed certificate is generated and saved in the data directory |
 | `--hsts` | `FLEETOPS_HSTS` | off | Send HSTS on HTTPS responses. Enable it only when no client uses the plain HTTP listener, because browsers apply HSTS per host, not per port |
 | `--docker-host` | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker endpoint for the `local` environment |
+| `--kube-exec-plugins` | `FLEETOPS_KUBE_EXEC_PLUGINS` | unset (off) | Exec plugins kubeconfig users may run: `default` (aws, aws-iam-authenticator, gke-gcloud-auth-plugin, kubelogin) and extra bare names, comma-separated |
 | `--secret-key` | `FLEETOPS_SECRET_KEY` | unset (`<data>/secret.key`) | 32 bytes, base64: seals stored kubeconfigs. Back it up with the database |
 | `--log-level` | `FLEETOPS_LOG` | `info` | `tracing` filter, for example `fleetops_api=debug,info` |
 | `--openapi` | — | — | Print the OpenAPI document to stdout and exit |
@@ -250,6 +253,7 @@ Design documents live in `docs/superpowers/`:
 - `specs/2026-10-07-fleetops-kube-suspend-design.md` is slice 3f (suspend and resume).
 - `specs/2026-10-08-fleetops-kube-crds-generic-kinds-design.md` is slice 3g (custom resources and the missing core kinds), with the Lens-parity roadmap.
 - `specs/2026-10-14-fleetops-kube-workload-logs-exec-design.md` is slice 3i (workload logs and exec).
+- `specs/2026-10-14-fleetops-kube-exec-plugins-design.md` is slice 3k (exec-plugin kubeconfigs).
 - `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), one for sub-project 2, and one for sub-project 3.
 
 ## Architecture
@@ -329,7 +333,7 @@ The full protocol is in section 5.2 of the spec.
 | 3h | Port-forward | A local port on the FleetOps host, or an HTTP proxy through FleetOps for a remote server |
 | **3i** | **Workload logs and exec** (done) | Logs merged across a workload's pods, tracked live; previous-container logs; a terminal from a workload |
 | 3j | Helm install and upgrade | Chart repositories and OCI, values editing, upgrade with a diff |
-| 3k | Exec-plugin kubeconfigs | EKS, GKE and AKS kubeconfigs (`aws`, `gcloud`, `kubelogin`) where FleetOps runs |
+| **3k** | **Exec-plugin kubeconfigs** (done) | EKS, GKE and AKS kubeconfigs (`aws`, `gcloud`, `kubelogin`) where FleetOps runs, behind `--kube-exec-plugins` |
 | 4 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
 | 5 | Teams & enterprise (free) | Teams, OIDC/SSO, LDAP, API tokens, backup and restore |
 

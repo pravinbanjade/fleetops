@@ -100,7 +100,7 @@ export function EnvironmentsPage() {
     col.display({ id: "status", header: "Status", cell: (c) => <EnvStatusBadge env={c.row.original.name} /> }),
     col.display({ id: "agent", header: "Agent", cell: (c) => <AgentCell env={c.row.original} /> }),
     col.accessor("kind", { header: "Kind" }),
-    col.accessor((e) => (e.kube ? `${e.kube.server} · ${e.kube.context} (${e.kube.user_kind})` : e.url), {
+    col.accessor((e) => (e.kube ? `${e.kube.server} · ${e.kube.context} (${e.kube.user_kind === "exec" ? `via ${e.kube.exec_command}` : e.kube.user_kind})` : e.url), {
       id: "url",
       header: "URL",
       cell: (c) => (

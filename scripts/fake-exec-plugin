@@ -1,0 +1,5 @@
+#!/bin/sh
+# Test-only exec plugin (slice 3k): prints the token in $FAKE_EXEC_TOKEN_FILE
+# as an ExecCredential, after $FAKE_EXEC_SLEEP seconds when set.
+[ -n "$FAKE_EXEC_SLEEP" ] && sleep "$FAKE_EXEC_SLEEP"
+printf '{"apiVersion":"client.authentication.k8s.io/v1","kind":"ExecCredential","status":{"token":"%s"}}\n' "$(cat "$FAKE_EXEC_TOKEN_FILE")"
