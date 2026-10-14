@@ -750,6 +750,31 @@ impl KubeOps for KubeClient {
         self.helm_uninstall_impl(ns, name, expected_current, dry_run, allowed)
             .await
     }
+    async fn helm_deploy(
+        &self,
+        d: &fleetops_core::helm::Deploy,
+        mode: fleetops_core::helm::HelmMode,
+        allowed: Option<&std::collections::BTreeSet<String>>,
+    ) -> Result<fleetops_core::helm::HelmPlan> {
+        self.helm_deploy_impl(d, mode, allowed).await
+    }
+    async fn helm_config(&self, ns: &str, name: &str) -> Result<serde_json::Value> {
+        self.helm_config_impl(ns, name).await
+    }
+    async fn api_versions(&self) -> Result<Vec<String>> {
+        let core = timed(self.client.list_core_api_versions()).await?;
+        let groups = timed(self.client.list_api_groups()).await?;
+        let mut out: Vec<String> = core.versions;
+        out.extend(
+            groups
+                .groups
+                .into_iter()
+                .flat_map(|g| g.versions.into_iter().map(|v| v.group_version)),
+        );
+        out.sort();
+        out.dedup();
+        Ok(out)
+    }
 }
 
 impl KubeClient {
