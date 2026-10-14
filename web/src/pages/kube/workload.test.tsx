@@ -1,7 +1,8 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { kubeRoutes, loggedIn, renderApp } from "@/test/app";
+import { ENVS, KUBE_ENV, kubeRoutes, loggedIn, renderApp } from "@/test/app";
+import { sortPods } from "./WorkloadTerminal";
 import { mockFetch } from "@/test/fetch";
 import { FakeWebSocket } from "@/test/fake-ws";
 import { podColor, shortPod } from "@/pages/containers/logs/LogView";
@@ -110,5 +111,54 @@ describe("pod suffixes", () => {
     expect(shortPod("web-7f9c4-x2lkq", "web-")).toBe("7f9c4-x2lkq");
     expect(shortPod("db-0", "web-")).toBe("db-0".slice(-5));
     expect(podColor("a")).toBe(podColor("a"));
+  });
+});
+
+const podRow = (name: string, created: number, health: string, containers = squares(0)) => ({
+  name,
+  namespace: "apps",
+  created,
+  status: "Running",
+  health,
+  columns: { containers },
+});
+
+describe("Terminal from a workload", () => {
+  it("prefers the newest ready pod", () => {
+    const rows = [podRow("old-ok", 1, "ok"), podRow("new-bad", 9, "bad"), podRow("new-ok", 5, "ok")];
+    expect(sortPods(rows as never).map((r) => r.name)).toEqual(["new-ok", "old-ok", "new-bad"]);
+  });
+
+  it("opens the chosen pod's terminal with its container", async () => {
+    const two = JSON.stringify([
+      { name: "main", init: false, state: "ready", reason: "", message: "", restarts: 0 },
+      { name: "side", init: false, state: "ready", reason: "", message: "", restarts: 0 },
+      { name: "migrate", init: true, state: "done", reason: "", message: "", restarts: 0 },
+    ]);
+    mockFetch({
+      ...routes,
+      "GET /api/v1/envs/k/k8s/deployments/apps/web/pods": {
+        json: { rows: [podRow("web-1", 1, "ok", two), podRow("web-2", 5, "ok", two)], truncated: false },
+      },
+      "GET /api/v1/envs/k/k8s/pods/apps/web-2": { json: { ...pod(0), row: { ...pod(0).row, name: "web-2" } } },
+    });
+    const { history } = renderApp("/envs/k/k8s/deployments/apps/web");
+    await userEvent.click(await screen.findByRole("button", { name: /Terminal/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByLabelText("Pod")).toHaveValue("web-2");
+    const containers = within(dialog).getByLabelText("Container");
+    expect(within(containers).queryByText("migrate")).toBeNull();
+    await userEvent.selectOptions(containers, "side");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Open terminal" }));
+    await waitFor(() => expect(history.location.pathname).toBe("/envs/k/k8s/pods/apps/web-2"));
+    expect(history.location.search).toContain("tab=terminal");
+    expect(history.location.search).toContain("container=side");
+  });
+
+  it("is not offered to viewers", async () => {
+    mockFetch({ ...routes, "GET /api/v1/envs": { json: [...ENVS, { ...KUBE_ENV, access: { role: "viewer", namespaces: null } }] } });
+    renderApp("/envs/k/k8s/deployments/apps/web");
+    await screen.findByRole("heading", { name: "web" });
+    expect(screen.queryByRole("button", { name: /Terminal/ })).toBeNull();
   });
 });

@@ -11,6 +11,7 @@ import { Page } from "@/components/Page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "@/lib/format";
 import { KubeActions } from "./KubeActions";
+import { WorkloadTerminal } from "./WorkloadTerminal";
 import { KubeHealth } from "./KubeHealth";
 import { asKind, CLUSTER_SCOPED, KIND_COLUMNS, KIND_LABEL, POD_LOG_KINDS } from "./kinds";
 import { useKubeUsage, usageKey } from "./usage";
@@ -75,7 +76,14 @@ export function KubeObjectPage() {
     ...(isPod && canWrite ? ([["terminal", "Terminal", TerminalSquare]] as [KubeTab, string, typeof Info][]) : []),
   ];
   return (
-    <Page title={name} meta={o && <KubeHealth health={o.row.health} label={o.row.status} />} actions={o && <KubeActions env={env} kind={kind} ns={ns} name={name} row={o.row} />}>
+    <Page title={name} meta={o && <KubeHealth health={o.row.health} label={o.row.status} />} actions={
+        o && (
+          <div className="flex items-center gap-2">
+            {isWorkload && canWrite && <WorkloadTerminal env={env} kind={kind} ns={ns} name={name} />}
+            <KubeActions env={env} kind={kind} ns={ns} name={name} row={o.row} />
+          </div>
+        )
+      }>
       {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}
       {gone && (
         <p role="status" className="mb-3 rounded-md border border-state-fail/40 bg-state-fail/10 px-3 py-2 text-sm">
