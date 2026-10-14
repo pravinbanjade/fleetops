@@ -234,15 +234,14 @@ impl HelmCli {
     }
 }
 
-/// A private directory for one request: helm's cache and the values file.
+/// A private directory for one request's values file. helm keeps its own
+/// cache and configuration, so it behaves as it does when run by hand on
+/// this host: `helm repo add` credentials and `helm registry login` apply,
+/// and it reads the cached index of every repository it knows.
 fn workdir() -> Result<(tempfile::TempDir, Vec<(String, String)>)> {
     let dir = tempfile::tempdir()
         .map_err(|e| Error::Internal(format!("cannot make a temporary directory: {e}")))?;
-    let env = vec![(
-        "HELM_CACHE_HOME".to_string(),
-        dir.path().join("cache").display().to_string(),
-    )];
-    Ok((dir, env))
+    Ok((dir, Vec::new()))
 }
 
 fn write_values(dir: &std::path::Path, values: &Value) -> Result<String> {
