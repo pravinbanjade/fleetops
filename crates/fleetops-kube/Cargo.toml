@@ -35,4 +35,4 @@ serde_json.workspace = true
 fleetops-agent = { path = "../fleetops-agent" }
 futures-util = { workspace = true, features = ["io", "sink"] }
 rustls.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
