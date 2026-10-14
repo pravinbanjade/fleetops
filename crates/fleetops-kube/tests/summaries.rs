@@ -260,7 +260,10 @@ fn a_pod_lists_each_container_state_init_containers_last() {
                 {"name": "dead", "ready": false, "restartCount": 0, "image": "x", "imageID": "", "state": {"terminated": {"exitCode": 137}}}]}}));
     let r = row(KubeKind::Pods, &p);
     let got: serde_json::Value = serde_json::from_str(&r.columns["containers"]).unwrap();
-    let c = |init: bool, name: &str, state: &str, reason: &str, message: &str| json!({"name": name, "init": init, "state": state, "reason": reason, "message": message});
+    let c = |init: bool, name: &str, state: &str, reason: &str, message: &str| {
+        let restarts = if name == "side" { 3 } else { 0 };
+        json!({"name": name, "init": init, "state": state, "reason": reason, "message": message, "restarts": restarts})
+    };
     assert_eq!(
         got,
         json!([
@@ -280,4 +283,34 @@ fn a_pod_lists_each_container_state_init_containers_last() {
         ])
     );
     assert_eq!(r.columns["ready"], "1/6");
+}
+
+#[test]
+fn a_workloads_containers_are_its_templates() {
+    let d: kube::api::DynamicObject = serde_json::from_value(serde_json::json!({
+        "apiVersion": "apps/v1", "kind": "Deployment",
+        "metadata": {"name": "web", "namespace": "apps"},
+        "spec": {"template": {"spec": {"containers": [{"name": "web"}, {"name": "proxy"}]}}}
+    }))
+    .unwrap();
+    assert_eq!(
+        fleetops_kube::summaries::template_containers(&d),
+        ["web", "proxy"]
+    );
+}
+
+#[test]
+fn container_squares_carry_restarts() {
+    let p: kube::api::DynamicObject = serde_json::from_value(serde_json::json!({
+        "apiVersion": "v1", "kind": "Pod",
+        "metadata": {"name": "a", "namespace": "apps"},
+        "spec": {"containers": [{"name": "web"}]},
+        "status": {"phase": "Running", "containerStatuses": [
+            {"name": "web", "ready": true, "restartCount": 4, "image": "x", "imageID": "",
+             "state": {"running": {}}}]}
+    }))
+    .unwrap();
+    let row = fleetops_kube::summaries::row(fleetops_core::kube::KubeKind::Pods, &p);
+    let squares: serde_json::Value = serde_json::from_str(&row.columns["containers"]).unwrap();
+    assert_eq!(squares[0]["restarts"], 4);
 }
