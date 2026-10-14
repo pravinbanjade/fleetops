@@ -191,3 +191,36 @@ describe("logText", () => {
     expect(logText(b.entries(), true)).toBe("2026-09-30T10:00:01Z ready\n[3 lines skipped]\n");
   });
 });
+
+describe("merged logs", () => {
+  const l = (pod: string | undefined, sec: number, text: string) => ({
+    stream: "stdout" as const,
+    text: `2026-10-14T10:00:${String(sec).padStart(2, "0")}.000000000Z ${text}`,
+    ...(pod ? { pod } : {}),
+  });
+
+  it("keeps each line's pod", () => {
+    const b = new LogBuffer();
+    b.append([l("web-a", 1, "x"), { stream: "meta", text: "▸ web-b started", pod: "web-b" }]);
+    expect([...b.entries()].map((e) => [e.pod, e.stream])).toEqual([
+      ["web-a", "stdout"],
+      ["web-b", "meta"],
+    ]);
+  });
+
+  it("resumes per pod: a slower pod's lines are kept and nothing is shown twice", () => {
+    const b = new LogBuffer();
+    b.append([l("a", 5, "a5"), l("b", 2, "b2")]);
+    expect(b.resumeSince).toBe(Date.parse("2026-10-14T10:00:02Z") / 1000);
+    b.resume();
+    // The server replays each pod from the oldest second held.
+    b.append([l("b", 2, "b2"), l("a", 3, "a3"), l("b", 3, "b3"), l("a", 5, "a5"), l("a", 6, "a6")]);
+    expect([...b.entries()].map((e) => e.text)).toEqual(["a5", "b2", "b3", "a6"]);
+  });
+
+  it("downloads name each line's pod", () => {
+    const b = new LogBuffer();
+    b.append([l("web-a", 1, "x"), l(undefined, 2, "y")]);
+    expect(logText(b.entries(), false)).toBe("[web-a] x\ny\n");
+  });
+});

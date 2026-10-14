@@ -15,6 +15,8 @@ export interface LogEntry {
   text: string;
   /** For a gap: how many lines were skipped. */
   dropped?: number;
+  /** Kubernetes merged logs: the pod the line came from. */
+  pod: string | null;
 }
 
 const TS = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)) /;
@@ -50,9 +52,9 @@ export class LogBuffer {
   private ring: LogEntry[] = [];
   private head = 0;
   private nextSeq = 0;
-  private lastKey: string | null = null;
-  private lastTs: string | null = null;
-  private resumeAfter: string | null = null;
+  /** Per source (a pod, or "" for a single container): the last timestamp held. */
+  private last = new Map<string, { key: string; ts: string }>();
+  private resumeAfter: Map<string, string> | null = null;
   /** Bumped on every change, for React to notice. */
   version = 0;
 
@@ -83,23 +85,25 @@ export class LogBuffer {
     let changed = false;
     for (const l of lines) {
       const [ts, text] = splitTimestamp(l.text);
+      const pod = l.pod ?? null;
+      const src = pod ?? "";
       if (ts) {
         const key = timestampKey(ts);
-        if (this.resumeAfter !== null) {
-          if (key <= this.resumeAfter) continue;
-          this.resumeAfter = null;
+        const after = this.resumeAfter?.get(src);
+        if (after !== undefined) {
+          if (key <= after) continue;
+          this.resumeAfter!.delete(src);
         }
-        this.lastKey = key;
-        this.lastTs = ts;
+        this.last.set(src, { key, ts });
       }
-      this.push({ seq: this.nextSeq, stream: l.stream, ts, text });
+      this.push({ seq: this.nextSeq, stream: l.stream, ts, text, pod });
       changed = true;
     }
     if (changed) this.version++;
   }
 
   gap(dropped: number) {
-    this.push({ seq: this.nextSeq, stream: "gap", ts: null, text: "", dropped });
+    this.push({ seq: this.nextSeq, stream: "gap", ts: null, text: "", dropped, pod: null });
     this.version++;
   }
 
@@ -109,14 +113,18 @@ export class LogBuffer {
    * rounded down; `resume()` drops the overlap.
    */
   get resumeSince(): number | null {
-    if (!this.lastTs) return null;
-    const ms = Date.parse(this.lastTs);
-    return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
+    // The oldest source's last line: every source resumes from at or before its own.
+    let min: number | null = null;
+    for (const { ts } of this.last.values()) {
+      const ms = Date.parse(ts);
+      if (!Number.isNaN(ms)) min = min === null ? ms : Math.min(min, ms);
+    }
+    return min === null ? null : Math.floor(min / 1000);
   }
 
   /** Skips replayed lines on the next append (see the class comment). */
   resume() {
-    this.resumeAfter = this.lastKey;
+    this.resumeAfter = new Map([...this.last].map(([src, v]) => [src, v.key]));
   }
 
   /**
@@ -132,8 +140,7 @@ export class LogBuffer {
   /** Removes every line and forgets the position: for a new query. */
   reset() {
     this.clear();
-    this.lastKey = null;
-    this.lastTs = null;
+    this.last = new Map();
     this.resumeAfter = null;
   }
 
@@ -253,7 +260,7 @@ export function logText(entries: Iterable<LogEntry>, timestamps: boolean): strin
   let out = "";
   for (const e of entries) {
     if (e.stream === "gap") out += `[${e.dropped} lines skipped]\n`;
-    else out += (timestamps && e.ts ? `${e.ts} ` : "") + stripAnsi(e.text) + "\n";
+    else out += (timestamps && e.ts ? `${e.ts} ` : "") + (e.pod ? `[${e.pod}] ` : "") + stripAnsi(e.text) + "\n";
   }
   return out;
 }
