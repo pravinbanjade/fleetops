@@ -2,15 +2,17 @@
 //! context, refuse users that need a helper binary or local files (the
 //! server is distroless), and reduce the file to that one context.
 
+use crate::exec_auth::{ExecAuthLayer, ExecPolicy, ProcessRunner, TokenSource};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use fleetops_core::env::{KubeconfigSummary, UserKind};
 use fleetops_core::{Error, Result};
-use kube::config::{AuthInfo, Kubeconfig, NamedAuthInfo, NamedCluster, NamedContext};
+use kube::config::{AuthInfo, Cluster, Kubeconfig, NamedAuthInfo, NamedCluster, NamedContext};
 use rustls::pki_types::{pem::PemObject, CertificateDer};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub const UNSUPPORTED_USER: &str =
-    "use a ServiceAccount token or the FleetOps agent: exec and auth-provider users are not supported";
+    "use a ServiceAccount token, an exec plugin (--kube-exec-plugins) or the FleetOps agent: auth-provider users are not supported";
 /// How long the create-time reachability check waits.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -75,8 +77,14 @@ fn file_ref(field: &str) -> Error {
     ))
 }
 
-fn check_user(context: &str, user: &AuthInfo) -> Result<UserKind> {
-    if user.exec.is_some() || user.auth_provider.is_some() {
+/// The user's kind, and an exec user's command (spec 3k §1).
+fn check_user(
+    context: &str,
+    user: &AuthInfo,
+    cluster: &Cluster,
+    policy: &ExecPolicy,
+) -> Result<(UserKind, Option<String>)> {
+    if user.auth_provider.is_some() {
         return Err(invalid(UNSUPPORTED_USER));
     }
     if user.token_file.is_some() {
@@ -88,10 +96,14 @@ fn check_user(context: &str, user: &AuthInfo) -> Result<UserKind> {
     if user.client_key.is_some() {
         return Err(file_ref("client-key"));
     }
+    if let Some(exec) = &user.exec {
+        let plugin = policy.check(exec, cluster)?;
+        return Ok((UserKind::Exec, Some(plugin.command)));
+    }
     if user.token.is_some() {
-        Ok(UserKind::Token)
+        Ok((UserKind::Token, None))
     } else if user.client_certificate_data.is_some() && user.client_key_data.is_some() {
-        Ok(UserKind::Cert)
+        Ok((UserKind::Cert, None))
     } else {
         Err(invalid(format!(
             "the user in context '{context}' has no token or client certificate"
@@ -99,7 +111,7 @@ fn check_user(context: &str, user: &AuthInfo) -> Result<UserKind> {
     }
 }
 
-pub fn prepare(text: &str, context: Option<&str>) -> Result<Prepared> {
+pub fn prepare(text: &str, context: Option<&str>, policy: &ExecPolicy) -> Result<Prepared> {
     let kc = parse(text)?;
     let name = pick(&kc, context)?;
     let ctx = kc.contexts.iter().find(|c| c.name == name).expect("picked");
@@ -139,7 +151,7 @@ pub fn prepare(text: &str, context: Option<&str>) -> Result<Prepared> {
             ))
         })?;
     let auth = user.auth_info.clone().unwrap_or_default();
-    let user_kind = check_user(&name, &auth)?;
+    let (user_kind, exec_command) = check_user(&name, &auth, &cl, policy)?;
 
     let minified = Kubeconfig {
         api_version: Some("v1".into()),
@@ -170,6 +182,7 @@ pub fn prepare(text: &str, context: Option<&str>) -> Result<Prepared> {
             server,
             context: name,
             user_kind,
+            exec_command,
         },
     })
 }
@@ -220,15 +233,40 @@ pub fn config(yaml: &str) -> Result<kube::Config> {
     Ok(c)
 }
 
+/// The kube-rs client for a stored kubeconfig. An exec user's plugin is
+/// checked against `policy` now and run on the first request (spec 3k §2).
+pub fn client(yaml: &str, policy: &ExecPolicy) -> Result<kube::Client> {
+    let mut c = config(yaml)?;
+    let Some(exec) = c.auth_info.exec.take() else {
+        return kube::Client::try_from(c).map_err(|e| invalid(e.to_string()));
+    };
+    let cluster = parse(yaml)?
+        .clusters
+        .first()
+        .and_then(|c| c.cluster.clone())
+        .unwrap_or_default();
+    let plugin = policy.check(&exec, &cluster)?;
+    let runner = Arc::new(ProcessRunner {
+        timeout: policy.timeout(),
+    });
+    let source = Arc::new(TokenSource::new(plugin, runner));
+    let builder = kube::client::ClientBuilder::try_from(c).map_err(|e| invalid(e.to_string()))?;
+    Ok(builder.with_layer(&ExecAuthLayer(source)).build())
+}
+
 /// `GET /version` with a short limit: used before saving a kubeconfig.
-pub async fn check(yaml: &str) -> Result<()> {
-    let client = kube::Client::try_from(config(yaml)?)
-        .map_err(|e| invalid(format!("cannot reach cluster: {e}")))?;
+pub async fn check(yaml: &str, policy: &ExecPolicy) -> Result<()> {
+    let client = client(yaml, policy)?;
     match tokio::time::timeout(CHECK_TIMEOUT, client.apiserver_version()).await {
         Ok(Ok(_)) => Ok(()),
         Ok(Err(kube::Error::Api(s))) if s.code == 401 => Err(invalid(
             "cannot reach cluster: credentials rejected (401): check the token or client certificate",
         )),
+        Ok(Err(kube::Error::Service(e)))
+            if e.downcast_ref::<crate::exec_auth::ExecError>().is_some() =>
+        {
+            Err(invalid(e.to_string()))
+        }
         Ok(Err(e)) => Err(invalid(format!("cannot reach cluster: {e}"))),
         Err(_) => Err(invalid(format!(
             "cannot reach cluster: no answer within {}s",
@@ -240,6 +278,7 @@ pub async fn check(yaml: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::exec_auth::ExecPolicy;
     use fleetops_core::env::UserKind;
 
     fn kc(users: &str, current: Option<&str>) -> String {
@@ -262,7 +301,7 @@ mod tests {
 
     #[test]
     fn prepare_keeps_only_the_chosen_context() {
-        let p = prepare(&kc(TOKENS, None), Some("ctx-a")).unwrap();
+        let p = prepare(&kc(TOKENS, None), Some("ctx-a"), &ExecPolicy::default()).unwrap();
         assert_eq!(p.summary.server, "https://a.example:6443");
         assert_eq!(p.summary.context, "ctx-a");
         assert_eq!(p.summary.user_kind, UserKind::Token);
@@ -281,39 +320,91 @@ mod tests {
     #[test]
     fn without_a_choice_the_current_context_wins_and_ambiguity_is_refused() {
         assert_eq!(
-            prepare(&kc(TOKENS, Some("ctx-b")), None)
+            prepare(&kc(TOKENS, Some("ctx-b")), None, &ExecPolicy::default())
                 .unwrap()
                 .summary
                 .context,
             "ctx-b"
         );
-        let e = prepare(&kc(TOKENS, None), None).unwrap_err().to_string();
+        let e = prepare(&kc(TOKENS, None), None, &ExecPolicy::default())
+            .unwrap_err()
+            .to_string();
         assert!(e.contains("choose a context: ctx-a, ctx-b"), "{e}");
-        let e = prepare(&kc(TOKENS, None), Some("nope"))
+        let e = prepare(&kc(TOKENS, None), Some("nope"), &ExecPolicy::default())
             .unwrap_err()
             .to_string();
         assert!(e.contains("unknown context 'nope'"), "{e}");
     }
 
+    const EXEC: &str = "- name: ua\n  user:\n    exec: {apiVersion: client.authentication.k8s.io/v1, command: aws, args: [eks, get-token, --cluster-name, c]}\n- name: ub\n  user: {token: x}\n";
+
     #[test]
-    fn exec_and_auth_provider_users_are_refused() {
-        let exec = "- name: ua\n  user:\n    exec: {apiVersion: client.authentication.k8s.io/v1, command: aws}\n- name: ub\n  user: {token: x}\n";
-        let e = prepare(&kc(exec, None), Some("ctx-a"))
+    fn an_exec_user_needs_the_flag() {
+        let off = ExecPolicy::default();
+        let e = prepare(&kc(EXEC, None), Some("ctx-a"), &off)
             .unwrap_err()
             .to_string();
-        assert!(e.contains(UNSUPPORTED_USER), "{e}");
+        assert!(e.contains(crate::exec_auth::OFF), "{e}");
+        let on = ExecPolicy::parse("default").unwrap();
+        let p = prepare(&kc(EXEC, None), Some("ctx-a"), &on).unwrap();
+        assert_eq!(p.summary.user_kind, UserKind::Exec);
+        assert_eq!(p.summary.exec_command.as_deref(), Some("aws"));
+        assert!(p.yaml.contains("get-token"), "the exec block is stored");
+    }
+
+    #[test]
+    fn a_disallowed_exec_user_says_which_rule() {
+        let on = ExecPolicy::parse("default").unwrap();
+        let bad = EXEC.replace("[eks, get-token, --cluster-name, c]", "[s3, ls]");
+        let e = prepare(&kc(&bad, None), Some("ctx-a"), &on)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("may only run 'eks get-token'"), "{e}");
+    }
+
+    #[test]
+    fn auth_provider_users_are_still_refused() {
         let ap =
             "- name: ua\n  user:\n    auth-provider: {name: gcp}\n- name: ub\n  user: {token: x}\n";
-        assert!(prepare(&kc(ap, None), Some("ctx-a"))
+        let on = ExecPolicy::parse("default").unwrap();
+        let e = prepare(&kc(ap, None), Some("ctx-a"), &on)
             .unwrap_err()
-            .to_string()
-            .contains(UNSUPPORTED_USER));
+            .to_string();
+        assert!(e.contains("auth-provider"), "{e}");
+    }
+
+    #[test]
+    fn token_summaries_have_no_exec_command_on_the_wire() {
+        let p = prepare(&kc(TOKENS, None), Some("ctx-a"), &ExecPolicy::default()).unwrap();
+        assert_eq!(
+            serde_json::to_value(&p.summary).unwrap(),
+            serde_json::json!({"server": "https://a.example:6443", "context": "ctx-a", "user_kind": "token"})
+        );
+    }
+
+    #[tokio::test]
+    async fn a_client_for_an_exec_user_is_built_without_running_it() {
+        // `fleetops-no-such-plugin` would fail if run: building must not run it.
+        let on = ExecPolicy::parse("fleetops-no-such-plugin").unwrap();
+        let u = "- name: ua\n  user:\n    exec: {apiVersion: client.authentication.k8s.io/v1, command: fleetops-no-such-plugin}\n- name: ub\n  user: {token: x}\n";
+        let p = prepare(&kc(u, None), Some("ctx-a"), &on).unwrap();
+        let c = client(&p.yaml, &on).unwrap();
+        let e = c.apiserver_version().await.unwrap_err().to_string();
+        assert!(
+            e.contains("exec plugin 'fleetops-no-such-plugin' was not found"),
+            "{e}"
+        );
+        let e = client(&p.yaml, &ExecPolicy::default())
+            .err()
+            .expect("refused while off")
+            .to_string();
+        assert!(e.contains(crate::exec_auth::OFF), "{e}");
     }
 
     #[test]
     fn file_references_are_refused() {
         let files = "- name: ua\n  user: {client-certificate: /home/me/c.pem, client-key-data: eA==}\n- name: ub\n  user: {token: x}\n";
-        let e = prepare(&kc(files, None), Some("ctx-a"))
+        let e = prepare(&kc(files, None), Some("ctx-a"), &ExecPolicy::default())
             .unwrap_err()
             .to_string();
         assert!(
@@ -321,17 +412,19 @@ mod tests {
             "{e}"
         );
         let tf = "- name: ua\n  user: {tokenFile: /t}\n- name: ub\n  user: {token: x}\n";
-        assert!(prepare(&kc(tf, None), Some("ctx-a"))
-            .unwrap_err()
-            .to_string()
-            .contains("'tokenFile'"));
+        assert!(
+            prepare(&kc(tf, None), Some("ctx-a"), &ExecPolicy::default())
+                .unwrap_err()
+                .to_string()
+                .contains("'tokenFile'")
+        );
     }
 
     #[test]
     fn a_client_certificate_user_is_cert_kind() {
         let certs = "- name: ua\n  user: {client-certificate-data: Y2VydA==, client-key-data: a2V5}\n- name: ub\n  user: {token: x}\n";
         assert_eq!(
-            prepare(&kc(certs, None), Some("ctx-a"))
+            prepare(&kc(certs, None), Some("ctx-a"), &ExecPolicy::default())
                 .unwrap()
                 .summary
                 .user_kind,
@@ -343,7 +436,7 @@ mod tests {
     fn a_user_with_no_token_or_certificate_is_refused() {
         let none =
             "- name: ua\n  user: {username: admin, password: pw}\n- name: ub\n  user: {token: x}\n";
-        let e = prepare(&kc(none, None), Some("ctx-a"))
+        let e = prepare(&kc(none, None), Some("ctx-a"), &ExecPolicy::default())
             .unwrap_err()
             .to_string();
         assert!(e.contains("has no token or client certificate"), "{e}");
@@ -351,7 +444,7 @@ mod tests {
 
     #[test]
     fn config_reads_the_server_namespace_and_token_without_io() {
-        let p = prepare(&kc(TOKENS, None), Some("ctx-a")).unwrap();
+        let p = prepare(&kc(TOKENS, None), Some("ctx-a"), &ExecPolicy::default()).unwrap();
         let c = config(&p.yaml).unwrap();
         assert_eq!(c.cluster_url.to_string(), "https://a.example:6443/");
         assert_eq!(c.default_namespace, "apps");

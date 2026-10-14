@@ -78,9 +78,9 @@ async fn prepare_kubeconfig(
     context: Option<&str>,
     skip_check: bool,
 ) -> ApiResult<kubeconfig::Prepared> {
-    let p = kubeconfig::prepare(text, context)?;
+    let p = kubeconfig::prepare(text, context, &Default::default())?;
     if !skip_check {
-        kubeconfig::check(&p.yaml).await?;
+        kubeconfig::check(&p.yaml, &Default::default()).await?;
     }
     Ok(p)
 }

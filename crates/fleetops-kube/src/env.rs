@@ -44,12 +44,16 @@ pub struct KubeConfigEnv {
 }
 
 impl KubeConfigEnv {
-    pub fn new(id: i64, name: &str, credential: Option<&Credential>) -> Self {
+    pub fn new(
+        id: i64,
+        name: &str,
+        credential: Option<&Credential>,
+        policy: &crate::exec_auth::ExecPolicy,
+    ) -> Self {
         let ops = match credential {
             None => Err("no kubeconfig stored".to_string()),
             Some(Credential::Unreadable(_)) => Err(UNREADABLE.to_string()),
-            Some(Credential::Kubeconfig(yaml)) => kubeconfig::config(yaml)
-                .and_then(|c| kube::Client::try_from(c).map_err(|e| Error::Invalid(e.to_string())))
+            Some(Credential::Kubeconfig(yaml)) => kubeconfig::client(yaml, policy)
                 .map(|c| Arc::new(KubeClient::new(c)))
                 .map_err(|e| format!("cannot reach cluster: {e}")),
         };
@@ -159,11 +163,21 @@ impl Environment for KubeAgentEnv {
 /// Builds the Kubernetes kinds; the server combines it with Docker's.
 pub struct KubeEnvFactory {
     agents: Arc<Registry>,
+    exec: crate::exec_auth::ExecPolicy,
 }
 
 impl KubeEnvFactory {
     pub fn new(agents: Arc<Registry>) -> Self {
-        Self { agents }
+        Self {
+            agents,
+            exec: Default::default(),
+        }
+    }
+
+    /// Which exec plugins stored kubeconfigs may run (spec 3k §3).
+    pub fn with_exec_policy(mut self, p: crate::exec_auth::ExecPolicy) -> Self {
+        self.exec = p;
+        self
     }
 }
 
@@ -174,6 +188,7 @@ impl EnvFactory for KubeEnvFactory {
                 spec.id,
                 &spec.name,
                 spec.credential.as_ref(),
+                &self.exec,
             ))),
             EnvKind::KubeAgent => Ok(Arc::new(KubeAgentEnv::new(
                 spec.id,
@@ -204,6 +219,33 @@ mod tests {
     }
 
     const UNREACHABLE: &str = "apiVersion: v1\nkind: Config\ncurrent-context: c\nclusters:\n- name: c\n  cluster: {server: 'https://127.0.0.1:1'}\ncontexts:\n- name: c\n  context: {cluster: c, user: u}\nusers:\n- name: u\n  user: {token: t}\n";
+
+    #[tokio::test]
+    async fn a_stored_exec_kubeconfig_without_the_flag_is_down_not_lost() {
+        let yaml = "apiVersion: v1\nkind: Config\ncurrent-context: c\nclusters:\n- name: c\n  cluster: {server: 'https://k.example:6443'}\ncontexts:\n- name: c\n  context: {cluster: c, user: u}\nusers:\n- name: u\n  user:\n    exec: {apiVersion: client.authentication.k8s.io/v1, command: aws, args: [eks, get-token]}\n";
+        let f = KubeEnvFactory::new(Default::default());
+        let env = f
+            .build(&spec(
+                EnvKind::KubeConfig,
+                Some(Credential::Kubeconfig(yaml.into())),
+            ))
+            .unwrap();
+        match env.status().await {
+            EnvStatus::Down { reason } => {
+                assert!(reason.contains(crate::exec_auth::OFF), "{reason}")
+            }
+            other => panic!("{other:?}"),
+        }
+        let f = KubeEnvFactory::new(Default::default())
+            .with_exec_policy(crate::exec_auth::ExecPolicy::parse("default").unwrap());
+        let env = f
+            .build(&spec(
+                EnvKind::KubeConfig,
+                Some(Credential::Kubeconfig(yaml.into())),
+            ))
+            .unwrap();
+        assert!(env.kube().is_some());
+    }
 
     #[tokio::test]
     async fn an_unreachable_cluster_is_down_without_blocking() {

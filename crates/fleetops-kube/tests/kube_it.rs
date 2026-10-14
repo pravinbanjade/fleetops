@@ -266,7 +266,9 @@ async fn a_narrow_token_gets_the_rbac_reason() {
 #[tokio::test]
 async fn a_kubeconfig_environment_is_up_with_its_nodes() {
     use fleetops_core::env::{Credential, EnvFactory, EnvKind, EnvSpec, EnvStatus, EnvVersion};
-    let p = fleetops_kube::kubeconfig::prepare(&common::read("kubeconfig"), None).unwrap();
+    let p =
+        fleetops_kube::kubeconfig::prepare(&common::read("kubeconfig"), None, &Default::default())
+            .unwrap();
     let f = fleetops_kube::env::KubeEnvFactory::new(Default::default());
     let env = f
         .build(&EnvSpec {
@@ -310,13 +312,23 @@ fn token_kubeconfig(token: &str) -> String {
 
 #[tokio::test]
 async fn the_create_check_rejects_bad_credentials() {
-    let good = fleetops_kube::kubeconfig::prepare(&token_kubeconfig(&common::read("token")), None)
+    let good = fleetops_kube::kubeconfig::prepare(
+        &token_kubeconfig(&common::read("token")),
+        None,
+        &Default::default(),
+    )
+    .unwrap();
+    fleetops_kube::kubeconfig::check(&good.yaml, &Default::default())
+        .await
         .unwrap();
-    fleetops_kube::kubeconfig::check(&good.yaml).await.unwrap();
     // /version answers anonymously, so only an authenticated call catches this.
-    let bad =
-        fleetops_kube::kubeconfig::prepare(&token_kubeconfig("not-a-real-token"), None).unwrap();
-    let e = fleetops_kube::kubeconfig::check(&bad.yaml)
+    let bad = fleetops_kube::kubeconfig::prepare(
+        &token_kubeconfig("not-a-real-token"),
+        None,
+        &Default::default(),
+    )
+    .unwrap();
+    let e = fleetops_kube::kubeconfig::check(&bad.yaml, &Default::default())
         .await
         .unwrap_err()
         .to_string();

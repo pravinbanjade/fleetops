@@ -175,6 +175,8 @@ impl std::fmt::Debug for Credential {
 pub enum UserKind {
     Token,
     Cert,
+    /// An exec plugin the server runs (spec 3k).
+    Exec,
 }
 
 /// What may be shown about a stored kubeconfig.
@@ -183,4 +185,7 @@ pub struct KubeconfigSummary {
     pub server: String,
     pub context: String,
     pub user_kind: UserKind,
+    /// Exec users only: the plugin's command name, never its arguments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exec_command: Option<String>,
 }

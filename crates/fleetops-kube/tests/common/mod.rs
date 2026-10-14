@@ -49,9 +49,9 @@ pub fn kube_client() -> kube::Client {
     if std::env::var_os("FLEETOPS_IT_TUNNEL").is_some() {
         return tunnel_client();
     }
-    let p = fleetops_kube::kubeconfig::prepare(&read("kubeconfig"), None).unwrap();
-    let config = fleetops_kube::kubeconfig::config(&p.yaml).unwrap();
-    kube::Client::try_from(config).unwrap()
+    let p =
+        fleetops_kube::kubeconfig::prepare(&read("kubeconfig"), None, &Default::default()).unwrap();
+    fleetops_kube::kubeconfig::client(&p.yaml, &Default::default()).unwrap()
 }
 
 /// `KubeOps` over `kube_client()`.
