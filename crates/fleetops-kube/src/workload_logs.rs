@@ -262,17 +262,21 @@ impl PodSet {
     fn remove(&mut self, name: &str) -> Vec<Step> {
         self.known.remove(name);
         self.waiting.remove(name);
-        self.ended.remove(name);
         self.skipped.remove(name);
-        if self.streaming.remove(name).is_none() {
+        // A rollout kills the container first, so its log may have ended
+        // already: it was still read, and still leaves.
+        let ended = self.ended.remove(name).is_some();
+        let streaming = self.streaming.remove(name).is_some();
+        if !streaming && !ended {
             return vec![];
         }
-        let mut out = vec![
-            Step::Stop {
+        let mut out = Vec::new();
+        if streaming {
+            out.push(Step::Stop {
                 pod: name.to_string(),
-            },
-            Step::Line(meta(Some(name), format!("◂ {name} gone"))),
-        ];
+            });
+        }
+        out.push(Step::Line(meta(Some(name), format!("◂ {name} gone"))));
         out.extend(self.fill());
         out
     }
@@ -774,6 +778,23 @@ mod tests {
         assert_eq!(out[0], Step::Stop { pod: "b".into() });
         assert_eq!(texts(&out), ["◂ b gone"]);
         assert!(!out.iter().any(|x| matches!(x, Step::Start { .. })));
+    }
+
+    #[test]
+    fn a_pod_whose_log_ended_before_it_was_deleted_still_says_gone() {
+        // A rollout kills the container first; the pod object goes after.
+        let mut s = PodSet::new("web", 25);
+        s.on_event(snap(vec![row("a", 1, "Running", 0)]));
+        s.on_ended("a", 100);
+        let out = s.on_event(WatchEvent::Deleted {
+            namespace: None,
+            name: "a".into(),
+        });
+        assert_eq!(texts(&out), ["◂ a gone"]);
+        assert!(
+            !out.iter().any(|x| matches!(x, Step::Stop { .. })),
+            "{out:?}"
+        );
     }
 
     #[test]
