@@ -157,7 +157,10 @@ const kubeListRoute = createRoute({
 const kubeObjectRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "k8s/$kind/$ns/$name",
-  validateSearch: (s: Record<string, unknown>): { tab?: KubeTab } => ({ tab: KUBE_TABS.find((t) => t === s.tab) }),
+  validateSearch: (s: Record<string, unknown>): { tab?: KubeTab; container?: string } => ({
+    tab: KUBE_TABS.find((t) => t === s.tab),
+    container: typeof s.container === "string" && s.container ? s.container : undefined,
+  }),
   component: lazyRouteComponent(() => import("@/pages/kube/KubeObjectPage"), "KubeObjectPage"),
 });
 

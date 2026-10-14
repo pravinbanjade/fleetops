@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "@/lib/format";
 import { KubeActions } from "./KubeActions";
 import { KubeHealth } from "./KubeHealth";
-import { asKind, CLUSTER_SCOPED, KIND_COLUMNS, KIND_LABEL } from "./kinds";
+import { asKind, CLUSTER_SCOPED, KIND_COLUMNS, KIND_LABEL, POD_LOG_KINDS } from "./kinds";
 import { useKubeUsage, usageKey } from "./usage";
 import { LivePaused } from "./LivePaused";
 import { Conditions, EventStrips } from "./ObjectParts";
@@ -25,13 +25,12 @@ const route = getRouteApi("/authed/shell/envs/$env/k8s/$kind/$ns/$name");
 
 export function KubeObjectPage() {
   const { env, kind: raw, ns, name } = route.useParams();
-  const { tab = "summary" } = route.useSearch();
+  const { tab = "summary", container } = route.useSearch();
   const navigate = useNavigate();
   const kind = asKind(raw) ?? "pods";
   const { canWrite } = useEnvAccess(env);
   const obj = useQuery(kubeObjectQuery(env, kind, ns, name));
   const events = useQuery({ ...kubeEventsQuery(env, kind, ns, name), enabled: tab === "events" });
-  const [container, setContainer] = useState<string | undefined>();
   const qc = useQueryClient();
   const [gone, setGone] = useState(false);
   const live = useKubeWatch(env, kind, CLUSTER_SCOPED.includes(kind) ? undefined : ns, (ev) => {
@@ -58,9 +57,11 @@ export function KubeObjectPage() {
     );
   const o = obj.data;
   const isPod = kind === "pods";
+  const isWorkload = POD_LOG_KINDS.includes(kind);
+  const setContainer = (c: string) => void navigate({ to: ".", search: (s) => ({ ...s, container: c }), replace: true });
   // Logs read any container, init ones included; a shell needs one of the pod's own.
   const listed = parseContainers(o?.row.columns.containers);
-  const all = listed.length ? listed : (o?.containers ?? []).map((c) => ({ name: c, init: false, state: "unknown" as const, reason: "", message: "" }));
+  const all = listed.length ? listed : (o?.containers ?? []).map((c) => ({ name: c, init: false, state: "unknown" as const, reason: "", message: "", restarts: 0 }));
   const pickable = tab === "terminal" ? all.filter((c) => !c.init) : all;
   const chosen = pickable.find((c) => c.name === container)?.name ?? pickable[0]?.name ?? o?.containers[0];
   // Whether the chosen container runs, not the pod: a crashing sidecar marks the pod, not its neighbours.
@@ -70,7 +71,7 @@ export function KubeObjectPage() {
     ["summary", "Summary", Info],
     ["yaml", "YAML", FileText],
     ["events", "Events", ListTree],
-    ...(isPod ? ([["logs", "Logs", ScrollText]] as [KubeTab, string, typeof Info][]) : []),
+    ...(isPod || isWorkload ? ([["logs", "Logs", ScrollText]] as [KubeTab, string, typeof Info][]) : []),
     ...(isPod && canWrite ? ([["terminal", "Terminal", TerminalSquare]] as [KubeTab, string, typeof Info][]) : []),
   ];
   return (
@@ -104,7 +105,7 @@ export function KubeObjectPage() {
       )}
         </div>
       )}
-      <Tabs value={tab} onValueChange={(t) => void navigate({ to: ".", search: { tab: t as KubeTab }, replace: true })}>
+      <Tabs value={tab} onValueChange={(t) => void navigate({ to: ".", search: (s) => ({ ...s, tab: t as KubeTab }), replace: true })}>
         <TabsList>
           {tabs.map(([value, label, Icon]) => (
             <TabsTrigger key={value} value={value}>
@@ -132,7 +133,15 @@ export function KubeObjectPage() {
             {(tab === "logs" || tab === "terminal") && pickable.length > 1 && <ContainerChips containers={pickable} value={chosen} onChange={setContainer} />}
             <TabsContent value="logs">
               <Suspense fallback={null}>
-                <LogsTab key={chosen} env={env} id={`${ns}/${name}`} name={name} running={running} container={chosen} />
+                <LogsTab
+                  key={chosen}
+                  env={env}
+                  id={`${ns}/${name}`}
+                  name={name}
+                  running={running}
+                  container={chosen}
+                  canPrevious={(listed.find((c) => c.name === chosen)?.restarts ?? 0) > 0}
+                />
               </Suspense>
             </TabsContent>
             {canWrite && (
@@ -142,6 +151,16 @@ export function KubeObjectPage() {
                 </Suspense>
               </TabsContent>
             )}
+          </>
+        )}
+        {isWorkload && o && (
+          <>
+            {tab === "logs" && pickable.length > 1 && <ContainerChips containers={pickable} value={chosen} onChange={setContainer} />}
+            <TabsContent value="logs">
+              <Suspense fallback={null}>
+                <LogsTab key={chosen} env={env} id={`${kind}/${ns}/${name}`} name={name} running container={chosen} podPrefix={`${name}-`} canPrevious />
+              </Suspense>
+            </TabsContent>
           </>
         )}
       </Tabs>

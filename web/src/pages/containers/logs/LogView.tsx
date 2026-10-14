@@ -22,6 +22,8 @@ interface Props {
   highlight?: RegExp | null;
   /** The seq of the current match: scrolled into view and marked. */
   current?: number | null;
+  /** Merged Kubernetes logs: the workload's name and a dash, dropped from pod suffixes. */
+  podPrefix?: string;
 }
 
 /**
@@ -31,7 +33,7 @@ interface Props {
  * scrolling back to the bottom resumes it. While paused, the lines in
  * view stay put when old lines are dropped from the top.
  */
-export function LogView({ buffer, version, timestamps, wrap, follow, onFollowChange, highlight, current }: Props) {
+export function LogView({ buffer, version, timestamps, wrap, follow, onFollowChange, highlight, current, podPrefix }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const count = buffer.length;
   // The virtualiser's methods change identity freely, so the compiler leaves this component unmemoised.
@@ -103,11 +105,12 @@ export function LogView({ buffer, version, timestamps, wrap, follow, onFollowCha
                 "absolute top-0 left-0 border-l-2 border-transparent px-3 leading-5",
                 wrap ? "w-full break-all whitespace-pre-wrap" : "w-max min-w-full whitespace-pre",
                 e.stream === "stderr" && "border-destructive/70",
+                e.stream === "meta" && "text-muted-foreground italic",
                 e.seq === current && "bg-accent",
               )}
               style={{ transform: `translateY(${item.start}px)`, height: wrap ? undefined : ROW }}
             >
-              <LogRow entry={e} timestamps={timestamps} highlight={highlight ?? null} />
+              <LogRow entry={e} timestamps={timestamps} highlight={highlight ?? null} podPrefix={podPrefix} />
             </div>
           );
         })}
@@ -116,7 +119,7 @@ export function LogView({ buffer, version, timestamps, wrap, follow, onFollowCha
   );
 }
 
-function LogRow({ entry, timestamps, highlight }: { entry: LogEntry; timestamps: boolean; highlight: RegExp | null }) {
+function LogRow({ entry, timestamps, highlight, podPrefix }: { entry: LogEntry; timestamps: boolean; highlight: RegExp | null; podPrefix?: string }) {
   if (entry.stream === "gap") {
     return (
       <span className="text-muted-foreground italic">
@@ -129,6 +132,11 @@ function LogRow({ entry, timestamps, highlight }: { entry: LogEntry; timestamps:
   return (
     <>
       {timestamps && entry.ts && <span className="mr-3 text-muted-foreground">{shortTimestamp(entry.ts)}</span>}
+      {entry.pod && entry.stream !== "meta" && (
+        <span className="mr-3" style={{ color: podColor(entry.pod) }} title={entry.pod}>
+          {shortPod(entry.pod, podPrefix)}
+        </span>
+      )}
       {markSegments(segments, ranges).map((s, i) =>
         s.mark ? (
           <mark key={i} style={css(s.style)} className="rounded-sm bg-yellow-300/80 text-inherit dark:bg-yellow-500/50">
@@ -142,6 +150,21 @@ function LogRow({ entry, timestamps, highlight }: { entry: LogEntry; timestamps:
       )}
     </>
   );
+}
+
+/** Categorical ANSI colours, red left out: red marks stderr. */
+const POD_COLOURS = [2, 3, 4, 5, 6, 10, 11, 12, 13, 14];
+
+/** A stable colour per pod name. */
+export function podColor(pod: string): string {
+  let h = 0;
+  for (const ch of pod) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `var(--ansi-${POD_COLOURS[h % POD_COLOURS.length]})`;
+}
+
+/** The part after the workload's name, else the last five characters. */
+export function shortPod(pod: string, prefix: string | undefined): string {
+  return prefix && pod.startsWith(prefix) && pod.length > prefix.length ? pod.slice(prefix.length) : pod.slice(-5);
 }
 
 /** Docker's timestamp to the millisecond: `2026-09-30 10:00:00.123Z`. */

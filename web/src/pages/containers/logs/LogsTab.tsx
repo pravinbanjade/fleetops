@@ -39,6 +39,8 @@ export function LogsTab({
   running,
   startedAt,
   container,
+  podPrefix,
+  canPrevious,
 }: {
   env: string;
   id: string;
@@ -47,8 +49,16 @@ export function LogsTab({
   startedAt?: string;
   /** Kubernetes only: the pod's container. */
   container?: string;
+  /** Merged Kubernetes logs: the workload's name and a dash, dropped from pod suffixes. */
+  podPrefix?: string;
+  /** Kubernetes only: whether a previous run can be read; absent hides the toggle. */
+  canPrevious?: boolean;
 }) {
-  const [query, setQuery] = useState<LogQuery>(() => (container ? { ...DEFAULT_QUERY, container } : DEFAULT_QUERY));
+  const [query, setQuery] = useState<LogQuery>(() => {
+    // A workload reads every pod: fewer lines each (spec 3i §2).
+    const base = podPrefix !== undefined ? { ...DEFAULT_QUERY, tail: 100 } : DEFAULT_QUERY;
+    return container ? { ...base, container } : base;
+  });
   const [since, setSince] = useState("");
   const [timestamps, setTimestamps] = useState(false);
   const [wrap, setWrap] = useState(false);
@@ -105,6 +115,19 @@ export function LogsTab({
         <Toggle id="logs-follow" checked={follow} onChange={setFollow}>
           Follow
         </Toggle>
+        {canPrevious !== undefined && (
+          <Toggle
+            id="logs-previous"
+            checked={!!query.previous}
+            disabled={!canPrevious}
+            onChange={(previous) => {
+              change({ previous });
+              if (previous) setFollow(false);
+            }}
+          >
+            Previous run
+          </Toggle>
+        )}
         <Button variant="outline" size="sm" onClick={clear}>
           Clear
         </Button>
@@ -151,6 +174,7 @@ export function LogsTab({
         onFollowChange={setFollow}
         highlight={search.re}
         current={search.current}
+        podPrefix={podPrefix}
       />
     </div>
   );
@@ -159,17 +183,19 @@ export function LogsTab({
 function Toggle({
   id,
   checked,
+  disabled,
   onChange,
   children,
 }: {
   id: string;
   checked: boolean;
+  disabled?: boolean;
   onChange(v: boolean): void;
   children: ReactNode;
 }) {
   return (
     <div className="flex items-center gap-2">
-      <Checkbox id={id} checked={checked} onCheckedChange={(v) => onChange(v === true)} />
+      <Checkbox id={id} checked={checked} disabled={disabled} onCheckedChange={(v) => onChange(v === true)} />
       <Label htmlFor={id} className="font-normal">
         {children}
       </Label>
