@@ -375,6 +375,7 @@ impl KubeOps for FakeKube {
                 Ok(LogLine {
                     stream: LogStream::Stdout,
                     text: t.clone(),
+                    pod: None,
                 })
             })
             .collect();

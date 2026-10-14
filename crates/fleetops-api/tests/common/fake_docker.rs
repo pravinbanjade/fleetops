@@ -542,6 +542,7 @@ pub fn line(stream: LogStream, text: &str) -> LogLine {
     LogLine {
         stream,
         text: text.into(),
+        pod: None,
     }
 }
 
@@ -584,6 +585,7 @@ impl StreamOps for FakeDocker {
             .filter(|l| match l.stream {
                 LogStream::Stdout => opts.stdout,
                 LogStream::Stderr => opts.stderr,
+                LogStream::Meta => true,
             })
             .collect();
         if let Some(n) = opts.tail {

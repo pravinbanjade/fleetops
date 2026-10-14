@@ -481,6 +481,7 @@ impl KubeOps for KubeClient {
                 l.map(|text| LogLine {
                     stream: LogStream::Stdout,
                     text,
+                    pod: None,
                 })
                 .map_err(stream_err)
             }))

@@ -48,6 +48,9 @@ pub struct StatsSample {
 pub enum LogStream {
     Stdout,
     Stderr,
+    /// Kubernetes merged logs only: a line FleetOps writes about the stream,
+    /// e.g. a pod joining or leaving (spec 3i §2).
+    Meta,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -56,6 +59,9 @@ pub struct LogLine {
     /// One line without its trailing newline. With `timestamps`, Docker's
     /// RFC 3339 timestamp and a space come first.
     pub text: String,
+    /// Kubernetes merged logs only: the pod the line came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pod: Option<String>,
 }
 
 pub const LOG_TAIL_DEFAULT: u32 = 1000;
@@ -74,6 +80,9 @@ pub struct LogOptions {
     /// Kubernetes only: the container; `None` is the pod's first. Docker
     /// ignores it.
     pub container: Option<String>,
+    /// Kubernetes only: the container's previous (terminated) run. Never
+    /// follows. Docker ignores it.
+    pub previous: bool,
 }
 
 impl Default for LogOptions {
@@ -86,6 +95,7 @@ impl Default for LogOptions {
             stdout: true,
             stderr: true,
             container: None,
+            previous: false,
         }
     }
 }
@@ -192,7 +202,8 @@ pub const MAX_LINE_BYTES: usize = 64 * 1024;
 impl LineSplitter {
     pub fn push(&mut self, stream: LogStream, chunk: &[u8]) -> Vec<LogLine> {
         let buf = match stream {
-            LogStream::Stdout => &mut self.stdout,
+            // Docker never sends Meta: those lines are FleetOps' own.
+            LogStream::Stdout | LogStream::Meta => &mut self.stdout,
             LogStream::Stderr => &mut self.stderr,
         };
         buf.extend_from_slice(chunk);
@@ -232,6 +243,7 @@ fn to_line(stream: LogStream, bytes: &[u8]) -> LogLine {
     LogLine {
         stream,
         text: String::from_utf8_lossy(bytes).into_owned(),
+        pod: None,
     }
 }
 
@@ -297,5 +309,40 @@ pub fn stats_sample(stats: &Value, time_ms: i64) -> StatsSample {
         block_read: read,
         block_write: write,
         pids: stats["pids_stats"]["current"].as_u64().unwrap_or(0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_line_without_a_pod_serialises_as_before() {
+        let l = LogLine {
+            stream: LogStream::Stdout,
+            text: "hi".into(),
+            pod: None,
+        };
+        assert_eq!(
+            serde_json::to_value(&l).unwrap(),
+            serde_json::json!({"stream": "stdout", "text": "hi"})
+        );
+        let m = LogLine {
+            stream: LogStream::Meta,
+            text: "▸ web-1 started".into(),
+            pod: Some("web-1".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&m).unwrap(),
+            serde_json::json!({"stream": "meta", "text": "▸ web-1 started", "pod": "web-1"})
+        );
+    }
+
+    #[test]
+    fn previous_defaults_to_false() {
+        let o: LogOptions = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(!o.previous);
+        let o: LogOptions = serde_json::from_value(serde_json::json!({"previous": true})).unwrap();
+        assert!(o.previous);
     }
 }

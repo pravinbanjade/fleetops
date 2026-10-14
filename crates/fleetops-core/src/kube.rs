@@ -184,6 +184,18 @@ impl KubeKind {
             KubeKind::Deployments | KubeKind::StatefulSets | KubeKind::DaemonSets
         )
     }
+
+    /// Runs pods from a template, so its logs are its pods' (spec 3i §1).
+    pub fn has_pod_logs(self) -> bool {
+        matches!(
+            self,
+            KubeKind::Deployments
+                | KubeKind::StatefulSets
+                | KubeKind::DaemonSets
+                | KubeKind::Jobs
+                | KubeKind::ReplicaSets
+        )
+    }
 }
 
 impl FromStr for KubeKind {
@@ -260,7 +272,8 @@ pub struct KubeObject {
     pub conditions: Vec<KubeCondition>,
     /// Nearest first: Pod → ReplicaSet → Deployment.
     pub owners: Vec<KubeRef>,
-    /// Pods only: container names, first is the default.
+    /// Pods: container names, first is the default. Workloads with pod
+    /// logs: the pod template's.
     pub containers: Vec<String>,
 }
 
@@ -610,6 +623,25 @@ pub trait KubeOps: Send + Sync {
     /// `opts.container` `None` means the pod's first container.
     fn logs(&self, ns: &str, pod: &str, opts: &LogOptions) -> BoxStream<LogLine>;
     async fn exec_start(&self, ns: &str, pod: &str, opts: &ExecOptions) -> Result<KubeExec>;
+    /// Logs merged across the pods `kind`/`name`'s selector matches, each
+    /// line tagged with its pod (spec 3i §4).
+    fn workload_logs(
+        &self,
+        kind: KubeKind,
+        _ns: &str,
+        _name: &str,
+        _opts: &LogOptions,
+    ) -> BoxStream<LogLine> {
+        let e = Error::Invalid(format!("{} logs are not available here", kind.as_str()));
+        Box::pin(futures_util::stream::once(async move { Err(e) }))
+    }
+    /// The pods `kind`/`name`'s selector matches, as rows.
+    async fn workload_pods(&self, kind: KubeKind, _ns: &str, _name: &str) -> Result<KubeList> {
+        Err(Error::Invalid(format!(
+            "{} pods are not available here",
+            kind.as_str()
+        )))
+    }
     /// Rows of `kind`, live: a `Snapshot`, then changes. Ends with `Err`
     /// when the watch cannot continue (spec §2.3).
     fn watch(&self, kind: KubeKind, ns: Option<&str>) -> BoxStream<WatchEvent>;
@@ -886,5 +918,28 @@ mod kind_tests {
         ] {
             assert!(!k.cluster_scoped(), "{k:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod pod_log_tests {
+    use super::*;
+
+    #[test]
+    fn only_workloads_have_pod_logs() {
+        let with: Vec<_> = KubeKind::ALL
+            .into_iter()
+            .filter(|k| k.has_pod_logs())
+            .collect();
+        assert_eq!(
+            with,
+            [
+                KubeKind::Deployments,
+                KubeKind::StatefulSets,
+                KubeKind::DaemonSets,
+                KubeKind::Jobs,
+                KubeKind::ReplicaSets
+            ]
+        );
     }
 }
