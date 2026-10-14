@@ -919,3 +919,160 @@ async fn a_narrow_token_cannot_list_custom_resources() {
         Err(Error::Forbidden(_))
     ));
 }
+
+async fn merged_lines(
+    s: &mut fleetops_core::streams::BoxStream<fleetops_core::streams::LogLine>,
+    until: impl Fn(&[fleetops_core::streams::LogLine]) -> bool,
+) -> Vec<fleetops_core::streams::LogLine> {
+    let mut got = Vec::new();
+    let done = timeout(Duration::from_secs(90), async {
+        while !until(&got) {
+            got.push(
+                s.next()
+                    .await
+                    .expect("stream ended")
+                    .expect("stream failed"),
+            );
+        }
+    })
+    .await;
+    assert!(done.is_ok(), "timed out; got {got:?}");
+    got
+}
+
+#[tokio::test]
+async fn a_deployments_merged_log_tracks_scale_and_rollout() {
+    use fleetops_core::streams::LogStream;
+    let ops = common::ops();
+    let name = uniq("merged");
+    let yaml = format!(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata: {{name: {name}, namespace: {NS}}}\nspec:\n  replicas: 2\n  selector: {{matchLabels: {{app: {name}}}}}\n  template:\n    metadata: {{labels: {{app: {name}}}}}\n    spec:\n      terminationGracePeriodSeconds: 1\n      containers:\n        - {{name: main, image: busybox:1.37, imagePullPolicy: IfNotPresent, command: [sh, -c, 'while true; do echo up $HOSTNAME; sleep 1; done']}}\n"
+    );
+    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+        .await
+        .unwrap();
+    let opts = LogOptions {
+        tail: Some(1),
+        ..LogOptions::default()
+    };
+    let mut s = ops.workload_logs(KubeKind::Deployments, NS, &name, &opts);
+    let pods_of = |ls: &[fleetops_core::streams::LogLine]| -> std::collections::BTreeSet<String> {
+        ls.iter()
+            .filter(|l| l.stream == LogStream::Stdout)
+            .filter_map(|l| l.pod.clone())
+            .collect()
+    };
+    let got = merged_lines(&mut s, |ls| pods_of(ls).len() == 2).await;
+    assert!(got
+        .iter()
+        .filter(|l| l.stream == LogStream::Stdout)
+        .all(|l| l.text.starts_with("up ")));
+
+    ops.scale(KubeKind::Deployments, NS, &name, 3)
+        .await
+        .unwrap();
+    merged_lines(&mut s, |ls| {
+        ls.iter()
+            .any(|l| l.stream == LogStream::Meta && l.text.ends_with(" started"))
+    })
+    .await;
+
+    ops.restart(KubeKind::Deployments, NS, &name).await.unwrap();
+    merged_lines(&mut s, |ls| {
+        ls.iter()
+            .any(|l| l.stream == LogStream::Meta && l.text.ends_with(" gone"))
+    })
+    .await;
+
+    let pods = ops
+        .workload_pods(KubeKind::Deployments, NS, &name)
+        .await
+        .unwrap();
+    assert!(
+        pods.rows.iter().all(|r| r.name.starts_with(&name)),
+        "{:?}",
+        pods.rows
+    );
+    ops.delete(KubeKind::Deployments, NS, &name).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_jobs_finished_pod_is_read_and_the_stream_ends_without_follow() {
+    let ops = common::ops();
+    let opts = LogOptions {
+        follow: false,
+        ..LogOptions::default()
+    };
+    let lines: Vec<_> = ops
+        .workload_logs(KubeKind::Jobs, NS, "once", &opts)
+        .collect()
+        .await;
+    let texts: Vec<_> = lines
+        .iter()
+        .map(|l| l.as_ref().unwrap().text.clone())
+        .collect();
+    assert!(texts.iter().any(|t| t == "done"), "{texts:?}");
+}
+
+#[tokio::test]
+async fn previous_reads_the_crashed_run_and_a_missing_one_is_a_marker() {
+    use fleetops_core::streams::LogStream;
+    let ops = common::ops();
+    common::eventually("crashonce restarted", || async {
+        ops.get(KubeKind::Pods, NS, "crashonce")
+            .await
+            .is_ok_and(|o| o.row.columns["restarts"] != "0")
+    })
+    .await;
+    let opts = LogOptions {
+        previous: true,
+        follow: false,
+        ..LogOptions::default()
+    };
+    let lines: Vec<_> = ops.logs(NS, "crashonce", &opts).collect().await;
+    let texts: Vec<_> = lines
+        .iter()
+        .map(|l| l.as_ref().unwrap().text.clone())
+        .collect();
+    assert_eq!(texts, ["first-run"]);
+
+    // web's pods never restarted: a marker per pod, not a failed stream.
+    let merged: Vec<_> = ops
+        .workload_logs(KubeKind::Deployments, NS, "web", &opts)
+        .collect()
+        .await;
+    let markers: Vec<_> = merged
+        .iter()
+        .map(|l| l.as_ref().unwrap())
+        .filter(|l| l.stream == LogStream::Meta)
+        .collect();
+    assert!(
+        !markers.is_empty()
+            && markers
+                .iter()
+                .all(|l| l.text.contains("has no previous run of web")),
+        "{merged:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_missing_container_is_a_marker_not_a_failure() {
+    use fleetops_core::streams::LogStream;
+    let ops = common::ops();
+    let opts = LogOptions {
+        follow: false,
+        container: Some("nope".into()),
+        ..LogOptions::default()
+    };
+    let merged: Vec<_> = ops
+        .workload_logs(KubeKind::Deployments, NS, "web", &opts)
+        .collect()
+        .await;
+    assert!(
+        !merged.is_empty()
+            && merged.iter().all(|l| l.as_ref().is_ok_and(
+                |l| l.stream == LogStream::Meta && l.text.ends_with("has no container nope")
+            )),
+        "{merged:?}"
+    );
+}
