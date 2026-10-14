@@ -14,6 +14,7 @@ pub mod kubeconfig;
 pub mod mask;
 pub mod metrics;
 pub mod printer;
+pub mod process;
 pub mod summaries;
 pub mod templates;
 pub mod tunnel;
