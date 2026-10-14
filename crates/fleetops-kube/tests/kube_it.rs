@@ -1030,8 +1030,8 @@ async fn a_jobs_finished_pod_is_read_and_the_stream_ends_without_follow() {
 async fn previous_reads_the_crashed_run_and_a_missing_one_is_a_marker() {
     use fleetops_core::streams::LogStream;
     let ops = common::ops();
-    common::eventually("crashonce restarted", || async {
-        ops.get(KubeKind::Pods, NS, "crashonce")
+    common::eventually("crash-once restarted", || async {
+        ops.get(KubeKind::Pods, NS, "crash-once")
             .await
             .is_ok_and(|o| o.row.columns["restarts"] != "0")
     })
@@ -1041,7 +1041,7 @@ async fn previous_reads_the_crashed_run_and_a_missing_one_is_a_marker() {
         follow: false,
         ..LogOptions::default()
     };
-    let lines: Vec<_> = ops.logs(NS, "crashonce", &opts).collect().await;
+    let lines: Vec<_> = ops.logs(NS, "crash-once", &opts).collect().await;
     let texts: Vec<_> = lines
         .iter()
         .map(|l| l.as_ref().unwrap().text.clone())
@@ -1109,4 +1109,59 @@ async fn a_crashing_pod_rejoins_with_its_new_runs_first_lines() {
     .await;
     assert!(got.iter().any(|l| l.text == "first-run"), "{got:?}");
     ops.delete(KubeKind::Deployments, NS, &name).await.unwrap();
+}
+fn exec_kubeconfig(sleep: Option<u32>) -> String {
+    use base64::Engine;
+    let ca = base64::engine::general_purpose::STANDARD
+        .encode(std::fs::read(common::dir().join("ca.crt")).unwrap());
+    let token_file = common::dir().join("token");
+    let sleep = sleep
+        .map(|s| format!(", {{name: FAKE_EXEC_SLEEP, value: '{s}'}}"))
+        .unwrap_or_default();
+    format!(
+        "apiVersion: v1\nkind: Config\ncurrent-context: t\nclusters:\n- name: t\n  cluster: {{server: '{}', certificate-authority-data: '{ca}'}}\ncontexts:\n- name: t\n  context: {{cluster: t, user: t}}\nusers:\n- name: t\n  user:\n    exec: {{apiVersion: client.authentication.k8s.io/v1, command: fake-exec-plugin, interactiveMode: Never, env: [{{name: FAKE_EXEC_TOKEN_FILE, value: '{}'}}{sleep}]}}\n",
+        common::read("server"),
+        token_file.display()
+    )
+}
+
+#[tokio::test]
+async fn an_exec_user_lists_pods_and_reads_logs() {
+    let policy = fleetops_kube::exec_auth::ExecPolicy::parse("fake-exec-plugin").unwrap();
+    let p = fleetops_kube::kubeconfig::prepare(&exec_kubeconfig(None), None, &policy).unwrap();
+    fleetops_kube::kubeconfig::check(&p.yaml, &policy)
+        .await
+        .unwrap();
+    let ops = fleetops_kube::KubeClient::new(
+        fleetops_kube::kubeconfig::client(&p.yaml, &policy).unwrap(),
+    );
+    let pods = ops.list(KubeKind::Pods, Some(NS)).await.unwrap();
+    assert!(pods.rows.iter().any(|r| r.name == "ticker"));
+    let opts = LogOptions {
+        follow: false,
+        tail: Some(1),
+        container: Some("main".into()),
+        ..LogOptions::default()
+    };
+    let lines: Vec<_> = ops.logs(NS, "ticker", &opts).collect().await;
+    assert!(
+        lines.iter().all(|l| l.is_ok()) && !lines.is_empty(),
+        "{lines:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_slow_exec_plugin_times_out_with_its_name() {
+    let policy = fleetops_kube::exec_auth::ExecPolicy::parse("fake-exec-plugin")
+        .unwrap()
+        .with_timeout(Duration::from_secs(1));
+    let p = fleetops_kube::kubeconfig::prepare(&exec_kubeconfig(Some(5)), None, &policy).unwrap();
+    let e = fleetops_kube::kubeconfig::check(&p.yaml, &policy)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        e.contains("exec plugin 'fake-exec-plugin' did not finish within 1s"),
+        "{e}"
+    );
 }
