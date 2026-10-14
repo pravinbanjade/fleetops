@@ -224,3 +224,33 @@ describe("merged logs", () => {
     expect(logText(b.entries(), false)).toBe("[web-a] x\ny\n");
   });
 });
+
+describe("merged log resume bounds", () => {
+  const at = (pod: string, hh: number, mm: number, text: string) => ({
+    stream: "stdout" as const,
+    text: `2026-10-14T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00.000000000Z ${text}`,
+    pod,
+  });
+
+  it("forgets a pod once it is gone", () => {
+    const b = new LogBuffer();
+    b.append([at("old", 9, 0, "x"), at("new", 12, 0, "y")]);
+    b.append([{ stream: "meta", text: "◂ old gone", pod: "old" }]);
+    expect(b.resumeSince).toBe(Date.parse("2026-10-14T12:00:00Z") / 1000);
+  });
+
+  it("does not reach back further than shortly before the newest line for a quiet pod", () => {
+    const b = new LogBuffer();
+    b.append([at("quiet", 9, 0, "x"), at("busy", 12, 0, "y")]);
+    expect(b.resumeSince).toBe(Date.parse("2026-10-14T12:00:00Z") / 1000 - 10);
+  });
+
+  it("still resumes a lagging pod from its own last line inside that window", () => {
+    const b = new LogBuffer();
+    b.append([
+      { stream: "stdout", text: "2026-10-14T12:00:55.000000000Z a", pod: "a" },
+      { stream: "stdout", text: "2026-10-14T12:01:00.000000000Z b", pod: "b" },
+    ]);
+    expect(b.resumeSince).toBe(Date.parse("2026-10-14T12:00:55Z") / 1000);
+  });
+});

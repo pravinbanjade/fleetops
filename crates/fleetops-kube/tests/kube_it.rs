@@ -1076,3 +1076,25 @@ async fn a_missing_container_is_a_marker_not_a_failure() {
         "{merged:?}"
     );
 }
+
+#[tokio::test]
+async fn a_crashing_pod_rejoins_with_its_new_runs_first_lines() {
+    use fleetops_core::streams::LogStream;
+    let ops = common::ops();
+    let name = uniq("crashloop");
+    // The first run says first-run and dies; the restart says second-run at once.
+    let yaml = format!(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata: {{name: {name}, namespace: {NS}}}\nspec:\n  replicas: 1\n  selector: {{matchLabels: {{app: {name}}}}}\n  template:\n    metadata: {{labels: {{app: {name}}}}}\n    spec:\n      terminationGracePeriodSeconds: 1\n      volumes: [{{name: mark, emptyDir: {{}}}}]\n      containers:\n        - {{name: main, image: busybox:1.37, imagePullPolicy: IfNotPresent, volumeMounts: [{{name: mark, mountPath: /mark}}], command: [sh, -c, 'if [ -f /mark/ran ]; then echo second-run; sleep 3600; else touch /mark/ran; echo first-run; sleep 2; exit 1; fi']}}\n"
+    );
+    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+        .await
+        .unwrap();
+    let mut s = ops.workload_logs(KubeKind::Deployments, NS, &name, &LogOptions::default());
+    let got = merged_lines(&mut s, |ls| {
+        ls.iter()
+            .any(|l| l.stream == LogStream::Stdout && l.text == "second-run")
+    })
+    .await;
+    assert!(got.iter().any(|l| l.text == "first-run"), "{got:?}");
+    ops.delete(KubeKind::Deployments, NS, &name).await.unwrap();
+}

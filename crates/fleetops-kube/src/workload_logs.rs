@@ -14,6 +14,7 @@ use kube::runtime::watcher;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinSet};
 
@@ -91,17 +92,23 @@ pub fn log_row(o: &DynamicObject) -> KubeRow {
     }
 }
 
+/// Where a pod's log is read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadFrom {
+    /// The caller's tail and since: a pod joining.
+    Tail,
+    /// The whole current run: a container that restarted. The log endpoint
+    /// reads only the current instance, so this repeats nothing.
+    Run,
+    /// From these unix seconds: a pod read again after its log failed.
+    Since(i64),
+}
+
 /// What the driver does next.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Step {
-    /// Read this pod's log; `since` (unix seconds) when it rejoins after a restart.
-    Start {
-        pod: String,
-        since: Option<i64>,
-    },
-    Stop {
-        pod: String,
-    },
+    Start { pod: String, from: ReadFrom },
+    Stop { pod: String },
     Line(LogLine),
 }
 
@@ -140,8 +147,12 @@ pub struct PodSet {
     streaming: BTreeMap<String, i64>,
     /// Streamable, waiting for a slot.
     waiting: BTreeSet<String>,
-    /// Their log ended: when, and the restart count it had started at.
-    ended: BTreeMap<String, (i64, i64)>,
+    /// Their log ended: the restart count it had started at.
+    ended: BTreeMap<String, i64>,
+    /// Their log failed: when, to be read again from then (spec 3i §7).
+    failed: BTreeMap<String, i64>,
+    /// The last reason said per pod, so a retry that fails alike stays quiet.
+    reasons: BTreeMap<String, String>,
     /// Lacking the container; already said.
     skipped: BTreeSet<String>,
     synced: bool,
@@ -157,6 +168,8 @@ impl PodSet {
             streaming: BTreeMap::new(),
             waiting: BTreeSet::new(),
             ended: BTreeMap::new(),
+            failed: BTreeMap::new(),
+            reasons: BTreeMap::new(),
             skipped: BTreeSet::new(),
             synced: false,
             capped_said: false,
@@ -201,11 +214,11 @@ impl PodSet {
     }
 
     /// `pod`'s log ended by itself (the container exited, or the pod finished).
-    pub fn on_ended(&mut self, pod: &str, now: i64) -> Vec<Step> {
+    pub fn on_ended(&mut self, pod: &str) -> Vec<Step> {
         let Some(started_at) = self.streaming.remove(pod) else {
             return vec![];
         };
-        self.ended.insert(pod.to_string(), (now, started_at));
+        self.ended.insert(pod.to_string(), started_at);
         let mut out = self.fill();
         // A restart already seen while the log was still draining.
         if let Some(r) = self.known.get(pod).cloned() {
@@ -215,10 +228,49 @@ impl PodSet {
         out
     }
 
+    /// `pod`'s log failed at `now`: say why (once per reason) and free its
+    /// slot. The driver calls `retry` later.
+    pub fn on_failed(&mut self, pod: &str, now: i64, reason: String) -> Vec<Step> {
+        if self.streaming.remove(pod).is_none() {
+            return vec![];
+        }
+        self.failed.insert(pod.to_string(), now);
+        let mut out = Vec::new();
+        if self.reasons.get(pod) != Some(&reason) {
+            out.push(Step::Line(meta(Some(pod), format!("{pod}: {reason}"))));
+            self.reasons.insert(pod.to_string(), reason);
+        }
+        out.extend(self.fill());
+        out
+    }
+
+    /// Its log failed and it has not been read again yet.
+    pub fn is_failed(&self, pod: &str) -> bool {
+        self.failed.contains_key(pod)
+    }
+
+    /// Reads a failed pod again, from when it failed, if a slot is free.
+    pub fn retry(&mut self, pod: &str) -> Vec<Step> {
+        let Some(&at) = self.failed.get(pod) else {
+            return vec![];
+        };
+        let Some(row) = self.known.get(pod) else {
+            return vec![];
+        };
+        if !streamable(row) || self.streaming.len() >= self.cap {
+            return vec![];
+        }
+        self.failed.remove(pod);
+        self.start(pod.to_string(), ReadFrom::Since(at), false)
+    }
+
     fn upsert(&mut self, row: KubeRow, announce: bool, total: usize) -> Vec<Step> {
         let name = row.name.clone();
         self.known.insert(name.clone(), row.clone());
-        if self.streaming.contains_key(&name) || self.skipped.contains(&name) {
+        if self.streaming.contains_key(&name)
+            || self.skipped.contains(&name)
+            || self.failed.contains_key(&name)
+        {
             return vec![];
         }
         if !streamable(&row) {
@@ -230,10 +282,10 @@ impl PodSet {
             let text = format!("{name} has no container {}", self.container);
             return vec![Step::Line(meta(Some(&name), text))];
         }
-        let since = match self.ended.get(&name) {
-            Some(&(at, started_at)) if restarts(&row) > started_at => Some(at),
+        let from = match self.ended.get(&name) {
+            Some(&started_at) if restarts(&row) > started_at => ReadFrom::Run,
             Some(_) => return vec![],
-            None => None,
+            None => ReadFrom::Tail,
         };
         if self.streaming.len() >= self.cap {
             self.waiting.insert(name);
@@ -245,17 +297,17 @@ impl PodSet {
             return vec![Step::Line(meta(None, text))];
         }
         self.ended.remove(&name);
-        self.start(name, since, announce)
+        self.start(name, from, announce)
     }
 
-    fn start(&mut self, name: String, since: Option<i64>, announce: bool) -> Vec<Step> {
+    fn start(&mut self, name: String, from: ReadFrom, announce: bool) -> Vec<Step> {
         let restarts = self.known.get(&name).map(restarts).unwrap_or(0);
         self.streaming.insert(name.clone(), restarts);
         let mut out = Vec::new();
         if announce {
             out.push(Step::Line(meta(Some(&name), format!("▸ {name} started"))));
         }
-        out.push(Step::Start { pod: name, since });
+        out.push(Step::Start { pod: name, from });
         out
     }
 
@@ -265,7 +317,8 @@ impl PodSet {
         self.skipped.remove(name);
         // A rollout kills the container first, so its log may have ended
         // already: it was still read, and still leaves.
-        let ended = self.ended.remove(name).is_some();
+        self.reasons.remove(name);
+        let ended = self.ended.remove(name).is_some() | self.failed.remove(name).is_some();
         let streaming = self.streaming.remove(name).is_some();
         if !streaming && !ended {
             return vec![];
@@ -292,7 +345,7 @@ impl PodSet {
                 .cloned();
             let Some(n) = next else { break };
             self.waiting.remove(&n);
-            out.extend(self.start(n, None, true));
+            out.extend(self.start(n, ReadFrom::Tail, true));
         }
         out
     }
@@ -333,20 +386,28 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// How a pod's log task finished: by itself, or with this reason.
+type Outcome = Option<String>;
+
+/// A failed pod is read again after this, doubling to `RETRY_MAX`.
+const RETRY_START: Duration = Duration::from_secs(2);
+const RETRY_MAX: Duration = Duration::from_secs(60);
+
 /// One task per streaming pod. Dropping it aborts them all.
 #[derive(Default)]
 struct Tasks {
-    set: JoinSet<String>,
+    set: JoinSet<(String, Outcome)>,
     handles: HashMap<String, AbortHandle>,
 }
 
 impl Tasks {
-    fn spawn(&mut self, pod: String, f: impl std::future::Future<Output = ()> + Send + 'static) {
+    fn spawn(
+        &mut self,
+        pod: String,
+        f: impl std::future::Future<Output = Outcome> + Send + 'static,
+    ) {
         let p = pod.clone();
-        let h = self.set.spawn(async move {
-            f.await;
-            p
-        });
+        let h = self.set.spawn(async move { (p, f.await) });
         self.handles.insert(pod, h);
     }
 
@@ -356,17 +417,51 @@ impl Tasks {
         }
     }
 
-    /// The next pod whose log ended by itself; aborted ones are skipped.
-    async fn ended(&mut self) -> Option<String> {
+    /// The next pod whose log finished by itself; aborted ones are skipped.
+    async fn ended(&mut self) -> Option<(String, Outcome)> {
         loop {
             match self.set.join_next().await? {
-                Ok(p) => {
+                Ok((p, outcome)) => {
                     self.handles.remove(&p);
-                    return Some(p);
+                    return Some((p, outcome));
                 }
                 Err(_) => continue,
             }
         }
+    }
+}
+
+/// Failed pods and when to read each again.
+struct Retries {
+    tx: mpsc::UnboundedSender<String>,
+    rx: mpsc::UnboundedReceiver<String>,
+    delay: HashMap<String, Duration>,
+}
+
+impl Retries {
+    fn new() -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
+        Self {
+            tx,
+            rx,
+            delay: HashMap::new(),
+        }
+    }
+
+    fn schedule(&mut self, pod: String) {
+        let d = self.delay.entry(pod.clone()).or_insert(RETRY_START);
+        let wait = *d;
+        *d = (*d * 2).min(RETRY_MAX);
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(wait).await;
+            let _ = tx.send(pod);
+        });
+    }
+
+    /// It read lines again: the next failure starts the backoff over.
+    fn reset(&mut self, pod: &str) {
+        self.delay.remove(pod);
     }
 }
 
@@ -410,6 +505,7 @@ async fn drive(
     );
     let mut set = PodSet::new(container.clone(), WORKLOAD_LOG_PODS);
     let mut tasks = Tasks::default();
+    let mut retries = Retries::new();
     let ctx = PodCtx {
         pods,
         opts: opts.clone(),
@@ -440,17 +536,44 @@ async fn drive(
                     }
                 }
             },
-            Some(pod) = tasks.ended() => {
-                if !apply(set.on_ended(&pod, now_unix()), &mut tasks, &ctx).await {
+            Some((pod, outcome)) = tasks.ended() => {
+                let steps = match outcome {
+                    None => set.on_ended(&pod),
+                    Some(reason) => {
+                        retries.schedule(pod.clone());
+                        set.on_failed(&pod, now_unix(), reason)
+                    }
+                };
+                if !apply(steps, &mut tasks, &ctx).await {
+                    return Ok(());
+                }
+            }
+            Some(pod) = retries.rx.recv() => {
+                let steps = set.retry(&pod);
+                if steps.is_empty() {
+                    // Still failed and no slot, or gone: a later retry decides.
+                    if set.is_failed(&pod) {
+                        retries.schedule(pod);
+                    }
+                } else {
+                    retries.reset(&pod);
+                }
+                if !apply(steps, &mut tasks, &ctx).await {
                     return Ok(());
                 }
             }
         }
     }
-    // Without follow: read every pod once, waiting ones as slots free.
+    // Without follow: read every pod once, waiting ones as slots free. A
+    // failure is said and not retried: the reader asked for what is there now.
     drop(events);
-    while let Some(pod) = tasks.ended().await {
-        if !apply(set.on_ended(&pod, now_unix()), &mut tasks, &ctx).await {
+    while let Some((pod, outcome)) = tasks.ended().await {
+        let mut steps = Vec::new();
+        if let Some(reason) = outcome {
+            steps.push(Step::Line(meta(Some(&pod), format!("{pod}: {reason}"))));
+        }
+        steps.extend(set.on_ended(&pod));
+        if !apply(steps, &mut tasks, &ctx).await {
             return Ok(());
         }
     }
@@ -468,11 +591,18 @@ struct PodCtx {
 async fn apply(steps: Vec<Step>, tasks: &mut Tasks, ctx: &PodCtx) -> bool {
     for s in steps {
         match s {
-            Step::Start { pod, since } => {
+            Step::Start { pod, from } => {
                 let mut o = ctx.opts.clone();
-                if since.is_some() {
-                    o.since = since;
-                    o.tail = None;
+                match from {
+                    ReadFrom::Tail => {}
+                    ReadFrom::Run => {
+                        o.since = None;
+                        o.tail = None;
+                    }
+                    ReadFrom::Since(at) => {
+                        o.since = Some(at);
+                        o.tail = None;
+                    }
                 }
                 let f = pod_task(
                     ctx.pods.clone(),
@@ -494,29 +624,34 @@ async fn apply(steps: Vec<Step>, tasks: &mut Tasks, ctx: &PodCtx) -> bool {
     true
 }
 
-/// One pod's lines, tagged; an error is a marker for that pod alone.
-async fn pod_task(pods: Api<Pod>, pod: String, o: LogOptions, container: String, tx: Tx) {
+/// One pod's lines, tagged. Ends with the reason its log failed, if it did;
+/// a previous run that does not exist is said here and is not a failure.
+async fn pod_task(
+    pods: Api<Pod>,
+    pod: String,
+    o: LogOptions,
+    container: String,
+    tx: Tx,
+) -> Outcome {
     let previous = o.previous;
     let mut lines = pod_logs(pods, pod.clone(), o);
     while let Some(item) = lines.next().await {
-        let (line, last) = match item {
+        match item {
             Ok(mut l) => {
                 l.pod = Some(pod.clone());
-                (l, false)
+                if tx.send(Ok(l)).await.is_err() {
+                    return None;
+                }
             }
-            Err(Error::Invalid(_)) if previous => (
-                meta(
-                    Some(&pod),
-                    format!("{pod} has no previous run of {container}"),
-                ),
-                true,
-            ),
-            Err(e) => (meta(Some(&pod), format!("{pod}: {e}")), true),
-        };
-        if tx.send(Ok(line)).await.is_err() || last {
-            return;
+            Err(Error::Invalid(_)) if previous => {
+                let text = format!("{pod} has no previous run of {container}");
+                let _ = tx.send(Ok(meta(Some(&pod), text))).await;
+                return None;
+            }
+            Err(e) => return Some(e.to_string()),
         }
     }
+    None
 }
 
 #[cfg(test)]
@@ -609,7 +744,7 @@ mod tests {
     fn start(pod: &str) -> Step {
         Step::Start {
             pod: pod.into(),
-            since: None,
+            from: ReadFrom::Tail,
         }
     }
     fn texts(steps: &[Step]) -> Vec<String> {
@@ -717,7 +852,7 @@ mod tests {
     fn a_pod_that_ended_stays_out_until_it_restarts() {
         let mut s = PodSet::new("web", 25);
         s.on_event(snap(vec![row("a", 1, "Running", 0)]));
-        assert!(s.on_ended("a", 100).is_empty());
+        assert!(s.on_ended("a").is_empty());
         assert!(s
             .on_event(WatchEvent::Modified {
                 row: row("a", 1, "Running", 0)
@@ -729,7 +864,7 @@ mod tests {
         assert!(
             out.contains(&Step::Start {
                 pod: "a".into(),
-                since: Some(100)
+                from: ReadFrom::Run
             }),
             "{out:?}"
         );
@@ -745,11 +880,11 @@ mod tests {
                 row: row("a", 1, "Running", 1)
             })
             .is_empty());
-        let out = s.on_ended("a", 100);
+        let out = s.on_ended("a");
         assert!(
             out.contains(&Step::Start {
                 pod: "a".into(),
-                since: Some(100)
+                from: ReadFrom::Run
             }),
             "{out:?}"
         );
@@ -762,7 +897,7 @@ mod tests {
             row("a", 1, "Succeeded", 0),
             row("b", 2, "Succeeded", 0),
         ]));
-        let out = s.on_ended("a", 100);
+        let out = s.on_ended("a");
         assert!(out.contains(&start("b")), "{out:?}");
     }
 
@@ -785,7 +920,7 @@ mod tests {
         // A rollout kills the container first; the pod object goes after.
         let mut s = PodSet::new("web", 25);
         s.on_event(snap(vec![row("a", 1, "Running", 0)]));
-        s.on_ended("a", 100);
+        s.on_ended("a");
         let out = s.on_event(WatchEvent::Deleted {
             namespace: None,
             name: "a".into(),
@@ -828,5 +963,71 @@ mod tests {
             "{e}"
         );
         assert!(s.next().await.is_none());
+    }
+
+    #[test]
+    fn a_failed_pod_says_why_once_and_retries_from_when_it_failed() {
+        let mut s = PodSet::new("web", 25);
+        s.on_event(snap(vec![row("a", 1, "Running", 0)]));
+        let out = s.on_failed("a", 100, "stream reset".into());
+        assert_eq!(texts(&out), ["a: stream reset"]);
+        assert!(!out.iter().any(|x| matches!(x, Step::Start { .. })));
+        let out = s.retry("a");
+        assert_eq!(
+            out,
+            [Step::Start {
+                pod: "a".into(),
+                from: ReadFrom::Since(100)
+            }]
+        );
+        let out = s.on_failed("a", 200, "stream reset".into());
+        assert!(
+            texts(&out).is_empty(),
+            "the same reason is said once: {out:?}"
+        );
+        s.retry("a");
+        let out = s.on_failed("a", 300, "container is waiting".into());
+        assert_eq!(texts(&out), ["a: container is waiting"]);
+    }
+
+    #[test]
+    fn a_failed_pods_slot_goes_to_a_waiting_one_and_it_waits_its_turn() {
+        let mut s = PodSet::new("web", 1);
+        s.on_event(snap(vec![
+            row("a", 1, "Running", 0),
+            row("b", 2, "Running", 0),
+        ]));
+        let out = s.on_failed("a", 100, "x".into());
+        assert!(out.contains(&start("b")), "{out:?}");
+        assert!(s.retry("a").is_empty());
+        let out = s.on_event(WatchEvent::Deleted {
+            namespace: None,
+            name: "b".into(),
+        });
+        // The freed slot waits for a's retry timer, not the next event.
+        assert!(
+            !out.iter().any(|x| matches!(x, Step::Start { .. })),
+            "{out:?}"
+        );
+        assert_eq!(
+            s.retry("a"),
+            [Step::Start {
+                pod: "a".into(),
+                from: ReadFrom::Since(100)
+            }]
+        );
+    }
+
+    #[test]
+    fn a_failed_pod_that_is_deleted_says_gone_and_is_not_retried() {
+        let mut s = PodSet::new("web", 25);
+        s.on_event(snap(vec![row("a", 1, "Running", 0)]));
+        s.on_failed("a", 100, "x".into());
+        let out = s.on_event(WatchEvent::Deleted {
+            namespace: None,
+            name: "a".into(),
+        });
+        assert_eq!(texts(&out), ["◂ a gone"]);
+        assert!(s.retry("a").is_empty());
     }
 }

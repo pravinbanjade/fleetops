@@ -4,6 +4,13 @@ import { stripAnsi, type Segment } from "./ansi";
 /** Most lines the log viewer keeps; the oldest are dropped past this. */
 export const LOG_BUFFER_MAX = 200_000;
 
+/**
+ * Merged logs: on resume, no pod reaches back further than this before the
+ * newest line held. A pod quiet for longer sent nothing in between, and
+ * asking from its last line would replay every other pod's log since then.
+ */
+export const RESUME_WINDOW_MS = 10_000;
+
 export interface LogEntry {
   /** Increases by one per entry for the life of the buffer; never reused. */
   seq: number;
@@ -87,6 +94,8 @@ export class LogBuffer {
       const [ts, text] = splitTimestamp(l.text);
       const pod = l.pod ?? null;
       const src = pod ?? "";
+      // A pod that left has nothing to resume (spec 3i §2: `◂ <pod> gone`).
+      if (l.stream === "meta" && pod && l.text === `◂ ${pod} gone`) this.last.delete(pod);
       if (ts) {
         const key = timestampKey(ts);
         const after = this.resumeAfter?.get(src);
@@ -113,13 +122,12 @@ export class LogBuffer {
    * rounded down; `resume()` drops the overlap.
    */
   get resumeSince(): number | null {
-    // The oldest source's last line: every source resumes from at or before its own.
-    let min: number | null = null;
-    for (const { ts } of this.last.values()) {
-      const ms = Date.parse(ts);
-      if (!Number.isNaN(ms)) min = min === null ? ms : Math.min(min, ms);
-    }
-    return min === null ? null : Math.floor(min / 1000);
+    // The oldest source's last line, within RESUME_WINDOW_MS of the newest:
+    // every source resumes from at or before its own.
+    const times = [...this.last.values()].map(({ ts }) => Date.parse(ts)).filter((ms) => !Number.isNaN(ms));
+    if (!times.length) return null;
+    const floor = Math.max(...times) - RESUME_WINDOW_MS;
+    return Math.floor(Math.min(...times.map((ms) => Math.max(ms, floor))) / 1000);
   }
 
   /** Skips replayed lines on the next append (see the class comment). */
