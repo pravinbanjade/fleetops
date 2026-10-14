@@ -126,7 +126,11 @@ pub struct ProcessRunner {
 #[async_trait]
 impl Runner for ProcessRunner {
     async fn run(&self, p: &Plugin) -> Result<Vec<u8>, ExecError> {
-        let mut child = tokio::process::Command::new(&p.command)
+        let mut cmd = tokio::process::Command::new(&p.command);
+        // Its own process group, so a timeout ends whatever it started too.
+        #[cfg(unix)]
+        cmd.process_group(0);
+        let mut child = cmd
             .args(&p.args)
             .envs(p.env.iter().map(|(k, v)| (k, v)))
             .env("KUBERNETES_EXEC_INFO", &p.exec_info)
@@ -139,6 +143,7 @@ impl Runner for ProcessRunner {
                 std::io::ErrorKind::NotFound => ExecError::NotFound(p.command.clone()),
                 _ => ExecError::Io(format!("exec plugin '{}' could not start: {e}", p.command)),
             })?;
+        let group = child.id();
         let mut stdout = child.stdout.take().expect("piped");
         let mut stderr = child.stderr.take().expect("piped");
         let work = async {
@@ -182,13 +187,31 @@ impl Runner for ProcessRunner {
         };
         match tokio::time::timeout(self.timeout, work).await {
             Ok(r) => r,
-            // Dropping `child` (kill_on_drop) ends the plugin.
-            Err(_) => Err(ExecError::TimedOut {
-                command: p.command.clone(),
-                secs: self.timeout.as_secs(),
-            }),
+            // Dropping `child` (kill_on_drop) ends the plugin; the group
+            // kill ends what it started.
+            Err(_) => {
+                kill_group(group);
+                Err(ExecError::TimedOut {
+                    command: p.command.clone(),
+                    secs: self.timeout.as_secs(),
+                })
+            }
         }
     }
+}
+
+/// SIGKILL to the plugin's process group (its pid, from `process_group(0)`).
+fn kill_group(group: Option<u32>) {
+    #[cfg(unix)]
+    if let Some(pid) = group.and_then(|g| i32::try_from(g).ok()) {
+        // SAFETY: kill(2) with a negative pid signals that process group;
+        // it touches no memory of ours.
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = group;
 }
 
 /// One plugin's token, refreshed by at most one run at a time.
@@ -459,7 +482,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let mark = dir.join("still-running");
         let p = Plugin {
-            args: vec!["-c".into(), format!("sleep 2; touch {}", mark.display())],
+            args: vec![
+                "-c".into(),
+                format!("(sleep 2; touch {}) & wait", mark.display()),
+            ],
             ..plugin("sh")
         };
         let started = std::time::Instant::now();
@@ -478,6 +504,9 @@ mod tests {
         );
         assert!(started.elapsed() < Duration::from_secs(2));
         tokio::time::sleep(Duration::from_secs(3)).await;
-        assert!(!mark.exists(), "the plugin was left running");
+        assert!(
+            !mark.exists(),
+            "a process the plugin started was left running"
+        );
     }
 }

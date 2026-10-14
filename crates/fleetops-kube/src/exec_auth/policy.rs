@@ -155,16 +155,43 @@ fn login_mode(args: &[String]) -> Option<&str> {
     None
 }
 
+/// Names that make an interpreter load code, or a cloud CLI read its
+/// config (which can name commands to run), from a path the kubeconfig picks.
+const RESERVED_ENV: [&str; 23] = [
+    "PATH",
+    "KUBERNETES_EXEC_INFO",
+    "HOME",
+    "XDG_CONFIG_HOME",
+    "BASH_ENV",
+    "ENV",
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "PERL5LIB",
+    "PERL5OPT",
+    "PERLLIB",
+    "RUBYOPT",
+    "RUBYLIB",
+    "JAVA_TOOL_OPTIONS",
+    "_JAVA_OPTIONS",
+    "JDK_JAVA_OPTIONS",
+    "GCONV_PATH",
+    "AWS_CONFIG_FILE",
+    "AWS_SHARED_CREDENTIALS_FILE",
+    "CLOUDSDK_CONFIG",
+    "AZURE_CONFIG_DIR",
+    "BOTO_CONFIG",
+    "KUBECONFIG",
+];
+const RESERVED_ENV_PREFIXES: [&str; 3] = ["LD_", "DYLD_", "PYTHON"];
+
 fn check_env_name(name: &str) -> Result<()> {
     let shaped = name
         .chars()
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-    let reserved = name == "PATH"
-        || name == "KUBERNETES_EXEC_INFO"
-        || name.starts_with("LD_")
-        || name.starts_with("DYLD_");
+    let reserved =
+        RESERVED_ENV.contains(&name) || RESERVED_ENV_PREFIXES.iter().any(|p| name.starts_with(p));
     if shaped && !reserved {
         Ok(())
     } else {
@@ -385,6 +412,54 @@ mod tests {
                 ("value".into(), "v".into()),
             ])]);
             assert!(err(&p, &e).contains("is not allowed"), "{bad}");
+        }
+    }
+
+    #[test]
+    fn env_that_makes_an_interpreter_load_code_or_config_from_a_path_is_refused() {
+        let p = on();
+        let mut e = exec("aws", &["eks", "get-token"]);
+        for bad in [
+            "PYTHONPATH",
+            "PYTHONSTARTUP",
+            "NODE_OPTIONS",
+            "NODE_PATH",
+            "BASH_ENV",
+            "ENV",
+            "PERL5LIB",
+            "PERL5OPT",
+            "RUBYOPT",
+            "RUBYLIB",
+            "JAVA_TOOL_OPTIONS",
+            "_JAVA_OPTIONS",
+            "JDK_JAVA_OPTIONS",
+            "GCONV_PATH",
+            "HOME",
+            "XDG_CONFIG_HOME",
+            "AWS_CONFIG_FILE",
+            "AWS_SHARED_CREDENTIALS_FILE",
+            "CLOUDSDK_CONFIG",
+            "AZURE_CONFIG_DIR",
+            "BOTO_CONFIG",
+            "KUBECONFIG",
+        ] {
+            e.env = Some(vec![HashMap::from([
+                ("name".into(), bad.into()),
+                ("value".into(), "/tmp/x".into()),
+            ])]);
+            assert!(err(&p, &e).contains("is not allowed"), "{bad}");
+        }
+        for ok in [
+            "AWS_PROFILE",
+            "AWS_REGION",
+            "AZURE_CLIENT_ID",
+            "CLOUDSDK_CORE_PROJECT",
+        ] {
+            e.env = Some(vec![HashMap::from([
+                ("name".into(), ok.into()),
+                ("value".into(), "v".into()),
+            ])]);
+            assert!(p.check(&e, &cluster()).is_ok(), "{ok}");
         }
     }
 
