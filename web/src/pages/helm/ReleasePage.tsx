@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
 import { useEnvAccess } from "@/api/access";
-import { helmHistoryQuery, helmReleaseQuery } from "@/api/queries";
+import { helmCapabilitiesQuery, helmHistoryQuery, helmReleaseQuery } from "@/api/queries";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,6 +14,7 @@ import type { HelmTab } from "./tabs";
 
 const route = getRouteApi("/authed/shell/envs/$env/k8s/helm/$ns/$name");
 const HelmPlanDialog = lazy(() => import("./HelmPlanDialog"));
+const HelmDeployDialog = lazy(() => import("./HelmDeployDialog"));
 
 const TABS: [HelmTab, string][] = [
   ["overview", "Overview"],
@@ -41,6 +42,8 @@ export function ReleasePage() {
   const detail = useQuery(helmReleaseQuery(env, ns, name));
   const history = useQuery({ ...helmHistoryQuery(env, ns, name), enabled: tab === "history" });
   const [action, setAction] = useState<HelmAction | null>(null);
+  const caps = useQuery(helmCapabilitiesQuery(env));
+  const [upgrading, setUpgrading] = useState(false);
   const r = detail.data?.release;
   return (
     <Page
@@ -56,12 +59,28 @@ export function ReleasePage() {
       actions={
         canWrite &&
         r && (
-          <Button variant="outline" size="sm" onClick={() => setAction({ kind: "uninstall" })}>
-            Uninstall
-          </Button>
+          <span className="flex items-center gap-2">
+            {caps.data?.install && (
+              <Button variant="outline" size="sm" onClick={() => setUpgrading(true)}>
+                Upgrade
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={() => setAction({ kind: "uninstall" })}>
+              Uninstall
+            </Button>
+          </span>
         )
       }
     >
+      {upgrading && (
+        <Suspense fallback={null}>
+          <HelmDeployDialog
+            env={env}
+            target={{ kind: "upgrade", ns, name, source: detail.data?.chart_source ?? null, values: detail.data?.values ?? "" }}
+            onClose={() => setUpgrading(false)}
+          />
+        </Suspense>
+      )}
       {action && (
         <Suspense fallback={null}>
           <HelmPlanDialog env={env} ns={ns} name={name} action={action} onClose={() => setAction(null)} />
