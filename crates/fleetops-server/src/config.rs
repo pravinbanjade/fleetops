@@ -37,6 +37,11 @@ pub struct Config {
     /// tracing filter, e.g. `info` or `fleetops_api=debug,info`.
     #[arg(long, env = "FLEETOPS_LOG", default_value = "info")]
     pub log_level: String,
+    /// Exec plugins kubeconfig users may run: `default` (aws,
+    /// aws-iam-authenticator, gke-gcloud-auth-plugin, kubelogin) and extra
+    /// bare names, comma-separated. Off when unset.
+    #[arg(long, env = "FLEETOPS_KUBE_EXEC_PLUGINS")]
+    pub kube_exec_plugins: Option<String>,
     /// Print the OpenAPI document to stdout and exit without starting.
     #[arg(long)]
     pub openapi: bool,

@@ -4,7 +4,7 @@ use crate::{
     auth::{extract::CurrentUser, token::hash_token},
     authz::{authorize_global, Action},
     extract::{ApiJson, ApiPath},
-    routes::audit,
+    routes::{audit, audit_detail},
     ApiResult, AppState,
 };
 use axum::{
@@ -74,15 +74,23 @@ pub struct KubeContexts {
 /// unless told not to. Runs before the mutation lock: the check can take
 /// seconds.
 async fn prepare_kubeconfig(
+    s: &AppState,
     text: &str,
     context: Option<&str>,
     skip_check: bool,
 ) -> ApiResult<kubeconfig::Prepared> {
-    let p = kubeconfig::prepare(text, context, &Default::default())?;
+    let policy = &s.config.kube_exec;
+    let p = kubeconfig::prepare(text, context, policy)?;
     if !skip_check {
-        kubeconfig::check(&p.yaml, &Default::default()).await?;
+        kubeconfig::check(&p.yaml, policy).await?;
     }
     Ok(p)
+}
+
+/// An exec user's command for the audit row (spec 3k §3); never its arguments.
+fn exec_detail(p: Option<&kubeconfig::Prepared>) -> Option<serde_json::Value> {
+    p.and_then(|p| p.summary.exec_command.as_ref())
+        .map(|c| serde_json::json!({ "exec_command": c }))
 }
 
 fn summary_json(p: &kubeconfig::Prepared) -> serde_json::Value {
@@ -210,7 +218,7 @@ pub async fn create(
     }
     let prepared = match (body.kind, &body.kubeconfig) {
         (EnvKind::KubeConfig, Some(text)) => {
-            Some(prepare_kubeconfig(text, body.context.as_deref(), body.skip_check).await?)
+            Some(prepare_kubeconfig(&s, text, body.context.as_deref(), body.skip_check).await?)
         }
         (EnvKind::KubeConfig, None) => {
             return Err(Error::Invalid("a kubeconfig is required".into()).into())
@@ -222,6 +230,7 @@ pub async fn create(
         }
         (_, None) => None,
     };
+    let detail = exec_detail(prepared.as_ref());
     let _guard = s.envs.lock_mutations().await;
     let (rec, enrollment, credential) = match body.kind {
         EnvKind::DockerLocal => {
@@ -286,13 +295,14 @@ pub async fn create(
         }
     };
     s.envs.insert(&rec, credential)?;
-    audit(
+    audit_detail(
         &s,
         Some(cu.user.id),
         "env.create",
         "environment",
         &rec.name,
         "success",
+        detail,
     )
     .await;
     Ok((
@@ -342,9 +352,10 @@ pub async fn update(
         );
     }
     let prepared = match &body.kubeconfig {
-        Some(t) => Some(prepare_kubeconfig(t, body.context.as_deref(), body.skip_check).await?),
+        Some(t) => Some(prepare_kubeconfig(&s, t, body.context.as_deref(), body.skip_check).await?),
         None => None,
     };
+    let detail = exec_detail(prepared.as_ref());
     let _guard = s.envs.lock_mutations().await;
     let current = find(&s, &name).await?;
     let new_name = body.name.unwrap_or(current.name.clone());
@@ -377,13 +388,14 @@ pub async fn update(
     };
     s.envs.replace(&current.name, &rec, credential)?;
     s.hubs.kube_watches.end_env(rec.id, ENV_CHANGED);
-    audit(
+    audit_detail(
         &s,
         Some(cu.user.id),
         "env.update",
         "environment",
         &rec.name,
         "success",
+        detail,
     )
     .await;
     Ok(Json(rec))

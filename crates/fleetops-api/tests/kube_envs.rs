@@ -84,7 +84,7 @@ async fn bad_kubeconfigs_are_refused_with_the_reason() {
     for (body, needle) in [
         (
             json!({"name": "k", "kind": "kube-config", "kubeconfig": exec, "skip_check": true}),
-            "exec and auth-provider users are not supported",
+            "exec plugins are off on this server",
         ),
         (
             json!({"name": "k", "kind": "kube-config", "skip_check": true}),

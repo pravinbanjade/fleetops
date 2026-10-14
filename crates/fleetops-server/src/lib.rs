@@ -12,10 +12,15 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 pub async fn run(config: Config) -> anyhow::Result<()> {
     let store = open_store(&config).await?;
+    let kube_exec = fleetops_kube::exec_auth::ExecPolicy::parse(
+        config.kube_exec_plugins.as_deref().unwrap_or(""),
+    )
+    .map_err(|e| anyhow::anyhow!("--kube-exec-plugins: {e}"))?;
     let state = build_state(
         store.clone(),
         ApiConfig {
             hsts: config.hsts,
+            kube_exec,
             ..ApiConfig::default()
         },
     );
@@ -33,10 +38,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 /// connect endpoint (which registers them).
 pub fn build_state(store: Store, config: ApiConfig) -> AppState {
     let agents = Arc::new(fleetops_tunnel::registry::Registry::default());
+    let exec = config.kube_exec.clone();
     AppState::new(
         store,
         config,
-        Arc::new(factory::Factory::new(agents.clone())),
+        Arc::new(factory::Factory::new(agents.clone(), exec)),
     )
     .with_agents(agents)
 }

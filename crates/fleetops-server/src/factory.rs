@@ -14,10 +14,10 @@ pub struct Factory {
 }
 
 impl Factory {
-    pub fn new(agents: Arc<Registry>) -> Self {
+    pub fn new(agents: Arc<Registry>, exec: fleetops_kube::exec_auth::ExecPolicy) -> Self {
         Self {
             docker: DockerEnvFactory::new(agents.clone()),
-            kube: KubeEnvFactory::new(agents),
+            kube: KubeEnvFactory::new(agents).with_exec_policy(exec),
         }
     }
 }

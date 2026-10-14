@@ -7672,6 +7672,13 @@
           "context": {
             "type": "string"
           },
+          "exec_command": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Exec users only: the plugin's command name, never its arguments."
+          },
           "server": {
             "type": "string"
           },
@@ -8644,7 +8651,8 @@
         "type": "string",
         "enum": [
           "token",
-          "cert"
+          "cert",
+          "exec"
         ]
       },
       "VolumeSpec": {
