@@ -1,5 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
@@ -132,6 +135,45 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
     await dialog.getByRole("button", { name: "Roll back" }).click();
     await expect(dialog.getByText("Revision 3 is deployed.")).toBeVisible();
     helm("uninstall", "e2e-demo", "--wait");
+  });
+
+  await test.step("install a chart from a repository and upgrade it", async () => {
+    const kc = join(process.env.FLEETOPS_KUBE_IT ?? "../target/kube-it", "kubeconfig");
+    const dir = mkdtempSync(join(tmpdir(), "fo-e2e-repo-"));
+    execFileSync(process.env.HELM ?? "helm", ["package", "../scripts/helm-it-chart", "-d", dir]);
+    const server = createServer((req, res) => {
+      try {
+        res.end(readFileSync(join(dir, (req.url ?? "/").slice(1))));
+      } catch {
+        res.statusCode = 404;
+        res.end();
+      }
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    execFileSync(process.env.HELM ?? "helm", ["repo", "index", dir, "--url", url]);
+    const helm = (...args: string[]) =>
+      execFileSync(process.env.HELM ?? "helm", ["--kubeconfig", kc, "--namespace", "fleetops-it", ...args]);
+    helm("uninstall", "e2e-installed", "--ignore-not-found", "--wait");
+    await page.goto(`/envs/${ENV}/k8s/helm`);
+    await page.getByRole("button", { name: "Install chart" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Release name").fill("e2e-installed");
+    await dialog.getByLabel("Namespace").fill("fleetops-it");
+    await dialog.getByLabel("Repository URL").fill(url);
+    await dialog.getByLabel("Chart", { exact: true }).fill("demo");
+    await dialog.getByRole("button", { name: "Review" }).click();
+    await dialog.getByRole("button", { name: "Install" }).click();
+    await expect(dialog.getByText("Revision 1 is deployed.")).toBeVisible({ timeout: 60_000 });
+    await dialog.getByRole("button", { name: "Done" }).click();
+    await page.goto(`/envs/${ENV}/k8s/helm/fleetops-it/e2e-installed`);
+    await page.getByRole("button", { name: "Upgrade" }).click();
+    await expect(page.getByRole("dialog").getByLabel("Repository URL")).toHaveValue(url);
+    await page.getByRole("dialog").getByRole("button", { name: "Review" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Upgrade" }).click();
+    await expect(page.getByRole("dialog").getByText("Revision 2 is deployed.")).toBeVisible({ timeout: 60_000 });
+    helm("uninstall", "e2e-installed", "--wait");
+    server.close();
   });
 
   await test.step("an operator limited to fleetops-it sees only its pods, live", async () => {

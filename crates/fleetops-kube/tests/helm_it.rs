@@ -303,3 +303,456 @@ async fn an_object_kept_by_an_upgrade_is_taken_back_by_a_rollback() {
         .delete(&format!("{name}-extra"), &DeleteParams::default())
         .await;
 }
+
+use fleetops_core::helm::{ChartRef, Deploy, HelmMode};
+use fleetops_kube::helm::render::{ChartRenderer, HelmCli, RenderInput};
+use std::path::Path;
+
+/// Writes a chart named `name` at `version` into `dir`: the 3d test chart,
+/// plus `extra` templates.
+fn write_chart(
+    dir: &Path,
+    name: &str,
+    version: &str,
+    extra: &[(&str, &str)],
+) -> std::path::PathBuf {
+    let c = dir.join(format!("{name}-{version}"));
+    std::fs::create_dir_all(c.join("templates")).unwrap();
+    let base = std::path::PathBuf::from(chart());
+    std::fs::write(
+        c.join("Chart.yaml"),
+        format!("apiVersion: v2\nname: {name}\nversion: {version}\nappVersion: \"1.0.0\"\n"),
+    )
+    .unwrap();
+    std::fs::copy(base.join("values.yaml"), c.join("values.yaml")).unwrap();
+    for t in ["deploy.yaml", "extra.yaml"] {
+        std::fs::copy(base.join("templates").join(t), c.join("templates").join(t)).unwrap();
+    }
+    for (file, text) in extra {
+        std::fs::write(c.join("templates").join(file), text).unwrap();
+    }
+    c
+}
+
+/// Packages charts into a directory served over HTTP on 127.0.0.1, with an index.
+async fn serve_repo(charts: &[std::path::PathBuf]) -> (String, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    for c in charts {
+        let out = helm_cmd()
+            .args([
+                "package",
+                c.to_str().unwrap(),
+                "-d",
+                dir.path().to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let out = helm_cmd()
+        .args(["repo", "index", dir.path().to_str().unwrap(), "--url", &url])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let root = dir.path().to_path_buf();
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        loop {
+            let (mut s, _) = listener.accept().await.unwrap();
+            let root = root.clone();
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 4096];
+                let n = s.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]);
+                let path = req
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .trim_start_matches('/')
+                    .to_string();
+                let body = std::fs::read(root.join(&path)).ok();
+                let head = match &body {
+                    Some(b) => format!(
+                        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                        b.len()
+                    ),
+                    None => {
+                        "HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                            .into()
+                    }
+                };
+                let _ = s.write_all(head.as_bytes()).await;
+                if let Some(b) = body {
+                    let _ = s.write_all(&b).await;
+                }
+            });
+        }
+    });
+    (url, dir)
+}
+
+fn helm_cli() -> HelmCli {
+    HelmCli {
+        binary: std::env::var("HELM").unwrap_or_else(|_| "helm".into()),
+        insecure_repos: true,
+        timeout: fleetops_kube::helm::render::RENDER_TIMEOUT,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn deploy(
+    ops: &fleetops_kube::KubeClient,
+    url: &str,
+    chart: &str,
+    version: &str,
+    name: &str,
+    values: serde_json::Value,
+    upgrade: bool,
+    allowed: Option<&std::collections::BTreeSet<String>>,
+) -> fleetops_core::Result<fleetops_core::helm::HelmPlan> {
+    let source = ChartRef {
+        repo_url: Some(url.into()),
+        chart: Some(chart.into()),
+        version: Some(version.into()),
+        oci: None,
+    };
+    let input = RenderInput {
+        name: name.into(),
+        namespace: NS.into(),
+        chart: source.clone(),
+        values: values.clone(),
+        upgrade,
+        kube_version: ops.version().await?.git_version,
+        api_versions: ops.api_versions().await?,
+    };
+    let rendered = helm_cli().render(&input).await?;
+    let d = Deploy {
+        namespace: NS.into(),
+        name: name.into(),
+        config: values,
+        rendered,
+        source,
+        upgrade,
+    };
+    let plan = ops.helm_deploy(&d, HelmMode::Plan, allowed).await?;
+    ops.helm_deploy(
+        &d,
+        HelmMode::Commit {
+            expected_current: plan.current,
+        },
+        allowed,
+    )
+    .await
+}
+
+fn uniq(prefix: &str) -> String {
+    format!(
+        "{prefix}-{}",
+        if std::env::var_os("FLEETOPS_IT_TUNNEL").is_some() {
+            "t"
+        } else {
+            "d"
+        }
+    )
+}
+
+#[tokio::test]
+async fn install_then_upgrade_leaves_a_history_helm_reads() {
+    let ops = common::ops();
+    let tmp = tempfile::tempdir().unwrap();
+    let (url, _repo) = serve_repo(&[
+        write_chart(tmp.path(), "fodemo", "0.1.0", &[]),
+        write_chart(tmp.path(), "fodemo", "0.2.0", &[]),
+    ])
+    .await;
+    let name = uniq("fo-install");
+    let _ = helm_cmd()
+        .args([
+            "uninstall",
+            &name,
+            "--namespace",
+            NS,
+            "--ignore-not-found",
+            "--wait",
+        ])
+        .output();
+    let p = deploy(
+        &ops,
+        &url,
+        "fodemo",
+        "0.1.0",
+        &name,
+        serde_json::json!({"password": "s3cret", "extra": true}),
+        false,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (p.revision, p.status.as_deref()),
+        (Some(1), Some("deployed")),
+        "{p:?}"
+    );
+    let e = deploy(
+        &ops,
+        &url,
+        "fodemo",
+        "0.1.0",
+        &name,
+        serde_json::json!({}),
+        false,
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(e.to_string().contains("exists; upgrade it"), "{e}");
+
+    // An upgrade that keeps the masked password.
+    let stored = ops.helm_config(NS, &name).await.unwrap();
+    let mut sent = serde_json::json!({"password": MASK, "extra": false});
+    fleetops_kube::helm::values::unmask(&mut sent, &stored).unwrap();
+    let p = deploy(&ops, &url, "fodemo", "0.2.0", &name, sent, true, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        (p.revision, p.status.as_deref()),
+        (Some(2), Some("deployed")),
+        "{p:?}"
+    );
+
+    let hist: serde_json::Value =
+        serde_json::from_str(&helm(&["history", &name, "-o", "json"])).unwrap();
+    let statuses: Vec<_> = hist
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["status"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(statuses, ["superseded", "deployed"]);
+    let vals = helm(&["get", "values", &name, "-o", "json"]);
+    assert!(
+        vals.contains("s3cret") && vals.contains("\"extra\":false"),
+        "{vals}"
+    );
+    assert_eq!(
+        ops.helm_get(NS, &name, None)
+            .await
+            .unwrap()
+            .chart_source
+            .unwrap()
+            .chart
+            .as_deref(),
+        Some("fodemo")
+    );
+    // The CLI carries on from a FleetOps release.
+    helm(&[
+        "upgrade",
+        &name,
+        &format!("{}/fodemo-0.2.0", tmp.path().display()),
+        "--reuse-values",
+    ]);
+    helm(&["uninstall", &name, "--wait"]);
+}
+
+#[tokio::test]
+async fn a_cli_release_is_upgraded_and_then_remembers_its_source() {
+    let ops = common::ops();
+    let tmp = tempfile::tempdir().unwrap();
+    let c1 = write_chart(tmp.path(), "fodemo", "0.1.0", &[]);
+    let (url, _repo) =
+        serve_repo(&[c1.clone(), write_chart(tmp.path(), "fodemo", "0.2.0", &[])]).await;
+    let name = uniq("fo-cli");
+    let _ = helm_cmd()
+        .args([
+            "uninstall",
+            &name,
+            "--namespace",
+            NS,
+            "--ignore-not-found",
+            "--wait",
+        ])
+        .output();
+    helm(&["install", &name, c1.to_str().unwrap()]);
+    assert!(ops
+        .helm_get(NS, &name, None)
+        .await
+        .unwrap()
+        .chart_source
+        .is_none());
+    let p = deploy(
+        &ops,
+        &url,
+        "fodemo",
+        "0.2.0",
+        &name,
+        serde_json::json!({}),
+        true,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(p.status.as_deref(), Some("deployed"), "{p:?}");
+    assert!(ops
+        .helm_get(NS, &name, None)
+        .await
+        .unwrap()
+        .chart_source
+        .is_some());
+    helm(&["uninstall", &name, "--wait"]);
+}
+
+const PRE_CM: &str = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {{ .Release.Name }}-pre\n  annotations:\n    \"helm.sh/hook\": pre-install\n    \"helm.sh/hook-weight\": \"-1\"\ndata: {k: v}\n";
+const PRE_JOB_OK: &str = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {{ .Release.Name }}-job\n  annotations:\n    \"helm.sh/hook\": pre-install\n    \"helm.sh/hook-delete-policy\": hook-succeeded\nspec:\n  backoffLimit: 0\n  template:\n    spec:\n      restartPolicy: Never\n      containers: [{name: m, image: busybox:1.37, imagePullPolicy: IfNotPresent, command: [sh, -c, 'exit 0']}]\n";
+const PRE_JOB_FAIL: &str = "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: {{ .Release.Name }}-job\n  annotations:\n    \"helm.sh/hook\": pre-install\nspec:\n  backoffLimit: 0\n  template:\n    spec:\n      restartPolicy: Never\n      containers: [{name: m, image: busybox:1.37, imagePullPolicy: IfNotPresent, command: [sh, -c, 'exit 1']}]\n";
+
+#[tokio::test]
+async fn pre_install_hooks_run_before_the_release_objects() {
+    let ops = common::ops();
+    let tmp = tempfile::tempdir().unwrap();
+    let (url, _repo) = serve_repo(&[write_chart(
+        tmp.path(),
+        "fohooked",
+        "0.1.0",
+        &[("cm.yaml", PRE_CM), ("job.yaml", PRE_JOB_OK)],
+    )])
+    .await;
+    let name = uniq("fo-hooked");
+    let _ = helm_cmd()
+        .args([
+            "uninstall",
+            &name,
+            "--namespace",
+            NS,
+            "--ignore-not-found",
+            "--wait",
+        ])
+        .output();
+    let p = deploy(
+        &ops,
+        &url,
+        "fohooked",
+        "0.1.0",
+        &name,
+        serde_json::json!({}),
+        false,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(p.status.as_deref(), Some("deployed"), "{p:?}");
+    let cms: Api<ConfigMap> = Api::namespaced(common::kube_client(), NS);
+    let deps: Api<Deployment> = Api::namespaced(common::kube_client(), NS);
+    let cm = cms.get(&format!("{name}-pre")).await.unwrap();
+    let dep = deps.get(&name).await.unwrap();
+    assert!(cm.metadata.creation_timestamp <= dep.metadata.creation_timestamp);
+    let jobs: Api<k8s_openapi::api::batch::v1::Job> = Api::namespaced(common::kube_client(), NS);
+    assert!(
+        jobs.get_opt(&format!("{name}-job"))
+            .await
+            .unwrap()
+            .is_none(),
+        "hook-succeeded deletes it"
+    );
+    helm(&["uninstall", &name, "--wait"]);
+    let _ = cms
+        .delete(&format!("{name}-pre"), &DeleteParams::default())
+        .await;
+}
+
+#[tokio::test]
+async fn a_failing_hook_leaves_the_release_failed_and_names_the_hook() {
+    let ops = common::ops();
+    let tmp = tempfile::tempdir().unwrap();
+    let (url, _repo) = serve_repo(&[write_chart(
+        tmp.path(),
+        "fofailing",
+        "0.1.0",
+        &[("job.yaml", PRE_JOB_FAIL)],
+    )])
+    .await;
+    let name = uniq("fo-failing");
+    let _ = helm_cmd()
+        .args([
+            "uninstall",
+            &name,
+            "--namespace",
+            NS,
+            "--ignore-not-found",
+            "--wait",
+        ])
+        .output();
+    let p = deploy(
+        &ops,
+        &url,
+        "fofailing",
+        "0.1.0",
+        &name,
+        serde_json::json!({}),
+        false,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(p.status.as_deref(), Some("failed"), "{p:?}");
+    assert!(
+        p.note.contains(&format!("pre-install hook Job {name}-job")),
+        "{}",
+        p.note
+    );
+    let deps: Api<Deployment> = Api::namespaced(common::kube_client(), NS);
+    assert!(
+        deps.get_opt(&name).await.unwrap().is_none(),
+        "objects wait for pre-install hooks"
+    );
+    let hist: serde_json::Value =
+        serde_json::from_str(&helm(&["history", &name, "-o", "json"])).unwrap();
+    assert_eq!(hist[0]["status"], "failed");
+    helm(&["uninstall", &name, "--wait"]);
+    let jobs: Api<k8s_openapi::api::batch::v1::Job> = Api::namespaced(common::kube_client(), NS);
+    let _ = jobs
+        .delete(&format!("{name}-job"), &DeleteParams::background())
+        .await;
+}
+
+#[tokio::test]
+async fn a_limited_grant_refuses_a_cluster_scoped_object_before_writing() {
+    let ops = common::ops();
+    let tmp = tempfile::tempdir().unwrap();
+    let role = "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata: {name: '{{ .Release.Name }}-cr'}\nrules: []\n";
+    let (url, _repo) = serve_repo(&[write_chart(
+        tmp.path(),
+        "focluster",
+        "0.1.0",
+        &[("cr.yaml", role)],
+    )])
+    .await;
+    let name = uniq("fo-limited");
+    let allowed: std::collections::BTreeSet<String> = [NS.to_string()].into();
+    let e = deploy(
+        &ops,
+        &url,
+        "focluster",
+        "0.1.0",
+        &name,
+        serde_json::json!({}),
+        false,
+        Some(&allowed),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(e, Error::Forbidden(_)), "{e}");
+    assert!(
+        ops.helm_history(NS, &name).await.is_err(),
+        "no release record was written"
+    );
+}
