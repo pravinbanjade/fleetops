@@ -167,3 +167,19 @@ metadata: { name: data, namespace: fleetops-it }
 spec:
   accessModes: [ReadWriteOnce]
   resources: { requests: { storage: 1Mi } }
+---
+# Crashes once, then runs: it has a previous run to read (slice 3i).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crashonce
+  namespace: fleetops-it
+spec:
+  restartPolicy: Always
+  volumes: [{ name: mark, emptyDir: {} }]
+  containers:
+    - name: main
+      image: busybox:1.37
+      imagePullPolicy: IfNotPresent
+      volumeMounts: [{ name: mark, mountPath: /mark }]
+      command: [sh, -c, 'if [ -f /mark/ran ]; then echo second-run; sleep 3600; else touch /mark/ran; echo first-run; exit 1; fi']

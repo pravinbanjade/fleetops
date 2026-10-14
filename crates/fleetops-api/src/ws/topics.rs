@@ -89,6 +89,40 @@ fn pod_id(id: &Option<String>) -> Result<(String, String)> {
     }
 }
 
+/// What a Kubernetes `logs` subscription reads (spec 3i §5).
+enum LogTarget {
+    Pod(String, String),
+    Workload(KubeKind, String, String),
+}
+
+/// `<namespace>/<pod>` or `<kind>/<namespace>/<name>`.
+fn log_target(id: &Option<String>) -> Result<LogTarget> {
+    let raw = required(id, "id")?;
+    match raw.split('/').collect::<Vec<_>>().as_slice() {
+        [_, _] => {
+            let (ns, pod) = pod_id(id)?;
+            Ok(LogTarget::Pod(ns, pod))
+        }
+        [kind, ns, name] => {
+            let refused = || Error::Invalid("logs are read from pods or workloads".into());
+            let k = kind
+                .parse::<KubeKind>()
+                .ok()
+                .filter(|k| k.has_pod_logs())
+                .ok_or_else(refused)?;
+            if *ns == "-" {
+                return Err(refused());
+            }
+            crate::routes::kube::check_namespace(ns)?;
+            crate::routes::kube::check_name(name)?;
+            Ok(LogTarget::Workload(k, ns.to_string(), name.to_string()))
+        }
+        _ => Err(Error::Invalid(
+            "a Kubernetes logs id is <namespace>/<pod> or <kind>/<namespace>/<name>".into(),
+        )),
+    }
+}
+
 fn is_kube_env(s: &AppState, env: &Option<String>) -> bool {
     env.as_deref()
         .and_then(|n| s.envs.get(n).ok())
@@ -185,9 +219,15 @@ pub(super) async fn logs(
     let lines = if is_kube_env(s, &env) {
         let crate::routes::kube::KubeCtx { env, ops, grant } =
             crate::routes::kube::kube_for(s, cu, required(&env, "env")?, Action::KubeRead).await?;
-        let (ns, pod) = pod_id(&id)?;
+        let target = log_target(&id)?;
+        let ns = match &target {
+            LogTarget::Pod(ns, _) | LogTarget::Workload(_, ns, _) => ns.clone(),
+        };
         crate::authz::deny_audited(s, cu, env.id(), "k8s.read", grant.check_ns(&ns)).await?;
-        ops.logs(&ns, &pod, &o)
+        match target {
+            LogTarget::Pod(ns, pod) => ops.logs(&ns, &pod, &o),
+            LogTarget::Workload(k, ns, name) => ops.workload_logs(k, &ns, &name, &o),
+        }
     } else {
         let (_, ops) = docker_for(s, cu, &env, Action::DockerRead).await?;
         ops.logs(required(&id, "id")?, &o)

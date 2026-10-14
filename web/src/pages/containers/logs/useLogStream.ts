@@ -13,6 +13,8 @@ export interface LogQuery {
   stderr: boolean;
   /** Kubernetes only: the pod's container; absent is its first. */
   container?: string;
+  /** Kubernetes only: the container's previous run; never follows. */
+  previous?: boolean;
 }
 
 export const DEFAULT_QUERY: LogQuery = { tail: 1000, since: null, stdout: true, stderr: true };
@@ -48,7 +50,7 @@ export function useLogStream(env: string, id: string, query: LogQuery, startedAt
       // A no-op on a new buffer; otherwise skips what is already held.
       buffer.resume();
       const since = buffer.resumeSince;
-      const opts: LogOptions = { follow: true, timestamps: true, ...query };
+      const opts: LogOptions = { follow: !query.previous, timestamps: true, ...query };
       if (since !== null) Object.assign(opts, { since, tail: null });
       return { topic: "logs" as const, env, id, opts };
     };

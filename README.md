@@ -9,7 +9,7 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 4).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b), per-environment roles (slice 3c) and Helm releases (slice 3d). Next is sub-project 4, stacks and GitOps.
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b), per-environment roles (slice 3c), Helm releases (slice 3d), events and metrics (3e), suspend and resume (3f), custom resources (3g) and workload logs and exec (3i). Next is sub-project 4, stacks and GitOps.
 
 ## Contents
 
@@ -249,6 +249,7 @@ Design documents live in `docs/superpowers/`:
 - `specs/2026-10-07-fleetops-kube-events-metrics-design.md` is slice 3e (events and CPU and memory).
 - `specs/2026-10-07-fleetops-kube-suspend-design.md` is slice 3f (suspend and resume).
 - `specs/2026-10-08-fleetops-kube-crds-generic-kinds-design.md` is slice 3g (custom resources and the missing core kinds), with the Lens-parity roadmap.
+- `specs/2026-10-14-fleetops-kube-workload-logs-exec-design.md` is slice 3i (workload logs and exec).
 - `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), one for sub-project 2, and one for sub-project 3.
 
 ## Architecture
@@ -323,9 +324,10 @@ The full protocol is in section 5.2 of the spec.
 | **3c** | **RBAC** (done) | Per-environment viewer and operator roles for Docker and Kubernetes environments, with namespace scoping inside clusters |
 | **3d** | **Helm** (done) | Releases in Kubernetes environments: history, masked values and manifest, rollback, uninstall |
 | **3e** | **Events and metrics** (done) | Cluster events as a live, read-only kind; CPU and memory from metrics-server on the overview, Nodes and Pods |
+| **3f** | **Suspend and resume** (done) | Park a Deployment, StatefulSet or CronJob and bring it back as it was |
 | **3g** | **Custom resources** (done) | Every kind the cluster serves, CRDs included, by discovery; storage, RBAC, ReplicaSets, HPAs and network policies as curated kinds |
 | 3h | Port-forward | A local port on the FleetOps host, or an HTTP proxy through FleetOps for a remote server |
-| 3i | Workload logs and exec | Logs merged across a workload's pods, previous-container logs, exec from a workload |
+| **3i** | **Workload logs and exec** (done) | Logs merged across a workload's pods, tracked live; previous-container logs; a terminal from a workload |
 | 3j | Helm install and upgrade | Chart repositories and OCI, values editing, upgrade with a diff |
 | 3k | Exec-plugin kubeconfigs | EKS, GKE and AKS kubeconfigs (`aws`, `gcloud`, `kubelogin`) where FleetOps runs |
 | 4 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |

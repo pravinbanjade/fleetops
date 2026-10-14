@@ -100,6 +100,7 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(kube::get, kube::delete, kube::replace))
         .routes(routes!(kube::editable))
         .routes(routes!(kube::events))
+        .routes(routes!(kube::workload_pods))
         .routes(routes!(kube::scale))
         .routes(routes!(kube::restart))
         .routes(routes!(kube::suspend))

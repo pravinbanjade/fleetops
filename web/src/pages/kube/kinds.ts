@@ -9,6 +9,8 @@ export const KUBE_KINDS: readonly KubeKind[] = [
 export const WORKLOADS: readonly KubeKind[] = ["deployments", "statefulsets", "daemonsets", "jobs", "cronjobs"];
 export const CLUSTER_SCOPED: readonly KubeKind[] = ["namespaces", "nodes", "persistentvolumes", "storageclasses", "clusterroles", "clusterrolebindings"];
 export const SCALABLE: readonly KubeKind[] = ["deployments", "statefulsets"];
+/** Workloads whose logs are their pods' (spec 3i §1). */
+export const POD_LOG_KINDS: readonly KubeKind[] = ["deployments", "statefulsets", "daemonsets", "jobs", "replicasets"];
 /** Kinds whose rows report health that is worth racking by: the rest are all "ok". */
 export const HEALTH_KINDS: readonly KubeKind[] = [
   ...WORKLOADS, "pods", "nodes", "replicasets", "horizontalpodautoscalers", "persistentvolumeclaims", "persistentvolumes",

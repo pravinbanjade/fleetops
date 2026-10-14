@@ -253,6 +253,36 @@ async fn first_container(pods: &Api<Pod>, pod: &str) -> Result<String> {
         .ok_or_else(|| Error::NotFound(format!("pod '{pod}' has no containers")))
 }
 
+/// One pod's log; `o.container` `None` is its first container.
+pub(crate) fn pod_logs(pods: Api<Pod>, pod: String, o: LogOptions) -> BoxStream<LogLine> {
+    let lines = futures_util::stream::once(async move {
+        let container = match o.container.clone() {
+            Some(c) => c,
+            None => first_container(&pods, &pod).await?,
+        };
+        let lp = LogParams {
+            container: Some(container),
+            follow: o.follow && !o.previous,
+            previous: o.previous,
+            tail_lines: o.tail.map(i64::from),
+            since_seconds: o.since.map(|s| (now_unix() - s).max(1)),
+            timestamps: o.timestamps,
+            ..LogParams::default()
+        };
+        let read = pods.log_stream(&pod, &lp).await.map_err(errors::map)?;
+        Ok::<_, Error>(read.lines().map(|l| {
+            l.map(|text| LogLine {
+                stream: LogStream::Stdout,
+                text,
+                pod: None,
+            })
+            .map_err(stream_err)
+        }))
+    })
+    .try_flatten();
+    Box::pin(lines)
+}
+
 /// A finished exec's code: 0 on Success, else the ExitCode cause.
 fn exit_code(s: &Status) -> Option<i64> {
     if s.status.as_deref() == Some("Success") {
@@ -335,6 +365,8 @@ impl KubeOps for KubeClient {
             owners,
             containers: if kind == KubeKind::Pods {
                 summaries::containers(&obj)
+            } else if kind.has_pod_logs() {
+                summaries::template_containers(&obj)
             } else {
                 vec![]
             },
@@ -461,32 +493,48 @@ impl KubeOps for KubeClient {
     }
 
     fn logs(&self, ns: &str, pod: &str, opts: &LogOptions) -> BoxStream<LogLine> {
-        let pods = self.pods(ns);
-        let (pod, o) = (pod.to_string(), opts.clone());
-        let lines = futures_util::stream::once(async move {
-            let container = match o.container.clone() {
-                Some(c) => c,
-                None => first_container(&pods, &pod).await?,
-            };
-            let lp = LogParams {
-                container: Some(container),
-                follow: o.follow,
-                tail_lines: o.tail.map(i64::from),
-                since_seconds: o.since.map(|s| (now_unix() - s).max(1)),
-                timestamps: o.timestamps,
-                ..LogParams::default()
-            };
-            let read = pods.log_stream(&pod, &lp).await.map_err(errors::map)?;
-            Ok::<_, Error>(read.lines().map(|l| {
-                l.map(|text| LogLine {
-                    stream: LogStream::Stdout,
-                    text,
-                })
-                .map_err(stream_err)
-            }))
+        pod_logs(self.pods(ns), pod.to_string(), opts.clone())
+    }
+
+    fn workload_logs(
+        &self,
+        kind: KubeKind,
+        ns: &str,
+        name: &str,
+        opts: &LogOptions,
+    ) -> BoxStream<LogLine> {
+        crate::workload_logs::run(
+            self.client.clone(),
+            kind,
+            ns.into(),
+            name.into(),
+            opts.clone(),
+        )
+    }
+
+    async fn workload_pods(&self, kind: KubeKind, ns: &str, name: &str) -> Result<KubeList> {
+        if !kind.has_pod_logs() {
+            return Err(Error::Invalid(format!(
+                "{} have no pods of their own",
+                kind.as_str()
+            )));
+        }
+        let obj = timed(self.api(kind, Some(ns)).get(name)).await?;
+        let sel = crate::workload_logs::selector(&obj.data["spec"]["selector"])?;
+        let lp = ListParams::default().labels(&sel).limit(PAGE_SIZE);
+        let list = timed(self.api(KubeKind::Pods, Some(ns)).list(&lp)).await?;
+        Ok(KubeList {
+            truncated: list
+                .metadata
+                .continue_
+                .as_deref()
+                .is_some_and(|c| !c.is_empty()),
+            rows: list
+                .items
+                .iter()
+                .map(|o| summaries::row(KubeKind::Pods, o))
+                .collect(),
         })
-        .try_flatten();
-        Box::pin(lines)
     }
 
     async fn exec_start(&self, ns: &str, pod: &str, opts: &ExecOptions) -> Result<KubeExec> {

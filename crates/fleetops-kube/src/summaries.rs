@@ -359,6 +359,7 @@ fn container_states(spec: Option<&PodSpec>, st: &PodStatus) -> String {
             "state": state,
             "reason": reason.unwrap_or_default(),
             "message": message.unwrap_or_default(),
+            "restarts": cs.map_or(0, |c| c.restart_count),
         })
     };
     let Some(spec) = spec else {
@@ -894,6 +895,17 @@ pub fn owners(obj: &DynamicObject) -> Vec<KubeRef> {
 
 pub fn containers(obj: &DynamicObject) -> Vec<String> {
     obj.data["spec"]["containers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c["name"].as_str().map(str::to_string))
+        .collect()
+}
+
+/// A workload's pod template's container names (spec 3i §1), first is the
+/// merged log's default.
+pub fn template_containers(obj: &DynamicObject) -> Vec<String> {
+    obj.data["spec"]["template"]["spec"]["containers"]
         .as_array()
         .into_iter()
         .flatten()

@@ -17,5 +17,6 @@ pub mod summaries;
 pub mod templates;
 pub mod tunnel;
 pub mod watch;
+pub mod workload_logs;
 
 pub use client::KubeClient;

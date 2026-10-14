@@ -4,6 +4,13 @@ import { stripAnsi, type Segment } from "./ansi";
 /** Most lines the log viewer keeps; the oldest are dropped past this. */
 export const LOG_BUFFER_MAX = 200_000;
 
+/**
+ * Merged logs: on resume, no pod reaches back further than this before the
+ * newest line held. A pod quiet for longer sent nothing in between, and
+ * asking from its last line would replay every other pod's log since then.
+ */
+export const RESUME_WINDOW_MS = 10_000;
+
 export interface LogEntry {
   /** Increases by one per entry for the life of the buffer; never reused. */
   seq: number;
@@ -15,6 +22,8 @@ export interface LogEntry {
   text: string;
   /** For a gap: how many lines were skipped. */
   dropped?: number;
+  /** Kubernetes merged logs: the pod the line came from. */
+  pod: string | null;
 }
 
 const TS = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)) /;
@@ -50,9 +59,9 @@ export class LogBuffer {
   private ring: LogEntry[] = [];
   private head = 0;
   private nextSeq = 0;
-  private lastKey: string | null = null;
-  private lastTs: string | null = null;
-  private resumeAfter: string | null = null;
+  /** Per source (a pod, or "" for a single container): the last timestamp held. */
+  private last = new Map<string, { key: string; ts: string }>();
+  private resumeAfter: Map<string, string> | null = null;
   /** Bumped on every change, for React to notice. */
   version = 0;
 
@@ -83,23 +92,27 @@ export class LogBuffer {
     let changed = false;
     for (const l of lines) {
       const [ts, text] = splitTimestamp(l.text);
+      const pod = l.pod ?? null;
+      const src = pod ?? "";
+      // A pod that left has nothing to resume (spec 3i §2: `◂ <pod> gone`).
+      if (l.stream === "meta" && pod && l.text === `◂ ${pod} gone`) this.last.delete(pod);
       if (ts) {
         const key = timestampKey(ts);
-        if (this.resumeAfter !== null) {
-          if (key <= this.resumeAfter) continue;
-          this.resumeAfter = null;
+        const after = this.resumeAfter?.get(src);
+        if (after !== undefined) {
+          if (key <= after) continue;
+          this.resumeAfter!.delete(src);
         }
-        this.lastKey = key;
-        this.lastTs = ts;
+        this.last.set(src, { key, ts });
       }
-      this.push({ seq: this.nextSeq, stream: l.stream, ts, text });
+      this.push({ seq: this.nextSeq, stream: l.stream, ts, text, pod });
       changed = true;
     }
     if (changed) this.version++;
   }
 
   gap(dropped: number) {
-    this.push({ seq: this.nextSeq, stream: "gap", ts: null, text: "", dropped });
+    this.push({ seq: this.nextSeq, stream: "gap", ts: null, text: "", dropped, pod: null });
     this.version++;
   }
 
@@ -109,14 +122,17 @@ export class LogBuffer {
    * rounded down; `resume()` drops the overlap.
    */
   get resumeSince(): number | null {
-    if (!this.lastTs) return null;
-    const ms = Date.parse(this.lastTs);
-    return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
+    // The oldest source's last line, within RESUME_WINDOW_MS of the newest:
+    // every source resumes from at or before its own.
+    const times = [...this.last.values()].map(({ ts }) => Date.parse(ts)).filter((ms) => !Number.isNaN(ms));
+    if (!times.length) return null;
+    const floor = Math.max(...times) - RESUME_WINDOW_MS;
+    return Math.floor(Math.min(...times.map((ms) => Math.max(ms, floor))) / 1000);
   }
 
   /** Skips replayed lines on the next append (see the class comment). */
   resume() {
-    this.resumeAfter = this.lastKey;
+    this.resumeAfter = new Map([...this.last].map(([src, v]) => [src, v.key]));
   }
 
   /**
@@ -132,8 +148,7 @@ export class LogBuffer {
   /** Removes every line and forgets the position: for a new query. */
   reset() {
     this.clear();
-    this.lastKey = null;
-    this.lastTs = null;
+    this.last = new Map();
     this.resumeAfter = null;
   }
 
@@ -253,7 +268,7 @@ export function logText(entries: Iterable<LogEntry>, timestamps: boolean): strin
   let out = "";
   for (const e of entries) {
     if (e.stream === "gap") out += `[${e.dropped} lines skipped]\n`;
-    else out += (timestamps && e.ts ? `${e.ts} ` : "") + stripAnsi(e.text) + "\n";
+    else out += (timestamps && e.ts ? `${e.ts} ` : "") + (e.pod ? `[${e.pod}] ` : "") + stripAnsi(e.text) + "\n";
   }
   return out;
 }

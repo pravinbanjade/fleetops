@@ -11,6 +11,8 @@ export interface ContainerSquare {
   state: State;
   reason: string;
   message: string;
+  /** Times the container has restarted; 0 when not reported. */
+  restarts: number;
 }
 
 const STATES: readonly string[] = ["ready", "running", "waiting", "error", "done", "unknown"];
@@ -28,7 +30,7 @@ export function parseContainers(column: string | undefined): ContainerSquare[] {
   return raw.flatMap((c) => {
     if (typeof c?.name !== "string") return [];
     const text = (v: unknown) => (typeof v === "string" ? v : "");
-    return [{ name: c.name, init: c.init === true, state: (STATES.includes(c.state) ? c.state : "unknown") as State, reason: text(c.reason), message: text(c.message) }];
+    return [{ name: c.name, init: c.init === true, state: (STATES.includes(c.state) ? c.state : "unknown") as State, reason: text(c.reason), message: text(c.message), restarts: typeof c.restarts === "number" ? c.restarts : 0 }];
   });
 }
 

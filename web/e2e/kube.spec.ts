@@ -99,6 +99,22 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
     await expect(page.locator(".xterm")).toContainText("hi-from-e2e", { timeout: 15_000 });
   });
 
+  await test.step("read a deployment's merged logs", async () => {
+    await page.goto(`/envs/${ENV}/k8s/deployments/fleetops-it/web?tab=logs`);
+    await expect(page.getByRole("log").getByText("serving").first()).toBeVisible({ timeout: 30_000 });
+  });
+
+  await test.step("open a terminal from the deployment", async () => {
+    await page.goto(`/envs/${ENV}/k8s/deployments/fleetops-it/web`);
+    await page.getByRole("button", { name: "Terminal" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Open terminal" }).click();
+    await expect(page).toHaveURL(/\/k8s\/pods\/fleetops-it\/web-.*tab=terminal/);
+    await page.getByRole("button", { name: /connect/i }).click();
+    await page.locator(".xterm").click();
+    await page.keyboard.type("echo hi-from-workload\n");
+    await expect(page.locator(".xterm")).toContainText("hi-from-workload", { timeout: 15_000 });
+  });
+
   await test.step("roll a Helm release back", async () => {
     const kc = join(process.env.FLEETOPS_KUBE_IT ?? "../target/kube-it", "kubeconfig");
     const chart = "../scripts/helm-it-chart";

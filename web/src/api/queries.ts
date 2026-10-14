@@ -4,6 +4,7 @@ import { refKind, type Ref } from "@/pages/kube/generic/ref";
 import type { ContainerInspect, ImageInspect, ImageLayer, NetworkInspect, VolumeInspect } from "./docker";
 import {
   getAuthStatus,
+  workloadPods,
   getDiskUsage,
   getEngineInfo,
   getEnvStatus,
@@ -177,6 +178,13 @@ export const kubeCountsQuery = (env: string, kinds: readonly KubeKind[], ns?: st
     queryFn: async () => (await kubeCounts({ path: { env }, query: { kinds: kinds.join(","), ...(ns ? { namespace: ns } : {}) } })).data,
     staleTime: 30_000,
     refetchInterval: 60_000,
+  });
+
+/** The pods a workload's selector matches, for the terminal picker. */
+export const workloadPodsQuery = (env: string, kind: KubeKind, ns: string, name: string) =>
+  queryOptions({
+    queryKey: [...keys.kubeObject(env, kind, ns, name), "pods"] as const,
+    queryFn: async () => (await workloadPods({ path: { env, kind, ns, name } })).data,
   });
 
 export const kubeObjectQuery = (env: string, kind: KubeKind, ns: string, name: string) =>
