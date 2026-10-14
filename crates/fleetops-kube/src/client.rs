@@ -496,6 +496,47 @@ impl KubeOps for KubeClient {
         pod_logs(self.pods(ns), pod.to_string(), opts.clone())
     }
 
+    fn workload_logs(
+        &self,
+        kind: KubeKind,
+        ns: &str,
+        name: &str,
+        opts: &LogOptions,
+    ) -> BoxStream<LogLine> {
+        crate::workload_logs::run(
+            self.client.clone(),
+            kind,
+            ns.into(),
+            name.into(),
+            opts.clone(),
+        )
+    }
+
+    async fn workload_pods(&self, kind: KubeKind, ns: &str, name: &str) -> Result<KubeList> {
+        if !kind.has_pod_logs() {
+            return Err(Error::Invalid(format!(
+                "{} have no pods of their own",
+                kind.as_str()
+            )));
+        }
+        let obj = timed(self.api(kind, Some(ns)).get(name)).await?;
+        let sel = crate::workload_logs::selector(&obj.data["spec"]["selector"])?;
+        let lp = ListParams::default().labels(&sel).limit(PAGE_SIZE);
+        let list = timed(self.api(KubeKind::Pods, Some(ns)).list(&lp)).await?;
+        Ok(KubeList {
+            truncated: list
+                .metadata
+                .continue_
+                .as_deref()
+                .is_some_and(|c| !c.is_empty()),
+            rows: list
+                .items
+                .iter()
+                .map(|o| summaries::row(KubeKind::Pods, o))
+                .collect(),
+        })
+    }
+
     async fn exec_start(&self, ns: &str, pod: &str, opts: &ExecOptions) -> Result<KubeExec> {
         let pods = self.pods(ns);
         let container = match &opts.container {

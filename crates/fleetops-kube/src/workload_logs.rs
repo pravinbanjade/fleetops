@@ -1,12 +1,21 @@
 //! Logs merged across a workload's pods (spec 3i §4): its selector, a
 //! watch of its pods, and one log task per pod into one stream.
 
-use fleetops_core::kube::{KubeRow, RowHealth, WatchEvent};
-use fleetops_core::streams::{LogLine, LogStream};
+use crate::client::{pod_logs, timed};
+use crate::kinds::api_resource;
+use fleetops_core::kube::{KubeKind, KubeRow, RowHealth, WatchEvent};
+use fleetops_core::now_unix;
+use fleetops_core::streams::{BoxStream, LogLine, LogOptions, LogStream};
 use fleetops_core::{Error, Result};
-use kube::api::DynamicObject;
+use futures_util::StreamExt;
+use k8s_openapi::api::core::v1::Pod;
+use kube::api::{Api, DynamicObject};
+use kube::runtime::watcher;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::task::{AbortHandle, JoinSet};
 
 /// Most pods one merged log reads at once (spec 3i §2).
 pub const WORKLOAD_LOG_PODS: usize = 25;
@@ -285,6 +294,227 @@ impl PodSet {
     }
 }
 
+type Tx = mpsc::Sender<Result<LogLine>>;
+
+/// Lines from every pod's task meet here; the browser's pace bounds them.
+const CHANNEL: usize = 256;
+
+/// The merged log (spec 3i §4). Dropping the stream aborts the driver,
+/// which drops its `JoinSet` and with it every pod's task.
+pub(crate) fn run(
+    client: kube::Client,
+    kind: KubeKind,
+    ns: String,
+    name: String,
+    opts: LogOptions,
+) -> BoxStream<LogLine> {
+    let (tx, rx) = mpsc::channel(CHANNEL);
+    let driver = tokio::spawn(async move {
+        if let Err(e) = drive(client, kind, ns, name, opts, tx.clone()).await {
+            let _ = tx.send(Err(e)).await;
+        }
+    });
+    let guard = AbortOnDrop(driver.abort_handle());
+    Box::pin(futures_util::stream::unfold(
+        (rx, guard),
+        |(mut rx, g)| async move { rx.recv().await.map(|item| (item, (rx, g))) },
+    ))
+}
+
+struct AbortOnDrop(AbortHandle);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// One task per streaming pod. Dropping it aborts them all.
+#[derive(Default)]
+struct Tasks {
+    set: JoinSet<String>,
+    handles: HashMap<String, AbortHandle>,
+}
+
+impl Tasks {
+    fn spawn(&mut self, pod: String, f: impl std::future::Future<Output = ()> + Send + 'static) {
+        let p = pod.clone();
+        let h = self.set.spawn(async move {
+            f.await;
+            p
+        });
+        self.handles.insert(pod, h);
+    }
+
+    fn abort(&mut self, pod: &str) {
+        if let Some(h) = self.handles.remove(pod) {
+            h.abort();
+        }
+    }
+
+    /// The next pod whose log ended by itself; aborted ones are skipped.
+    async fn ended(&mut self) -> Option<String> {
+        loop {
+            match self.set.join_next().await? {
+                Ok(p) => {
+                    self.handles.remove(&p);
+                    return Some(p);
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+}
+
+async fn drive(
+    client: kube::Client,
+    kind: KubeKind,
+    ns: String,
+    name: String,
+    mut opts: LogOptions,
+    tx: Tx,
+) -> Result<()> {
+    if !kind.has_pod_logs() {
+        return Err(Error::Invalid(
+            "logs are read from pods or workloads".into(),
+        ));
+    }
+    let workloads: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), &ns, &api_resource(kind));
+    let obj = timed(workloads.get(&name)).await?;
+    let sel = selector(&obj.data["spec"]["selector"])?;
+    let container = match opts.container.clone() {
+        Some(c) => c,
+        None => crate::summaries::template_containers(&obj)
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                Error::NotFound(format!("{} '{name}' has no containers", kind.kind_name()))
+            })?,
+    };
+    opts.container = Some(container.clone());
+    if opts.previous {
+        opts.follow = false;
+    }
+    let pods_dyn: Api<DynamicObject> =
+        Api::namespaced_with(client.clone(), &ns, &api_resource(KubeKind::Pods));
+    let pods: Api<Pod> = Api::namespaced(client, &ns);
+    let mut events = crate::watch::watch_with(
+        pods_dyn,
+        Arc::new(log_row),
+        watcher::Config::default().labels(&sel),
+    );
+    let mut set = PodSet::new(container.clone(), WORKLOAD_LOG_PODS);
+    let mut tasks = Tasks::default();
+    let ctx = PodCtx {
+        pods,
+        opts: opts.clone(),
+        container,
+        tx,
+    };
+    loop {
+        tokio::select! {
+            ev = events.next() => match ev {
+                None => return Ok(()),
+                Some(Err(e)) => return Err(e),
+                Some(Ok(ev)) => {
+                    let snapshot = matches!(ev, WatchEvent::Snapshot { .. });
+                    let deleted = matches!(ev, WatchEvent::Deleted { .. });
+                    if !apply(set.on_event(ev), &mut tasks, &ctx).await {
+                        return Ok(());
+                    }
+                    if snapshot && !opts.follow {
+                        break;
+                    }
+                    if deleted && set.is_empty() {
+                        if let Err(Error::NotFound(_)) = timed(workloads.get(&name)).await {
+                            return Err(Error::NotFound(format!(
+                                "{} '{name}' was deleted",
+                                kind.kind_name()
+                            )));
+                        }
+                    }
+                }
+            },
+            Some(pod) = tasks.ended() => {
+                if !apply(set.on_ended(&pod, now_unix()), &mut tasks, &ctx).await {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    // Without follow: read every pod once, waiting ones as slots free.
+    drop(events);
+    while let Some(pod) = tasks.ended().await {
+        if !apply(set.on_ended(&pod, now_unix()), &mut tasks, &ctx).await {
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+struct PodCtx {
+    pods: Api<Pod>,
+    opts: LogOptions,
+    container: String,
+    tx: Tx,
+}
+
+/// Carries out `steps`; false once the browser has gone.
+async fn apply(steps: Vec<Step>, tasks: &mut Tasks, ctx: &PodCtx) -> bool {
+    for s in steps {
+        match s {
+            Step::Start { pod, since } => {
+                let mut o = ctx.opts.clone();
+                if since.is_some() {
+                    o.since = since;
+                    o.tail = None;
+                }
+                let f = pod_task(
+                    ctx.pods.clone(),
+                    pod.clone(),
+                    o,
+                    ctx.container.clone(),
+                    ctx.tx.clone(),
+                );
+                tasks.spawn(pod, f);
+            }
+            Step::Stop { pod } => tasks.abort(&pod),
+            Step::Line(l) => {
+                if ctx.tx.send(Ok(l)).await.is_err() {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// One pod's lines, tagged; an error is a marker for that pod alone.
+async fn pod_task(pods: Api<Pod>, pod: String, o: LogOptions, container: String, tx: Tx) {
+    let previous = o.previous;
+    let mut lines = pod_logs(pods, pod.clone(), o);
+    while let Some(item) = lines.next().await {
+        let (line, last) = match item {
+            Ok(mut l) => {
+                l.pod = Some(pod.clone());
+                (l, false)
+            }
+            Err(Error::Invalid(_)) if previous => (
+                meta(
+                    Some(&pod),
+                    format!("{pod} has no previous run of {container}"),
+                ),
+                true,
+            ),
+            Err(e) => (meta(Some(&pod), format!("{pod}: {e}")), true),
+        };
+        if tx.send(Ok(line)).await.is_err() || last {
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -556,5 +786,26 @@ mod tests {
             name: "a".into(),
         });
         assert!(s.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_kind_without_pod_logs_is_refused_before_any_request() {
+        use futures_util::StreamExt;
+        // A client whose every request would fail: the refusal must come first.
+        let cfg = kube::Config::new("http://127.0.0.1:9".parse().unwrap());
+        let client = kube::Client::try_from(cfg).unwrap();
+        let mut s = run(
+            client,
+            fleetops_core::kube::KubeKind::Services,
+            "apps".into(),
+            "web".into(),
+            Default::default(),
+        );
+        let e = s.next().await.unwrap().unwrap_err();
+        assert!(
+            matches!(e, Error::Invalid(ref m) if m == "logs are read from pods or workloads"),
+            "{e}"
+        );
+        assert!(s.next().await.is_none());
     }
 }
