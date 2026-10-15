@@ -2,11 +2,10 @@
 //! (spec 3k §2).
 
 use super::Plugin;
+use crate::process::RunError;
 use async_trait::async_trait;
-use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
@@ -126,92 +125,37 @@ pub struct ProcessRunner {
 #[async_trait]
 impl Runner for ProcessRunner {
     async fn run(&self, p: &Plugin) -> Result<Vec<u8>, ExecError> {
-        let mut cmd = tokio::process::Command::new(&p.command);
-        // Its own process group, so a timeout ends whatever it started too.
-        #[cfg(unix)]
-        cmd.process_group(0);
-        let mut child = cmd
-            .args(&p.args)
-            .envs(p.env.iter().map(|(k, v)| (k, v)))
-            .env("KUBERNETES_EXEC_INFO", &p.exec_info)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|e| match e.kind() {
-                std::io::ErrorKind::NotFound => ExecError::NotFound(p.command.clone()),
-                _ => ExecError::Io(format!("exec plugin '{}' could not start: {e}", p.command)),
-            })?;
-        let group = child.id();
-        let mut stdout = child.stdout.take().expect("piped");
-        let mut stderr = child.stderr.take().expect("piped");
-        let work = async {
-            let mut out = Vec::new();
-            let mut err = Vec::new();
-            let mut out_cap = (&mut stdout).take(STDOUT_CAP as u64 + 1);
-            let mut err_cap = (&mut stderr).take(64 * 1024);
-            // Over the cap, stop at once: a plugin blocked on a full stdout
-            // never closes stderr.
-            let read_out = async {
-                out_cap
-                    .read_to_end(&mut out)
-                    .await
-                    .map_err(|e| ExecError::Io(e.to_string()))?;
-                if out.len() > STDOUT_CAP {
-                    return Err(ExecError::NotACredential(p.command.clone()));
-                }
-                Ok(())
-            };
-            let read_err = async {
-                err_cap
-                    .read_to_end(&mut err)
-                    .await
-                    .map_err(|e| ExecError::Io(e.to_string()))
-            };
-            tokio::try_join!(read_out, read_err)?;
-            let status = child
-                .wait()
-                .await
-                .map_err(|e| ExecError::Io(e.to_string()))?;
-            if !status.success() {
-                let text = String::from_utf8_lossy(&err);
-                let shown: String = text.trim().chars().take(STDERR_SHOWN).collect();
-                return Err(ExecError::Failed {
-                    command: p.command.clone(),
-                    code: status.code(),
-                    stderr: shown,
-                });
-            }
-            Ok(out)
+        let mut env = p.env.clone();
+        env.push(("KUBERNETES_EXEC_INFO".into(), p.exec_info.clone()));
+        let spec = crate::process::Spec {
+            program: &p.command,
+            args: &p.args,
+            env: &env,
+            timeout: self.timeout,
+            stdout_cap: STDOUT_CAP,
+            cwd: None,
         };
-        match tokio::time::timeout(self.timeout, work).await {
-            Ok(r) => r,
-            // Dropping `child` (kill_on_drop) ends the plugin; the group
-            // kill ends what it started.
-            Err(_) => {
-                kill_group(group);
-                Err(ExecError::TimedOut {
-                    command: p.command.clone(),
-                    secs: self.timeout.as_secs(),
-                })
+        let out = crate::process::run(spec).await.map_err(|e| match e {
+            RunError::NotFound => ExecError::NotFound(p.command.clone()),
+            RunError::TimedOut => ExecError::TimedOut {
+                command: p.command.clone(),
+                secs: self.timeout.as_secs(),
+            },
+            RunError::TooLarge => ExecError::NotACredential(p.command.clone()),
+            RunError::Io(m) => {
+                ExecError::Io(format!("exec plugin '{}' could not run: {m}", p.command))
             }
+        })?;
+        if !out.success() {
+            let shown: String = out.stderr.trim().chars().take(STDERR_SHOWN).collect();
+            return Err(ExecError::Failed {
+                command: p.command.clone(),
+                code: out.code,
+                stderr: shown,
+            });
         }
+        Ok(out.stdout)
     }
-}
-
-/// SIGKILL to the plugin's process group (its pid, from `process_group(0)`).
-fn kill_group(group: Option<u32>) {
-    #[cfg(unix)]
-    if let Some(pid) = group.and_then(|g| i32::try_from(g).ok()) {
-        // SAFETY: kill(2) with a negative pid signals that process group;
-        // it touches no memory of ours.
-        unsafe {
-            libc::kill(-pid, libc::SIGKILL);
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = group;
 }
 
 /// One plugin's token, refreshed by at most one run at a time.

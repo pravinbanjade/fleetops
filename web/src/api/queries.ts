@@ -4,6 +4,7 @@ import { refKind, type Ref } from "@/pages/kube/generic/ref";
 import type { ContainerInspect, ImageInspect, ImageLayer, NetworkInspect, VolumeInspect } from "./docker";
 import {
   getAuthStatus,
+  helmCapabilities,
   workloadPods,
   getDiskUsage,
   getEngineInfo,
@@ -85,6 +86,7 @@ export const keys = {
   /** Outside the `k8s` prefix: a write's invalidation should not refetch usage. */
   kubeUsage: (env: string, kind: "nodes" | "pods", ns?: string) => ["env", env, "k8s-usage", kind, ns ?? "*"] as const,
   helm: (env: string, ns?: string) => ["env", env, "helm", ns ?? "*"] as const,
+  helmCapabilities: (env: string) => ["env", env, "helm-capabilities"] as const,
   helmRelease: (env: string, ns: string, name: string) => ["env", env, "helm", ns, name] as const,
   /** The newest Docker events seen over the websocket; filled by the live layer, never fetched. */
   recentEvents: (env: string) => ["live", env, "events"] as const,
@@ -242,6 +244,14 @@ const retryUnlessGone = (failures: number, err: unknown) =>
 
 /** Releases are not watched; the list is read this often while visible (spec 3d §2.3). */
 export const HELM_POLL_MS = 10000;
+
+/** Whether this server can install and upgrade charts (spec 3j §5). */
+export const helmCapabilitiesQuery = (env: string) =>
+  queryOptions({
+    queryKey: keys.helmCapabilities(env),
+    queryFn: async () => (await helmCapabilities({ path: { env } })).data,
+    staleTime: 5 * 60_000,
+  });
 
 export const helmReleasesQuery = (env: string, ns?: string) =>
   queryOptions({

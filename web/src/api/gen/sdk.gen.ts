@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CordonKubeData, CordonKubeErrors, CordonKubeResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteGenericKubeData, DeleteGenericKubeErrors, DeleteGenericKubeResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableGenericKubeData, EditableGenericKubeErrors, EditableGenericKubeResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, GenericKubeEventsData, GenericKubeEventsErrors, GenericKubeEventsResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetGenericKubeData, GetGenericKubeErrors, GetGenericKubeResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetTaskData, GetTaskErrors, GetTaskResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeDiscoveryData, KubeDiscoveryErrors, KubeDiscoveryResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListGenericKubeData, ListGenericKubeErrors, ListGenericKubeResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceGenericKubeData, ReplaceGenericKubeErrors, ReplaceGenericKubeResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, ResumeKubeData, ResumeKubeErrors, ResumeKubeResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, SuspendKubeData, SuspendKubeErrors, SuspendKubeResponses, TagImageData, TagImageErrors, TagImageResponses, TriggerKubeData, TriggerKubeErrors, TriggerKubeResponses, UncordonKubeData, UncordonKubeErrors, UncordonKubeResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses, WorkloadPodsData, WorkloadPodsErrors, WorkloadPodsResponses } from './types.gen';
+import type { AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CordonKubeData, CordonKubeErrors, CordonKubeResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteGenericKubeData, DeleteGenericKubeErrors, DeleteGenericKubeResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableGenericKubeData, EditableGenericKubeErrors, EditableGenericKubeResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, GenericKubeEventsData, GenericKubeEventsErrors, GenericKubeEventsResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetGenericKubeData, GetGenericKubeErrors, GetGenericKubeResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetTaskData, GetTaskErrors, GetTaskResponses, HelmCapabilitiesData, HelmCapabilitiesErrors, HelmCapabilitiesResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, InstallHelmChartData, InstallHelmChartErrors, InstallHelmChartResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeDiscoveryData, KubeDiscoveryErrors, KubeDiscoveryResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListGenericKubeData, ListGenericKubeErrors, ListGenericKubeResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceGenericKubeData, ReplaceGenericKubeErrors, ReplaceGenericKubeResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, ResumeKubeData, ResumeKubeErrors, ResumeKubeResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, ShowHelmChartData, ShowHelmChartErrors, ShowHelmChartResponses, SuspendKubeData, SuspendKubeErrors, SuspendKubeResponses, TagImageData, TagImageErrors, TagImageResponses, TriggerKubeData, TriggerKubeErrors, TriggerKubeResponses, UncordonKubeData, UncordonKubeErrors, UncordonKubeResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses, UpgradeHelmReleaseData, UpgradeHelmReleaseErrors, UpgradeHelmReleaseResponses, WorkloadPodsData, WorkloadPodsErrors, WorkloadPodsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -626,6 +626,36 @@ export const kubeDiscovery = <ThrowOnError extends boolean = true>(options: Opti
 });
 
 /**
+ * Whether charts can be installed and upgraded here
+ */
+export const helmCapabilities = <ThrowOnError extends boolean = true>(options: Options<HelmCapabilitiesData, ThrowOnError>): RequestResult<HelmCapabilitiesResponses, HelmCapabilitiesErrors, ThrowOnError> => (options.client ?? client).get<HelmCapabilitiesResponses, HelmCapabilitiesErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/k8s/helm/capabilities',
+    ...options
+});
+
+/**
+ * A chart's metadata and default values
+ */
+export const showHelmChart = <ThrowOnError extends boolean = true>(options: Options<ShowHelmChartData, ThrowOnError>): RequestResult<ShowHelmChartResponses, ShowHelmChartErrors, ThrowOnError> => (options.client ?? client).post<ShowHelmChartResponses, ShowHelmChartErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/k8s/helm/charts/show',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
  * Helm releases at their latest revision
  */
 export const listHelmReleases = <ThrowOnError extends boolean = true>(options: Options<ListHelmReleasesData, ThrowOnError>): RequestResult<ListHelmReleasesResponses, ListHelmReleasesErrors, ThrowOnError> => (options.client ?? client).get<ListHelmReleasesResponses, ListHelmReleasesErrors, ThrowOnError>({
@@ -636,6 +666,23 @@ export const listHelmReleases = <ThrowOnError extends boolean = true>(options: O
         }],
     url: '/api/v1/envs/{env}/k8s/helm/releases',
     ...options
+});
+
+/**
+ * Plan or commit installing a chart
+ */
+export const installHelmChart = <ThrowOnError extends boolean = true>(options: Options<InstallHelmChartData, ThrowOnError>): RequestResult<InstallHelmChartResponses, InstallHelmChartErrors, ThrowOnError> => (options.client ?? client).post<InstallHelmChartResponses, InstallHelmChartErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/k8s/helm/releases/{ns}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**
@@ -691,6 +738,23 @@ export const uninstallHelmRelease = <ThrowOnError extends boolean = true>(option
             type: 'apiKey'
         }],
     url: '/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/uninstall',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Plan or commit upgrading a release
+ */
+export const upgradeHelmRelease = <ThrowOnError extends boolean = true>(options: Options<UpgradeHelmReleaseData, ThrowOnError>): RequestResult<UpgradeHelmReleaseResponses, UpgradeHelmReleaseErrors, ThrowOnError> => (options.client ?? client).post<UpgradeHelmReleaseResponses, UpgradeHelmReleaseErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/k8s/helm/releases/{ns}/{name}/upgrade',
     ...options,
     headers: {
         'Content-Type': 'application/json',

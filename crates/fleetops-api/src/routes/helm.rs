@@ -14,11 +14,19 @@ use axum::{
     extract::{Query, State},
     Json,
 };
-use fleetops_core::helm::{HelmPlan, HelmRelease, HelmRevision, ReleaseDetail};
+use fleetops_core::helm::{
+    ChartRef, ChartShow, Deploy, HelmMode, HelmPlan, HelmRelease, HelmRevision, ReleaseDetail,
+    HELM_OFF,
+};
 use fleetops_core::{now_unix, Error, Result};
+use fleetops_kube::helm::{
+    render::{ChartRenderer, RenderInput},
+    values,
+};
 use fleetops_store::NewAudit;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::Arc;
 use utoipa::{IntoParams, ToSchema};
 
 #[derive(Deserialize, IntoParams)]
@@ -285,4 +293,247 @@ pub async fn uninstall(
     .await;
     let r = crate::authz::deny_audited(&s, &cu, env_id, "k8s.write", r).await;
     Ok(Json(hinted(&s, &k8, r?).await))
+}
+
+#[derive(Deserialize, IntoParams)]
+#[into_params(parameter_in = Path)]
+pub struct NamespacePath {
+    pub env: String,
+    /// The release's namespace.
+    pub ns: String,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct HelmCapabilities {
+    /// Whether install and upgrade are available (the server has --helm-binary).
+    pub install: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ShowBody {
+    pub chart: ChartRef,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct InstallBody {
+    pub name: String,
+    pub chart: ChartRef,
+    /// YAML; empty for none.
+    #[serde(default)]
+    pub values: String,
+    pub dry_run: bool,
+    /// The plan's `current`; 0 for a new release.
+    #[serde(default)]
+    pub expected_current: u32,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpgradeBody {
+    pub chart: ChartRef,
+    /// YAML; masked values sent back unchanged keep their stored value.
+    #[serde(default)]
+    pub values: String,
+    pub dry_run: bool,
+    #[serde(default)]
+    pub expected_current: u32,
+}
+
+fn renderer(s: &AppState) -> Result<Arc<dyn ChartRenderer>> {
+    s.config
+        .helm
+        .clone()
+        .ok_or_else(|| Error::Invalid(HELM_OFF.into()))
+}
+
+#[utoipa::path(get, path = "/envs/{env}/k8s/helm/capabilities", operation_id = "helmCapabilities", tag = "helm",
+    summary = "Whether charts can be installed and upgraded here", params(ReleasesPath),
+    responses((status = 200, description = "Capabilities", body = HelmCapabilities)))]
+pub async fn capabilities(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ReleasesPath>,
+) -> ApiResult<Json<HelmCapabilities>> {
+    kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    Ok(Json(HelmCapabilities {
+        install: s.config.helm.is_some(),
+    }))
+}
+
+#[utoipa::path(post, path = "/envs/{env}/k8s/helm/charts/show", operation_id = "showHelmChart", tag = "helm",
+    summary = "A chart's metadata and default values", params(ReleasesPath), request_body = ShowBody,
+    responses((status = 200, description = "The chart", body = ChartShow)))]
+pub async fn show(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ReleasesPath>,
+    ApiJson(body): ApiJson<ShowBody>,
+) -> ApiResult<Json<ChartShow>> {
+    let r = renderer(&s)?;
+    body.chart.validate(r.insecure_repos())?;
+    kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    Ok(Json(r.show(&body.chart).await?))
+}
+
+/// Renders with the cluster's version and API groups. helm reads the
+/// values as typed, plus an overlay of what was restored from `stored`, so
+/// it parses them by its own rules; the release stores helm's result.
+#[allow(clippy::too_many_arguments)]
+async fn render(
+    r: &dyn ChartRenderer,
+    k8: &KubeCtx,
+    ns: &str,
+    name: &str,
+    chart: &ChartRef,
+    values_yaml: &str,
+    stored: &serde_json::Value,
+    upgrade: bool,
+) -> Result<fleetops_core::helm::Rendered> {
+    let parsed = values::parse(values_yaml)?;
+    let (full, overlay) = values::restore(&parsed, stored)?;
+    let input = RenderInput {
+        name: name.into(),
+        namespace: ns.into(),
+        chart: chart.clone(),
+        values: full,
+        values_yaml: values_yaml.into(),
+        overlay,
+        upgrade,
+        kube_version: k8.ops.version().await?.git_version,
+        api_versions: k8.ops.api_versions().await?,
+    };
+    r.render(&input).await
+}
+
+/// Plans or commits on a task of its own (as rollback does), auditing a commit.
+#[allow(clippy::too_many_arguments)]
+async fn deploy(
+    s: &AppState,
+    cu: &CurrentUser,
+    k8: &KubeCtx,
+    target: String,
+    d: Deploy,
+    dry_run: bool,
+    expected_current: u32,
+    action: &'static str,
+) -> ApiResult<Json<HelmPlan>> {
+    let (ops, allowed, env_id) = (k8.ops.clone(), k8.grant.namespaces.clone(), k8.env.id());
+    let (st, user_id) = (s.clone(), cu.user.id);
+    let mode = if dry_run {
+        HelmMode::Plan
+    } else {
+        HelmMode::Commit { expected_current }
+    };
+    let r = detached(async move {
+        let r = ops.helm_deploy(&d, mode, allowed.as_ref()).await;
+        if !dry_run {
+            let (ok, detail) = match &r {
+                Ok(plan) => (
+                    plan.status.as_deref() == Some("deployed"),
+                    json!({"chart": d.source.label(), "version": d.rendered.meta.version, "revision": plan.revision, "status": plan.status}),
+                ),
+                Err(e) => (false, json!({"chart": d.source.label(), "version": d.rendered.meta.version, "error": e.to_string()})),
+            };
+            audit(&st, user_id, env_id, action, &target, detail, ok).await;
+        }
+        r
+    })
+    .await;
+    let r = crate::authz::deny_audited(s, cu, env_id, "k8s.write", r).await;
+    Ok(Json(hinted(s, k8, r?).await))
+}
+
+#[utoipa::path(post, path = "/envs/{env}/k8s/helm/releases/{ns}", operation_id = "installHelmChart", tag = "helm",
+    summary = "Plan or commit installing a chart", params(NamespacePath), request_body = InstallBody,
+    responses((status = 200, description = "The plan, or what was done", body = HelmPlan)))]
+pub async fn install(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<NamespacePath>,
+    ApiJson(body): ApiJson<InstallBody>,
+) -> ApiResult<Json<HelmPlan>> {
+    let r = renderer(&s)?;
+    body.chart.validate(r.insecure_repos())?;
+    let rp = ReleasePath {
+        env: p.env,
+        ns: p.ns,
+        name: body.name.clone(),
+    };
+    let k8 = writable(&s, &cu, &rp).await?;
+    let none = serde_json::Value::Null;
+    let rendered = render(
+        r.as_ref(),
+        &k8,
+        &rp.ns,
+        &rp.name,
+        &body.chart,
+        &body.values,
+        &none,
+        false,
+    )
+    .await?;
+    let d = Deploy {
+        namespace: rp.ns.clone(),
+        name: rp.name.clone(),
+        config: rendered.config.clone(),
+        rendered,
+        source: body.chart,
+        upgrade: false,
+    };
+    deploy(
+        &s,
+        &cu,
+        &k8,
+        rp.target(),
+        d,
+        body.dry_run,
+        body.expected_current,
+        "helm.install",
+    )
+    .await
+}
+
+#[utoipa::path(post, path = "/envs/{env}/k8s/helm/releases/{ns}/{name}/upgrade", operation_id = "upgradeHelmRelease", tag = "helm",
+    summary = "Plan or commit upgrading a release", params(ReleasePath), request_body = UpgradeBody,
+    responses((status = 200, description = "The plan, or what was done", body = HelmPlan)))]
+pub async fn upgrade(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ReleasePath>,
+    ApiJson(body): ApiJson<UpgradeBody>,
+) -> ApiResult<Json<HelmPlan>> {
+    let r = renderer(&s)?;
+    body.chart.validate(r.insecure_repos())?;
+    let k8 = writable(&s, &cu, &p).await?;
+    values::parse(&body.values)?;
+    let stored = k8.ops.helm_config(&p.ns, &p.name).await?;
+    let rendered = render(
+        r.as_ref(),
+        &k8,
+        &p.ns,
+        &p.name,
+        &body.chart,
+        &body.values,
+        &stored,
+        true,
+    )
+    .await?;
+    let d = Deploy {
+        namespace: p.ns.clone(),
+        name: p.name.clone(),
+        config: rendered.config.clone(),
+        rendered,
+        source: body.chart,
+        upgrade: true,
+    };
+    deploy(
+        &s,
+        &cu,
+        &k8,
+        p.target(),
+        d,
+        body.dry_run,
+        body.expected_current,
+        "helm.upgrade",
+    )
+    .await
 }

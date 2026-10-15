@@ -77,6 +77,26 @@ pub fn clean(v: &mut Value) {
     }
 }
 
+/// Marks, in a masked Secret, each value that differs from `before`
+/// (added ones too), so a review shows a rotated secret without showing it.
+pub fn mark_changed(before: &Value, after: &Value, shown: &mut Value) {
+    if !is_secret(after) {
+        return;
+    }
+    let old = before.get("data").and_then(Value::as_object);
+    let Some(new) = after.get("data").and_then(Value::as_object) else {
+        return;
+    };
+    let Some(out) = shown.get_mut("data").and_then(Value::as_object_mut) else {
+        return;
+    };
+    for (k, v) in new {
+        if old.and_then(|o| o.get(k)) != Some(v) {
+            out.insert(k.clone(), format!("{MASK} (changed)").into());
+        }
+    }
+}
+
 /// `clean` without the masking: for comparing objects, where a changed
 /// Secret value must still count as a change. Never shown.
 pub fn strip(v: &mut Value) {
@@ -296,5 +316,18 @@ mod tests {
     fn an_object_too_large_to_edit_is_refused() {
         let v = json!({"data": {"big": "x".repeat(YAML_CAP + 1)}});
         assert!(matches!(to_yaml(&v), Err(fleetops_core::Error::Invalid(_))));
+    }
+
+    #[test]
+    fn a_secret_value_that_changes_is_marked_without_being_shown() {
+        let before = serde_json::json!({"kind": "Secret", "data": {"same": "YQ==", "rotated": "Yg==", "gone": "Yw=="}});
+        let after = serde_json::json!({"kind": "Secret", "data": {"same": "YQ==", "rotated": "eg==", "new": "ZA=="}});
+        let mut shown = after.clone();
+        clean(&mut shown);
+        mark_changed(&before, &after, &mut shown);
+        assert_eq!(shown["data"]["same"], MASK);
+        assert_eq!(shown["data"]["rotated"], format!("{MASK} (changed)"));
+        assert_eq!(shown["data"]["new"], format!("{MASK} (changed)"));
+        assert!(!shown.to_string().contains("eg=="));
     }
 }

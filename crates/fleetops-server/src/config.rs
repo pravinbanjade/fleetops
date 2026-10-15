@@ -42,6 +42,13 @@ pub struct Config {
     /// bare names, comma-separated. Off when unset.
     #[arg(long, env = "FLEETOPS_KUBE_EXEC_PLUGINS")]
     pub kube_exec_plugins: Option<String>,
+    /// The helm used to render charts for install and upgrade: `helm` on
+    /// PATH or an absolute path. Off when unset.
+    #[arg(long, env = "FLEETOPS_HELM")]
+    pub helm_binary: Option<String>,
+    /// Allow http:// chart repositories (for local testing).
+    #[arg(long, env = "FLEETOPS_HELM_INSECURE_REPOS")]
+    pub helm_insecure_repos: bool,
     /// Print the OpenAPI document to stdout and exit without starting.
     #[arg(long)]
     pub openapi: bool,

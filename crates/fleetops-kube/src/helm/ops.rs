@@ -20,6 +20,61 @@ use std::collections::BTreeSet;
 /// Longest description written to a failed revision.
 const DESCRIPTION_MAX: usize = 1000;
 
+use super::hooks::{self, HookState};
+use fleetops_core::helm::{ChartRef, Deploy, HelmMode, RenderedHook};
+use std::time::Duration;
+
+const HOOK_TIMEOUT: Duration = Duration::from_secs(300);
+const HOOK_POLL: Duration = Duration::from_secs(2);
+const HOOK_DELETE_WAIT: Duration = Duration::from_secs(60);
+pub const CHART_SOURCE: &str = "fleetops.io/chart-source";
+
+/// (group, kind) of an object.
+fn group_kind(d: &crate::apply::Doc) -> (String, String) {
+    let group = d.api_version.split_once('/').map(|(g, _)| g).unwrap_or("");
+    (group.to_string(), d.kind.clone())
+}
+
+/// The (group, kind) each CRD defines.
+fn crd_kinds(docs: &[crate::apply::Doc]) -> Vec<(String, String)> {
+    docs.iter()
+        .filter_map(|d| {
+            let s = &d.value["spec"];
+            Some((
+                s["group"].as_str()?.to_string(),
+                s["names"]["kind"].as_str()?.to_string(),
+            ))
+        })
+        .collect()
+}
+
+const CRD_WAIT: Duration = Duration::from_secs(60);
+
+fn crd_change(doc: &crate::apply::Doc) -> Result<HelmObjectChange> {
+    Ok(HelmObjectChange {
+        api_version: doc.api_version.clone(),
+        kind: doc.kind.clone(),
+        namespace: None,
+        name: doc.name.clone(),
+        change: HelmChange::Create,
+        before: None,
+        after: Some(crate::mask::to_yaml(&cleaned(doc.value.clone()))?),
+        error: None,
+    })
+}
+
+/// The revision an install continues from: 0 for a new name, an
+/// uninstalled release's last version, or a refusal.
+fn install_base(name: &str, latest: Option<&Release>) -> Result<u32> {
+    match latest {
+        None => Ok(0),
+        Some(r) if r.info.status == "uninstalled" => Ok(r.version),
+        Some(_) => Err(Error::Conflict(format!(
+            "release '{name}' exists; upgrade it"
+        ))),
+    }
+}
+
 fn unreadable_err(e: String) -> Error {
     Error::Upstream {
         status: 422,
@@ -83,10 +138,8 @@ fn owned_by(live: &serde_json::Value, release: &str, release_ns: &str) -> bool {
 fn new_plan(current: u32) -> HelmPlan {
     HelmPlan {
         current,
-        revision: None,
-        status: None,
-        changes: vec![],
         note: HOOKS_NOTE.into(),
+        ..Default::default()
     }
 }
 
@@ -151,7 +204,12 @@ impl KubeClient {
 
     /// Creates (`create`) or replaces the Secret holding `r`. A create that
     /// finds the Secret already there lost a race with another operation.
-    async fn write_release(&self, r: &Release, create: bool) -> Result<()> {
+    async fn write_release(
+        &self,
+        r: &Release,
+        create: bool,
+        source: Option<&ChartRef>,
+    ) -> Result<()> {
         let api = self.release_secrets(Some(&r.namespace));
         let name = storage::secret_name(&r.name, r.version);
         let mut s = if create {
@@ -165,6 +223,15 @@ impl KubeClient {
         s.metadata.name = Some(name.clone());
         s.metadata.namespace = Some(r.namespace.clone());
         s.metadata.labels = Some(storage::labels(r));
+        if let Some(src) = source {
+            s.metadata
+                .annotations
+                .get_or_insert_with(Default::default)
+                .insert(
+                    CHART_SOURCE.into(),
+                    serde_json::to_string(src).expect("a chart reference serialises"),
+                );
+        }
         s.data = Some([("release".to_string(), ByteString(storage::encode(r)))].into());
         let pp = PostParams {
             dry_run: false,
@@ -330,6 +397,424 @@ impl KubeClient {
         Ok(cur)
     }
 
+    async fn supersede_others(&self, ns: &str, name: &str, keep: u32) -> Result<()> {
+        let sel = format!("{},status=deployed", release_selector(name));
+        for (_, _, v) in self.release_metas(Some(ns), &sel).await? {
+            if v != keep {
+                let mut old = self.read_release(ns, name, v).await?;
+                old.info.status = "superseded".into();
+                self.write_release(&old, false, None).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The newest deployed revision, if any.
+    async fn last_deployed(&self, ns: &str, name: &str) -> Result<Option<Release>> {
+        let sel = format!("{},status=deployed", release_selector(name));
+        match self
+            .release_metas(Some(ns), &sel)
+            .await?
+            .into_iter()
+            .map(|(_, _, v)| v)
+            .max()
+        {
+            Some(v) => Ok(Some(self.read_release(ns, name, v).await?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Where the chart came from: the newest revision Secret carrying FleetOps' annotation.
+    async fn chart_source(&self, ns: &str, name: &str) -> Result<Option<ChartRef>> {
+        let lp = ListParams::default().labels(&release_selector(name));
+        let mut list = timed(self.release_secrets(Some(ns)).list_metadata(&lp))
+            .await?
+            .items;
+        list.sort_by_key(|m| {
+            std::cmp::Reverse(
+                m.metadata
+                    .labels
+                    .as_ref()
+                    .and_then(|l| l.get("version"))
+                    .and_then(|v| v.parse::<u32>().ok())
+                    .unwrap_or(0),
+            )
+        });
+        Ok(list.iter().find_map(|m| {
+            m.metadata
+                .annotations
+                .as_ref()?
+                .get(CHART_SOURCE)
+                .and_then(|s| serde_json::from_str(s).ok())
+        }))
+    }
+
+    pub(crate) async fn helm_config_impl(&self, ns: &str, name: &str) -> Result<serde_json::Value> {
+        let r = self.latest(ns, name).await?;
+        Ok(if r.config.is_null() {
+            serde_json::json!({})
+        } else {
+            r.config
+        })
+    }
+
+    /// The CRDs an install would create: those not in the cluster yet.
+    async fn crd_changes(&self, docs: &[crate::apply::Doc]) -> Result<Vec<HelmObjectChange>> {
+        let mut out = Vec::new();
+        for doc in docs {
+            let (ar, _) = self.resolve(&doc.api_version, &doc.kind).await?;
+            let api: Api<DynamicObject> = Api::all_with(self.client.clone(), &ar);
+            if timed(api.get_opt(&doc.name)).await?.is_none() {
+                out.push(crd_change(doc)?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Creates each missing CRD and waits until it is Established; existing
+    /// ones are left as they are.
+    async fn install_crds(
+        &self,
+        docs: &[crate::apply::Doc],
+    ) -> std::result::Result<Vec<HelmObjectChange>, String> {
+        let mut out = Vec::new();
+        for doc in docs {
+            let label = format!("CRD {}", doc.name);
+            let (ar, _) = self
+                .resolve(&doc.api_version, &doc.kind)
+                .await
+                .map_err(|e| format!("{label}: {e}"))?;
+            let api: Api<DynamicObject> = Api::all_with(self.client.clone(), &ar);
+            if timed(api.get_opt(&doc.name))
+                .await
+                .map_err(|e| format!("{label}: {e}"))?
+                .is_some()
+            {
+                continue;
+            }
+            let obj: DynamicObject =
+                serde_json::from_value(doc.value.clone()).map_err(|e| format!("{label}: {e}"))?;
+            let pp = PostParams {
+                dry_run: false,
+                field_manager: Some(FIELD_MANAGER.into()),
+            };
+            timed(api.create(&pp, &obj))
+                .await
+                .map_err(|e| format!("{label}: {e}"))?;
+            let start = tokio::time::Instant::now();
+            loop {
+                let live = timed(api.get(&doc.name))
+                    .await
+                    .map_err(|e| format!("{label}: {e}"))?;
+                let v = serde_json::to_value(&live).unwrap_or_default();
+                let established = v
+                    .pointer("/status/conditions")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|cs| {
+                        cs.iter()
+                            .any(|c| c["type"] == "Established" && c["status"] == "True")
+                    });
+                if established {
+                    break;
+                }
+                if start.elapsed() > CRD_WAIT {
+                    return Err(format!(
+                        "{label}: not established within {}s",
+                        CRD_WAIT.as_secs()
+                    ));
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            out.push(crd_change(doc).map_err(|e| format!("{label}: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    /// `resolve_steps` again after new CRDs, waiting for discovery to serve
+    /// their kinds.
+    async fn resolve_waiting(
+        &self,
+        steps: &mut [plan::Step],
+        ns: &str,
+        allowed: Option<&BTreeSet<String>>,
+        new_kinds: &[(String, String)],
+    ) -> Result<Vec<Result<kube::discovery::ApiResource>>> {
+        let start = tokio::time::Instant::now();
+        loop {
+            let r = self.resolve_steps(steps, ns, allowed).await?;
+            let waiting = steps
+                .iter()
+                .zip(&r)
+                .any(|(s, ar)| ar.is_err() && new_kinds.contains(&group_kind(&s.doc)));
+            if !waiting || start.elapsed() > CRD_WAIT {
+                return Ok(r);
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    /// Refuses the whole deploy before anything is written when a hook falls outside `allowed`.
+    async fn check_hooks(
+        &self,
+        hs: &[RenderedHook],
+        ns: &str,
+        allowed: Option<&BTreeSet<String>>,
+    ) -> Result<()> {
+        for h in hs {
+            for mut doc in crate::apply::split_all(&h.manifest)? {
+                match self.resolve(&doc.api_version, &doc.kind).await {
+                    Ok((_, namespaced)) => {
+                        crate::apply::set_namespace(&mut doc, namespaced, ns);
+                        fleetops_core::access::check_doc(
+                            allowed,
+                            namespaced,
+                            doc.namespace.as_deref(),
+                        )?;
+                    }
+                    Err(_) if allowed.is_some() => {
+                        return Err(fleetops_core::access::cluster_scoped_denied())
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Runs one hook (spec 3j §3); the error names the hook.
+    async fn run_hook(
+        &self,
+        h: &RenderedHook,
+        ns: &str,
+        phase: &str,
+    ) -> std::result::Result<(), String> {
+        let label = format!("{phase} hook {} {}", h.kind, h.name);
+        let r = self.run_hook_inner(h, ns).await;
+        r.map_err(|m| format!("{label}: {m}"))
+    }
+
+    async fn run_hook_inner(&self, h: &RenderedHook, ns: &str) -> std::result::Result<(), String> {
+        let mut doc = crate::apply::split_all(&h.manifest)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .next()
+            .ok_or("the hook is empty")?;
+        let (ar, namespaced) = self
+            .resolve(&doc.api_version, &doc.kind)
+            .await
+            .map_err(|e| e.to_string())?;
+        crate::apply::set_namespace(&mut doc, namespaced, ns);
+        let api: Api<DynamicObject> = match &doc.namespace {
+            Some(n) => Api::namespaced_with(self.client.clone(), n, &ar),
+            None => Api::all_with(self.client.clone(), &ar),
+        };
+        let pols = hooks::policies(h);
+        if pols.contains(&"before-hook-creation") {
+            let dp = DeleteParams::background();
+            match timed(api.delete(&doc.name, &dp)).await {
+                Ok(_) | Err(Error::NotFound(_)) => {}
+                Err(e) => return Err(e.to_string()),
+            }
+            let start = tokio::time::Instant::now();
+            while timed(api.get_opt(&doc.name))
+                .await
+                .map_err(|e| e.to_string())?
+                .is_some()
+            {
+                if start.elapsed() > HOOK_DELETE_WAIT {
+                    return Err("the previous hook object was not deleted within 60s".into());
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        }
+        let obj: DynamicObject =
+            serde_json::from_value(doc.value.clone()).map_err(|e| e.to_string())?;
+        let pp = PostParams {
+            dry_run: false,
+            field_manager: Some(FIELD_MANAGER.into()),
+        };
+        timed(api.create(&pp, &obj))
+            .await
+            .map_err(|e| e.to_string())?;
+        let start = tokio::time::Instant::now();
+        let outcome = loop {
+            let live = timed(api.get(&doc.name)).await.map_err(|e| e.to_string())?;
+            match hooks::state(&doc.kind, &serde_json::to_value(&live).unwrap_or_default()) {
+                HookState::Succeeded => break Ok(()),
+                HookState::Failed(m) => break Err(m),
+                HookState::Running if start.elapsed() > HOOK_TIMEOUT => {
+                    break Err(format!("did not finish within {}s", HOOK_TIMEOUT.as_secs()))
+                }
+                HookState::Running => tokio::time::sleep(HOOK_POLL).await,
+            }
+        };
+        let delete = (outcome.is_ok() && pols.contains(&"hook-succeeded"))
+            || (outcome.is_err() && pols.contains(&"hook-failed"));
+        if delete {
+            let _ = timed(api.delete(&doc.name, &DeleteParams::background())).await;
+        }
+        outcome
+    }
+
+    pub(crate) async fn helm_deploy_impl(
+        &self,
+        d: &Deploy,
+        mode: HelmMode,
+        allowed: Option<&BTreeSet<String>>,
+    ) -> Result<HelmPlan> {
+        let (ns, name) = (d.namespace.as_str(), d.name.as_str());
+        let latest = match self.latest(ns, name).await {
+            Ok(r) => Some(r),
+            Err(Error::NotFound(_)) => None,
+            Err(e) => return Err(e),
+        };
+        let (current, base_manifest, before_config, first_deployed) = if d.upgrade {
+            let cur =
+                latest.ok_or_else(|| Error::NotFound(format!("release '{name}' not found")))?;
+            if is_pending(&cur.info.status) {
+                return Err(Error::Conflict(CHANGED.into()));
+            }
+            let base = self
+                .last_deployed(ns, name)
+                .await?
+                .unwrap_or_else(|| cur.clone());
+            (
+                cur.version,
+                base.manifest.clone(),
+                cur.config.clone(),
+                cur.info.first_deployed.clone(),
+            )
+        } else {
+            let v = install_base(name, latest.as_ref())?;
+            (v, String::new(), serde_json::Value::Null, None)
+        };
+        if let HelmMode::Commit { expected_current } = mode {
+            if expected_current != current {
+                return Err(Error::Conflict(CHANGED.into()));
+            }
+        }
+        // The chart's crds/ documents: cluster-wide, so never for a limited grant.
+        let mut crd_docs = Vec::new();
+        for t in &d.rendered.crds {
+            crd_docs.extend(crate::apply::split_all(t)?);
+        }
+        if allowed.is_some() && !crd_docs.is_empty() {
+            return Err(fleetops_core::access::cluster_scoped_denied());
+        }
+        let new_kinds = crd_kinds(&crd_docs);
+        let mut steps = plan::rollback_steps(&base_manifest, &d.rendered.manifest, ns)?;
+        let mut resources = self.resolve_steps(&mut steps, ns, allowed).await?;
+        self.check_hooks(&d.rendered.hooks, ns, allowed).await?;
+        let act = if d.upgrade { "upgrade" } else { "install" };
+        let mut out = HelmPlan {
+            current,
+            note: String::new(),
+            hooks: hooks::steps(&d.rendered.hooks, d.upgrade),
+            values_before: d.upgrade.then(|| mask::values_yaml(&before_config)),
+            values_after: Some(mask::values_yaml(&d.config)),
+            notes: d.rendered.notes.clone(),
+            chart: Some(d.rendered.meta.clone()),
+            ..Default::default()
+        };
+        if mode == HelmMode::Plan {
+            if !d.upgrade {
+                out.changes = self.crd_changes(&crd_docs).await?;
+            }
+            let mut changes = self.run_steps(&mut steps, resources, name, ns, true).await;
+            // Objects of a kind the chart's own CRDs bring cannot be checked
+            // before those CRDs exist: shown as they will be created.
+            for (step, c) in steps.iter().zip(changes.iter_mut()) {
+                if c.error.is_some() && !d.upgrade && new_kinds.contains(&group_kind(&step.doc)) {
+                    c.error = None;
+                    c.after = Some(crate::mask::to_yaml(&cleaned(step.doc.value.clone()))?);
+                }
+            }
+            out.changes.extend(changes);
+            return Ok(out);
+        }
+        let now = storage::now();
+        let mut next = Release {
+            name: name.into(),
+            namespace: ns.into(),
+            version: current + 1,
+            info: storage::Info {
+                status: format!("pending-{act}"),
+                description: String::new(),
+                notes: d.rendered.notes.clone(),
+                first_deployed: first_deployed.or_else(|| Some(now.clone())),
+                last_deployed: Some(now),
+                rest: Default::default(),
+            },
+            chart: d.rendered.chart.clone(),
+            config: d.config.clone(),
+            manifest: d.rendered.manifest.clone(),
+            rest: [(
+                "hooks".to_string(),
+                serde_json::to_value(&d.rendered.hooks).expect("hooks serialise"),
+            )]
+            .into_iter()
+            .collect(),
+        };
+        self.write_release(&next, true, Some(&d.source)).await?;
+        let mut failure = None;
+        // As Helm does: CRDs are created on install when missing, before
+        // anything else, and never upgraded or deleted.
+        if !d.upgrade && !crd_docs.is_empty() {
+            match self.install_crds(&crd_docs).await {
+                Ok(created) => {
+                    out.changes = created;
+                    resources = self
+                        .resolve_waiting(&mut steps, ns, allowed, &new_kinds)
+                        .await?;
+                }
+                Err(m) => failure = Some(m),
+            }
+        }
+        for h in hooks::for_phase(&d.rendered.hooks, &format!("pre-{act}")) {
+            if failure.is_some() {
+                break;
+            }
+            if let Err(m) = self.run_hook(h, ns, &format!("pre-{act}")).await {
+                failure = Some(m);
+                break;
+            }
+        }
+        if failure.is_none() {
+            let changes = self.run_steps(&mut steps, resources, name, ns, false).await;
+            out.changes.extend(changes);
+            let failed = failures(&out.changes);
+            if !failed.is_empty() {
+                failure = Some(failed.join("; "));
+            }
+        }
+        if failure.is_none() {
+            for h in hooks::for_phase(&d.rendered.hooks, &format!("post-{act}")) {
+                if let Err(m) = self.run_hook(h, ns, &format!("post-{act}")).await {
+                    failure = Some(m);
+                    break;
+                }
+            }
+        }
+        let verb = if d.upgrade { "Upgrade" } else { "Install" };
+        match failure {
+            None => {
+                next.info.status = "deployed".into();
+                next.info.description = format!("{verb} complete");
+                self.write_release(&next, false, None).await?;
+                self.supersede_others(ns, name, next.version).await?;
+            }
+            Some(m) => {
+                next.info.status = "failed".into();
+                next.info.description = truncate(format!("{verb} failed: {m}"));
+                self.write_release(&next, false, None).await?;
+            }
+        }
+        out.revision = Some(next.version);
+        out.status = Some(next.info.status.clone());
+        out.note = next.info.description.clone();
+        Ok(out)
+    }
+
     pub(crate) async fn helm_list_impl(&self, ns: Option<&str>) -> Result<Vec<HelmRelease>> {
         let metas = self.release_metas(ns, storage::OWNER_SELECTOR).await?;
         let mut out = Vec::new();
@@ -356,6 +841,7 @@ impl KubeClient {
             notes: r.info.notes.clone(),
             values: mask::values_yaml(&r.config),
             manifest: mask::manifest(&r.manifest),
+            chart_source: self.chart_source(ns, name).await?,
         })
     }
 
@@ -426,28 +912,21 @@ impl KubeClient {
         next.info.description = format!("Rollback to {to}");
         next.info.first_deployed = cur.info.first_deployed.clone();
         next.info.last_deployed = Some(storage::now());
-        self.write_release(&next, true).await?;
+        self.write_release(&next, true, None).await?;
         plan.changes = self.run_steps(&mut steps, resources, name, ns, false).await;
         let failed = failures(&plan.changes);
         if failed.is_empty() {
             next.info.status = "deployed".into();
             next.info.description = format!("Rollback to {to} (FleetOps; hooks not run)");
-            self.write_release(&next, false).await?;
+            self.write_release(&next, false, None).await?;
             // As Helm does: every other deployed revision is superseded; a
             // failed one keeps its status.
-            let sel = format!("{},status=deployed", release_selector(name));
-            for (_, _, v) in self.release_metas(Some(ns), &sel).await? {
-                if v != next.version {
-                    let mut old = self.read_release(ns, name, v).await?;
-                    old.info.status = "superseded".into();
-                    self.write_release(&old, false).await?;
-                }
-            }
+            self.supersede_others(ns, name, next.version).await?;
         } else {
             next.info.status = "failed".into();
             next.info.description =
                 truncate(format!("Rollback to {to} failed: {}", failed.join("; ")));
-            self.write_release(&next, false).await?;
+            self.write_release(&next, false, None).await?;
         }
         plan.revision = Some(next.version);
         plan.status = Some(next.info.status.clone());
@@ -471,7 +950,7 @@ impl KubeClient {
             return Ok(plan);
         }
         cur.info.status = "uninstalling".into();
-        self.write_release(&cur, false).await?;
+        self.write_release(&cur, false, None).await?;
         plan.changes = self.run_steps(&mut steps, resources, name, ns, false).await;
         let failed = failures(&plan.changes);
         if failed.is_empty() {
@@ -491,7 +970,7 @@ impl KubeClient {
         } else {
             cur.info.status = "failed".into();
             cur.info.description = truncate(format!("Uninstall failed: {}", failed.join("; ")));
-            self.write_release(&cur, false).await?;
+            self.write_release(&cur, false, None).await?;
             plan.status = Some("failed".into());
         }
         Ok(plan)
@@ -525,5 +1004,16 @@ mod tests {
         let gone = list_row("apps", "a", 2, Err(Error::NotFound("gone".into()))).unwrap();
         assert!(gone.is_none());
         assert!(list_row("apps", "a", 2, Err(Error::Forbidden("no".into()))).is_err());
+    }
+
+    #[test]
+    fn an_install_over_a_live_release_is_refused_and_over_an_uninstalled_one_continues() {
+        let mut live = rec();
+        live.info.status = "deployed".into();
+        let e = install_base("a", Some(&live)).unwrap_err().to_string();
+        assert!(e.contains("release 'a' exists; upgrade it"), "{e}");
+        live.info.status = "uninstalled".into();
+        assert_eq!(install_base("a", Some(&live)).unwrap(), 2);
+        assert_eq!(install_base("a", None).unwrap(), 0);
     }
 }

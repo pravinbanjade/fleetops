@@ -406,3 +406,43 @@ pub fn ws_config() -> ApiConfig {
         ..ApiConfig::default()
     }
 }
+
+/// A renderer that records what it was asked and answers a fixed chart.
+#[derive(Debug, Default)]
+pub struct FakeRenderer {
+    pub calls: std::sync::Mutex<Vec<(String, serde_json::Value, bool)>>,
+}
+
+#[async_trait::async_trait]
+impl fleetops_kube::helm::render::ChartRenderer for FakeRenderer {
+    async fn render(
+        &self,
+        r: &fleetops_kube::helm::render::RenderInput,
+    ) -> fleetops_core::Result<fleetops_core::helm::Rendered> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push((r.name.clone(), r.values.clone(), r.upgrade));
+        Ok(fleetops_core::helm::Rendered {
+            manifest: "---\n# Source: demo/templates/cm.yaml\napiVersion: v1\nkind: ConfigMap\nmetadata: {name: demo}\n".into(),
+            hooks: vec![],
+            notes: "Hello".into(),
+            chart: serde_json::json!({"metadata": {"name": "demo", "version": "0.2.0"}}),
+            meta: fleetops_core::helm::ChartMeta { name: "demo".into(), version: "0.2.0".into(), ..Default::default() },
+            config: r.values.clone(),
+            crds: vec![],
+        })
+    }
+    async fn show(
+        &self,
+        _c: &fleetops_core::helm::ChartRef,
+    ) -> fleetops_core::Result<fleetops_core::helm::ChartShow> {
+        Ok(fleetops_core::helm::ChartShow {
+            meta: Default::default(),
+            values: "replicas: 1\n".into(),
+        })
+    }
+    fn insecure_repos(&self) -> bool {
+        false
+    }
+}

@@ -21,6 +21,13 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         ApiConfig {
             hsts: config.hsts,
             kube_exec,
+            helm: config.helm_binary.clone().map(|binary| {
+                Arc::new(fleetops_kube::helm::render::HelmCli {
+                    binary,
+                    insecure_repos: config.helm_insecure_repos,
+                    timeout: fleetops_kube::helm::render::RENDER_TIMEOUT,
+                }) as Arc<dyn fleetops_kube::helm::render::ChartRenderer>
+            }),
             ..ApiConfig::default()
         },
     );

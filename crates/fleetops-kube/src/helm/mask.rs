@@ -17,7 +17,7 @@ const SECRETISH: [&str; 9] = [
     "private",
 ];
 
-fn secretish(key: &str) -> bool {
+pub(crate) fn secretish(key: &str) -> bool {
     let k = key.to_ascii_lowercase();
     SECRETISH.iter().any(|s| k.contains(s))
 }

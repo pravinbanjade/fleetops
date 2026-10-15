@@ -25,7 +25,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `rm -rf ${data} && exec ${bin} --data ${data} --bind 127.0.0.1:${port}`,
+    command: `rm -rf ${data} && exec ${bin} --data ${data} --bind 127.0.0.1:${port} --helm-binary ${process.env.HELM ?? "helm"} --helm-insecure-repos`,
     url: `http://127.0.0.1:${port}/api/v1/health`,
     reuseExistingServer: false,
     stdout: "pipe",

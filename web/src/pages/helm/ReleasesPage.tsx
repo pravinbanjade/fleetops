@@ -1,14 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import type { HelmRelease } from "@/api/gen/types.gen";
-import { helmReleasesQuery } from "@/api/queries";
+import { useEnvAccess } from "@/api/access";
+import { helmCapabilitiesQuery, helmReleasesQuery } from "@/api/queries";
+import { Button } from "@/components/ui/button";
 import { DataTable, columns } from "@/components/DataTable";
 import { Page } from "@/components/Page";
 import { formatAgo } from "@/lib/format";
 import { NamespacePicker, useNamespace } from "@/pages/kube/NamespacePicker";
 import { TopBarActions } from "@/components/topBarSlot";
 import { HelmStatus } from "./HelmStatus";
+
+const HelmDeployDialog = lazy(() => import("./HelmDeployDialog"));
 
 const route = getRouteApi("/authed/shell/envs/$env/k8s/helm");
 
@@ -48,11 +52,24 @@ export function ReleasesPage() {
   const [ns, setNs] = useNamespace(env);
   const list = useQuery(helmReleasesQuery(env, ns || undefined));
   const cols = useMemo(() => releaseColumns(env), [env]);
+  const caps = useQuery(helmCapabilitiesQuery(env));
+  const { canWrite } = useEnvAccess(env);
+  const [installing, setInstalling] = useState(false);
   return (
     <Page title="Helm releases">
       <TopBarActions>
         <NamespacePicker env={env} value={ns} onChange={setNs} />
+        {canWrite && caps.data?.install && (
+          <Button size="sm" onClick={() => setInstalling(true)}>
+            Install chart
+          </Button>
+        )}
       </TopBarActions>
+      {installing && (
+        <Suspense fallback={null}>
+          <HelmDeployDialog env={env} target={{ kind: "install", ns: ns || "default" }} onClose={() => setInstalling(false)} />
+        </Suspense>
+      )}
       <DataTable
         label="Helm releases"
         data={list.data}

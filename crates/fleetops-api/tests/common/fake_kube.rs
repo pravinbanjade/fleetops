@@ -42,6 +42,10 @@ pub struct FakeKube {
     watches: Mutex<Vec<WatchTx>>,
     pub applied: Mutex<Vec<Applied>>,
     pub helm_releases: Mutex<Vec<HelmRelease>>,
+    /// Every deploy asked for, with its mode.
+    pub deploys: Mutex<Vec<(Deploy, HelmMode)>>,
+    /// What `helm_config` answers (the stored, unmasked values).
+    pub helm_values: Mutex<serde_json::Value>,
     /// Returned by rollback and uninstall; `status` and `revision` are set on commit.
     pub helm_plan: Mutex<Option<HelmPlan>>,
     /// (namespaced, namespace) of each object a rollback or uninstall touches.
@@ -587,7 +591,52 @@ impl KubeOps for FakeKube {
             notes: "hello".into(),
             values: format!("db:\n  password: {MASK}\n"),
             manifest: "---\nkind: ConfigMap\n".into(),
+            chart_source: None,
         })
+    }
+    async fn helm_deploy(
+        &self,
+        d: &Deploy,
+        mode: HelmMode,
+        allowed: Option<&BTreeSet<String>>,
+    ) -> Result<HelmPlan> {
+        if let Some(a) = allowed {
+            if !a.contains(&d.namespace) {
+                return Err(Error::Forbidden("outside the grant".into()));
+            }
+        }
+        self.deploys.lock().unwrap().push((d.clone(), mode));
+        let exists = self
+            .helm_releases
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| r.name == d.name && r.namespace == d.namespace);
+        if !d.upgrade && exists {
+            return Err(Error::Conflict(format!(
+                "release '{}' exists; upgrade it",
+                d.name
+            )));
+        }
+        let commit = matches!(mode, HelmMode::Commit { .. });
+        Ok(HelmPlan {
+            current: if d.upgrade { 1 } else { 0 },
+            revision: commit.then_some(if d.upgrade { 2 } else { 1 }),
+            status: commit.then(|| "deployed".to_string()),
+            notes: d.rendered.notes.clone(),
+            ..Default::default()
+        })
+    }
+    async fn helm_config(&self, _ns: &str, _name: &str) -> Result<serde_json::Value> {
+        let v = self.helm_values.lock().unwrap().clone();
+        Ok(if v.is_null() {
+            serde_json::json!({})
+        } else {
+            v
+        })
+    }
+    async fn api_versions(&self) -> Result<Vec<String>> {
+        Ok(vec!["v1".into(), "apps/v1".into()])
     }
     async fn helm_history(&self, ns: &str, name: &str) -> Result<Vec<HelmRevision>> {
         let r = self.helm_get(ns, name, None).await?.release;

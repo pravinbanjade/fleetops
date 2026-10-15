@@ -21,6 +21,7 @@ fn plan(current: u32) -> HelmPlan {
             error: None,
         }],
         note: HOOKS_NOTE.into(),
+        ..Default::default()
     }
 }
 
@@ -326,4 +327,202 @@ async fn a_commit_finishes_even_when_the_caller_leaves() {
         .audit_actions()
         .await
         .contains(&"helm.rollback".to_string()));
+}
+
+fn with_helm() -> fleetops_api::ApiConfig {
+    fleetops_api::ApiConfig {
+        helm: Some(std::sync::Arc::new(common::FakeRenderer::default())),
+        ..Default::default()
+    }
+}
+
+fn install_body(dry_run: bool) -> serde_json::Value {
+    json!({"name": "demo", "chart": {"repo_url": "https://c.example", "chart": "demo"}, "values": "password: s3cret\n", "dry_run": dry_run, "expected_current": 0})
+}
+
+#[tokio::test]
+async fn without_the_flag_install_is_off_and_capabilities_say_so() {
+    let t = common::app().await;
+    let admin = t.setup_admin().await;
+    t.add_kube_env(&admin, "k").await;
+    let caps = t
+        .send(common::req(
+            "GET",
+            "/api/v1/envs/k/k8s/helm/capabilities",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(caps.json, json!({"install": false}));
+    let r = t
+        .send(common::req(
+            "POST",
+            "/api/v1/envs/k/k8s/helm/releases/apps",
+            Some(install_body(true)),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 400);
+    assert!(
+        r.json["message"]
+            .as_str()
+            .unwrap()
+            .contains("--helm-binary"),
+        "{:?}",
+        r.json
+    );
+}
+
+#[tokio::test]
+async fn install_plans_then_commits_and_audits_without_values() {
+    let t = common::app_with(with_helm()).await;
+    let admin = t.setup_admin().await;
+    t.add_kube_env(&admin, "k").await;
+    let plan = t
+        .send(common::req(
+            "POST",
+            "/api/v1/envs/k/k8s/helm/releases/apps",
+            Some(install_body(true)),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(plan.status, 200, "{:?}", plan.json);
+    assert_eq!(plan.json["notes"], "Hello");
+    let done = t
+        .send(common::req(
+            "POST",
+            "/api/v1/envs/k/k8s/helm/releases/apps",
+            Some(install_body(false)),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(done.json["status"], "deployed");
+    let deploys = t.fake.kube.deploys.lock().unwrap().clone();
+    assert_eq!(deploys.len(), 2);
+    assert_eq!(deploys[1].0.config, json!({"password": "s3cret"}));
+    assert_eq!(
+        deploys[1].1,
+        fleetops_core::helm::HelmMode::Commit {
+            expected_current: 0
+        }
+    );
+    assert_eq!(deploys[1].0.source.chart.as_deref(), Some("demo"));
+    let audit = t
+        .send(common::req("GET", "/api/v1/audit", None, Some(&admin)))
+        .await
+        .json
+        .to_string();
+    assert!(
+        audit.contains("helm.install")
+            && audit.contains("https://c.example demo")
+            && !audit.contains("s3cret"),
+        "{audit}"
+    );
+}
+
+#[tokio::test]
+async fn bad_values_and_bad_references_are_refused_before_rendering() {
+    let t = common::app_with(with_helm()).await;
+    let admin = t.setup_admin().await;
+    t.add_kube_env(&admin, "k").await;
+    for body in [
+        json!({"name": "demo", "chart": {"repo_url": "https://c.example", "chart": "demo"}, "values": "- a\n", "dry_run": true}),
+        json!({"name": "demo", "chart": {"repo_url": "https://c.example", "chart": "demo"}, "values": "password: ••••\n", "dry_run": true}),
+        json!({"name": "demo", "chart": {"oci": "--post-renderer=/x"}, "values": "", "dry_run": true}),
+        json!({"name": "demo", "chart": {"repo_url": "http://c.example", "chart": "demo"}, "values": "", "dry_run": true}),
+        json!({"name": "Not_A_Name", "chart": {"oci": "oci://r/c"}, "values": "", "dry_run": true}),
+    ] {
+        let r = t
+            .send(common::req(
+                "POST",
+                "/api/v1/envs/k/k8s/helm/releases/apps",
+                Some(body.clone()),
+                Some(&admin),
+            ))
+            .await;
+        assert_eq!(r.status, 400, "{body}: {:?}", r.json);
+    }
+    assert!(t.fake.kube.deploys.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn upgrade_restores_masked_values_from_the_release() {
+    let t = common::app_with(with_helm()).await;
+    let admin = t.setup_admin().await;
+    t.add_kube_env(&admin, "k").await;
+    t.fake.kube.helm_release("apps", "demo", 1, "deployed");
+    *t.fake.kube.helm_values.lock().unwrap() = json!({"db": {"password": "s3cret"}, "replicas": 1});
+    let body = json!({"chart": {"oci": "oci://r/demo", "version": "0.2.0"}, "values": "db:\n  password: ••••\nreplicas: 2\n", "dry_run": true});
+    let r = t
+        .send(common::req(
+            "POST",
+            "/api/v1/envs/k/k8s/helm/releases/apps/demo/upgrade",
+            Some(body),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    let d = &t.fake.kube.deploys.lock().unwrap()[0].0;
+    assert!(d.upgrade);
+    assert_eq!(
+        d.config,
+        json!({"db": {"password": "s3cret"}, "replicas": 2})
+    );
+}
+
+#[tokio::test]
+async fn a_name_in_use_is_a_conflict() {
+    let t = common::app_with(with_helm()).await;
+    let admin = t.setup_admin().await;
+    t.add_kube_env(&admin, "k").await;
+    t.fake.kube.helm_release("apps", "demo", 1, "deployed");
+    let r = t
+        .send(common::req(
+            "POST",
+            "/api/v1/envs/k/k8s/helm/releases/apps",
+            Some(install_body(true)),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 409);
+    assert!(r.json["message"]
+        .as_str()
+        .unwrap()
+        .contains("exists; upgrade it"));
+}
+
+#[tokio::test]
+async fn a_namespace_outside_the_grant_is_refused() {
+    let t = common::app_with(with_helm()).await;
+    let admin = t.setup_admin().await;
+    t.add_kube_env(&admin, "k").await;
+    t.create_user(&admin, "bob", "bob-password-1", "user").await;
+    t.grant("bob", "k", "operator", Some(&["team-a"])).await;
+    let bob = common::session_from(&t.login("bob", "bob-password-1").await);
+    let r = t
+        .send(common::req(
+            "POST",
+            "/api/v1/envs/k/k8s/helm/releases/apps",
+            Some(install_body(true)),
+            Some(&bob),
+        ))
+        .await;
+    assert_eq!(r.status, 403);
+}
+
+#[tokio::test]
+async fn show_returns_the_charts_defaults() {
+    let t = common::app_with(with_helm()).await;
+    let admin = t.setup_admin().await;
+    t.add_kube_env(&admin, "k").await;
+    let r = t
+        .send(common::req(
+            "POST",
+            "/api/v1/envs/k/k8s/helm/charts/show",
+            Some(json!({"chart": {"oci": "oci://r/c"}})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json["values"], "replicas: 1\n");
 }

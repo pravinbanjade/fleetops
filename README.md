@@ -9,7 +9,7 @@ What sets it apart:
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 4).
 
-> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b), per-environment roles (slice 3c), Helm releases (slice 3d), events and metrics (3e), suspend and resume (3f), custom resources (3g), workload logs and exec (3i) and exec-plugin kubeconfigs (3k). Next is sub-project 4, stacks and GitOps.
+> **Status: early development.** Sub-project 1 (core and local Docker) is complete and released as v0.1.0. Sub-project 2 (an agent for remote hosts) is implemented: one server manages many Docker hosts. Sub-project 3 (Kubernetes) is implemented: clusters are managed next to Docker hosts, by kubeconfig or through an in-cluster agent, with live lists and YAML editing (slice 3b), per-environment roles (slice 3c), Helm releases (slice 3d), events and metrics (3e), suspend and resume (3f), custom resources (3g), workload logs and exec (3i), Helm install and upgrade (3j) and exec-plugin kubeconfigs (3k). Next is sub-project 4, stacks and GitOps.
 
 ## Contents
 
@@ -162,6 +162,8 @@ What you can do: browse the common kinds (workloads, ReplicaSets, services, ingr
 
 **Helm releases.** *Helm releases* in the sidebar lists the releases in one namespace or all of them, with chart, app version, status and revision; the list refreshes every 10 s. A release page shows its overview, revision history, values, rendered manifest and notes.
 
+**Installing and upgrading charts.** Start the server with `--helm-binary helm` (or `FLEETOPS_HELM=helm`, or an absolute path) and **Install chart** appears on the Helm releases page, and **Upgrade** on each release. You type a repository URL and chart name, or an `oci://` reference, and optionally a version and values. FleetOps renders with that helm (`helm template` and a client-side dry run, never touching the cluster), shows every object it will create, change or delete, the values diff, the hooks in order and the notes, and applies only after you confirm. Install and upgrade hooks run: Jobs and Pods are waited for, up to 5 minutes each. A chart's `crds/` are created on install when missing and never upgraded or deleted, as Helm does. Each helm run has its own empty repository list, so private chart repositories (`helm repo add` with a password) are not supported; OCI registries use the `helm registry login` of the user running FleetOps. A repository URL may not carry credentials. `http://` repositories need `--helm-insecure-repos`. Templates that call `lookup` see an empty cluster, as with `helm template`: a chart that generates a password unless one exists will generate a new one on every upgrade, and the review marks such Secret values `(changed)`. Needs helm 3.13 or later.
+
 - **Masking.** In values, anything under a key containing `password`, `passwd`, `secret`, `token`, `key`, `credential`, `auth`, `cert` or `private` is masked, and Secret objects in the manifest are masked. This is best effort: a credential under an innocent key name is shown.
 - **Rollback and uninstall** (operators). Both are a dry run first, shown per object as a diff; nothing changes until you confirm, and an uninstall asks you to type the release name. FleetOps writes the release history the way Helm does, so `helm history`, `helm upgrade` and `helm rollback` keep working afterwards. If the release changed since you reviewed it, or another Helm operation is in progress, you are asked to review again. A rollback or uninstall runs to the end even if you close the page; if the server itself stops part-way, the release can be left `pending-rollback` or `uninstalling`, and `helm rollback <release> <revision>` from the CLI recovers it.
 - **Limits.** Chart hooks (`pre-rollback`, `pre-delete` and so on) are **not run**. A rollback patches each object from the current revision's form to the target's: fields the newer revision added are removed, and a list that changed between the two revisions is replaced whole, so entries others added to such a list (for example sidecars injected by a webhook) are dropped until they are added again. Only Helm 3 releases stored as Secrets (Helm's default driver, also used by Helm 4) are seen. A user limited to some namespaces cannot roll back or uninstall a release that touches anything outside them, including cluster-scoped objects.
@@ -195,6 +197,8 @@ Configuration comes from CLI flags or environment variables. There is no config 
 | `--tls-cert` / `--tls-key` | `FLEETOPS_TLS_CERT` / `FLEETOPS_TLS_KEY` | unset | PEM certificate and key; pass both or neither. When unset, a self-signed certificate is generated and saved in the data directory |
 | `--hsts` | `FLEETOPS_HSTS` | off | Send HSTS on HTTPS responses. Enable it only when no client uses the plain HTTP listener, because browsers apply HSTS per host, not per port |
 | `--docker-host` | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker endpoint for the `local` environment |
+| `--helm-binary` | `FLEETOPS_HELM` | unset (off) | The helm that renders charts for install and upgrade: `helm` on PATH or an absolute path |
+| `--helm-insecure-repos` | `FLEETOPS_HELM_INSECURE_REPOS` | off | Allow `http://` chart repositories |
 | `--kube-exec-plugins` | `FLEETOPS_KUBE_EXEC_PLUGINS` | unset (off) | Exec plugins kubeconfig users may run: `default` (aws, aws-iam-authenticator, gke-gcloud-auth-plugin, kubelogin) and extra bare names, comma-separated |
 | `--secret-key` | `FLEETOPS_SECRET_KEY` | unset (`<data>/secret.key`) | 32 bytes, base64: seals stored kubeconfigs. Back it up with the database |
 | `--log-level` | `FLEETOPS_LOG` | `info` | `tracing` filter, for example `fleetops_api=debug,info` |
@@ -253,6 +257,7 @@ Design documents live in `docs/superpowers/`:
 - `specs/2026-10-07-fleetops-kube-suspend-design.md` is slice 3f (suspend and resume).
 - `specs/2026-10-08-fleetops-kube-crds-generic-kinds-design.md` is slice 3g (custom resources and the missing core kinds), with the Lens-parity roadmap.
 - `specs/2026-10-14-fleetops-kube-workload-logs-exec-design.md` is slice 3i (workload logs and exec).
+- `specs/2026-10-14-fleetops-helm-install-upgrade-design.md` is slice 3j (Helm install and upgrade).
 - `specs/2026-10-14-fleetops-kube-exec-plugins-design.md` is slice 3k (exec-plugin kubeconfigs).
 - `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), one for sub-project 2, and one for sub-project 3.
 
@@ -332,7 +337,7 @@ The full protocol is in section 5.2 of the spec.
 | **3g** | **Custom resources** (done) | Every kind the cluster serves, CRDs included, by discovery; storage, RBAC, ReplicaSets, HPAs and network policies as curated kinds |
 | 3h | Port-forward | A local port on the FleetOps host, or an HTTP proxy through FleetOps for a remote server |
 | **3i** | **Workload logs and exec** (done) | Logs merged across a workload's pods, tracked live; previous-container logs; a terminal from a workload |
-| 3j | Helm install and upgrade | Chart repositories and OCI, values editing, upgrade with a diff |
+| **3j** | **Helm install and upgrade** (done) | Install charts from repositories and OCI registries, upgrade with values and a reviewed diff, install and upgrade hooks; behind `--helm-binary` |
 | **3k** | **Exec-plugin kubeconfigs** (done) | EKS, GKE and AKS kubeconfigs (`aws`, `gcloud`, `kubelogin`) where FleetOps runs, behind `--kube-exec-plugins` |
 | 4 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
 | 5 | Teams & enterprise (free) | Teams, OIDC/SSO, LDAP, API tokens, backup and restore |
