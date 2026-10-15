@@ -2,6 +2,7 @@
 
 pub mod access;
 pub mod docker;
+pub mod edition;
 pub mod env;
 pub mod error;
 pub mod helm;

@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ErrorBody {
     /// Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,
-    /// `forbidden`, `rate_limited`, `env_unavailable`, `upstream`, `internal`.
+    /// `forbidden`, `license_required`, `seat_limit`, `rate_limited`, `env_unavailable`, `upstream`, `internal`.
     pub code: &'static str,
     pub message: String,
     /// Matches the `x-request-id` response header and the server log.
@@ -38,6 +38,7 @@ impl IntoResponse for ApiError {
             Error::Invalid(_) => StatusCode::BAD_REQUEST,
             Error::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             Error::Forbidden(_) => StatusCode::FORBIDDEN,
+            Error::LicenseRequired(_) | Error::SeatLimit(_) => StatusCode::FORBIDDEN,
             Error::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
             Error::EnvUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Error::Upstream { status, .. } => StatusCode::from_u16(*status)
@@ -78,6 +79,11 @@ mod tests {
 
     #[test]
     fn maps_variants_to_status() {
+        assert_eq!(
+            status_of(Error::LicenseRequired("audit_export".into())),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(status_of(Error::SeatLimit(5)), StatusCode::FORBIDDEN);
         assert_eq!(
             status_of(Error::NotFound("x".into())),
             StatusCode::NOT_FOUND

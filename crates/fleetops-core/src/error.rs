@@ -12,6 +12,12 @@ pub enum Error {
     Unauthorized(String),
     #[error("{0}")]
     Forbidden(String),
+    /// An Enterprise feature the license does not cover (403).
+    #[error("this needs a FleetOps Enterprise license with the '{0}' feature")]
+    LicenseRequired(String),
+    /// Creating a user would pass the license's user limit (403).
+    #[error("the license allows {0} users; remove a user or extend the license")]
+    SeatLimit(u32),
     #[error("too many attempts; retry in {retry_after_secs}s")]
     RateLimited { retry_after_secs: u64 },
     #[error("environment unavailable: {0}")]
@@ -38,7 +44,9 @@ impl Error {
             | Error::EnvUnavailable(m)
             | Error::Internal(m) => m.clone(),
             Error::Upstream { message, .. } => message.clone(),
-            Error::RateLimited { .. } => self.to_string(),
+            Error::RateLimited { .. } | Error::LicenseRequired(_) | Error::SeatLimit(_) => {
+                self.to_string()
+            }
         }
     }
 
@@ -49,6 +57,8 @@ impl Error {
             Error::Invalid(_) => "invalid",
             Error::Unauthorized(_) => "unauthorized",
             Error::Forbidden(_) => "forbidden",
+            Error::LicenseRequired(_) => "license_required",
+            Error::SeatLimit(_) => "seat_limit",
             Error::RateLimited { .. } => "rate_limited",
             Error::EnvUnavailable(_) => "env_unavailable",
             Error::Upstream { .. } => "upstream",
@@ -85,6 +95,11 @@ mod tests {
             "upstream"
         );
         assert_eq!(Error::Internal("x".into()).code(), "internal");
+        assert_eq!(
+            Error::LicenseRequired("audit_export".into()).code(),
+            "license_required"
+        );
+        assert_eq!(Error::SeatLimit(5).code(), "seat_limit");
     }
 
     #[test]
