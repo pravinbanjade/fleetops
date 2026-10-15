@@ -18,10 +18,23 @@ pub enum Loaded {
     Ok(License),
 }
 
+/// Where the license in effect came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = LicenseSource)]
+pub enum Source {
+    /// Admin → License; removable there.
+    Uploaded,
+    /// `--license-file`; only the server's configuration can remove it.
+    File,
+}
+
 /// `GET /ee/license`.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LicenseInfo {
     pub status: Status,
+    /// `null` when there is no license.
+    pub source: Option<Source>,
     /// Why the license is invalid.
     pub reason: Option<String>,
     pub id: Option<String>,
@@ -37,7 +50,7 @@ pub struct LicenseInfo {
 pub struct LicenseState {
     keys: Vec<VerifyingKey>,
     file: Option<PathBuf>,
-    loaded: RwLock<Loaded>,
+    loaded: RwLock<(Loaded, Option<Source>)>,
 }
 
 impl LicenseState {
@@ -45,7 +58,7 @@ impl LicenseState {
         Self {
             keys,
             file,
-            loaded: RwLock::new(Loaded::None),
+            loaded: RwLock::new((Loaded::None, None)),
         }
     }
 
@@ -55,24 +68,27 @@ impl LicenseState {
 
     /// Reads the uploaded license, or else the `--license-file`.
     pub async fn load(&self, store: &Store) -> Result<()> {
-        let loaded = match crate::db::get(store.pool()).await? {
-            Some(raw) => self.parse(&raw),
+        let (loaded, source) = match crate::db::get(store.pool()).await? {
+            Some(raw) => (self.parse(&raw), Some(Source::Uploaded)),
             None => match &self.file {
-                None => Loaded::None,
+                None => (Loaded::None, None),
                 Some(path) => match std::fs::read_to_string(path) {
-                    Ok(text) => self.parse(&text),
+                    Ok(text) => (self.parse(&text), Some(Source::File)),
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                         tracing::warn!(path = %path.display(), "license file not found; Enterprise features are off");
-                        Loaded::None
+                        (Loaded::None, None)
                     }
-                    Err(e) => Loaded::Invalid(format!("cannot read {}: {e}", path.display())),
+                    Err(e) => (
+                        Loaded::Invalid(format!("cannot read {}: {e}", path.display())),
+                        Some(Source::File),
+                    ),
                 },
             },
         };
         if let Loaded::Invalid(reason) = &loaded {
             tracing::error!(%reason, "license is not valid; Enterprise features are off");
         }
-        self.set(loaded);
+        self.set(loaded, source);
         Ok(())
     }
 
@@ -83,12 +99,12 @@ impl LicenseState {
         }
     }
 
-    pub fn set(&self, loaded: Loaded) {
-        *self.loaded.write().expect("license lock") = loaded;
+    pub fn set(&self, loaded: Loaded, source: Option<Source>) {
+        *self.loaded.write().expect("license lock") = (loaded, source);
     }
 
     pub fn status(&self, now: i64) -> Status {
-        match &*self.loaded.read().expect("license lock") {
+        match &self.loaded.read().expect("license lock").0 {
             Loaded::None => Status::None,
             Loaded::Invalid(_) => Status::Invalid,
             Loaded::Ok(l) => l.status_at(now),
@@ -96,8 +112,12 @@ impl LicenseState {
     }
 
     pub fn info(&self, now: i64, users_in_use: i64) -> LicenseInfo {
+        let guard = self.loaded.read().expect("license lock");
+        let (loaded, source) = &*guard;
+        let source = *source;
         let empty = |status, reason| LicenseInfo {
             status,
+            source,
             reason,
             id: None,
             customer: None,
@@ -106,11 +126,12 @@ impl LicenseState {
             features: vec![],
             users_in_use,
         };
-        match &*self.loaded.read().expect("license lock") {
+        match loaded {
             Loaded::None => empty(Status::None, None),
             Loaded::Invalid(r) => empty(Status::Invalid, Some(r.clone())),
             Loaded::Ok(l) => LicenseInfo {
                 status: l.status_at(now),
+                source,
                 reason: None,
                 id: Some(l.payload.id.clone()),
                 customer: Some(l.payload.customer.clone()),
@@ -124,7 +145,7 @@ impl LicenseState {
 
     /// Runs `f` on the license while it is active (valid or in grace).
     fn active<T>(&self, f: impl FnOnce(&License) -> T) -> Option<T> {
-        match &*self.loaded.read().expect("license lock") {
+        match &self.loaded.read().expect("license lock").0 {
             Loaded::Ok(l) if l.status_at(now_unix()).active() => Some(f(l)),
             _ => None,
         }
@@ -235,7 +256,7 @@ mod tests {
             &[key.verifying_key()],
         )
         .unwrap();
-        st.set(Loaded::Ok(l));
+        st.set(Loaded::Ok(l), None);
         assert_eq!(st.status(now_unix()), Status::Expired);
         assert!(!st.has(Feature::AuditExport));
         assert_eq!(st.max_users(), None);

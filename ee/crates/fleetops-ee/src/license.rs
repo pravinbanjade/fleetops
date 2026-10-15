@@ -44,6 +44,7 @@ pub enum LicenseError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
+#[schema(as = LicenseStatus)]
 pub enum Status {
     None,
     Invalid,
@@ -79,9 +80,15 @@ pub fn sign(payload: &Payload, key: &SigningKey) -> String {
 }
 
 /// Checks the signature against any of `keys`, then the version, then
-/// parses the payload. Surrounding whitespace is ignored.
+/// parses the payload. Whitespace anywhere (a key wrapped by an email
+/// client) and a byte-order mark are ignored: neither base64url nor the
+/// separator uses them.
 pub fn verify(text: &str, keys: &[VerifyingKey]) -> Result<License, LicenseError> {
-    let (p, s) = text.trim().split_once('.').ok_or(LicenseError::Format)?;
+    let compact: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '\u{feff}')
+        .collect();
+    let (p, s) = compact.split_once('.').ok_or(LicenseError::Format)?;
     let bytes = B64.decode(p).map_err(|_| LicenseError::Format)?;
     let sig: [u8; 64] = B64
         .decode(s)
@@ -147,6 +154,19 @@ mod tests {
         let lic = verify(&format!("\n  {text}\n"), &[key.verifying_key()]).unwrap();
         assert_eq!(lic.payload.customer, "Acme");
         assert_eq!(lic.features, vec![Feature::AuditExport]);
+    }
+
+    #[test]
+    fn bom_and_line_wrapped_pastes_verify() {
+        let key = SigningKey::generate(&mut OsRng);
+        let text = sign(&payload(100), &key);
+        let wrapped: String = text
+            .as_bytes()
+            .chunks(60)
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        assert!(verify(&format!("\u{feff}{wrapped}\n"), &[key.verifying_key()]).is_ok());
     }
 
     #[test]

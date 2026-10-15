@@ -6,6 +6,8 @@ export type LicenseStatus = "none" | "invalid" | "valid" | "grace" | "expired";
 
 export interface LicenseInfo {
   status: LicenseStatus;
+  /** Uploaded in Admin → License, or read from `--license-file`; null without a license. */
+  source: "uploaded" | "file" | null;
   reason: string | null;
   id: string | null;
   customer: string | null;

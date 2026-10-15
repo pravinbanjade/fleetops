@@ -51,6 +51,12 @@ export function LicensePage() {
           </dd>
           <dt className="text-muted-foreground">Features</dt>
           <dd>{l.features.join(", ") || "none"}</dd>
+          {l.source === "file" && (
+            <>
+              <dt className="text-muted-foreground">Source</dt>
+              <dd>The server's --license-file. Installing a license here overrides it.</dd>
+            </>
+          )}
         </dl>
       )}
       <form
@@ -74,7 +80,7 @@ export function LicensePage() {
           <Button type="submit" disabled={!text.trim() || upload.isPending}>
             Install license
           </Button>
-          {l && l.status !== "none" && (
+          {l?.source === "uploaded" && (
             <Button type="button" variant="outline" disabled={remove.isPending} onClick={() => remove.mutate()}>
               Remove license
             </Button>

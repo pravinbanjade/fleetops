@@ -8,6 +8,7 @@ import { bannerFor, GRACE_SECS, type LicenseInfo } from "./license";
 const NOW = 1_800_000_000;
 const info = (over: Partial<LicenseInfo> = {}): LicenseInfo => ({
   status: "valid",
+  source: "uploaded",
   reason: null,
   id: "lic-1",
   customer: "Acme",
@@ -55,6 +56,18 @@ describe("enterprise UI", () => {
     const put = calls.find((c) => c.method === "PUT");
     expect(put?.body).toBe("abc.def");
     expect(put?.headers.get("content-type")).toBe("text/plain");
+  });
+
+  it("offers Remove only for an uploaded license", async () => {
+    mockFetch({
+      ...loggedIn,
+      "GET /api/v1/edition": { json: { edition: "enterprise", features: ["audit_export"] } },
+      "GET /api/v1/ee/license": { json: info({ source: "file" }) },
+    });
+    const { screen } = renderApp("/admin/license");
+    await screen.findByText("Acme");
+    expect(screen.queryByRole("button", { name: "Remove license" })).not.toBeInTheDocument();
+    expect(screen.getByText(/--license-file/)).toBeInTheDocument();
   });
 
   it("shows the expiry banner and hides Export when the license lapsed", async () => {

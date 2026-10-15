@@ -3,7 +3,7 @@
 use crate::{
     export,
     license::{verify, Status},
-    state::{LicenseInfo, LicenseState, Loaded},
+    state::{LicenseInfo, LicenseState, Loaded, Source},
 };
 use axum::{
     body::Body,
@@ -74,7 +74,7 @@ pub async fn put_license(
     let detail =
         json!({"customer": parsed.payload.customer, "expires_at": parsed.payload.expires_at});
     let id = parsed.payload.id.clone();
-    lic.set(Loaded::Ok(parsed));
+    lic.set(Loaded::Ok(parsed), Some(Source::Uploaded));
     fleetops_api::audit_detail(
         &s,
         Some(admin.user.id),
@@ -120,6 +120,7 @@ pub async fn delete_license(
 #[into_params(parameter_in = Query)]
 pub struct ExportQuery {
     /// `csv` (default) or `ndjson`.
+    #[param(inline)]
     pub format: Option<export::Format>,
     /// Unix seconds, inclusive.
     pub from: Option<i64>,

@@ -144,16 +144,23 @@ async fn delete_falls_back_to_file_then_none() {
     std::fs::write(&file, license(&k, now_unix() + DAY, None, &[])).unwrap();
     let ee = ee_app(&k, Some(file.clone())).await;
     let admin = ee.admin().await;
-    ee.install(
-        &admin,
-        &license(&k, now_unix() + DAY, None, &["audit_export"]),
-    )
-    .await;
+    let r = ee
+        .send("GET", "/api/v1/ee/license", None, Some(&admin))
+        .await;
+    assert_eq!(r.json()["source"], "file");
+    let r = ee
+        .install(
+            &admin,
+            &license(&k, now_unix() + DAY, None, &["audit_export"]),
+        )
+        .await;
+    assert_eq!(r.json()["source"], "uploaded");
     let r = ee
         .send("DELETE", "/api/v1/ee/license", None, Some(&admin))
         .await;
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.json()["status"], "valid");
+    assert_eq!(r.json()["source"], "file");
     assert_eq!(
         r.json()["features"],
         json!([]),
@@ -164,6 +171,7 @@ async fn delete_falls_back_to_file_then_none() {
         .send("DELETE", "/api/v1/ee/license", None, Some(&admin))
         .await;
     assert_eq!(r.json()["status"], "none");
+    assert!(r.json()["source"].is_null());
     assert!(ee.actions().await.contains(&"license.remove".to_string()));
 }
 
@@ -329,4 +337,38 @@ async fn served_document_lists_enterprise_routes() {
         .json();
     assert!(doc["paths"]["/api/v1/ee/license"]["put"].is_object());
     assert!(doc["paths"]["/api/v1/ee/audit/export"]["get"].is_object());
+}
+
+fn refs<'a>(v: &'a serde_json::Value, out: &mut Vec<&'a str>) {
+    match v {
+        serde_json::Value::Object(m) => {
+            for (k, v) in m {
+                match (k.as_str(), v.as_str()) {
+                    ("$ref", Some(r)) => out.push(r),
+                    _ => refs(v, out),
+                }
+            }
+        }
+        serde_json::Value::Array(a) => a.iter().for_each(|v| refs(v, out)),
+        _ => {}
+    }
+}
+
+#[test]
+fn every_reference_in_the_enterprise_document_resolves() {
+    let doc: serde_json::Value =
+        serde_json::from_str(&fleetops_api::openapi::json_with(fleetops_ee::api_routes())).unwrap();
+    let mut found = vec![];
+    refs(&doc, &mut found);
+    let schemas = &doc["components"]["schemas"];
+    let missing: Vec<_> = found
+        .into_iter()
+        .filter_map(|r| r.strip_prefix("#/components/schemas/"))
+        .filter(|name| schemas[*name].is_null())
+        .collect();
+    assert!(missing.is_empty(), "unresolved schema refs: {missing:?}");
+    assert!(
+        schemas["LicenseStatus"].is_object(),
+        "license status has a specific name"
+    );
 }
