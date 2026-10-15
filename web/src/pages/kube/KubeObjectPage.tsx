@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { FileText, Info, ListTree, ScrollText, TerminalSquare } from "lucide-react";
 import { lazy, Suspense, useState, type ReactNode } from "react";
-import type { KubeKind, KubeRow } from "@/api/gen/types.gen";
+import type { KubeKind, KubeRef, KubeRow } from "@/api/gen/types.gen";
 import { useEnvAccess } from "@/api/access";
 import { keys, kubeEventsQuery, kubeObjectQuery } from "@/api/queries";
 import { useKubeWatch } from "@/live/kubeWatch";
@@ -13,13 +13,15 @@ import { formatAgo, formatCores, formatCpu, formatMemory, formatPercent } from "
 import { KubeActions } from "./KubeActions";
 import { WorkloadTerminal } from "./WorkloadTerminal";
 import { KubeHealth } from "./KubeHealth";
-import { asKind, CLUSTER_SCOPED, KIND_COLUMNS, KIND_LABEL, POD_LOG_KINDS } from "./kinds";
+import { asKind, CLUSTER_SCOPED, KIND_COLUMNS, KIND_LABEL, LINK_COLUMNS, POD_LOG_KINDS, READ_ONLY } from "./kinds";
 import { useKubeUsage, usageKey } from "./usage";
 import { LivePaused } from "./LivePaused";
 import { Conditions, EventStrips } from "./ObjectParts";
-import { ContainerChips, parseContainers } from "./ContainerSquares";
+import { ContainerChips, ContainerSquares, parseContainers } from "./ContainerSquares";
 import type { KubeTab } from "./tabs";
 
+// Reads the object's YAML (and the YAML library) only once the summary shows.
+const ObjectSpec = lazy(() => import("./spec/ObjectSpec"));
 const LogsTab = lazy(() => import("@/pages/containers/logs/LogsTab").then((m) => ({ default: m.LogsTab })));
 const TerminalTab = lazy(() => import("@/pages/containers/terminal/TerminalTab").then((m) => ({ default: m.TerminalTab })));
 const route = getRouteApi("/authed/shell/envs/$env/k8s/$kind/$ns/$name");
@@ -76,7 +78,7 @@ export function KubeObjectPage() {
     ...(isPod && canWrite ? ([["terminal", "Terminal", TerminalSquare]] as [KubeTab, string, typeof Info][]) : []),
   ];
   return (
-    <Page title={name} meta={o && <KubeHealth health={o.row.health} label={o.row.status} />} actions={
+    <Page title={name} meta={o && <Meta env={env} ns={ns} health={<KubeHealth health={o.row.health} label={o.row.status} />} owners={o.owners} />} actions={
         o && (
           <div className="flex items-center gap-2">
             {isWorkload && canWrite && <WorkloadTerminal env={env} kind={kind} ns={ns} name={name} />}
@@ -93,26 +95,6 @@ export function KubeObjectPage() {
           </Link>
         </p>
       )}
-      {o && (
-        <div className="mb-3">
-      {o.owners.length > 0 && (
-        <p className="text-sm">
-          Owned by{" "}
-          {o.owners.map((r, i) => (
-            <span key={`${r.kind}/${r.name}`}>
-              {i > 0 && " → "}
-              {r.link ? (
-                <Link to="/envs/$env/k8s/$kind/$ns/$name" params={{ env, kind: r.link, ns, name: r.name }} className="hover:underline">{r.name}</Link>
-              ) : (
-                <span>{r.name}</span>
-              )}{" "}
-              <span className="text-muted-foreground">({r.kind})</span>
-            </span>
-          ))}
-        </p>
-      )}
-        </div>
-      )}
       <Tabs value={tab} onValueChange={(t) => void navigate({ to: ".", search: (s) => ({ ...s, tab: t as KubeTab }), replace: true })}>
         <TabsList>
           {tabs.map(([value, label, Icon]) => (
@@ -122,11 +104,16 @@ export function KubeObjectPage() {
             </TabsTrigger>
           ))}
         </TabsList>
-        <TabsContent value="summary">
+        {/* Kept mounted while another tab shows, so an env or data edit in progress survives a look at the YAML. */}
+        <TabsContent value="summary" forceMount className="data-[state=inactive]:hidden">
           {o && (
             <div className="grid gap-4">
-              <Details label="Summary" items={[...summaryItems(kind, o.row), ...usage]} />
-              {o.conditions.length > 0 && <Conditions conditions={o.conditions} />}
+              <Details label="Summary" items={[...summaryItems(env, kind, o.row), ...usage]} />
+              <Suspense fallback={o.conditions.length > 0 && <Conditions conditions={o.conditions} />}>
+                <ObjectSpec env={env} kind={kind} ns={ns} name={name} yaml={o.yaml} canWrite={canWrite && !READ_ONLY.includes(kind)} owners={o.owners}>
+                  {o.conditions.length > 0 && <Conditions conditions={o.conditions} />}
+                </ObjectSpec>
+              </Suspense>
             </div>
           )}
         </TabsContent>
@@ -189,15 +176,69 @@ function useUsageItems(env: string, kind: KubeKind, ns: string, name: string): [
   ];
 }
 
-/** Kind, namespace and age, then the kind's own columns under the list's headers. */
-function summaryItems(kind: KubeKind, row: KubeRow): [string, ReactNode][] {
+/** The state, then who owns it: "Owned by ReplicaSet api-7d9 → Deployment api". */
+function Meta({ env, ns, health, owners }: { env: string; ns: string; health: ReactNode; owners: KubeRef[] }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      {health}
+      {owners.length > 0 && (
+        <span className="min-w-0">
+          Owned by{" "}
+          {owners.map((r, i) => (
+            <span key={`${r.kind}/${r.name}`}>
+              {i > 0 && <span aria-hidden> → </span>}
+              {i > 0 && <span className="sr-only">, owned by </span>}
+              {r.kind}{" "}
+              {r.link ? (
+                <Link to="/envs/$env/k8s/$kind/$ns/$name" params={{ env, kind: r.link, ns, name: r.name }} className="font-ident text-foreground underline decoration-border underline-offset-4 hover:decoration-primary">
+                  {r.name}
+                </Link>
+              ) : (
+                <span className="font-ident text-foreground">{r.name}</span>
+              )}
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Columns that only tell a list where a cell links; the cell itself shows the name. */
+const HIDDEN_COLUMNS = new Set(["claim_namespace", "target_kind", "role_kind", "object_link", "object_namespace", "unschedulable"]);
+
+/** Columns whose values the cluster wrote (addresses, node and object names), set in mono. */
+const IDENT_COLUMNS = new Set(["node", "ip", "internal_ip", "cluster_ip", "external_ip", "address", "hosts", "volume", "claim", "owner", "storage_class", "provisioner", "pod_selector", "target", "role", "version"]);
+
+/** Kind, namespace and age, then the kind's own columns in the list's order and under its headers. */
+function summaryItems(env: string, kind: KubeKind, row: KubeRow): [string, ReactNode][] {
   const header = new Map(KIND_COLUMNS[kind]);
   const label = (k: string) => header.get(k) ?? k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, " ");
-  const value = (k: string, v: string) => (k === "last_seen" && Number(v) ? formatAgo(Number(v)) : v || "—");
+  const keys = [...KIND_COLUMNS[kind].map(([k]) => k).filter((k) => k in row.columns), ...Object.keys(row.columns).filter((k) => !header.has(k) && !HIDDEN_COLUMNS.has(k))];
+  const value = (k: string, v: string): ReactNode => {
+    if (!v) return "—";
+    if (k === "last_seen" && Number(v)) return formatAgo(Number(v));
+    if (k === "containers") return <ContainerSquares column={v} ready={row.columns.ready} />;
+    const to = LINK_COLUMNS[kind]?.[k]?.(row.columns, row.namespace ?? null);
+    if (to)
+      return (
+        <Link to="/envs/$env/k8s/$kind/$ns/$name" params={{ env, kind: to.kind, ns: to.ns, name: v }} className="font-ident underline decoration-border underline-offset-4 hover:decoration-primary">
+          {v}
+        </Link>
+      );
+    return IDENT_COLUMNS.has(k) ? <span className="font-ident font-normal">{v}</span> : v;
+  };
   return [
     ["Kind", KIND_LABEL[kind].replace(/s$/, "")],
-    ["Namespace", row.namespace ? <span className="font-ident">{row.namespace}</span> : undefined],
-    ["Age", formatAgo(row.created)],
-    ...Object.entries(row.columns).map(([k, v]): [string, ReactNode] => [label(k), value(k, v)]),
+    [
+      "Namespace",
+      row.namespace ? (
+        <Link to="/envs/$env/k8s/$kind/$ns/$name" params={{ env, kind: "namespaces", ns: "-", name: row.namespace }} className="font-ident underline decoration-border underline-offset-4 hover:decoration-primary">
+          {row.namespace}
+        </Link>
+      ) : undefined,
+    ],
+    ["Age", <time dateTime={new Date(row.created * 1000).toISOString()} title={new Date(row.created * 1000).toLocaleString()}>{formatAgo(row.created)}</time>],
+    ...keys.map((k): [string, ReactNode] => [label(k), value(k, row.columns[k])]),
   ];
 }

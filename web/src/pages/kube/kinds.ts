@@ -74,6 +74,7 @@ export const asKind = (s: string): KubeKind | undefined => KUBE_KINDS.find((k) =
 type Linker = (cols: Record<string, string>, ns: string | null) => { kind: KubeKind; ns: string } | undefined;
 const kindOf = (s: string | undefined) => (s ? asKind(s) : undefined);
 export const LINK_COLUMNS: Partial<Record<KubeKind, Record<string, Linker>>> = {
+  pods: { node: () => ({ kind: "nodes", ns: "-" }) },
   persistentvolumeclaims: { volume: () => ({ kind: "persistentvolumes", ns: "-" }) },
   persistentvolumes: { claim: (c) => (c.claim_namespace ? { kind: "persistentvolumeclaims", ns: c.claim_namespace } : undefined) },
   replicasets: { owner: (_c, ns) => ({ kind: "deployments", ns: ns ?? "-" }) },

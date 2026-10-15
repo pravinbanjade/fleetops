@@ -1,4 +1,6 @@
 import type { KubeCondition, KubeEvent } from "@/api/gen/types.gen";
+import { ListChecks } from "lucide-react";
+import { Panel } from "@/components/Panel";
 import { StateBadge, type Tone } from "@/components/StateBadge";
 import { errorMessage } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
@@ -15,8 +17,7 @@ function conditionTone(c: KubeCondition): Tone {
 /** Each condition as a strip: its reading as a holder, the type, and why. */
 export function Conditions({ conditions }: { conditions: KubeCondition[] }) {
   return (
-    <section aria-label="Conditions" className="overflow-hidden rounded-lg border bg-card">
-      <h2 className="border-b bg-muted/40 px-4 py-2 text-sm font-semibold">Conditions</h2>
+    <Panel title="Conditions" icon={ListChecks} flush>
       <ul className="font-strip text-sm">
         {conditions.map((c) => (
           <li key={c.type} className="grid grid-cols-[4.75rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-0.5 border-b px-4 py-2.5 last:border-b-0 sm:grid-cols-[4.75rem_minmax(0,14rem)_minmax(0,1fr)]">
@@ -30,7 +31,7 @@ export function Conditions({ conditions }: { conditions: KubeCondition[] }) {
           </li>
         ))}
       </ul>
-    </section>
+    </Panel>
   );
 }
 

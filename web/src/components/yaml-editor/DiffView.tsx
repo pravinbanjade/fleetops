@@ -11,7 +11,7 @@ export function DiffView({ before, after, label }: { before?: string | null; aft
           .split("\n")
           .map((line, j) => {
             const k = `${i}-${j}`;
-            if (p.added) return <ins key={k} className="block bg-state-ok/15 no-underline">+ {line}</ins>;
+            if (p.added) return <ins key={k} className="block bg-state-run/15 no-underline">+ {line}</ins>;
             if (p.removed) return <del key={k} className="block bg-state-fail/15 no-underline">- {line}</del>;
             return <span key={k} className="block text-muted-foreground">  {line}</span>;
           }),
