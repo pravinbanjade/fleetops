@@ -3,6 +3,76 @@
 //! `enterprise` feature.
 
 pub mod db;
+pub mod export;
 pub mod keys;
 pub mod license;
+pub mod routes;
 pub mod state;
+
+use axum::Extension;
+use ed25519_dalek::VerifyingKey;
+use fleetops_api::AppState;
+use fleetops_core::{edition::Entitlements, now_unix, Result};
+use fleetops_store::Store;
+use futures_util::future::BoxFuture;
+use state::LicenseState;
+use std::{path::PathBuf, sync::Arc, time::Duration};
+use utoipa_axum::{router::OpenApiRouter, routes};
+
+pub struct EeConfig {
+    /// `--license-file` / `FLEETOPS_LICENSE_FILE`.
+    pub license_file: Option<PathBuf>,
+}
+
+/// What the server wires in (editions spec §3.4).
+pub struct EeParts {
+    pub entitlements: Arc<dyn Entitlements>,
+    pub routes: OpenApiRouter<AppState>,
+    /// Logs license status changes; spawn it.
+    pub background: BoxFuture<'static, ()>,
+}
+
+/// The Enterprise routes, for the OpenAPI document (no license attached).
+pub fn api_routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(
+            routes::get_license,
+            routes::put_license,
+            routes::delete_license
+        ))
+        .routes(routes!(routes::export_audit))
+}
+
+pub async fn init(store: &Store, config: EeConfig) -> Result<EeParts> {
+    init_with_keys(store, config, keys::trusted()).await
+}
+
+pub async fn init_with_keys(
+    store: &Store,
+    config: EeConfig,
+    keys: Vec<VerifyingKey>,
+) -> Result<EeParts> {
+    db::migrate(store.pool()).await?;
+    let state = Arc::new(LicenseState::new(keys, config.license_file));
+    state.load(store).await?;
+    Ok(EeParts {
+        entitlements: state.clone(),
+        routes: api_routes().layer(Extension(state.clone())),
+        background: Box::pin(watch(state)),
+    })
+}
+
+async fn watch(state: Arc<LicenseState>) {
+    let mut last = state.status(now_unix());
+    tracing::info!(status = ?last, "Enterprise license");
+    let mut tick = tokio::time::interval(Duration::from_secs(3600));
+    tick.tick().await;
+    loop {
+        tick.tick().await;
+        let now = state.status(now_unix());
+        if now != last {
+            tracing::warn!(from = ?last, to = ?now, "Enterprise license status changed");
+            last = now;
+        }
+    }
+}
