@@ -137,6 +137,21 @@ jobs:
           path: web/playwright-report/
           retention-days: 7
 
+  # The kube job runs the Helm suite with Helm 3, the oldest supported
+  # (3.13+); this runs it again with Helm 4, whose dry run differs.
+  helm-4:
+    name: Helm 4
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          web: "false"
+          kube-tools: "true"
+          helm-version: "4.3.0"
+      - run: make kind-up
+      - run: PATH="$PWD/scripts:$PATH" FLEETOPS_KUBE_IT="$PWD/target/kube-it" cargo test -p fleetops-kube --features kube-it --test helm_it -- --test-threads=4
+
   # The agent's Kubernetes mode with the real images, on its own kind
   # cluster. Kept apart from kube: the image build compiles the workspace
   # again inside BuildKit, and next to kube's target/ the disk fills.

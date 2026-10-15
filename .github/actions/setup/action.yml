@@ -17,6 +17,9 @@ inputs:
   kube-tools:
     description: Install kind, kubectl and helm at the pinned versions
     default: "false"
+  helm-version:
+    description: The helm installed with kube-tools
+    default: "3.19.0"
   free-disk:
     description: Remove preinstalled SDKs the build never uses
     default: "false"
@@ -60,7 +63,7 @@ runs:
       env:
         KIND_VERSION: 0.33.0
         KUBECTL_VERSION: 1.37.1
-        HELM_VERSION: 3.19.0
+        HELM_VERSION: ${{ inputs.helm-version }}
       run: |
         set -eu
         bin="$RUNNER_TEMP/bin"; mkdir -p "$bin"

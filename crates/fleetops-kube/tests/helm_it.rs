@@ -406,6 +406,11 @@ fn helm_cli() -> HelmCli {
         binary: std::env::var("HELM").unwrap_or_else(|_| "helm".into()),
         insecure_repos: true,
         timeout: fleetops_kube::helm::render::RENDER_TIMEOUT,
+        // The server uses its own binary; a test binary cannot stand in.
+        discard: Some(fleetops_kube::helm::render::Discard {
+            program: "sh".into(),
+            args: vec!["-c".into(), "cat >/dev/null".into()],
+        }),
     }
 }
 
@@ -793,6 +798,19 @@ async fn chart_crds_are_installed_once_and_outlive_the_release() {
             ])
             .output();
     }
+    // A cluster that has never seen the CRD, as in CI: with one left from
+    // an earlier run, helm resolves the chart's own kinds and the test
+    // would pass without exercising the first install.
+    let crds: Api<k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition> =
+        Api::all(common::kube_client());
+    let _ = crds.delete("gadgets.fo.example", &Default::default()).await;
+    for _ in 0..60 {
+        if crds.get_opt("gadgets.fo.example").await.unwrap().is_none() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    assert!(crds.get_opt("gadgets.fo.example").await.unwrap().is_none());
     let p = deploy(&ops, &url, "foop", "0.1.0", &a, "", false, None)
         .await
         .unwrap();
@@ -810,8 +828,6 @@ async fn chart_crds_are_installed_once_and_outlive_the_release() {
     assert_eq!(p.status.as_deref(), Some("deployed"), "{p:?}");
     helm(&["uninstall", &a, "--wait"]);
     helm(&["uninstall", &b, "--wait"]);
-    let crds: Api<k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition> =
-        Api::all(common::kube_client());
     assert!(
         crds.get_opt("gadgets.fo.example").await.unwrap().is_some(),
         "uninstall never deletes a chart's CRDs"

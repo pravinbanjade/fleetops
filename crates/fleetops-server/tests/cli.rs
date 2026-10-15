@@ -50,3 +50,34 @@ fn community_binary_has_no_license_flag() {
     let doc: serde_json::Value = serde_json::from_str(&fleetops_server::openapi_json()).unwrap();
     assert!(doc["paths"]["/api/v1/ee/license"].is_null());
 }
+
+#[test]
+fn helm_discard_argument_reads_stdin_and_prints_nothing() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("never-created");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fleetops"))
+        .arg(fleetops_kube::helm::render::DISCARD_ARG)
+        .env("FLEETOPS_DATA", &data)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    // More than a pipe buffer, so a program that never reads would block helm.
+    let manifest = "apiVersion: v1\nkind: ConfigMap\n---\n".repeat(20_000);
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(manifest.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.stdout.is_empty());
+    assert!(!data.exists(), "the discard must not start the server");
+}
