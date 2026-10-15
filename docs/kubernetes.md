@@ -1,0 +1,56 @@
+# Kubernetes and Helm
+
+FleetOps manages Kubernetes clusters next to Docker hosts. This page covers adding a cluster, what the in-cluster agent may do, and what you can do once a cluster is connected.
+
+## Add a cluster
+
+There are two ways in, both under **Admin → Environments → Add environment**:
+
+- **Kubernetes cluster (kubeconfig).** Paste a kubeconfig and pick a context. Its user must authenticate with a bearer token (a ServiceAccount token works well) or a client certificate, and every certificate and key must be inline (`*-data`). `auth-provider` users are refused. Exec-plugin users (EKS, GKE, AKS) need the opt-in below. The server checks that the cluster answers before saving, unless you tick **Save without checking**. The kubeconfig is stored encrypted and never shown again.
+
+  **EKS, GKE and AKS kubeconfigs.** Kubeconfigs whose user runs an exec plugin are accepted when the server is started with `--kube-exec-plugins=default` (or `FLEETOPS_KUBE_EXEC_PLUGINS=default`). The server then runs `aws eks get-token`, `aws-iam-authenticator token`, `gke-gcloud-auth-plugin` or `kubelogin get-token --login <azurecli|spn|msi|workloadidentity|azd>` itself, found on its own `PATH` and signed in as the user running FleetOps. A plugin must finish within 30 s (it and anything it started are then killed) and never gets a terminal. A kubeconfig's `env` may not set variables that redirect code or config loading (`PATH`, `LD_*`, `PYTHON*`, `NODE_OPTIONS`, `HOME`, `AWS_CONFIG_FILE` and the like): set those on the server. Other plugins can be listed by name (`--kube-exec-plugins=default,my-auth`). This suits FleetOps running as a binary on a machine that is already logged in. The container image ships no plugins, so use the in-cluster agent there.
+- **Kubernetes cluster (in-cluster agent).** You get a `kubectl apply` command. Run it with a context for the target cluster. It installs `fleetops-agent --kube` in the `fleetops` namespace. The agent dials out to this server, so the cluster needs no inbound access, and the server never holds the cluster's credentials. The agent keeps its key in the Secret `fleetops-agent-key`. Rotating the key gives a new command; re-applying it restarts the agent with the new join token.
+
+## Agent access levels
+
+When you add an agent cluster you pick what its ClusterRole allows:
+
+| Access level | Grants |
+|---|---|
+| **Read-only** | `get`, `list` and `watch` on namespaces, nodes, pods, services, configmaps, secrets, events, deployments, statefulsets, daemonsets, replicasets, jobs, cronjobs, ingresses, network policies, HPAs, PVCs, PVs, storage classes, service accounts and RBAC roles and bindings; `get` on `pods/log`; `get` and `list` on `metrics.k8s.io` nodes and pods. No changes and no terminal. |
+| **Standard** (default) | Read-only, plus `create`, `update` and `patch` on the workload, network, config, PVC, HPA and service-account kinds, `delete` on the namespaced ones, the `scale` subresources, and `create` on `pods/exec`. PVs, storage classes and RBAC objects stay read-only. |
+| **Cluster admin** | Standard, plus a second binding, `fleetops-agent-cluster-admin`, to the built-in `cluster-admin` role. Needed to apply other kinds (CRDs, RBAC objects): full control of the cluster. |
+
+Tick **Read custom resources** to also grant `get`, `list` and `watch` on every kind (`apiGroups: ["*"]`), which custom resources need. It is off by default because it also reads every built-in kind, Secrets included. Writing custom resources needs cluster admin.
+
+The level is kept across key rotations. Raising it is a re-apply of the new command. A binding's role cannot change, so lowering it from cluster admin also needs `kubectl delete clusterrolebinding fleetops-agent-cluster-admin`; the lower manifests say so in a comment. When the cluster refuses a write, its 403 reason is shown with the level that would allow it.
+
+## What you can do
+
+Browse the common kinds (workloads, ReplicaSets, services, ingresses, network policies, config, HPAs, storage, RBAC) and the cluster's events in one namespace or all of them. Open an object to see a summary, its YAML (`managedFields` stripped) and its events. Follow pod logs and open a pod terminal. Scale, restart or delete objects.
+
+- **Live updates.** Lists and object pages follow the cluster through watch streams, shared between everyone viewing the same list and stopped 30 s after the last viewer leaves. When a watch cannot continue (for example the cluster forbids it), the page says *Live updates paused* with the reason and a Retry button, and never presents old data as live.
+- **Editing.** *Edit YAML* on an object page and *Create* on a list (from a starter template). Every write is a dry run first, shown as a diff; nothing is written until you apply. Create uses server-side apply as field manager `fleetops`; a field owned by another manager is a conflict you can force. An edit is refused if the object changed since you opened it, and offers to reapply your edit on top of the new version.
+- **Overview.** A cluster's home page lists what needs attention first (failing pods, workloads short of replicas, failed Helm releases, nodes not ready), then the newest warning events, each workload kind's health, the nodes and counts of everything else.
+- **Suspend and resume.** A Deployment or StatefulSet you don't need for now can be suspended: it scales to 0 and FleetOps remembers its replica count (annotation `fleetops.io/suspended-replicas`), so Resume brings back exactly that many. A CronJob suspends with its own `spec.suspend`. Suspend from the object's page, from a list (several at once), or straight from *Needs attention* on the overview. Suspended workloads sit in their own bay and never count as failing.
+- **Act on a selection.** Every list you can write to has checkboxes; the bar above the table offers what fits the rows you picked, each counted for its own rows: Restart, Scale (one replica count for all), Suspend/Resume, Run now (CronJobs: a Job from the template, as `kubectl create job --from=cronjob` does), Cordon/Uncordon (nodes) and Delete. Actions run one after another; if one fails, the dialog says how far it got and trying again picks up from there. The object page offers the same set. Cordon, uncordon and run now are audited as `k8s.cordon`, `k8s.uncordon` and `k8s.trigger`.
+- **Custom resources.** *Custom Resources* in the sidebar lists every other kind the cluster serves, found by API discovery: *Definitions* (the CRDs themselves), then one fold per API group. A custom resource's list shows the columns its CRD declares for `kubectl get`, follows the cluster live, and racks rows by their `Ready` condition. Its page shows conditions, YAML and events; *Edit YAML* and *Delete* appear when the cluster's verbs allow them. A CRD installed a moment ago is found at once; an API group that cannot be read (often an aggregated API that is down) is named at the top of the group. The command palette finds them by kind.
+- **Events.** *Events* in the sidebar lists the cluster's events, warnings first and newest first, each linked to the object it is about. Events are read-only.
+- **CPU and memory.** When the cluster runs [metrics-server](https://github.com/kubernetes-sigs/metrics-server), the overview shows the cluster's CPU and memory against what its nodes can allocate and the busiest pods, and the Nodes and Pods lists gain CPU and Memory columns. Figures refresh every 15 s. Without metrics-server the pages say so; nothing else changes. An agent installed before this release needs its command re-applied to read metrics.
+- **Secrets.** Values are never shown, including the copy kubectl keeps in the `last-applied-configuration` annotation. Leave a masked value unchanged and the real one is kept; change it and the new value is written.
+
+## Helm
+
+*Helm releases* in the sidebar lists the releases in one namespace or all of them, with chart, app version, status and revision; the list refreshes every 10 s. A release page shows its overview, revision history, values, rendered manifest and notes.
+
+- **Masking.** In values, anything under a key containing `password`, `passwd`, `secret`, `token`, `key`, `credential`, `auth`, `cert` or `private` is masked, and Secret objects in the manifest are masked. This is best effort: a credential under an innocent key name is shown.
+- **Rollback and uninstall** (operators). Both are a dry run first, shown per object as a diff; nothing changes until you confirm, and an uninstall asks you to type the release name. FleetOps writes the release history the way Helm does, so `helm history`, `helm upgrade` and `helm rollback` keep working afterwards. If the release changed since you reviewed it, or another Helm operation is in progress, you are asked to review again. A rollback or uninstall runs to the end even if you close the page; if the server itself stops part-way, the release can be left `pending-rollback` or `uninstalling`, and `helm rollback <release> <revision>` from the CLI recovers it.
+- **Limits.** Chart hooks (`pre-rollback`, `pre-delete` and so on) are **not run**. A rollback patches each object from the current revision's form to the target's: fields the newer revision added are removed, and a list that changed between the two revisions is replaced whole, so entries others added to such a list (for example sidecars injected by a webhook) are dropped until they are added again. Only Helm 3 releases stored as Secrets (Helm's default driver, also used by Helm 4) are seen. A user limited to some namespaces cannot roll back or uninstall a release that touches anything outside them, including cluster-scoped objects.
+
+### Installing and upgrading charts
+
+Start the server with `--helm-binary helm` (or `FLEETOPS_HELM=helm`, or an absolute path) and **Install chart** appears on the Helm releases page, and **Upgrade** on each release. You type a repository URL and chart name, or an `oci://` reference, and optionally a version and values. FleetOps renders with that helm (`helm template` and a client-side dry run, never touching the cluster), shows every object it will create, change or delete, the values diff, the hooks in order and the notes, and applies only after you confirm. Install and upgrade hooks run: Jobs and Pods are waited for, up to 5 minutes each. A chart's `crds/` are created on install when missing and never upgraded or deleted, as Helm does. Each helm run has its own empty repository list, so private chart repositories (`helm repo add` with a password) are not supported; OCI registries use the `helm registry login` of the user running FleetOps. A repository URL may not carry credentials. `http://` repositories need `--helm-insecure-repos`. Templates that call `lookup` see an empty cluster, as with `helm template`: a chart that generates a password unless one exists will generate a new one on every upgrade, and the review marks such Secret values `(changed)`. Needs helm 3.13 or later.
+
+## The secret key
+
+Stored kubeconfigs are sealed with AES-256-GCM. The key is `FLEETOPS_SECRET_KEY` (32 bytes, base64), or `<data>/secret.key`, which is created on first start. Back it up with `fleetops.db`. Without it, stored kubeconfigs cannot be read; such environments show *credential cannot be decrypted; re-enter the kubeconfig*.
