@@ -1175,6 +1175,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "fleetops-license"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ed25519-dalek",
+ "fleetops-core",
+ "fleetops-ee",
+ "hex",
+ "jiff",
+ "rand 0.8.8",
+ "serde_json",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
 name = "fleetops-server"
 version = "0.1.0"
 dependencies = [

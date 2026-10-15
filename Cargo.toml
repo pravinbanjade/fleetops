@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "ee/crates/*"]
+members = ["crates/*", "ee/crates/*", "ee/tools/*"]
 # `cargo build` and `cargo test` cover the Community edition only.
 default-members = ["crates/*"]
 

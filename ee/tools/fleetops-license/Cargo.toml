@@ -1,0 +1,22 @@
+[package]
+name = "fleetops-license"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "../../LICENSE"
+publish = false
+
+[dependencies]
+fleetops-core.workspace = true
+fleetops-ee.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+ed25519-dalek.workspace = true
+hex.workspace = true
+jiff.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
