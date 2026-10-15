@@ -1,11 +1,11 @@
 # FleetOps
 
-FleetOps is a lightweight, open-source container management platform. It is a single Rust binary with the web UI and a SQLite database built in. Point it at a Docker or Podman socket and you can manage containers, images, volumes, networks and Compose projects from the browser.
+FleetOps is a lightweight, open-core container management platform. It is a single Rust binary with the web UI and a SQLite database built in. Point it at a Docker or Podman socket and you can manage containers, images, volumes, networks and Compose projects from the browser.
 
 What sets it apart:
 
 - **One small binary.** It starts fast and uses little memory. The target is under 50 MB of RSS when idle, on a host with about 50 containers.
-- **No paid tiers.** Features such as RBAC, SSO, GitOps and audit are free. They arrive across the roadmap below.
+- **Open core.** RBAC, audit, multi-host, Kubernetes and (soon) GitOps are free and Apache-2.0. SSO, teams, API tokens, backup and audit export are in the Enterprise edition. See [Editions](#editions).
 - **Live UI.** Lists and detail pages update from Docker events, with no polling or manual refresh.
 - **Built for Compose and GitOps.** Stack authoring and git sync are planned (sub-project 4).
 
@@ -14,6 +14,7 @@ What sets it apart:
 ## Contents
 
 - [Features](#features)
+- [Editions](#editions)
 - [Quick start](#quick-start)
 - [Access](#access)
 - [Configuration](#configuration)
@@ -63,6 +64,22 @@ What sets it apart:
 - `/` focuses the list filter.
 - Dark, light and system themes.
 - Values that look like secrets are masked until clicked. This covers env, inspect JSON, image env, and volume driver options.
+
+## Editions
+
+| | Community | Enterprise |
+|---|---|---|
+| License | Apache-2.0 | [FleetOps Enterprise License](ee/LICENSE) plus a subscription |
+| Image | `fleets/fleetops` | `fleets/fleetops-ee` |
+| Docker, Kubernetes, Helm, agents | ✓ | ✓ |
+| RBAC and namespace scoping | ✓ | ✓ |
+| Audit log (90-day retention) | ✓ | ✓ |
+| Audit export (CSV, NDJSON) | | ✓ |
+| SSO (OIDC, LDAP), teams, API tokens, backup | | planned |
+
+The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license may cap the number of users: past the cap no new users can be created, and existing users keep working.
+
+**Licensing.** Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and production use needs a subscription. `make build` builds Community with no Enterprise code compiled in; `make build-ee` builds Enterprise.
 
 ## Quick start
 
@@ -199,6 +216,7 @@ Configuration comes from CLI flags or environment variables. There is no config 
 | `--docker-host` | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker endpoint for the `local` environment |
 | `--helm-binary` | `FLEETOPS_HELM` | unset (off) | The helm that renders charts for install and upgrade: `helm` on PATH or an absolute path |
 | `--helm-insecure-repos` | `FLEETOPS_HELM_INSECURE_REPOS` | off | Allow `http://` chart repositories |
+| `--license-file` | `FLEETOPS_LICENSE_FILE` | unset | Enterprise only: license file; one uploaded in Admin → License takes precedence |
 | `--kube-exec-plugins` | `FLEETOPS_KUBE_EXEC_PLUGINS` | unset (off) | Exec plugins kubeconfig users may run: `default` (aws, aws-iam-authenticator, gke-gcloud-auth-plugin, kubelogin) and extra bare names, comma-separated |
 | `--secret-key` | `FLEETOPS_SECRET_KEY` | unset (`<data>/secret.key`) | 32 bytes, base64: seals stored kubeconfigs. Back it up with the database |
 | `--log-level` | `FLEETOPS_LOG` | `info` | `tracing` filter, for example `fleetops_api=debug,info` |
@@ -259,6 +277,7 @@ Design documents live in `docs/superpowers/`:
 - `specs/2026-10-14-fleetops-kube-workload-logs-exec-design.md` is slice 3i (workload logs and exec).
 - `specs/2026-10-14-fleetops-helm-install-upgrade-design.md` is slice 3j (Helm install and upgrade).
 - `specs/2026-10-14-fleetops-kube-exec-plugins-design.md` is slice 3k (exec-plugin kubeconfigs).
+- `specs/2026-10-15-fleetops-editions-design.md` is the Community/Enterprise split and licensing.
 - `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), one for sub-project 2, and one for sub-project 3.
 
 ## Architecture
@@ -340,7 +359,7 @@ The full protocol is in section 5.2 of the spec.
 | **3j** | **Helm install and upgrade** (done) | Install charts from repositories and OCI registries, upgrade with values and a reviewed diff, install and upgrade hooks; behind `--helm-binary` |
 | **3k** | **Exec-plugin kubeconfigs** (done) | EKS, GKE and AKS kubeconfigs (`aws`, `gcloud`, `kubelogin`) where FleetOps runs, behind `--kube-exec-plugins` |
 | 4 | Stacks + GitOps | Compose authoring, diff before deploy, rollback, git-backed stacks with webhook or poll sync |
-| 5 | Teams & enterprise (free) | Teams, OIDC/SSO, LDAP, API tokens, backup and restore |
+| 5 | Enterprise edition (paid) | SSO (OIDC, LDAP), teams, API tokens, backup and restore, extended audit (export done; SIEM forwarding and long retention to come) |
 
 Progress on sub-project 1:
 
