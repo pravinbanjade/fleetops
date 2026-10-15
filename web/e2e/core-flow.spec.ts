@@ -64,9 +64,13 @@ test("setup, log in, pull, run, watch, search logs, exec and remove", async ({ p
   await test.step("create and start a container", async () => {
     await openContainers(page);
     await page.getByRole("link", { name: "Create container" }).click();
-    await page.getByLabel("Image").fill(IMAGE);
-    await page.getByLabel("Name").fill(NAME);
-    await page.getByLabel("Command").fill(`sh -c 'i=0; while true; do echo "tick $i"; i=$((i+1)); sleep 1; done'`);
+    // Scoped to the form, which waits for it: until the page changes, the
+    // containers table is still there and its "Image" and "Name" column
+    // headers (and their resize handles) carry the same labels.
+    const form = page.getByRole("form", { name: "Container settings" });
+    await form.getByLabel("Image", { exact: true }).fill(IMAGE);
+    await form.getByLabel("Name", { exact: true }).fill(NAME);
+    await form.getByLabel("Command", { exact: true }).fill(`sh -c 'i=0; while true; do echo "tick $i"; i=$((i+1)); sleep 1; done'`);
     await page.getByRole("button", { name: "Create", exact: true }).click();
     await expect(page.getByRole("heading", { name: NAME })).toBeVisible();
     id = page.url().split("/").pop()!;
