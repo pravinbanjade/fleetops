@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-agent"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-api"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "argon2",
  "async-trait",
@@ -1087,7 +1087,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "futures-util",
@@ -1100,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-docker"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bollard",
@@ -1119,7 +1119,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-ee"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "base64",
@@ -1147,7 +1147,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-kube"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -1176,7 +1176,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-license"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1193,7 +1193,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1223,7 +1223,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-store"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aes-gcm",
  "base64",
@@ -1239,7 +1239,7 @@ dependencies = [
 
 [[package]]
 name = "fleetops-tunnel"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bytes",
