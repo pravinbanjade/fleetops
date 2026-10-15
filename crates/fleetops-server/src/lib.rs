@@ -35,9 +35,34 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     if let Some(env) = bootstrap_local(&store, &state.envs, &config.docker_host).await? {
         tracing::info!(url = %env.url, "registered local Docker environment");
     }
+    #[cfg(feature = "enterprise")]
+    let app = {
+        let ee = fleetops_ee::init(
+            &store,
+            fleetops_ee::EeConfig {
+                license_file: config.license_file.clone(),
+            },
+        )
+        .await?;
+        tokio::spawn(ee.background);
+        fleetops_api::app_with(
+            state.with_entitlements(ee.entitlements),
+            static_files::router(),
+            ee.routes,
+        )
+    };
+    #[cfg(not(feature = "enterprise"))]
     let app = fleetops_api::app(state, static_files::router());
     tokio::spawn(maintenance::run(store));
     serve(&config, app).await
+}
+
+/// The OpenAPI document this binary serves (`fleetops --openapi`).
+pub fn openapi_json() -> String {
+    #[cfg(feature = "enterprise")]
+    return fleetops_api::openapi::json_with(fleetops_ee::api_routes());
+    #[cfg(not(feature = "enterprise"))]
+    fleetops_api::openapi::json().to_string()
 }
 
 /// The API state with the env factory wired in: one agent registry, shared

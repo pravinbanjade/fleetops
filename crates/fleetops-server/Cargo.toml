@@ -12,6 +12,10 @@ path = "src/main.rs"
 [features]
 # End-to-end tests against a real Docker daemon (see `make test-docker`).
 docker-it = []
+# The Enterprise edition (ee/LICENSE): `make build-ee`.
+enterprise = ["dep:fleetops-ee"]
+# Enterprise trusting the committed test license key: the EE e2e suite only.
+ee-test-license-key = ["enterprise", "fleetops-ee/test-license-key"]
 
 [dependencies]
 fleetops-core.workspace = true
@@ -20,6 +24,7 @@ fleetops-api.workspace = true
 fleetops-docker.workspace = true
 fleetops-tunnel.workspace = true
 fleetops-kube.workspace = true
+fleetops-ee = { workspace = true, optional = true }
 anyhow.workspace = true
 axum.workspace = true
 axum-server.workspace = true

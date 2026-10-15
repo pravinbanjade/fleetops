@@ -49,6 +49,11 @@ pub struct Config {
     /// Allow http:// chart repositories (for local testing).
     #[arg(long, env = "FLEETOPS_HELM_INSECURE_REPOS")]
     pub helm_insecure_repos: bool,
+    /// Enterprise license file. A license uploaded in Admin → License
+    /// takes precedence.
+    #[cfg(feature = "enterprise")]
+    #[arg(long, env = "FLEETOPS_LICENSE_FILE")]
+    pub license_file: Option<PathBuf>,
     /// Print the OpenAPI document to stdout and exit without starting.
     #[arg(long)]
     pub openapi: bool,
