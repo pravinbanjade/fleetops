@@ -34,7 +34,7 @@ The image runs as a non-root user on `distroless/static` for linux/amd64 and lin
 
 ### Other ways to run it
 
-- **Binary.** Static linux binaries with SHA-256 checksums are on the [releases page](https://gitlab.com/pravinbanjade/fleetops/-/releases):
+- **Binary.** Static linux binaries with SHA-256 checksums are on the [releases page](https://github.com/pravinbanjade/fleetops/releases):
 
   ```sh
   ./fleetops --data ./data --bind 127.0.0.1:9000
@@ -43,7 +43,7 @@ The image runs as a non-root user on `distroless/static` for linux/amd64 and lin
 - **From source.** Needs Rust (stable), Node.js 24+ and pnpm 12. See [docs/development.md](docs/development.md).
 
   ```sh
-  git clone https://gitlab.com/pravinbanjade/fleetops.git
+  git clone https://github.com/pravinbanjade/fleetops.git
   cd fleetops
   make build          # builds the UI, then the release binary with it embedded
   ./target/release/fleetops --data ./data --bind 127.0.0.1:9000
@@ -177,7 +177,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 
 ## Contributing
 
-Bug reports, ideas and merge requests are welcome on [GitLab](https://gitlab.com/pravinbanjade/fleetops). Read [CONTRIBUTING.md](CONTRIBUTING.md) first: commits need a DCO sign-off (`git commit -s`), and new behaviour starts with a failing test.
+Bug reports, ideas and pull requests are welcome on [GitHub](https://github.com/pravinbanjade/fleetops). Read [CONTRIBUTING.md](CONTRIBUTING.md) first: commits need a DCO sign-off (`git commit -s`), and new behaviour starts with a failing test.
 
 ## License
 

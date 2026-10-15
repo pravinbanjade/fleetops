@@ -1,0 +1,161 @@
+name: Release
+
+# A tag vX.Y.Z, matching the workspace version in Cargo.toml, publishes the
+# multi-arch Community, Enterprise and agent images to Docker Hub, and a
+# GitHub release with static linux binaries of each and SHA-256 checksums.
+# Needs the repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN.
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SERVER_IMAGE: docker.io/fleets/fleetops
+  AGENT_IMAGE: docker.io/fleets/fleetops-agent
+  EE_IMAGE: docker.io/fleets/fleetops-ee
+
+jobs:
+  release:
+    name: Images, binaries and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag matches the workspace version
+        id: version
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME, Cargo.toml $version" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup
+        with:
+          rust: "false"
+          web: "false"
+          free-disk: "true"
+      # No QEMU: the Dockerfile cross-compiles on the build platform.
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - id: meta-server
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.SERVER_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - id: meta-agent
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.AGENT_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - id: meta-ee
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.EE_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-server.outputs.tags }}
+          labels: ${{ steps.meta-server.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: agent
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-agent.outputs.tags }}
+          labels: ${{ steps.meta-agent.outputs.labels }}
+          cache-from: type=gha
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: server
+          build-args: EDITION=ee
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-ee.outputs.tags }}
+          labels: ${{ steps.meta-ee.outputs.labels }}
+          cache-from: type=gha
+
+      # The same builds (cache hits), stopped at the bare-binary stages.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: binary
+          platforms: linux/amd64,linux/arm64
+          outputs: type=local,dest=out
+          cache-from: type=gha
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: agent-binary
+          platforms: linux/amd64,linux/arm64
+          outputs: type=local,dest=out-agent
+          cache-from: type=gha
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: binary
+          build-args: EDITION=ee
+          platforms: linux/amd64,linux/arm64
+          outputs: type=local,dest=out-ee
+          cache-from: type=gha
+
+      - name: Package the binaries
+        run: |
+          mkdir dist
+          for arch in amd64 arm64; do
+            for pair in "fleetops:out/linux_$arch/fleetops" \
+                        "fleetops-agent:out-agent/linux_$arch/fleetops-agent" \
+                        "fleetops-ee:out-ee/linux_$arch/fleetops"; do
+              name="${pair%%:*}-$GITHUB_REF_NAME-linux-$arch"
+              cp "${pair#*:}" "dist/$name"
+              (cd dist && sha256sum "$name" > "$name.sha256")
+            done
+          done
+          ls -l dist
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          notes=$(cat <<EOF
+          Images for linux/amd64 and linux/arm64:
+
+          - \`$SERVER_IMAGE:$VERSION\`: Community, Apache-2.0
+          - \`$EE_IMAGE:$VERSION\`: Enterprise, needs a license
+          - \`$AGENT_IMAGE:$VERSION\`: the agent for remote hosts and clusters
+
+          Static linux binaries of each, with SHA-256 checksums, are attached below.
+          EOF
+          )
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
+            --title "FleetOps $GITHUB_REF_NAME" --notes "$notes" --generate-notes

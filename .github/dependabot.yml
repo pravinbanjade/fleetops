@@ -1,0 +1,42 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories: ["/", "/.github/actions/setup"]
+    schedule:
+      interval: weekly
+    # New releases wait a week before an update is proposed.
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    # New releases wait a week before an update is proposed.
+    cooldown:
+      default-days: 7
+    groups:
+      cargo-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directories: ["/web", "/ee/web"]
+    schedule:
+      interval: weekly
+    # New releases wait a week before an update is proposed.
+    cooldown:
+      default-days: 7
+    groups:
+      npm-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    # New releases wait a week before an update is proposed.
+    cooldown:
+      default-days: 7

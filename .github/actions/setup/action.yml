@@ -1,0 +1,73 @@
+name: Set up the FleetOps toolchain
+description: >
+  Rust (from rust-toolchain.toml) with a build cache, Node and pnpm with a
+  store cache, and optionally Playwright's Chromium and the Kubernetes test
+  tools. GitHub's Ubuntu runners already have Docker.
+
+inputs:
+  rust:
+    description: Set up Rust and its cache
+    default: "true"
+  web:
+    description: Set up Node and pnpm, and install web dependencies
+    default: "true"
+  playwright:
+    description: Install Chromium and its system libraries
+    default: "false"
+  kube-tools:
+    description: Install kind, kubectl and helm at the pinned versions
+    default: "false"
+  free-disk:
+    description: Remove preinstalled SDKs the build never uses
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # Image builds and kind next to target/ outgrow the runner's free disk.
+    - if: inputs.free-disk == 'true'
+      shell: bash
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+        df -h /
+
+    # rustup reads rust-toolchain.toml (stable, with rustfmt and clippy).
+    - if: inputs.rust == 'true'
+      uses: Swatinem/rust-cache@v2
+
+    - if: inputs.web == 'true'
+      uses: pnpm/action-setup@v6
+      with:
+        package_json_file: web/package.json
+    - if: inputs.web == 'true'
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: pnpm
+        cache-dependency-path: web/pnpm-lock.yaml
+    - if: inputs.web == 'true'
+      shell: bash
+      run: pnpm -C web install --frozen-lockfile
+
+    - if: inputs.playwright == 'true'
+      shell: bash
+      run: pnpm -C web exec playwright install --with-deps chromium
+
+    # The versions ci/Dockerfile pinned on GitLab. helm is for the Helm
+    # interop tests only; no image ships it.
+    - if: inputs.kube-tools == 'true'
+      shell: bash
+      env:
+        KIND_VERSION: 0.33.0
+        KUBECTL_VERSION: 1.37.1
+        HELM_VERSION: 3.19.0
+      run: |
+        set -eu
+        bin="$RUNNER_TEMP/bin"; mkdir -p "$bin"
+        fetch() { curl -fsSL --connect-timeout 20 --retry 5 --retry-all-errors -o "$1" "$2"; }
+        fetch "$bin/kind" "https://kind.sigs.k8s.io/dl/v${KIND_VERSION}/kind-linux-amd64"
+        fetch "$bin/kubectl" "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+        fetch "$RUNNER_TEMP/helm.tgz" "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz"
+        tar -xzf "$RUNNER_TEMP/helm.tgz" -C "$RUNNER_TEMP" && mv "$RUNNER_TEMP/linux-amd64/helm" "$bin/helm"
+        chmod +x "$bin/kind" "$bin/kubectl"
+        echo "$bin" >> "$GITHUB_PATH"
