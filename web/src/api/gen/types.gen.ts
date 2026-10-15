@@ -439,6 +439,16 @@ export type EditableObject = {
     yaml: string;
 };
 
+export type Edition = 'community' | 'enterprise';
+
+/**
+ * `GET /edition`: the edition and the features in effect right now.
+ */
+export type EditionInfo = {
+    edition: Edition;
+    features: Array<Feature>;
+};
+
 export type EngineVersion = {
     api_version: string;
     arch: string;
@@ -512,7 +522,7 @@ export type EnvironmentRecord = {
 export type ErrorBody = {
     /**
      * Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,
-     * `forbidden`, `rate_limited`, `env_unavailable`, `upstream`, `internal`.
+     * `forbidden`, `license_required`, `seat_limit`, `rate_limited`, `env_unavailable`, `upstream`, `internal`.
      */
     code: string;
     message: string;
@@ -536,6 +546,11 @@ export type ExecOptions = {
     rows?: number;
     user?: string | null;
 };
+
+/**
+ * An Enterprise feature a license can grant.
+ */
+export type Feature = 'audit_export';
 
 /**
  * One user's access to one environment.
@@ -1533,6 +1548,31 @@ export type GetAuthStatusResponses = {
 };
 
 export type GetAuthStatusResponse = GetAuthStatusResponses[keyof GetAuthStatusResponses];
+
+export type GetEditionData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/edition';
+};
+
+export type GetEditionErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetEditionError = GetEditionErrors[keyof GetEditionErrors];
+
+export type GetEditionResponses = {
+    /**
+     * Edition
+     */
+    200: EditionInfo;
+};
+
+export type GetEditionResponse = GetEditionResponses[keyof GetEditionResponses];
 
 export type ListEnvsData = {
     body?: never;

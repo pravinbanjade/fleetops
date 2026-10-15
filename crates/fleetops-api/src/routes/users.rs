@@ -50,6 +50,11 @@ pub async fn create(
 ) -> ApiResult<(StatusCode, Json<User>)> {
     validate_username(&body.username)?;
     validate_password(&body.password)?;
+    if let Some(max) = s.entitlements.max_users() {
+        if s.store.count_users().await? >= i64::from(max) {
+            return Err(Error::SeatLimit(max).into());
+        }
+    }
     let hash = password::hash_password(body.password).await?;
     let user = s
         .store

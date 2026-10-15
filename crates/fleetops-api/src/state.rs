@@ -72,6 +72,9 @@ pub struct AppState {
     /// When each environment's last `agent.disconnect` was audited, so a
     /// flapping agent writes one row per five minutes.
     pub agent_disconnects: Arc<std::sync::Mutex<std::collections::HashMap<i64, Instant>>>,
+    /// The edition and license in effect; Community unless an Enterprise
+    /// build replaces it (editions spec §3.1).
+    pub entitlements: Arc<dyn fleetops_core::edition::Entitlements>,
 }
 
 impl AppState {
@@ -88,7 +91,14 @@ impl AppState {
             tasks: Arc::new(TaskManager::default()),
             agents: Arc::default(),
             agent_disconnects: Arc::default(),
+            entitlements: Arc::new(fleetops_core::edition::Community),
         }
+    }
+
+    /// Replaces the Community entitlements (Enterprise builds).
+    pub fn with_entitlements(mut self, e: Arc<dyn fleetops_core::edition::Entitlements>) -> Self {
+        self.entitlements = e;
+        self
     }
 
     /// Shares `agents` with the env factory, so agent environments see the

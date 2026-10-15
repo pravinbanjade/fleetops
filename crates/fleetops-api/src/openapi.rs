@@ -31,6 +31,9 @@ pub const API_BASE: &str = "/api/v1";
     ),
     components(schemas(
         ErrorBody,
+        fleetops_core::edition::Edition,
+        fleetops_core::edition::Feature,
+        fleetops_core::edition::EditionInfo,
         ContainerActionName,
         ComposeActionName,
         crate::ws::protocol::ClientMsg,

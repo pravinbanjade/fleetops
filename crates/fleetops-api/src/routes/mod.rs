@@ -2,6 +2,7 @@ pub mod access;
 pub mod audit_log;
 pub mod auth;
 pub mod docker;
+pub mod edition;
 pub mod envs;
 pub(crate) mod helm;
 pub(crate) mod kube;
@@ -23,6 +24,7 @@ use utoipa_axum::{router::OpenApiRouter, router::UtoipaMethodRouterExt, routes};
 pub fn api() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(health))
+        .routes(routes!(edition::get))
         .routes(routes!(crate::openapi::serve))
         .routes(routes!(auth::status))
         .routes(routes!(auth::setup))
@@ -158,8 +160,8 @@ pub(crate) async fn audit(
     audit_detail(s, user_id, action, target_type, target_id, result, None).await
 }
 
-/// `audit` with a detail object.
-pub(crate) async fn audit_detail(
+/// `audit` with a detail object. Public for Enterprise routes.
+pub async fn audit_detail(
     s: &AppState,
     user_id: Option<i64>,
     action: &str,

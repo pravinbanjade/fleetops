@@ -61,6 +61,25 @@ pub async fn app_with(config: ApiConfig) -> TestApp {
     }
 }
 
+/// An app whose entitlements are `e` instead of Community.
+pub async fn app_entitled(e: Arc<dyn fleetops_core::edition::Entitlements>) -> TestApp {
+    let store = Store::in_memory().await.unwrap();
+    let fake = FakeDocker::new();
+    let state = AppState::new(
+        store.clone(),
+        ApiConfig::default(),
+        Arc::new(FakeFactory(fake.clone())),
+    )
+    .with_entitlements(e);
+    let router = fleetops_api::app(state.clone(), Router::new());
+    TestApp {
+        router,
+        store,
+        state,
+        fake,
+    }
+}
+
 pub fn req(
     method: &str,
     uri: &str,
