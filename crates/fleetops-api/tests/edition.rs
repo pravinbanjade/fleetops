@@ -98,3 +98,56 @@ async fn require_feature_names_the_missing_feature() {
     assert_eq!(err.code(), "license_required");
     assert!(err.to_string().contains("audit_export"));
 }
+
+use fleetops_api::{ApiResult, AppState};
+use utoipa_axum::{router::OpenApiRouter, routes};
+
+#[utoipa::path(get, path = "/ee/ping", operation_id = "eePing", tag = "system",
+    summary = "Test route", responses((status = 200, description = "pong", body = String)))]
+async fn ee_ping() -> ApiResult<String> {
+    Ok("pong".into())
+}
+
+#[tokio::test]
+async fn extra_routes_are_served_and_documented() {
+    use tower::ServiceExt;
+    let store = fleetops_store::Store::in_memory().await.unwrap();
+    let fake = common::fake_docker::FakeDocker::new();
+    let state = AppState::new(
+        store,
+        fleetops_api::ApiConfig::default(),
+        Arc::new(common::fake_docker::FakeFactory(fake)),
+    );
+    let router = fleetops_api::app_with(
+        state,
+        axum::Router::new(),
+        OpenApiRouter::new().routes(routes!(ee_ping)),
+    );
+    let res = router
+        .clone()
+        .oneshot(req("GET", "/api/v1/ee/ping", None, None))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let res = router
+        .oneshot(req("GET", "/api/v1/openapi.json", None, None))
+        .await
+        .unwrap();
+    let bytes = http_body_util::BodyExt::collect(res.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(doc["paths"]["/api/v1/ee/ping"].is_object());
+    assert!(doc["paths"]["/api/v1/edition"].is_object());
+}
+
+#[test]
+fn community_document_has_no_ee_paths() {
+    let doc: serde_json::Value = serde_json::from_str(fleetops_api::openapi::json()).unwrap();
+    assert!(doc["paths"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .all(|p| !p.starts_with("/api/v1/ee/")));
+}

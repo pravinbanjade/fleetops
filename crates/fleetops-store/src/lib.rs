@@ -23,8 +23,6 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::{path::Path, str::FromStr, time::Duration};
 
-static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
-
 #[derive(Clone)]
 pub struct Store {
     pool: SqlitePool,
@@ -66,7 +64,12 @@ impl Store {
     }
 
     async fn init(pool: SqlitePool) -> Result<Self> {
-        MIGRATOR
+        // An Enterprise build adds its own migrations (versions 1000000+) to
+        // the same table; a Community binary must still start on that
+        // database, so applied versions it does not know are ignored.
+        let mut migrator = sqlx::migrate!("./migrations");
+        migrator.set_ignore_missing(true);
+        migrator
             .run(&pool)
             .await
             .map_err(|e| Error::Internal(format!("migration failed: {e}")))?;
@@ -74,6 +77,11 @@ impl Store {
             pool,
             secrets: std::sync::Arc::new(secrets::SecretBox::new(&secrets::SecretKey::random())),
         })
+    }
+
+    /// The connection pool, for the Enterprise crate's own tables.
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 
     /// Seals and opens credentials with `key` instead of the random

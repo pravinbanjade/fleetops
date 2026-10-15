@@ -103,6 +103,17 @@ pub fn json() -> &'static str {
     })
 }
 
+/// The document `app_with` serves when it differs from [`json`].
+#[derive(Clone)]
+pub struct Served(pub std::sync::Arc<str>);
+
+/// The document for the Community routes plus `extra`.
+pub fn json_with(extra: OpenApiRouter<crate::AppState>) -> String {
+    document(crate::routes::api().merge(extra))
+        .to_pretty_json()
+        .expect("OpenAPI document serialises")
+}
+
 /// The OpenAPI document for this API.
 #[utoipa::path(
     get,
@@ -112,13 +123,17 @@ pub fn json() -> &'static str {
     security(()),
     responses((status = 200, description = "OpenAPI 3.1 document", body = serde_json::Value))
 )]
-pub async fn serve() -> Response {
+pub async fn serve(ext: axum::http::Extensions) -> Response {
+    let body: String = match ext.get::<Served>() {
+        Some(Served(doc)) => doc.to_string(),
+        None => json().to_string(),
+    };
     (
         [(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         )],
-        json(),
+        body,
     )
         .into_response()
 }
