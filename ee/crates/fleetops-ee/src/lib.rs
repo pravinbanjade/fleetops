@@ -2,5 +2,7 @@
 //! Enterprise API and its tables. Built into the server only with the
 //! `enterprise` feature.
 
+pub mod db;
 pub mod keys;
 pub mod license;
+pub mod state;

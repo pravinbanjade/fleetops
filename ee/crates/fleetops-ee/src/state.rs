@@ -1,0 +1,243 @@
+//! The license in effect (editions spec §4.2-4.3). Status is computed from
+//! the parsed license and the clock on every check, so expiry needs no
+//! restart and per-request checks stay cheap.
+
+use crate::license::{verify, License, Status};
+use ed25519_dalek::VerifyingKey;
+use fleetops_core::edition::{Edition, Entitlements, Feature};
+use fleetops_core::{now_unix, Result};
+use fleetops_store::Store;
+use serde::Serialize;
+use std::{path::PathBuf, sync::RwLock};
+use utoipa::ToSchema;
+
+#[derive(Debug, Clone)]
+pub enum Loaded {
+    None,
+    Invalid(String),
+    Ok(License),
+}
+
+/// `GET /ee/license`.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct LicenseInfo {
+    pub status: Status,
+    /// Why the license is invalid.
+    pub reason: Option<String>,
+    pub id: Option<String>,
+    pub customer: Option<String>,
+    pub expires_at: Option<i64>,
+    /// `null`: unlimited.
+    pub max_users: Option<u32>,
+    /// The features the license names (in effect only while it is active).
+    pub features: Vec<Feature>,
+    pub users_in_use: i64,
+}
+
+pub struct LicenseState {
+    keys: Vec<VerifyingKey>,
+    file: Option<PathBuf>,
+    loaded: RwLock<Loaded>,
+}
+
+impl LicenseState {
+    pub fn new(keys: Vec<VerifyingKey>, file: Option<PathBuf>) -> Self {
+        Self {
+            keys,
+            file,
+            loaded: RwLock::new(Loaded::None),
+        }
+    }
+
+    pub fn keys(&self) -> &[VerifyingKey] {
+        &self.keys
+    }
+
+    /// Reads the uploaded license, or else the `--license-file`.
+    pub async fn load(&self, store: &Store) -> Result<()> {
+        let loaded = match crate::db::get(store.pool()).await? {
+            Some(raw) => self.parse(&raw),
+            None => match &self.file {
+                None => Loaded::None,
+                Some(path) => match std::fs::read_to_string(path) {
+                    Ok(text) => self.parse(&text),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        tracing::warn!(path = %path.display(), "license file not found; Enterprise features are off");
+                        Loaded::None
+                    }
+                    Err(e) => Loaded::Invalid(format!("cannot read {}: {e}", path.display())),
+                },
+            },
+        };
+        if let Loaded::Invalid(reason) = &loaded {
+            tracing::error!(%reason, "license is not valid; Enterprise features are off");
+        }
+        self.set(loaded);
+        Ok(())
+    }
+
+    fn parse(&self, text: &str) -> Loaded {
+        match verify(text, &self.keys) {
+            Ok(l) => Loaded::Ok(l),
+            Err(e) => Loaded::Invalid(e.to_string()),
+        }
+    }
+
+    pub fn set(&self, loaded: Loaded) {
+        *self.loaded.write().expect("license lock") = loaded;
+    }
+
+    pub fn status(&self, now: i64) -> Status {
+        match &*self.loaded.read().expect("license lock") {
+            Loaded::None => Status::None,
+            Loaded::Invalid(_) => Status::Invalid,
+            Loaded::Ok(l) => l.status_at(now),
+        }
+    }
+
+    pub fn info(&self, now: i64, users_in_use: i64) -> LicenseInfo {
+        let empty = |status, reason| LicenseInfo {
+            status,
+            reason,
+            id: None,
+            customer: None,
+            expires_at: None,
+            max_users: None,
+            features: vec![],
+            users_in_use,
+        };
+        match &*self.loaded.read().expect("license lock") {
+            Loaded::None => empty(Status::None, None),
+            Loaded::Invalid(r) => empty(Status::Invalid, Some(r.clone())),
+            Loaded::Ok(l) => LicenseInfo {
+                status: l.status_at(now),
+                reason: None,
+                id: Some(l.payload.id.clone()),
+                customer: Some(l.payload.customer.clone()),
+                expires_at: Some(l.payload.expires_at),
+                max_users: l.payload.max_users,
+                features: l.features.clone(),
+                users_in_use,
+            },
+        }
+    }
+
+    /// Runs `f` on the license while it is active (valid or in grace).
+    fn active<T>(&self, f: impl FnOnce(&License) -> T) -> Option<T> {
+        match &*self.loaded.read().expect("license lock") {
+            Loaded::Ok(l) if l.status_at(now_unix()).active() => Some(f(l)),
+            _ => None,
+        }
+    }
+}
+
+impl Entitlements for LicenseState {
+    fn edition(&self) -> Edition {
+        Edition::Enterprise
+    }
+    fn has(&self, feature: Feature) -> bool {
+        self.active(|l| l.features.contains(&feature))
+            .unwrap_or(false)
+    }
+    fn max_users(&self) -> Option<u32> {
+        self.active(|l| l.payload.max_users).flatten()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::license::{sign, Payload, GRACE_SECS, VERSION};
+    use ed25519_dalek::SigningKey;
+    use fleetops_core::edition::{Edition, Entitlements, Feature};
+    use fleetops_core::now_unix;
+
+    fn lic(key: &SigningKey, expires_at: i64, id: &str) -> String {
+        sign(
+            &Payload {
+                v: VERSION,
+                id: id.into(),
+                customer: "Acme".into(),
+                issued_at: 0,
+                expires_at,
+                max_users: Some(3),
+                features: vec!["audit_export".into()],
+            },
+            key,
+        )
+    }
+
+    async fn store() -> Store {
+        let s = Store::in_memory().await.unwrap();
+        crate::db::migrate(s.pool()).await.unwrap();
+        s
+    }
+
+    fn key() -> SigningKey {
+        SigningKey::generate(&mut rand::rngs::OsRng)
+    }
+
+    #[tokio::test]
+    async fn nothing_configured_is_none_and_entitles_nothing() {
+        let key = key();
+        let st = LicenseState::new(vec![key.verifying_key()], None);
+        st.load(&store().await).await.unwrap();
+        assert_eq!(st.status(now_unix()), Status::None);
+        assert_eq!(st.edition(), Edition::Enterprise);
+        assert!(!st.has(Feature::AuditExport));
+        assert_eq!(st.max_users(), None);
+    }
+
+    #[tokio::test]
+    async fn stored_license_wins_over_the_file() {
+        let key = key();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("l.lic");
+        std::fs::write(&file, lic(&key, now_unix() + 1000, "from-file")).unwrap();
+        let s = store().await;
+        let st = LicenseState::new(vec![key.verifying_key()], Some(file));
+        st.load(&s).await.unwrap();
+        assert_eq!(st.info(now_unix(), 1).id.as_deref(), Some("from-file"));
+        crate::db::put(s.pool(), &lic(&key, now_unix() + 1000, "uploaded"), 0, 1)
+            .await
+            .unwrap();
+        st.load(&s).await.unwrap();
+        assert_eq!(st.info(now_unix(), 1).id.as_deref(), Some("uploaded"));
+        assert!(st.has(Feature::AuditExport));
+        assert_eq!(st.max_users(), Some(3));
+    }
+
+    #[tokio::test]
+    async fn bad_or_missing_file() {
+        let key = key();
+        let dir = tempfile::tempdir().unwrap();
+        let bad = dir.path().join("bad.lic");
+        std::fs::write(&bad, "garbage").unwrap();
+        let st = LicenseState::new(vec![key.verifying_key()], Some(bad));
+        st.load(&store().await).await.unwrap();
+        let info = st.info(now_unix(), 1);
+        assert_eq!(info.status, Status::Invalid);
+        assert_eq!(info.reason.as_deref(), Some("not a FleetOps license"));
+        let st = LicenseState::new(
+            vec![key.verifying_key()],
+            Some(dir.path().join("missing.lic")),
+        );
+        st.load(&store().await).await.unwrap();
+        assert_eq!(st.status(now_unix()), Status::None);
+    }
+
+    #[tokio::test]
+    async fn expired_license_entitles_nothing_and_lifts_the_limit() {
+        let key = key();
+        let st = LicenseState::new(vec![key.verifying_key()], None);
+        let l = crate::license::verify(
+            &lic(&key, now_unix() - GRACE_SECS - 1, "old"),
+            &[key.verifying_key()],
+        )
+        .unwrap();
+        st.set(Loaded::Ok(l));
+        assert_eq!(st.status(now_unix()), Status::Expired);
+        assert!(!st.has(Feature::AuditExport));
+        assert_eq!(st.max_users(), None);
+    }
+}
