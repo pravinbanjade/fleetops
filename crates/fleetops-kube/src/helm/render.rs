@@ -18,7 +18,13 @@ pub struct RenderInput {
     pub name: String,
     pub namespace: String,
     pub chart: ChartRef,
+    /// The full values (masks restored): for scrubbing messages.
     pub values: Value,
+    /// The values as the user typed them: helm's first values file, so
+    /// helm parses them by its own rules (`0644` is octal there).
+    pub values_yaml: String,
+    /// What was restored from the stored release: helm's second values file.
+    pub overlay: Option<Value>,
     pub upgrade: bool,
     pub kube_version: String,
     pub api_versions: Vec<String>,
@@ -50,15 +56,18 @@ pub fn chart_args(c: &ChartRef) -> Vec<String> {
     a
 }
 
-pub fn template_args(r: &RenderInput, values_file: &str) -> Vec<String> {
+fn values_args(files: &[String]) -> Vec<String> {
+    files
+        .iter()
+        .flat_map(|f| ["--values".to_string(), f.clone()])
+        .collect()
+}
+
+pub fn template_args(r: &RenderInput, values_files: &[String]) -> Vec<String> {
     let mut a = vec!["template".to_string(), r.name.clone()];
     a.extend(chart_args(&r.chart));
-    a.extend([
-        "--namespace".into(),
-        r.namespace.clone(),
-        "--values".into(),
-        values_file.into(),
-    ]);
+    a.extend(["--namespace".into(), r.namespace.clone()]);
+    a.extend(values_args(values_files));
     a.extend(["--kube-version".into(), r.kube_version.clone()]);
     for v in &r.api_versions {
         a.extend(["--api-versions".into(), v.clone()]);
@@ -70,26 +79,31 @@ pub fn template_args(r: &RenderInput, values_file: &str) -> Vec<String> {
     a
 }
 
-pub fn dry_run_args(r: &RenderInput, values_file: &str) -> Vec<String> {
+pub fn dry_run_args(r: &RenderInput, values_files: &[String]) -> Vec<String> {
     let mut a = vec!["install".to_string(), r.name.clone()];
     a.extend(chart_args(&r.chart));
-    a.extend([
-        "--namespace".into(),
-        r.namespace.clone(),
-        "--values".into(),
-        values_file.into(),
-        "--dry-run=client".into(),
-        "--output".into(),
-        "json".into(),
-    ]);
+    a.extend(["--namespace".into(), r.namespace.clone()]);
+    a.extend(values_args(values_files));
+    a.extend(["--dry-run=client".into(), "--output".into(), "json".into()]);
     a
 }
 
+/// Whether a `# Source:` path is in a chart's (or subchart's) `crds/` folder.
+fn crd_source(source: &str) -> bool {
+    let parts: Vec<&str> = source.split('/').collect();
+    parts
+        .iter()
+        .enumerate()
+        .any(|(i, p)| *p == "crds" && (i == 1 || (i >= 3 && parts[i - 2] == "charts")))
+}
+
 /// `helm template`'s documents: the release manifest in Helm's stored form
-/// (`---\n# Source: …\n<yaml>`), and the hooks.
-pub fn split_template(out: &str) -> Result<(String, Vec<RenderedHook>)> {
+/// (`---\n# Source: …\n<yaml>`), the hooks, and the `crds/` documents,
+/// which Helm keeps out of the manifest.
+pub fn split_template(out: &str) -> Result<(String, Vec<RenderedHook>, Vec<String>)> {
     let mut manifest = String::new();
     let mut hooks = Vec::new();
+    let mut crds = Vec::new();
     let mut source = String::new();
     for chunk in out
         .split("\n---")
@@ -114,6 +128,10 @@ pub fn split_template(out: &str) -> Result<(String, Vec<RenderedHook>)> {
             ))
         })?;
         if v.is_null() {
+            continue;
+        }
+        if crd_source(&source) {
+            crds.push(body.trim_start_matches('\n').to_string());
             continue;
         }
         let ann = |k: &str| {
@@ -147,7 +165,7 @@ pub fn split_template(out: &str) -> Result<(String, Vec<RenderedHook>)> {
             }
         }
     }
-    Ok((manifest, hooks))
+    Ok((manifest, hooks, crds))
 }
 
 fn list(s: &str) -> Vec<String> {
@@ -158,8 +176,9 @@ fn list(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// The chart object Helm stores in a release, its notes, and its metadata.
-pub fn from_dry_run(json: &[u8]) -> Result<(Value, String, ChartMeta)> {
+/// The chart object Helm stores in a release, its notes, its metadata, and
+/// the values as helm parsed them.
+pub fn from_dry_run(json: &[u8]) -> Result<(Value, String, ChartMeta, Value)> {
     let v: Value = serde_json::from_slice(json)
         .map_err(|e| Error::Invalid(format!("helm's dry run printed something unexpected: {e}")))?;
     let chart = v["chart"].clone();
@@ -171,10 +190,15 @@ pub fn from_dry_run(json: &[u8]) -> Result<(Value, String, ChartMeta)> {
         app_version: s("appVersion"),
         description: s("description"),
     };
+    let config = match &v["config"] {
+        Value::Object(_) => v["config"].clone(),
+        _ => Value::Object(Default::default()),
+    };
     Ok((
         chart,
         v["info"]["notes"].as_str().unwrap_or_default().to_string(),
         meta,
+        config,
     ))
 }
 
@@ -196,19 +220,59 @@ pub fn shown_stderr(stderr: &str, values: &Value) -> String {
     s
 }
 
+/// One helm run's private directory: the values files, an empty working
+/// directory (so no local chart is ever picked up), and its own repository
+/// list and index cache. helm's configuration home is left alone, so
+/// `helm registry login` still applies to OCI registries.
+struct Work {
+    dir: tempfile::TempDir,
+    env: Vec<(String, String)>,
+    cwd: std::path::PathBuf,
+}
+
+fn workdir() -> Result<Work> {
+    let fail =
+        |e: std::io::Error| Error::Internal(format!("cannot prepare a directory for helm: {e}"));
+    let dir = tempfile::tempdir().map_err(fail)?;
+    let cwd = dir.path().join("work");
+    std::fs::create_dir(&cwd).map_err(fail)?;
+    let repos = dir.path().join("repositories.yaml");
+    std::fs::write(&repos, "").map_err(fail)?;
+    let env = vec![
+        (
+            "HELM_REPOSITORY_CONFIG".to_string(),
+            repos.display().to_string(),
+        ),
+        (
+            "HELM_REPOSITORY_CACHE".to_string(),
+            dir.path().join("repository").display().to_string(),
+        ),
+    ];
+    Ok(Work { dir, env, cwd })
+}
+
+fn write_file(dir: &std::path::Path, name: &str, text: &str) -> Result<String> {
+    use std::io::Write;
+    let path = dir.join(name);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+    opts.open(&path)
+        .and_then(|mut f| f.write_all(text.as_bytes()))
+        .map_err(|e| Error::Internal(format!("cannot write a values file: {e}")))?;
+    Ok(path.display().to_string())
+}
+
 impl HelmCli {
-    async fn helm(
-        &self,
-        args: &[String],
-        env: &[(String, String)],
-        values: &Value,
-    ) -> Result<Vec<u8>> {
+    async fn helm(&self, args: &[String], w: &Work, values: &Value) -> Result<Vec<u8>> {
         let spec = Spec {
             program: &self.binary,
             args,
-            env,
+            env: &w.env,
             timeout: self.timeout,
             stdout_cap: HELM_STDOUT_CAP,
+            cwd: Some(&w.cwd),
         };
         let out = process::run(spec).await.map_err(|e| match e {
             RunError::NotFound => {
@@ -234,60 +298,42 @@ impl HelmCli {
     }
 }
 
-/// A private directory for one request's values file. helm keeps its own
-/// cache and configuration, so it behaves as it does when run by hand on
-/// this host: `helm repo add` credentials and `helm registry login` apply,
-/// and it reads the cached index of every repository it knows.
-fn workdir() -> Result<(tempfile::TempDir, Vec<(String, String)>)> {
-    let dir = tempfile::tempdir()
-        .map_err(|e| Error::Internal(format!("cannot make a temporary directory: {e}")))?;
-    Ok((dir, Vec::new()))
-}
-
-fn write_values(dir: &std::path::Path, values: &Value) -> Result<String> {
-    use std::io::Write;
-    let path = dir.join("values.yaml");
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
-    let text = serde_json::to_string(values).expect("values serialise"); // JSON is YAML
-    opts.open(&path)
-        .and_then(|mut f| f.write_all(text.as_bytes()))
-        .map_err(|e| Error::Internal(format!("cannot write the values file: {e}")))?;
-    Ok(path.display().to_string())
-}
-
 #[async_trait]
 impl ChartRenderer for HelmCli {
     async fn render(&self, r: &RenderInput) -> Result<Rendered> {
-        let (dir, env) = workdir()?;
-        let file = write_values(dir.path(), &r.values)?;
-        let out = self.helm(&template_args(r, &file), &env, &r.values).await?;
-        let (manifest, hooks) = split_template(&String::from_utf8_lossy(&out))?;
-        let json = self.helm(&dry_run_args(r, &file), &env, &r.values).await?;
-        let (chart, notes, meta) = from_dry_run(&json)?;
+        let w = workdir()?;
+        let mut files = vec![write_file(w.dir.path(), "values.yaml", &r.values_yaml)?];
+        if let Some(o) = &r.overlay {
+            let text = serde_json::to_string(o).expect("values serialise"); // JSON is YAML
+            files.push(write_file(w.dir.path(), "restored.json", &text)?);
+        }
+        let out = self.helm(&template_args(r, &files), &w, &r.values).await?;
+        let (manifest, hooks, crds) = split_template(&String::from_utf8_lossy(&out))?;
+        let json = self.helm(&dry_run_args(r, &files), &w, &r.values).await?;
+        let (chart, notes, meta, config) = from_dry_run(&json)?;
         Ok(Rendered {
             manifest,
             hooks,
             notes,
             chart,
             meta,
+            config,
+            crds,
         })
     }
 
     async fn show(&self, chart: &ChartRef) -> Result<ChartShow> {
-        let (_dir, env) = workdir()?;
+        let w = workdir()?;
         let none = Value::Null;
         let mut a = vec!["show".to_string(), "chart".to_string()];
         a.extend(chart_args(chart));
-        let meta_yaml = self.helm(&a, &env, &none).await?;
+        let meta_yaml = self.helm(&a, &w, &none).await?;
         let m: Value = serde_saphyr::from_slice(&meta_yaml).map_err(|e| {
             Error::Invalid(format!("helm show chart printed something unexpected: {e}"))
         })?;
         let s = |k: &str| m[k].as_str().unwrap_or_default().to_string();
         a[1] = "values".into();
-        let values = String::from_utf8_lossy(&self.helm(&a, &env, &none).await?).into_owned();
+        let values = String::from_utf8_lossy(&self.helm(&a, &w, &none).await?).into_owned();
         Ok(ChartShow {
             meta: ChartMeta {
                 name: s("name"),
@@ -315,6 +361,8 @@ mod tests {
             namespace: "apps".into(),
             chart,
             values: json!({}),
+            values_yaml: String::new(),
+            overlay: None,
             upgrade,
             kube_version: "v1.32.0".into(),
             api_versions: vec!["v1".into(), "apps/v1".into()],
@@ -344,7 +392,7 @@ mod tests {
 
     #[test]
     fn template_args_carry_capabilities_and_upgrade() {
-        let a = template_args(&input(repo(), true), "/tmp/v.yaml");
+        let a = template_args(&input(repo(), true), &["/tmp/v.yaml".into()]);
         assert_eq!(&a[..2], ["template", "rel"]);
         for want in [
             vec!["--namespace", "apps"],
@@ -361,12 +409,13 @@ mod tests {
         assert!(
             a.contains(&"--include-crds".to_string()) && a.contains(&"--is-upgrade".to_string())
         );
-        assert!(!template_args(&input(repo(), false), "/v").contains(&"--is-upgrade".to_string()));
+        assert!(!template_args(&input(repo(), false), &["/v".into()])
+            .contains(&"--is-upgrade".to_string()));
     }
 
     #[test]
     fn dry_run_args_never_reach_a_cluster() {
-        let a = dry_run_args(&input(repo(), false), "/tmp/v.yaml");
+        let a = dry_run_args(&input(repo(), false), &["/tmp/v.yaml".into()]);
         assert_eq!(&a[..2], ["install", "rel"]);
         assert!(a.contains(&"--dry-run=client".to_string()));
         assert!(a.windows(2).any(|w| w == ["--output", "json"]));
@@ -374,7 +423,7 @@ mod tests {
 
     #[test]
     fn template_output_splits_into_manifest_and_hooks() {
-        let (manifest, hooks) =
+        let (manifest, hooks, _) =
             split_template(include_str!("../../testdata/helm/template-out.yaml")).unwrap();
         assert!(
             manifest.contains("# Source: demo/templates/deploy.yaml")
@@ -399,13 +448,13 @@ mod tests {
     #[test]
     fn a_document_without_its_own_source_keeps_the_previous_one() {
         let out = "---\n# Source: c/templates/two.yaml\napiVersion: v1\nkind: ConfigMap\nmetadata: {name: a}\n---\napiVersion: v1\nkind: ConfigMap\nmetadata: {name: b}\n";
-        let (m, _) = split_template(out).unwrap();
+        let (m, _, _) = split_template(out).unwrap();
         assert_eq!(m.matches("# Source: c/templates/two.yaml").count(), 2);
     }
 
     #[test]
     fn the_dry_run_gives_the_chart_and_notes() {
-        let (chart, notes, meta) =
+        let (chart, notes, meta, _) =
             from_dry_run(include_bytes!("../../testdata/helm/dry-run.json")).unwrap();
         assert_eq!(chart["metadata"]["name"], "demo");
         assert_eq!(notes, "Hello rel\n");
@@ -429,5 +478,52 @@ mod tests {
         );
         assert!(!s.contains("hunter2") && s.contains("busybox"));
         assert!(s.len() <= 2048 + 3);
+    }
+
+    #[test]
+    fn chart_crds_are_kept_apart_from_the_manifest() {
+        let out = "---\n# Source: op/crds/gadgets.yaml\napiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata: {name: gadgets.fo.example}\n---\n# Source: op/charts/sub/crds/more.yaml\napiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata: {name: more.fo.example}\n---\n# Source: op/templates/crds/not-a-crd-folder.yaml\napiVersion: v1\nkind: ConfigMap\nmetadata: {name: c}\n";
+        let (manifest, hooks, crds) = split_template(out).unwrap();
+        assert!(hooks.is_empty());
+        assert_eq!(crds.len(), 2);
+        assert!(crds[0].contains("gadgets.fo.example") && crds[1].contains("more.fo.example"));
+        assert!(
+            !manifest.contains("CustomResourceDefinition") && manifest.contains("kind: ConfigMap")
+        );
+    }
+
+    #[test]
+    fn a_second_values_file_carries_the_restored_secrets() {
+        let a = template_args(
+            &input(repo(), false),
+            &["/t/values.yaml".into(), "/t/restored.json".into()],
+        );
+        assert!(a.windows(2).any(|w| w == ["--values", "/t/values.yaml"]));
+        assert!(a.windows(2).any(|w| w == ["--values", "/t/restored.json"]));
+    }
+
+    #[test]
+    fn helm_config_comes_from_helms_own_parse() {
+        let json = br#"{"chart": {"metadata": {"name": "demo"}}, "info": {"notes": ""}, "config": {"mode": 420}}"#;
+        let (_, _, _, config) = from_dry_run(json).unwrap();
+        assert_eq!(config, json!({"mode": 420}));
+        let (_, _, _, none) = from_dry_run(br#"{"chart": {}, "info": {}}"#).unwrap();
+        assert_eq!(none, json!({}));
+    }
+
+    #[test]
+    fn each_run_has_its_own_repositories_and_an_empty_working_directory() {
+        let w = workdir().unwrap();
+        let get = |k: &str| {
+            w.env
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v.clone())
+                .unwrap()
+        };
+        let repos = std::path::PathBuf::from(get("HELM_REPOSITORY_CONFIG"));
+        assert_eq!(std::fs::read_to_string(&repos).unwrap(), "");
+        assert!(get("HELM_REPOSITORY_CACHE").starts_with(&*w.dir.path().to_string_lossy()));
+        assert_eq!(std::fs::read_dir(&w.cwd).unwrap().count(), 0);
     }
 }

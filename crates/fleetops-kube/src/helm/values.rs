@@ -27,60 +27,164 @@ pub fn parse(yaml: &str) -> Result<Value> {
 pub fn unmask(submitted: &mut Value, stored: &Value) -> Result<()> {
     let mut masked = stored.clone();
     mask_values(&mut masked);
-    walk(submitted, Some(stored), Some(&masked), String::new())
+    let mut restored = Vec::new();
+    walk(
+        submitted,
+        Some(stored),
+        Some(&masked),
+        &mut Vec::new(),
+        &mut restored,
+    )
+}
+
+/// `unmask` on a copy: the full values, and an overlay of only what was
+/// restored (whole lists where a restore is inside one), for helm's second
+/// values file. The user's own YAML stays the first file, so helm parses it
+/// by its own rules (`0644` is octal there).
+pub fn restore(submitted: &Value, stored: &Value) -> Result<(Value, Option<Value>)> {
+    let mut full = submitted.clone();
+    let mut masked = stored.clone();
+    mask_values(&mut masked);
+    let mut restored = Vec::new();
+    walk(
+        &mut full,
+        Some(stored),
+        Some(&masked),
+        &mut Vec::new(),
+        &mut restored,
+    )?;
+    if restored.is_empty() {
+        return Ok((full, None));
+    }
+    let mut overlay = Value::Object(Default::default());
+    for path in restored {
+        // Helm replaces lists whole, so a restore inside one carries the list.
+        let cut = path
+            .iter()
+            .position(|s| matches!(s, Seg::Index(_)))
+            .unwrap_or(path.len());
+        let prefix = &path[..cut];
+        if let Some(v) = get(&full, prefix) {
+            set(&mut overlay, prefix, v.clone());
+        }
+    }
+    Ok((full, Some(overlay)))
+}
+
+#[derive(Clone)]
+enum Seg {
+    Key(String),
+    Index(usize),
+}
+
+fn shown(path: &[Seg]) -> String {
+    let mut out = String::new();
+    for s in path {
+        match s {
+            Seg::Key(k) if out.is_empty() => out.push_str(k),
+            Seg::Key(k) => {
+                out.push('.');
+                out.push_str(k);
+            }
+            Seg::Index(i) => out.push_str(&format!("[{i}]")),
+        }
+    }
+    if out.is_empty() {
+        "the top level".into()
+    } else {
+        out
+    }
+}
+
+fn refused(path: &[Seg]) -> Error {
+    Error::Invalid(format!(
+        "values contain the mask at {}; type the value",
+        shown(path)
+    ))
+}
+
+fn contains_mask(v: &Value) -> bool {
+    match v {
+        Value::String(s) => s == MASK,
+        Value::Object(m) => m.values().any(contains_mask),
+        Value::Array(a) => a.iter().any(contains_mask),
+        _ => false,
+    }
 }
 
 fn walk(
     sub: &mut Value,
     stored: Option<&Value>,
     masked: Option<&Value>,
-    path: String,
+    path: &mut Vec<Seg>,
+    restored: &mut Vec<Vec<Seg>>,
 ) -> Result<()> {
     match sub {
         Value::String(s) if s == MASK => match (stored, masked) {
             (Some(st), Some(Value::String(m))) if m == MASK => {
                 *sub = st.clone();
+                restored.push(path.clone());
                 Ok(())
             }
-            _ => {
-                let at = if path.is_empty() {
-                    "the top level".to_string()
-                } else {
-                    path
-                };
-                Err(Error::Invalid(format!(
-                    "values contain the mask at {at}; type the value"
-                )))
-            }
+            _ => Err(refused(path)),
         },
         Value::Object(map) => {
             for (k, v) in map.iter_mut() {
-                let p = if path.is_empty() {
-                    k.clone()
-                } else {
-                    format!("{path}.{k}")
-                };
+                path.push(Seg::Key(k.clone()));
                 walk(
                     v,
                     stored.and_then(|s| s.get(k)),
                     masked.and_then(|m| m.get(k)),
-                    p,
+                    path,
+                    restored,
                 )?;
+                path.pop();
             }
             Ok(())
         }
+        // A list entry is matched by position, which a deletion shifts: a
+        // masked entry is restored only when it is otherwise untouched.
         Value::Array(items) => {
             for (i, v) in items.iter_mut().enumerate() {
-                walk(
-                    v,
-                    stored.and_then(|s| s.get(i)),
-                    masked.and_then(|m| m.get(i)),
-                    format!("{path}[{i}]"),
-                )?;
+                if !contains_mask(v) {
+                    continue;
+                }
+                path.push(Seg::Index(i));
+                match (stored.and_then(|s| s.get(i)), masked.and_then(|m| m.get(i))) {
+                    (Some(st), Some(m)) if m == v => {
+                        *v = st.clone();
+                        restored.push(path.clone());
+                    }
+                    _ => return Err(refused(path)),
+                }
+                path.pop();
             }
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+fn get<'a>(v: &'a Value, path: &[Seg]) -> Option<&'a Value> {
+    path.iter().try_fold(v, |v, s| match s {
+        Seg::Key(k) => v.get(k),
+        Seg::Index(i) => v.get(*i),
+    })
+}
+
+/// Sets `value` at a path of keys, making objects on the way.
+fn set(root: &mut Value, path: &[Seg], value: Value) {
+    let mut cur = root;
+    for (n, s) in path.iter().enumerate() {
+        let Seg::Key(k) = s else { return };
+        let map = cur.as_object_mut().expect("overlay levels are objects");
+        if n + 1 == path.len() {
+            map.insert(k.clone(), value);
+            return;
+        }
+        cur = map
+            .entry(k.clone())
+            .or_insert_with(|| Value::Object(Default::default()));
     }
 }
 
@@ -178,5 +282,37 @@ mod tests {
         let mut s = secret_strings(&v);
         s.sort();
         assert_eq!(s, ["-----BEGIN", "hunter2"]);
+    }
+
+    #[test]
+    fn a_masked_list_entry_is_restored_only_when_it_is_untouched() {
+        let stored = json!({"users": [{"name": "alice", "password": "A"}, {"name": "bob", "password": "B"}]});
+        let mut same = json!({"users": [{"name": "alice", "password": MASK}, {"name": "bob", "password": MASK}]});
+        unmask(&mut same, &stored).unwrap();
+        assert_eq!(same, stored);
+        // alice deleted: bob now sits where alice was, and must not get her password.
+        let mut shifted = json!({"users": [{"name": "bob", "password": MASK}]});
+        let e = unmask(&mut shifted, &stored).unwrap_err().to_string();
+        assert!(
+            e.contains("values contain the mask at users[0]; type the value"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn restore_gives_the_full_values_and_an_overlay_of_only_what_it_restored() {
+        let stored = json!({"db": {"password": "s3cret", "host": "h"}, "users": [{"name": "a", "token": "T"}], "mode": 420});
+        let sent = json!({"db": {"password": MASK, "host": "h2"}, "users": [{"name": "a", "token": MASK}], "mode": 644});
+        let (full, overlay) = restore(&sent, &stored).unwrap();
+        assert_eq!(
+            full,
+            json!({"db": {"password": "s3cret", "host": "h2"}, "users": [{"name": "a", "token": "T"}], "mode": 644})
+        );
+        assert_eq!(
+            overlay,
+            Some(json!({"db": {"password": "s3cret"}, "users": [{"name": "a", "token": "T"}]}))
+        );
+        let (_, none) = restore(&json!({"a": 1}), &stored).unwrap();
+        assert_eq!(none, None);
     }
 }

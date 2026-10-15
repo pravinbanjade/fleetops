@@ -159,6 +159,10 @@ impl ChartRef {
                 if !plain(url) || !scheme_ok {
                     return bad("the repository URL must be https:// (http:// needs --helm-insecure-repos on the server)");
                 }
+                let authority = url.split_once("://").map(|(_, r)| r).unwrap_or("");
+                if authority.split('/').next().unwrap_or("").contains('@') {
+                    return bad("the repository URL must not carry credentials");
+                }
                 if !chart_name(chart) {
                     return bad(
                         "the chart name must be lowercase letters, digits, '.', '_' or '-'",
@@ -236,6 +240,11 @@ pub struct Rendered {
     /// Helm's chart object, stored in the release as Helm stores it.
     pub chart: serde_json::Value,
     pub meta: ChartMeta,
+    /// The values as helm parsed them: what the release stores as `config`.
+    pub config: serde_json::Value,
+    /// The chart's `crds/` documents: installed once if missing, never
+    /// stored in the manifest, upgraded or deleted, as Helm does.
+    pub crds: Vec<String>,
 }
 
 /// An install or upgrade to plan or commit.
@@ -375,5 +384,22 @@ mod tests {
     fn older_plans_and_details_still_deserialise() {
         let p: HelmPlan = serde_json::from_value(serde_json::json!({"current": 2, "revision": null, "status": null, "changes": [], "note": "n"})).unwrap();
         assert!(p.hooks.is_empty() && p.chart.is_none() && p.notes.is_empty());
+    }
+
+    #[test]
+    fn a_repository_url_never_carries_credentials() {
+        for url in [
+            "https://user:token@charts.example.com",
+            "https://token@charts.example.com/x",
+        ] {
+            let e = repo(url, "demo").validate(true).unwrap_err().to_string();
+            assert!(e.contains("must not carry credentials"), "{url}: {e}");
+        }
+        assert!(
+            repo("https://charts.example.com/a@b", "demo")
+                .validate(false)
+                .is_ok(),
+            "an @ in the path is fine"
+        );
     }
 }

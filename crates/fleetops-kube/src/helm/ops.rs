@@ -29,6 +29,40 @@ const HOOK_POLL: Duration = Duration::from_secs(2);
 const HOOK_DELETE_WAIT: Duration = Duration::from_secs(60);
 pub const CHART_SOURCE: &str = "fleetops.io/chart-source";
 
+/// (group, kind) of an object.
+fn group_kind(d: &crate::apply::Doc) -> (String, String) {
+    let group = d.api_version.split_once('/').map(|(g, _)| g).unwrap_or("");
+    (group.to_string(), d.kind.clone())
+}
+
+/// The (group, kind) each CRD defines.
+fn crd_kinds(docs: &[crate::apply::Doc]) -> Vec<(String, String)> {
+    docs.iter()
+        .filter_map(|d| {
+            let s = &d.value["spec"];
+            Some((
+                s["group"].as_str()?.to_string(),
+                s["names"]["kind"].as_str()?.to_string(),
+            ))
+        })
+        .collect()
+}
+
+const CRD_WAIT: Duration = Duration::from_secs(60);
+
+fn crd_change(doc: &crate::apply::Doc) -> Result<HelmObjectChange> {
+    Ok(HelmObjectChange {
+        api_version: doc.api_version.clone(),
+        kind: doc.kind.clone(),
+        namespace: None,
+        name: doc.name.clone(),
+        change: HelmChange::Create,
+        before: None,
+        after: Some(crate::mask::to_yaml(&cleaned(doc.value.clone()))?),
+        error: None,
+    })
+}
+
 /// The revision an install continues from: 0 for a new name, an
 /// uninstalled release's last version, or a refusal.
 fn install_base(name: &str, latest: Option<&Release>) -> Result<u32> {
@@ -424,6 +458,101 @@ impl KubeClient {
         })
     }
 
+    /// The CRDs an install would create: those not in the cluster yet.
+    async fn crd_changes(&self, docs: &[crate::apply::Doc]) -> Result<Vec<HelmObjectChange>> {
+        let mut out = Vec::new();
+        for doc in docs {
+            let (ar, _) = self.resolve(&doc.api_version, &doc.kind).await?;
+            let api: Api<DynamicObject> = Api::all_with(self.client.clone(), &ar);
+            if timed(api.get_opt(&doc.name)).await?.is_none() {
+                out.push(crd_change(doc)?);
+            }
+        }
+        Ok(out)
+    }
+
+    /// Creates each missing CRD and waits until it is Established; existing
+    /// ones are left as they are.
+    async fn install_crds(
+        &self,
+        docs: &[crate::apply::Doc],
+    ) -> std::result::Result<Vec<HelmObjectChange>, String> {
+        let mut out = Vec::new();
+        for doc in docs {
+            let label = format!("CRD {}", doc.name);
+            let (ar, _) = self
+                .resolve(&doc.api_version, &doc.kind)
+                .await
+                .map_err(|e| format!("{label}: {e}"))?;
+            let api: Api<DynamicObject> = Api::all_with(self.client.clone(), &ar);
+            if timed(api.get_opt(&doc.name))
+                .await
+                .map_err(|e| format!("{label}: {e}"))?
+                .is_some()
+            {
+                continue;
+            }
+            let obj: DynamicObject =
+                serde_json::from_value(doc.value.clone()).map_err(|e| format!("{label}: {e}"))?;
+            let pp = PostParams {
+                dry_run: false,
+                field_manager: Some(FIELD_MANAGER.into()),
+            };
+            timed(api.create(&pp, &obj))
+                .await
+                .map_err(|e| format!("{label}: {e}"))?;
+            let start = tokio::time::Instant::now();
+            loop {
+                let live = timed(api.get(&doc.name))
+                    .await
+                    .map_err(|e| format!("{label}: {e}"))?;
+                let v = serde_json::to_value(&live).unwrap_or_default();
+                let established = v
+                    .pointer("/status/conditions")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|cs| {
+                        cs.iter()
+                            .any(|c| c["type"] == "Established" && c["status"] == "True")
+                    });
+                if established {
+                    break;
+                }
+                if start.elapsed() > CRD_WAIT {
+                    return Err(format!(
+                        "{label}: not established within {}s",
+                        CRD_WAIT.as_secs()
+                    ));
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            out.push(crd_change(doc).map_err(|e| format!("{label}: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    /// `resolve_steps` again after new CRDs, waiting for discovery to serve
+    /// their kinds.
+    async fn resolve_waiting(
+        &self,
+        steps: &mut [plan::Step],
+        ns: &str,
+        allowed: Option<&BTreeSet<String>>,
+        new_kinds: &[(String, String)],
+    ) -> Result<Vec<Result<kube::discovery::ApiResource>>> {
+        let start = tokio::time::Instant::now();
+        loop {
+            let r = self.resolve_steps(steps, ns, allowed).await?;
+            let waiting = steps
+                .iter()
+                .zip(&r)
+                .any(|(s, ar)| ar.is_err() && new_kinds.contains(&group_kind(&s.doc)));
+            if !waiting || start.elapsed() > CRD_WAIT {
+                return Ok(r);
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
     /// Refuses the whole deploy before anything is written when a hook falls outside `allowed`.
     async fn check_hooks(
         &self,
@@ -564,8 +693,17 @@ impl KubeClient {
                 return Err(Error::Conflict(CHANGED.into()));
             }
         }
+        // The chart's crds/ documents: cluster-wide, so never for a limited grant.
+        let mut crd_docs = Vec::new();
+        for t in &d.rendered.crds {
+            crd_docs.extend(crate::apply::split_all(t)?);
+        }
+        if allowed.is_some() && !crd_docs.is_empty() {
+            return Err(fleetops_core::access::cluster_scoped_denied());
+        }
+        let new_kinds = crd_kinds(&crd_docs);
         let mut steps = plan::rollback_steps(&base_manifest, &d.rendered.manifest, ns)?;
-        let resources = self.resolve_steps(&mut steps, ns, allowed).await?;
+        let mut resources = self.resolve_steps(&mut steps, ns, allowed).await?;
         self.check_hooks(&d.rendered.hooks, ns, allowed).await?;
         let act = if d.upgrade { "upgrade" } else { "install" };
         let mut out = HelmPlan {
@@ -579,7 +717,19 @@ impl KubeClient {
             ..Default::default()
         };
         if mode == HelmMode::Plan {
-            out.changes = self.run_steps(&mut steps, resources, name, ns, true).await;
+            if !d.upgrade {
+                out.changes = self.crd_changes(&crd_docs).await?;
+            }
+            let mut changes = self.run_steps(&mut steps, resources, name, ns, true).await;
+            // Objects of a kind the chart's own CRDs bring cannot be checked
+            // before those CRDs exist: shown as they will be created.
+            for (step, c) in steps.iter().zip(changes.iter_mut()) {
+                if c.error.is_some() && !d.upgrade && new_kinds.contains(&group_kind(&step.doc)) {
+                    c.error = None;
+                    c.after = Some(crate::mask::to_yaml(&cleaned(step.doc.value.clone()))?);
+                }
+            }
+            out.changes.extend(changes);
             return Ok(out);
         }
         let now = storage::now();
@@ -607,14 +757,31 @@ impl KubeClient {
         };
         self.write_release(&next, true, Some(&d.source)).await?;
         let mut failure = None;
+        // As Helm does: CRDs are created on install when missing, before
+        // anything else, and never upgraded or deleted.
+        if !d.upgrade && !crd_docs.is_empty() {
+            match self.install_crds(&crd_docs).await {
+                Ok(created) => {
+                    out.changes = created;
+                    resources = self
+                        .resolve_waiting(&mut steps, ns, allowed, &new_kinds)
+                        .await?;
+                }
+                Err(m) => failure = Some(m),
+            }
+        }
         for h in hooks::for_phase(&d.rendered.hooks, &format!("pre-{act}")) {
+            if failure.is_some() {
+                break;
+            }
             if let Err(m) = self.run_hook(h, ns, &format!("pre-{act}")).await {
                 failure = Some(m);
                 break;
             }
         }
         if failure.is_none() {
-            out.changes = self.run_steps(&mut steps, resources, name, ns, false).await;
+            let changes = self.run_steps(&mut steps, resources, name, ns, false).await;
+            out.changes.extend(changes);
             let failed = failures(&out.changes);
             if !failed.is_empty() {
                 failure = Some(failed.join("; "));

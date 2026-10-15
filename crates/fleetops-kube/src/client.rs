@@ -225,10 +225,14 @@ pub(crate) fn outcome(
         Some(b) if *b == after => ApplyAction::Unchanged,
         Some(_) => ApplyAction::Configured,
     };
+    let mut shown = cleaned(after.clone());
+    if let Some(b) = &before {
+        crate::mask::mark_changed(b, &after, &mut shown);
+    }
     let before = before
         .map(|b| crate::mask::to_yaml(&cleaned(b)))
         .transpose()?;
-    Ok((action, before, crate::mask::to_yaml(&cleaned(after))?))
+    Ok((action, before, crate::mask::to_yaml(&shown)?))
 }
 
 /// Runs one apiserver call with the request timeout and error mapping.

@@ -429,6 +429,8 @@ impl fleetops_kube::helm::render::ChartRenderer for FakeRenderer {
             notes: "Hello".into(),
             chart: serde_json::json!({"metadata": {"name": "demo", "version": "0.2.0"}}),
             meta: fleetops_core::helm::ChartMeta { name: "demo".into(), version: "0.2.0".into(), ..Default::default() },
+            config: r.values.clone(),
+            crds: vec![],
         })
     }
     async fn show(

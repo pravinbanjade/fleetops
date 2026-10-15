@@ -416,7 +416,7 @@ async fn deploy(
     chart: &str,
     version: &str,
     name: &str,
-    values: serde_json::Value,
+    values_yaml: &str,
     upgrade: bool,
     allowed: Option<&std::collections::BTreeSet<String>>,
 ) -> fleetops_core::Result<fleetops_core::helm::HelmPlan> {
@@ -426,11 +426,23 @@ async fn deploy(
         version: Some(version.into()),
         oci: None,
     };
+    // As the API does: helm reads the typed YAML plus what was restored.
+    let stored = if upgrade {
+        ops.helm_config(NS, name).await?
+    } else {
+        serde_json::Value::Null
+    };
+    let (full, overlay) = fleetops_kube::helm::values::restore(
+        &fleetops_kube::helm::values::parse(values_yaml)?,
+        &stored,
+    )?;
     let input = RenderInput {
         name: name.into(),
         namespace: NS.into(),
         chart: source.clone(),
-        values: values.clone(),
+        values: full,
+        values_yaml: values_yaml.into(),
+        overlay,
         upgrade,
         kube_version: ops.version().await?.git_version,
         api_versions: ops.api_versions().await?,
@@ -439,7 +451,7 @@ async fn deploy(
     let d = Deploy {
         namespace: NS.into(),
         name: name.into(),
-        config: values,
+        config: rendered.config.clone(),
         rendered,
         source,
         upgrade,
@@ -492,7 +504,7 @@ async fn install_then_upgrade_leaves_a_history_helm_reads() {
         "fodemo",
         "0.1.0",
         &name,
-        serde_json::json!({"password": "s3cret", "extra": true}),
+        &serde_json::json!({"password": "s3cret", "extra": true}).to_string(),
         false,
         None,
     )
@@ -509,7 +521,7 @@ async fn install_then_upgrade_leaves_a_history_helm_reads() {
         "fodemo",
         "0.1.0",
         &name,
-        serde_json::json!({}),
+        &serde_json::json!({}).to_string(),
         false,
         None,
     )
@@ -518,10 +530,8 @@ async fn install_then_upgrade_leaves_a_history_helm_reads() {
     assert!(e.to_string().contains("exists; upgrade it"), "{e}");
 
     // An upgrade that keeps the masked password.
-    let stored = ops.helm_config(NS, &name).await.unwrap();
-    let mut sent = serde_json::json!({"password": MASK, "extra": false});
-    fleetops_kube::helm::values::unmask(&mut sent, &stored).unwrap();
-    let p = deploy(&ops, &url, "fodemo", "0.2.0", &name, sent, true, None)
+    let sent = format!("password: {MASK}\nextra: false\nmode: 0644\n");
+    let p = deploy(&ops, &url, "fodemo", "0.2.0", &name, &sent, true, None)
         .await
         .unwrap();
     assert_eq!(
@@ -541,7 +551,9 @@ async fn install_then_upgrade_leaves_a_history_helm_reads() {
     assert_eq!(statuses, ["superseded", "deployed"]);
     let vals = helm(&["get", "values", &name, "-o", "json"]);
     assert!(
-        vals.contains("s3cret") && vals.contains("\"extra\":false"),
+        vals.contains("s3cret")
+            && vals.contains("\"extra\":false")
+            && vals.contains("\"mode\":420"),
         "{vals}"
     );
     assert_eq!(
@@ -595,7 +607,7 @@ async fn a_cli_release_is_upgraded_and_then_remembers_its_source() {
         "fodemo",
         "0.2.0",
         &name,
-        serde_json::json!({}),
+        &serde_json::json!({}).to_string(),
         true,
         None,
     )
@@ -643,7 +655,7 @@ async fn pre_install_hooks_run_before_the_release_objects() {
         "fohooked",
         "0.1.0",
         &name,
-        serde_json::json!({}),
+        &serde_json::json!({}).to_string(),
         false,
         None,
     )
@@ -697,7 +709,7 @@ async fn a_failing_hook_leaves_the_release_failed_and_names_the_hook() {
         "fofailing",
         "0.1.0",
         &name,
-        serde_json::json!({}),
+        &serde_json::json!({}).to_string(),
         false,
         None,
     )
@@ -744,7 +756,7 @@ async fn a_limited_grant_refuses_a_cluster_scoped_object_before_writing() {
         "focluster",
         "0.1.0",
         &name,
-        serde_json::json!({}),
+        &serde_json::json!({}).to_string(),
         false,
         Some(&allowed),
     )
@@ -754,5 +766,54 @@ async fn a_limited_grant_refuses_a_cluster_scoped_object_before_writing() {
     assert!(
         ops.helm_history(NS, &name).await.is_err(),
         "no release record was written"
+    );
+}
+
+const GADGET_CRD: &str = "apiVersion: apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata: {name: gadgets.fo.example}\nspec:\n  group: fo.example\n  scope: Namespaced\n  names: {plural: gadgets, singular: gadget, kind: Gadget}\n  versions:\n    - name: v1\n      served: true\n      storage: true\n      schema: {openAPIV3Schema: {type: object, x-kubernetes-preserve-unknown-fields: true}}\n";
+const GADGET: &str = "apiVersion: fo.example/v1\nkind: Gadget\nmetadata: {name: '{{ .Release.Name }}'}\nspec: {size: 1}\n";
+
+#[tokio::test]
+async fn chart_crds_are_installed_once_and_outlive_the_release() {
+    let ops = common::ops();
+    let tmp = tempfile::tempdir().unwrap();
+    let c = write_chart(tmp.path(), "foop", "0.1.0", &[("gadget.yaml", GADGET)]);
+    std::fs::create_dir_all(c.join("crds")).unwrap();
+    std::fs::write(c.join("crds").join("gadgets.yaml"), GADGET_CRD).unwrap();
+    let (url, _repo) = serve_repo(&[c]).await;
+    let (a, b) = (uniq("fo-crd-a"), uniq("fo-crd-b"));
+    for n in [&a, &b] {
+        let _ = helm_cmd()
+            .args([
+                "uninstall",
+                n,
+                "--namespace",
+                NS,
+                "--ignore-not-found",
+                "--wait",
+            ])
+            .output();
+    }
+    let p = deploy(&ops, &url, "foop", "0.1.0", &a, "", false, None)
+        .await
+        .unwrap();
+    assert_eq!(p.status.as_deref(), Some("deployed"), "{p:?}");
+    let manifest = helm(&["get", "manifest", &a]);
+    assert!(
+        !manifest.contains("CustomResourceDefinition"),
+        "CRDs stay out of the manifest: {manifest}"
+    );
+    assert!(manifest.contains("kind: Gadget"));
+    // A second release of the same chart finds the CRD and leaves it be.
+    let p = deploy(&ops, &url, "foop", "0.1.0", &b, "", false, None)
+        .await
+        .unwrap();
+    assert_eq!(p.status.as_deref(), Some("deployed"), "{p:?}");
+    helm(&["uninstall", &a, "--wait"]);
+    helm(&["uninstall", &b, "--wait"]);
+    let crds: Api<k8s_openapi::apiextensions_apiserver::pkg::apis::apiextensions::v1::CustomResourceDefinition> =
+        Api::all(common::kube_client());
+    assert!(
+        crds.get_opt("gadgets.fo.example").await.unwrap().is_some(),
+        "uninstall never deletes a chart's CRDs"
     );
 }

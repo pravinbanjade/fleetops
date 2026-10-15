@@ -374,21 +374,29 @@ pub async fn show(
     Ok(Json(r.show(&body.chart).await?))
 }
 
-/// Renders with the cluster's version and API groups.
+/// Renders with the cluster's version and API groups. helm reads the
+/// values as typed, plus an overlay of what was restored from `stored`, so
+/// it parses them by its own rules; the release stores helm's result.
+#[allow(clippy::too_many_arguments)]
 async fn render(
     r: &dyn ChartRenderer,
     k8: &KubeCtx,
     ns: &str,
     name: &str,
     chart: &ChartRef,
-    values: &serde_json::Value,
+    values_yaml: &str,
+    stored: &serde_json::Value,
     upgrade: bool,
 ) -> Result<fleetops_core::helm::Rendered> {
+    let parsed = values::parse(values_yaml)?;
+    let (full, overlay) = values::restore(&parsed, stored)?;
     let input = RenderInput {
         name: name.into(),
         namespace: ns.into(),
         chart: chart.clone(),
-        values: values.clone(),
+        values: full,
+        values_yaml: values_yaml.into(),
+        overlay,
         upgrade,
         kube_version: k8.ops.version().await?.git_version,
         api_versions: k8.ops.api_versions().await?,
@@ -451,22 +459,22 @@ pub async fn install(
         name: body.name.clone(),
     };
     let k8 = writable(&s, &cu, &rp).await?;
-    let mut config = values::parse(&body.values)?;
-    values::unmask(&mut config, &serde_json::Value::Null)?;
+    let none = serde_json::Value::Null;
     let rendered = render(
         r.as_ref(),
         &k8,
         &rp.ns,
         &rp.name,
         &body.chart,
-        &config,
+        &body.values,
+        &none,
         false,
     )
     .await?;
     let d = Deploy {
         namespace: rp.ns.clone(),
         name: rp.name.clone(),
-        config,
+        config: rendered.config.clone(),
         rendered,
         source: body.chart,
         upgrade: false,
@@ -496,14 +504,23 @@ pub async fn upgrade(
     let r = renderer(&s)?;
     body.chart.validate(r.insecure_repos())?;
     let k8 = writable(&s, &cu, &p).await?;
-    let mut config = values::parse(&body.values)?;
+    values::parse(&body.values)?;
     let stored = k8.ops.helm_config(&p.ns, &p.name).await?;
-    values::unmask(&mut config, &stored)?;
-    let rendered = render(r.as_ref(), &k8, &p.ns, &p.name, &body.chart, &config, true).await?;
+    let rendered = render(
+        r.as_ref(),
+        &k8,
+        &p.ns,
+        &p.name,
+        &body.chart,
+        &body.values,
+        &stored,
+        true,
+    )
+    .await?;
     let d = Deploy {
         namespace: p.ns.clone(),
         name: p.name.clone(),
-        config,
+        config: rendered.config.clone(),
         rendered,
         source: body.chart,
         upgrade: true,

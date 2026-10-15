@@ -133,6 +133,7 @@ impl Runner for ProcessRunner {
             env: &env,
             timeout: self.timeout,
             stdout_cap: STDOUT_CAP,
+            cwd: None,
         };
         let out = crate::process::run(spec).await.map_err(|e| match e {
             RunError::NotFound => ExecError::NotFound(p.command.clone()),

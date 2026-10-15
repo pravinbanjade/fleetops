@@ -14,6 +14,8 @@ pub struct Spec<'a> {
     pub env: &'a [(String, String)],
     pub timeout: Duration,
     pub stdout_cap: usize,
+    /// Where the child runs; `None` is the server's own directory.
+    pub cwd: Option<&'a std::path::Path>,
 }
 
 #[derive(Debug)]
@@ -39,6 +41,9 @@ pub enum RunError {
 
 pub async fn run(s: Spec<'_>) -> Result<Output, RunError> {
     let mut cmd = tokio::process::Command::new(s.program);
+    if let Some(dir) = s.cwd {
+        cmd.current_dir(dir);
+    }
     // Its own process group, so a timeout ends whatever it started too.
     #[cfg(unix)]
     cmd.process_group(0);
@@ -131,6 +136,7 @@ mod tests {
             env,
             timeout: Duration::from_secs(5),
             stdout_cap: 1024,
+            cwd: None,
         }
     }
     fn sh(script: &str) -> Vec<String> {
@@ -168,5 +174,22 @@ mod tests {
             ..spec(&slow, &none)
         };
         assert_eq!(run(s).await.unwrap_err(), RunError::TimedOut);
+    }
+
+    #[tokio::test]
+    async fn the_child_runs_in_the_directory_given() {
+        let dir = tempfile::tempdir().unwrap();
+        let args = sh("pwd -P");
+        let none: [(String, String); 0] = [];
+        let s = Spec {
+            cwd: Some(dir.path()),
+            ..spec(&args, &none)
+        };
+        let o = run(s).await.unwrap();
+        let want = std::fs::canonicalize(dir.path()).unwrap();
+        assert_eq!(
+            String::from_utf8(o.stdout.clone()).unwrap().trim(),
+            want.to_string_lossy()
+        );
     }
 }
