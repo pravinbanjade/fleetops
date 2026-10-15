@@ -27,6 +27,7 @@ import { UserAvatar } from "./UserAvatar";
 import { CustomResourcesNav } from "@/pages/kube/generic/CustomResourcesNav";
 import { LINK, useGroupToggles } from "./sidebar";
 import { TopBarSlot } from "./topBarSlot";
+import { ee, Slot, useEeAdminNav } from "@/ee-slots";
 
 export function Shell() {
   const { env } = useParams({ strict: false });
@@ -40,7 +41,7 @@ export function Shell() {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useGoKeys(env, kube);
   return (
-    <div className="min-h-svh md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
+    <div data-edition={ee.id} className="min-h-svh md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
       <aside className="sticky top-0 hidden h-svh border-r bg-rail md:block">
         <Rail env={env} kube={kube} />
       </aside>
@@ -62,6 +63,7 @@ export function Shell() {
       <main className="min-w-0">
         <TopBar env={env} kube={kube} onMenu={() => setDrawer(true)} slotRef={setSlot} />
         <ConnectionBanner />
+        <Slot name="shell.banner" />
         {env && !kube && <EnvLive env={env} />}
         <TopBarSlot.Provider value={slot}>
           <Outlet />
@@ -184,12 +186,19 @@ function AdminNav() {
   // Read without `useSession`: the shell re-renders on navigation, and a
   // lost session clears the cache just before the move to login.
   const { data } = useQuery(meQuery);
+  const eeNav = useEeAdminNav();
   if (data?.user.role !== "admin") return null;
   return (
     <nav className="grid gap-0.5" aria-label="Administration">
       <div className="px-2 pb-1 text-xs font-medium text-muted-foreground">Administration</div>
       {ADMIN_NAV.map(({ to, label, icon: Icon }) => (
         <Link key={to} to={to} className={LINK}>
+          <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+          {label}
+        </Link>
+      ))}
+      {eeNav.map(({ to, label, icon: Icon }) => (
+        <Link key={to} to={to as never} className={LINK}>
           <Icon className="size-4 shrink-0" strokeWidth={1.75} />
           {label}
         </Link>

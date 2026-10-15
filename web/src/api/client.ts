@@ -63,3 +63,33 @@ export function configureApi(opts: ApiOptions = {}) {
     return new ApiError(response.status, body);
   });
 }
+
+/**
+ * A JSON call outside the generated client (the Enterprise endpoints, which
+ * the committed Community document does not list). Sends the CSRF token on
+ * mutating requests and throws `ApiError` like the SDK.
+ */
+export async function apiFetch<T>(
+  path: string,
+  init: { method?: string; body?: string; contentType?: string } = {},
+): Promise<T> {
+  const method = init.method ?? "GET";
+  const headers = new Headers();
+  if (init.contentType) headers.set("content-type", init.contentType);
+  if (method !== "GET" && csrfToken) headers.set("x-csrf-token", csrfToken);
+  const res = await fetch(
+    new Request(new URL(path, window.location.origin), { method, headers, body: init.body, credentials: "same-origin" }),
+  );
+  const text = await res.text();
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : undefined;
+  } catch {
+    body = undefined;
+  }
+  if (!res.ok) {
+    if (res.status === 401) reportUnauthorized();
+    throw new ApiError(res.status, body as Partial<ErrorBody> | undefined);
+  }
+  return body as T;
+}

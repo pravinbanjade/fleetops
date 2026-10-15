@@ -4,6 +4,7 @@ import { refKind, type Ref } from "@/pages/kube/generic/ref";
 import type { ContainerInspect, ImageInspect, ImageLayer, NetworkInspect, VolumeInspect } from "./docker";
 import {
   getAuthStatus,
+  getEdition,
   helmCapabilities,
   workloadPods,
   getDiskUsage,
@@ -52,6 +53,7 @@ import { mergeEvents } from "@/live/noise";
  */
 export const keys = {
   authStatus: ["auth", "status"] as const,
+  edition: ["edition"] as const,
   me: ["auth", "me"] as const,
   sessions: ["auth", "sessions"] as const,
   envs: ["envs"] as const,
@@ -95,6 +97,12 @@ export const keys = {
 export const authStatusQuery = queryOptions({
   queryKey: keys.authStatus,
   queryFn: async () => (await getAuthStatus()).data,
+});
+
+export const editionQuery = queryOptions({
+  queryKey: keys.edition,
+  queryFn: async () => (await getEdition()).data,
+  staleTime: 60_000,
 });
 
 export const meQuery = queryOptions({

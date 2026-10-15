@@ -27,7 +27,7 @@ export function mockFetch(routes: Record<string, Handler | { status?: number; js
         method: input.method,
         path: url.pathname + url.search,
         headers: input.headers,
-        body: text ? JSON.parse(text) : undefined,
+        body: text ? parseBody(text) : undefined,
       };
       calls.push(call);
       const route = routes[`${call.method} ${url.pathname}`];
@@ -38,6 +38,14 @@ export function mockFetch(routes: Record<string, Handler | { status?: number; js
     }),
   );
   return calls;
+}
+
+function parseBody(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
 }
 
 export function json(status: number, body: unknown) {

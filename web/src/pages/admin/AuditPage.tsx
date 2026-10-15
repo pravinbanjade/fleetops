@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatTime } from "@/lib/format";
 import { SystemAvatar, UserAvatar } from "@/components/UserAvatar";
+import { Slot } from "@/ee-slots";
 
 type Row = AuditEntry & { envName: string };
 const col = columns<Row>();
@@ -73,9 +74,12 @@ export function AuditPage() {
     <Page
       title="Audit log"
       actions={
-        <Button variant="outline" disabled={audit.isFetching} onClick={() => void audit.refetch()}>
-          Refresh
-        </Button>
+        <>
+          <Slot name="audit.toolbar" />
+          <Button variant="outline" disabled={audit.isFetching} onClick={() => void audit.refetch()}>
+            Refresh
+          </Button>
+        </>
       }
     >
       <DataTable

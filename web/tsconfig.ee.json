@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "paths": { "@/*": ["./src/*"], "@ee": ["../ee/web/src/index.ts"] } },
+  "include": ["src", "e2e", "../ee/web/src", "../ee/web/e2e", "vite.config.ts", "playwright.config.ts", "playwright.ee.config.ts", "openapi-ts.config.ts"]
+}

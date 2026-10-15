@@ -14,7 +14,7 @@
     "skipLibCheck": true,
     "noEmit": true,
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
-    "paths": { "@/*": ["./src/*"] }
+    "paths": { "@/*": ["./src/*"], "@ee": ["./src/ee-stub.ts"] }
   },
   "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts", "openapi-ts.config.ts"]
 }

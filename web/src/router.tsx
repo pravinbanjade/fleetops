@@ -20,6 +20,7 @@ import { CONTAINER_TABS, type ContainerTab } from "@/pages/containers/tabs";
 import { HELM_TABS, type HelmTab } from "@/pages/helm/tabs";
 import { KUBE_TABS, type KubeTab } from "@/pages/kube/tabs";
 import { SetupPage } from "@/pages/SetupPage";
+import { ee } from "@/ee-slots";
 
 export interface RouterContext {
   queryClient: QueryClient;
@@ -315,7 +316,7 @@ const routeTree = rootRoute.addChildren([
     genericListRoute,
     genericObjectRoute,
       ]),
-      adminRoute.addChildren([usersRoute, envsAdminRoute, auditRoute]),
+      adminRoute.addChildren([usersRoute, envsAdminRoute, auditRoute, ...(ee.adminRoutes(adminRoute) as [])]),
       accountRoute,
     ]),
   ]),
