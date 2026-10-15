@@ -11,3 +11,8 @@ web/e2e-data/
 web/test-results/
 web/playwright-report/
 ee/web/node_modules
+
+# Local design and planning context, not published
+PRODUCT.md
+DESIGN.md
+docs/superpowers/

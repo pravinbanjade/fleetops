@@ -263,23 +263,6 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 - **Releases** (the `publish` and `release` jobs in `.gitlab-ci.yml`) run on a `vX.Y.Z` tag that matches the workspace version in `Cargo.toml`. They push the server and agent images (`docker.io/fleets/fleetops` and `docker.io/fleets/fleetops-agent`) to Docker Hub with the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` CI/CD variables, upload both binaries to the generic package registry and link them from a GitLab release.
 - **TDD.** New behaviour starts with a failing test.
 
-### Design documents
-
-Design documents live in `docs/superpowers/`:
-
-- `specs/2026-09-29-fleetops-core-docker-design.md` is the sub-project 1 design and the authority for behaviour.
-- `specs/2026-10-01-fleetops-agent-multihost-design.md` is the sub-project 2 (agent) design.
-- `specs/2026-10-01-fleetops-kubernetes-design.md` is the sub-project 3 (Kubernetes) design.
-- `specs/2026-10-06-fleetops-kube-live-writable-design.md` is slice 3b (live and writable Kubernetes).
-- `specs/2026-10-07-fleetops-kube-events-metrics-design.md` is slice 3e (events and CPU and memory).
-- `specs/2026-10-07-fleetops-kube-suspend-design.md` is slice 3f (suspend and resume).
-- `specs/2026-10-08-fleetops-kube-crds-generic-kinds-design.md` is slice 3g (custom resources and the missing core kinds), with the Lens-parity roadmap.
-- `specs/2026-10-14-fleetops-kube-workload-logs-exec-design.md` is slice 3i (workload logs and exec).
-- `specs/2026-10-14-fleetops-helm-install-upgrade-design.md` is slice 3j (Helm install and upgrade).
-- `specs/2026-10-14-fleetops-kube-exec-plugins-design.md` is slice 3k (exec-plugin kubeconfigs).
-- `specs/2026-10-15-fleetops-editions-design.md` is the Community/Enterprise split and licensing.
-- `plans/` holds the implementation plans: one per phase of sub-project 1 (P1, P2a–c, P3a–d), one for sub-project 2, and one for sub-project 3.
-
 ## Architecture
 
 ```
@@ -292,9 +275,8 @@ fleetops/
 │  ├─ fleetops-tunnel/   yamux over a WebSocket, the agent control protocol, the live-session registry
 │  ├─ fleetops-agent/    bin `fleetops-agent`: dial-out, key storage, byte pipe to the host's Docker socket
 │  └─ fleetops-store/    sqlx + SQLite: migrations and repositories (users, sessions, environments, settings, audit)
-├─ web/                  React 19 + TypeScript + Vite
-│  └─ src/api/gen/       client generated from the OpenAPI document
-└─ docs/superpowers/     specs and plans
+└─ web/                  React 19 + TypeScript + Vite
+   └─ src/api/gen/       client generated from the OpenAPI document
 ```
 
 - **Environments.** Every Docker route is scoped to an environment (`/envs/{env}/…`). Handlers resolve the environment through an `EnvRegistry` and call the `DockerOps` trait. They never call bollard directly. Local environments use `LocalDocker` on a socket; agent environments (`docker-agent`) use the same `LocalDocker` over a tunnel. Kubernetes environments (`kube-config`, `kube-agent`) implement `KubeOps` instead, on kube-rs, either from a stored kubeconfig or over the same tunnel to an in-cluster agent; their routes live under `/envs/{env}/k8s/…`, and pod logs and exec use the same websocket topics as containers.
