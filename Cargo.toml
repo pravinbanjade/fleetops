@@ -1,11 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = ["crates/*", "ee/crates/*"]
+# `cargo build` and `cargo test` cover the Community edition only.
+default-members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
+license = "Apache-2.0"
 
 [workspace.dependencies]
 fleetops-core = { path = "crates/fleetops-core" }
@@ -14,12 +17,14 @@ fleetops-api = { path = "crates/fleetops-api" }
 fleetops-docker = { path = "crates/fleetops-docker" }
 fleetops-tunnel = { path = "crates/fleetops-tunnel" }
 fleetops-kube = { path = "crates/fleetops-kube" }
+fleetops-ee = { path = "ee/crates/fleetops-ee" }
 
 aes-gcm = "0.10"
 anyhow = "1"
 argon2 = { version = "0.5", features = ["std"] }
 async-trait = "0.1"
 base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 bollard = "0.21"
 bytes = "1"
 axum = { version = "0.8", features = ["ws", "multipart"] }

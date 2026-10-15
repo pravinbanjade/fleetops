@@ -10,3 +10,4 @@ web/dist/
 web/e2e-data/
 web/test-results/
 web/playwright-report/
+ee/web/node_modules

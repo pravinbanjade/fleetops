@@ -1,0 +1,34 @@
+FleetOps Enterprise License
+
+Copyright (c) 2026 Pravin Banjade
+
+This license covers every file in the ee/ directory of the FleetOps
+repository, and the parts of any program built from them (together, "the
+Enterprise Software"). Files outside ee/ are licensed under the Apache
+License 2.0; see LICENSE at the repository root.
+
+1. Development and testing. You may copy, modify and run the Enterprise
+   Software, and builds that include it, to develop, test and evaluate
+   them. This needs no subscription.
+
+2. Production use. Any other use, including any production use, needs a
+   valid FleetOps Enterprise subscription covering the number of users,
+   and the license key issued for it. You may not remove, disable or work
+   around the license key check or the limits it enforces.
+
+3. Modifications. You may modify the Enterprise Software for the uses
+   allowed in sections 1 and 2. Contributions you send to the FleetOps
+   project for ee/ are licensed to the project under these same terms,
+   with the added right for the project to relicense them.
+
+4. Distribution. You may not distribute, sublicense, sell, or offer as a
+   hosted service the Enterprise Software or modified versions of it.
+   Unmodified official FleetOps Enterprise builds may be copied for your
+   own use under a subscription.
+
+5. No warranty. THE ENTERPRISE SOFTWARE IS PROVIDED "AS IS", WITHOUT
+   WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO EVENT SHALL THE AUTHORS
+   OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY ARISING FROM THE ENTERPRISE SOFTWARE OR ITS USE.
+
+6. Termination. These rights end automatically if you break these terms.

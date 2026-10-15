@@ -3,6 +3,7 @@ name = "fleetops-kube"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 
 [features]
 # The cluster suite: `make test-kube`.
