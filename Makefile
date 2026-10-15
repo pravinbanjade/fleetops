@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi
+.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi test-ee test-web-ee web-ee build-ee e2e-ee check-editions image-ee
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -12,8 +12,9 @@ dev-server:
 	DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null)} \
 		cargo run -p fleetops-server -- --data ./.dev-data --bind 127.0.0.1:9000
 
+# Community crates (default-members); make test-ee covers ee/.
 test:
-	cargo test --workspace
+	cargo test
 
 # Typecheck, lint and unit tests for the web UI, and a check that the
 # committed API client matches the committed OpenAPI document.
@@ -76,6 +77,7 @@ agent-kube-smoke: kind-up
 lint:
 	cargo fmt --all --check
 	cargo clippy --workspace --all-targets -- -D warnings
+	cargo clippy -p fleetops-server -p fleetops-ee -p fleetops-license --features fleetops-server/enterprise --all-targets -- -D warnings
 
 fmt:
 	cargo fmt --all
@@ -120,3 +122,41 @@ image-smoke:
 # that the agent enrolls and its environment reaches Docker.
 agent-smoke:
 	scripts/agent-smoke.sh $(IMAGE) $(AGENT_IMAGE)
+
+# ---- Enterprise edition (ee/LICENSE) ----------------------------------------
+
+EE_FEATURES = --features fleetops-server/enterprise
+EE_IMAGE ?= fleetops-ee:dev
+
+# The Enterprise crates, and the server built with them.
+test-ee:
+	cargo test -p fleetops-ee -p fleetops-license
+	cargo test -p fleetops-ee --features test-license-key keys::
+	cargo test -p fleetops-server $(EE_FEATURES)
+
+test-web-ee:
+	cd web && pnpm install --frozen-lockfile
+	cd web && pnpm typecheck:ee
+	cd web && pnpm test:ee
+
+web-ee:
+	cd web && pnpm install --frozen-lockfile
+	cd web && pnpm build:ee
+
+build-ee: web-ee
+	cargo build --release -p fleetops-server $(EE_FEATURES)
+
+# The Enterprise Playwright suite, on a build that trusts the test key.
+e2e-ee: web-ee
+	cargo build --release -p fleetops-server --features fleetops-server/ee-test-license-key
+	cd web && pnpm exec playwright install chromium
+	cd web && DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
+		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
+		pnpm exec playwright test -c playwright.ee.config.ts
+
+# Community code must not reach into ee/ (spec §6).
+check-editions: web
+	scripts/check-editions.sh
+
+image-ee:
+	docker buildx build --platform $(PLATFORMS) --build-arg EDITION=ee --target server --tag $(EE_IMAGE) --load .

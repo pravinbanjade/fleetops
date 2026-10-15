@@ -23,6 +23,7 @@ variables:
   CI_IMAGE: $CI_REGISTRY_IMAGE/ci:$CI_COMMIT_REF_SLUG
   SERVER_IMAGE_REPO: docker.io/fleets/fleetops
   AGENT_IMAGE_REPO: docker.io/fleets/fleetops-agent
+  EE_IMAGE_REPO: docker.io/fleets/fleetops-ee
   BUILD_CACHE: $CI_REGISTRY_IMAGE/cache:build
   CARGO_HOME: $CI_PROJECT_DIR/.cargo
   CARGO_TERM_COLOR: always
@@ -104,6 +105,36 @@ web:
   script:
     - make test-web
 
+rust-ee:
+  extends: .test
+  cache: [*rust-cache]
+  script:
+    - make test-ee
+
+web-ee:
+  extends: .test
+  cache: [*web-cache]
+  script:
+    - make test-web-ee
+
+# Community code must not depend on ee/.
+editions:
+  extends: .test
+  cache: [*rust-cache, *web-cache]
+  script:
+    - make check-editions
+
+e2e-ee:
+  extends: [.test, .docker]
+  cache: [*rust-cache, *web-cache]
+  script:
+    - (cd web && pnpm install --frozen-lockfile)
+    - make e2e-ee
+  artifacts:
+    when: on_failure
+    expire_in: 7 days
+    paths: [web/playwright-report/, web/test-results/]
+
 e2e:
   extends: [.test, .docker]
   cache: [*rust-cache, *web-cache]
@@ -161,6 +192,11 @@ images:
     - docker buildx build . --target server --platform linux/amd64 --load --tag fleetops:ci --cache-from "type=registry,ref=$BUILD_CACHE"
     - docker buildx build . --target agent --platform linux/amd64 --load --tag fleetops-agent:ci --cache-from "type=registry,ref=$BUILD_CACHE"
     - make image-smoke IMAGE=fleetops:ci
+    - >
+      docker buildx build . --target server --build-arg EDITION=ee --platform linux/amd64,linux/arm64
+      --cache-from "type=registry,ref=$BUILD_CACHE"
+    - docker buildx build . --target server --build-arg EDITION=ee --platform linux/amd64 --load --tag fleetops-ee:ci --cache-from "type=registry,ref=$BUILD_CACHE"
+    - make image-smoke IMAGE=fleetops-ee:ci
     - make agent-smoke IMAGE=fleetops:ci AGENT_IMAGE=fleetops-agent:ci
 
 # Pushes the images and uploads the binaries to the generic package
@@ -187,9 +223,14 @@ publish:
       docker buildx build . --target agent --platform linux/amd64,linux/arm64 --push
       $(tags "$AGENT_IMAGE_REPO") $labels
       --cache-from "type=registry,ref=$BUILD_CACHE"
+    - >
+      docker buildx build . --target server --build-arg EDITION=ee --platform linux/amd64,linux/arm64 --push
+      $(tags "$EE_IMAGE_REPO") $labels
+      --cache-from "type=registry,ref=$BUILD_CACHE"
     # The same build (cache hits), stopped at the bare-binary stages.
     - docker buildx build . --target binary --platform linux/amd64,linux/arm64 --output type=local,dest=out --cache-from "type=registry,ref=$BUILD_CACHE"
     - docker buildx build . --target agent-binary --platform linux/amd64,linux/arm64 --output type=local,dest=out-agent --cache-from "type=registry,ref=$BUILD_CACHE"
+    - docker buildx build . --target binary --build-arg EDITION=ee --platform linux/amd64,linux/arm64 --output type=local,dest=out-ee --cache-from "type=registry,ref=$BUILD_CACHE"
     - |
       mkdir dist
       for arch in amd64 arm64; do
@@ -199,6 +240,9 @@ publish:
         agent=fleetops-agent-$CI_COMMIT_TAG-linux-$arch
         cp out-agent/linux_$arch/fleetops-agent "dist/$agent"
         (cd dist && sha256sum "$agent" > "$agent.sha256")
+        ee=fleetops-ee-$CI_COMMIT_TAG-linux-$arch
+        cp out-ee/linux_$arch/fleetops "dist/$ee"
+        (cd dist && sha256sum "$ee" > "$ee.sha256")
       done
       echo "VERSION=$version" > release.env
       for f in dist/*; do
@@ -223,13 +267,17 @@ release:
   release:
     tag_name: $CI_COMMIT_TAG
     name: FleetOps $CI_COMMIT_TAG
-    description: "Images `$SERVER_IMAGE_REPO:$VERSION` and `$AGENT_IMAGE_REPO:$VERSION` for linux/amd64 and linux/arm64, and static linux binaries of both with SHA-256 checksums."
+    description: "Images `$SERVER_IMAGE_REPO:$VERSION` (Community, Apache-2.0), `$EE_IMAGE_REPO:$VERSION` (Enterprise, needs a license) and `$AGENT_IMAGE_REPO:$VERSION` for linux/amd64 and linux/arm64, and static linux binaries of each with SHA-256 checksums."
     assets:
       links:
         - { name: fleetops-$CI_COMMIT_TAG-linux-amd64, url: $PACKAGE/fleetops-$CI_COMMIT_TAG-linux-amd64, link_type: package }
         - { name: fleetops-$CI_COMMIT_TAG-linux-amd64.sha256, url: $PACKAGE/fleetops-$CI_COMMIT_TAG-linux-amd64.sha256, link_type: other }
         - { name: fleetops-$CI_COMMIT_TAG-linux-arm64, url: $PACKAGE/fleetops-$CI_COMMIT_TAG-linux-arm64, link_type: package }
         - { name: fleetops-$CI_COMMIT_TAG-linux-arm64.sha256, url: $PACKAGE/fleetops-$CI_COMMIT_TAG-linux-arm64.sha256, link_type: other }
+        - { name: fleetops-ee-$CI_COMMIT_TAG-linux-amd64, url: $PACKAGE/fleetops-ee-$CI_COMMIT_TAG-linux-amd64, link_type: package }
+        - { name: fleetops-ee-$CI_COMMIT_TAG-linux-amd64.sha256, url: $PACKAGE/fleetops-ee-$CI_COMMIT_TAG-linux-amd64.sha256, link_type: other }
+        - { name: fleetops-ee-$CI_COMMIT_TAG-linux-arm64, url: $PACKAGE/fleetops-ee-$CI_COMMIT_TAG-linux-arm64, link_type: package }
+        - { name: fleetops-ee-$CI_COMMIT_TAG-linux-arm64.sha256, url: $PACKAGE/fleetops-ee-$CI_COMMIT_TAG-linux-arm64.sha256, link_type: other }
         - { name: fleetops-agent-$CI_COMMIT_TAG-linux-amd64, url: $PACKAGE/fleetops-agent-$CI_COMMIT_TAG-linux-amd64, link_type: package }
         - { name: fleetops-agent-$CI_COMMIT_TAG-linux-amd64.sha256, url: $PACKAGE/fleetops-agent-$CI_COMMIT_TAG-linux-amd64.sha256, link_type: other }
         - { name: fleetops-agent-$CI_COMMIT_TAG-linux-arm64, url: $PACKAGE/fleetops-agent-$CI_COMMIT_TAG-linux-arm64, link_type: package }

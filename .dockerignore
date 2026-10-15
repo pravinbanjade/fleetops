@@ -4,6 +4,8 @@
 !Cargo.lock
 !crates/
 !web/
+!ee/
+ee/web/node_modules
 web/node_modules/
 web/dist/
 web/test-results/

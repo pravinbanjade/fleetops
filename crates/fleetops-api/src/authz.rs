@@ -102,6 +102,16 @@ pub async fn deny_audited<T>(
     r
 }
 
+/// Fails with `license_required` unless the license grants `feature`.
+/// Enterprise handlers call this before doing anything.
+pub fn require_feature(state: &AppState, feature: fleetops_core::edition::Feature) -> Result<()> {
+    if state.entitlements.has(feature) {
+        Ok(())
+    } else {
+        Err(Error::LicenseRequired(feature.as_str().into()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,15 +153,5 @@ mod tests {
         assert!(
             matches!(authorize_env(None, "e", Action::DockerRead), Err(Error::NotFound(m)) if m == "environment 'e'")
         );
-    }
-}
-
-/// Fails with `license_required` unless the license grants `feature`.
-/// Enterprise handlers call this before doing anything.
-pub fn require_feature(state: &AppState, feature: fleetops_core::edition::Feature) -> Result<()> {
-    if state.entitlements.has(feature) {
-        Ok(())
-    } else {
-        Err(Error::LicenseRequired(feature.as_str().into()))
     }
 }

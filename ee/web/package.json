@@ -1,0 +1,6 @@
+{
+  "name": "fleetops-ee-web",
+  "private": true,
+  "type": "module",
+  "license": "SEE LICENSE IN ../LICENSE"
+}

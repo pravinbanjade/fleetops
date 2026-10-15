@@ -10,16 +10,20 @@
 ARG RUST_VERSION=1.98
 ARG NODE_VERSION=24
 ARG ZIGBUILD_VERSION=0.23.4
+# ce, or ee for the Enterprise edition (ee/LICENSE): `make image-ee`.
+ARG EDITION=ce
 
 # The web UI, which the server binary embeds at compile time.
 FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-trixie-slim AS web
+ARG EDITION
 WORKDIR /src/web
 RUN corepack enable
 COPY web/package.json web/pnpm-lock.yaml ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 COPY web/ ./
-RUN pnpm build
+COPY ee/web/ /src/ee/web/
+RUN if [ "$EDITION" = ee ]; then pnpm build:ee; else pnpm build; fi
 
 # zig and cargo-zigbuild, taken from the cargo-zigbuild project's image.
 FROM --platform=$BUILDPLATFORM ghcr.io/rust-cross/cargo-zigbuild:${ZIGBUILD_VERSION} AS zigbuild
@@ -31,7 +35,9 @@ ENV PATH=/usr/local/zig:$PATH
 RUN rustup target add x86_64-unknown-linux-musl aarch64-unknown-linux-musl
 WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
+ARG EDITION
 COPY crates/ crates/
+COPY ee/ ee/
 COPY --from=web /src/web/dist web/dist
 ARG TARGETARCH
 # Each platform gets its own cache mounts. The two builds run at once, and
@@ -48,8 +54,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=fleetops-cargo-regist
     # builder, and cargo judges workspace crates fresh by mtime. Touching
     # them makes cargo rebuild this checkout's crates (dependencies stay
     # cached) instead of reusing another checkout's newer build.
-    find crates -type f -exec touch {} + && \
-    cargo zigbuild --locked --release -p fleetops-server -p fleetops-agent --target "$target" && \
+    find crates ee -type f -exec touch {} + && \
+    features=$([ "$EDITION" = ee ] && echo "--features fleetops-server/enterprise" || true) && \
+    cargo zigbuild --locked --release -p fleetops-server -p fleetops-agent $features --target "$target" && \
     cp "target/$target/release/fleetops" /fleetops && \
     cp "target/$target/release/fleetops-agent" /fleetops-agent
 # The data directory, owned by distroless's nonroot user (65532).
