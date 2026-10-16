@@ -6,6 +6,8 @@ FleetOps is a self-hosted container management platform. It is a single Rust bin
 
 [Quick start](#quick-start) · [Features](#features) · [Editions](#editions) · [Kubernetes guide](docs/kubernetes.md) · [Security](#security) · [Contributing](CONTRIBUTING.md)
 
+![The FleetOps dashboard for a Docker host: containers that need attention, running containers with live CPU and memory, disk usage and recent events](docs/images/dashboard.png)
+
 > **Status: early development (0.x).** Docker, multi-host agents, Kubernetes, Helm and per-environment roles all work today. Expect rough edges and breaking changes between minor versions. Stacks and GitOps are next.
 
 ## Why FleetOps
@@ -15,6 +17,27 @@ FleetOps is a self-hosted container management platform. It is a single Rust bin
 - **Built for incidents.** A virtualized log viewer that handles 200k lines with search and ANSI colour, and a terminal that never silently starts a new shell. Every exec and every change is audited.
 - **Teams included.** Per-environment viewer and operator roles, namespace scoping on clusters, and an audit log are free and Apache-2.0.
 - **No telemetry.** FleetOps never phones home.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/containers.png" alt="Container list grouped by state, with ports and live CPU and memory sparklines"></td>
+    <td width="50%"><img src="docs/images/logs.png" alt="Log viewer with timestamps, ANSI colours and search highlighting"></td>
+  </tr>
+  <tr>
+    <td align="center">Containers, with live CPU and memory</td>
+    <td align="center">Logs with search, timestamps and ANSI colour</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/k8s-overview.png" alt="Kubernetes cluster overview: workloads that need attention, recent warnings, nodes and resource counts"></td>
+    <td width="50%"><img src="docs/images/k8s-pods.png" alt="Kubernetes pod list across all namespaces with status, restarts, node and IP"></td>
+  </tr>
+  <tr>
+    <td align="center">Kubernetes cluster overview</td>
+    <td align="center">Pods across every namespace, updated live</td>
+  </tr>
+</table>
 
 ## Quick start
 
