@@ -4,6 +4,8 @@
 
 FleetOps is a self-hosted container management platform. It is a single Rust binary with the web UI and a SQLite database built in. Run it next to a Docker or Podman socket and your team can manage containers, images, volumes, networks and Compose projects from the browser. Add more Docker hosts through a dial-out agent, and Kubernetes clusters by kubeconfig or an in-cluster agent, all in the same UI.
 
+It is an open-source alternative to Portainer: roles, Kubernetes namespace scoping and an audit log are free under Apache-2.0, on any number of nodes. See [FleetOps vs Portainer](https://fleetops.pravinb.com.np/portainer-alternative) and the [FAQ](https://fleetops.pravinb.com.np/faq).
+
 [Quick start](#quick-start) · [Features](#features) · [Editions](#editions) · [Kubernetes guide](docs/kubernetes.md) · [Security](#security) · [Contributing](CONTRIBUTING.md)
 
 ![The FleetOps dashboard for a Docker host: containers that need attention, running containers with live CPU and memory, disk usage and recent events](docs/images/dashboard.png)
