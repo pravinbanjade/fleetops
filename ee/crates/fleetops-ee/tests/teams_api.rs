@@ -488,3 +488,40 @@ async fn effective_access_lists_sources() {
     let r = f.call("GET", "/api/v1/ee/users/1/access", None).await;
     assert_eq!(r.json(), json!([]), "admins have everything already");
 }
+
+#[tokio::test]
+async fn env_team_access_lists_teams_and_members() {
+    let f = fx().await;
+    let t = f.team("payments").await;
+    f.add(t, f.bob_id).await;
+    f.add(t, f.carol_id).await;
+    f.grant(
+        t,
+        f.kube,
+        json!({"role": "operator", "namespaces": ["pay"]}),
+    )
+    .await;
+    f.team("idle").await;
+
+    let r = f.call("GET", "/api/v1/ee/envs/k/teams", None).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(
+        r.json(),
+        json!([{"team_id": t, "team_name": "payments", "role": "operator", "namespaces": ["pay"],
+                "members": ["bob", "carol"]}])
+    );
+    assert_eq!(
+        f.call("GET", "/api/v1/ee/envs/e/teams", None).await.json(),
+        json!([])
+    );
+    assert_eq!(
+        f.call("GET", "/api/v1/ee/envs/nope/teams", None)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    let r =
+        f.ee.send("GET", "/api/v1/ee/envs/k/teams", None, Some(&f.bob))
+            .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+}

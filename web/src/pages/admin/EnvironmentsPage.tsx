@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
 import { EnvStatusBadge } from "@/components/Shell";
+import { isEnterpriseBuild, Slot } from "@/ee-slots";
 import { Button } from "@/components/ui/button";
 import { Dialog as Modal, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -428,7 +429,9 @@ function EnvAccess({ env, onClose }: { env: string; onClose: () => void }) {
         ) : !q.data ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : q.data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Only admins can use this environment.</p>
+          <p className="text-sm text-muted-foreground">
+            {isEnterpriseBuild ? "No user has a direct grant here." : "Only admins can use this environment."}
+          </p>
         ) : (
           <table aria-label={`Access to ${env}`} className="w-full text-sm">
             <thead className="text-left text-muted-foreground">
@@ -449,6 +452,7 @@ function EnvAccess({ env, onClose }: { env: string; onClose: () => void }) {
             </tbody>
           </table>
         )}
+        <Slot name="env.access" props={{ env }} />
       </DialogContent>
     </Modal>
   );

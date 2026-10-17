@@ -283,6 +283,25 @@ pub async fn delete_binding(pool: &SqlitePool, team_id: i64, env_id: i64) -> Res
     Ok(r.rows_affected() > 0)
 }
 
+/// Every team with a grant on `env_id`, by name, with the grant.
+pub async fn env_teams(pool: &SqlitePool, env_id: i64) -> Result<Vec<(TeamRecord, TeamBinding)>> {
+    let bindings: Vec<TeamBinding> =
+        sqlx::query_as::<_, BindingRow>(&format!("{BINDING_SELECT} WHERE b.environment_id = ?"))
+            .bind(env_id)
+            .fetch_all(pool)
+            .await
+            .map_err(db_err)?
+            .into_iter()
+            .map(BindingRow::into_binding)
+            .collect::<Result<_>>()?;
+    let mut out = Vec::new();
+    for b in bindings {
+        out.push((get(pool, b.team_id).await?, b));
+    }
+    out.sort_by(|a, b| a.0.name.to_lowercase().cmp(&b.0.name.to_lowercase()));
+    Ok(out)
+}
+
 /// The teams a user belongs to, by name.
 pub async fn user_teams(pool: &SqlitePool, user_id: i64) -> Result<Vec<TeamRecord>> {
     sqlx::query_as(

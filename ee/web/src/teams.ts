@@ -35,6 +35,15 @@ export interface EffectiveAccess {
   sources: AccessSource[];
 }
 
+/** A team's grant on one environment, and who it reaches. */
+export interface EnvTeamAccess {
+  team_id: number;
+  team_name: string;
+  role: EnvRole;
+  namespaces: string[] | null;
+  members: string[];
+}
+
 const URL = "/api/v1/ee/teams";
 const json = (v: unknown) => ({ body: JSON.stringify(v), contentType: "application/json" });
 
@@ -42,6 +51,7 @@ export const teamKeys = {
   all: ["ee", "teams"] as const,
   team: (id: number) => ["ee", "teams", id] as const,
   effective: ["ee", "effective-access"] as const,
+  envTeams: (env: string) => ["ee", "effective-access", "env", env] as const,
 };
 
 export const teamsQuery = queryOptions({
@@ -56,6 +66,12 @@ export const userEffectiveAccessQuery = (userId: number) =>
   queryOptions({
     queryKey: [...teamKeys.effective, userId] as const,
     queryFn: () => apiFetch<EffectiveAccess[]>(`/api/v1/ee/users/${userId}/access`),
+  });
+
+export const envTeamsQuery = (env: string) =>
+  queryOptions({
+    queryKey: teamKeys.envTeams(env),
+    queryFn: () => apiFetch<EnvTeamAccess[]>(`/api/v1/ee/envs/${encodeURIComponent(env)}/teams`),
   });
 
 export const createTeam = (name: string, description: string | null) =>

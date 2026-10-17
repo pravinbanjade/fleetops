@@ -134,7 +134,7 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 
 The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license may cap the number of users: past the cap no new users can be created, and existing users keep working.
 
-Teams come with any Enterprise license: add a user to a team in **Admin → Teams** and they get its environment access, combined with their own (the strongest role wins). Without a license, teams are read-only and keep granting access; removing members or access always works. Running the Community image on the same data ignores teams, so access through them stops until you switch back.
+Teams come with any Enterprise license: add a user to a team in **Admin → Teams** and they get its environment access, combined with their own: the strongest role wins and namespace lists add up, so Operator on one namespace plus Viewer on the whole cluster gives Operator on the whole cluster. Without a license, teams are read-only and keep granting access; removing members or access always works. Running the Community image on the same data ignores teams, so access through them stops until you switch back.
 
 Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and production use needs a subscription. `make build` builds Community with no Enterprise code compiled in; `make build-ee` builds Enterprise.
 

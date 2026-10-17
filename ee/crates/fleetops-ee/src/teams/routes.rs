@@ -68,6 +68,18 @@ pub struct EffectiveAccess {
     pub sources: Vec<AccessSource>,
 }
 
+/// A team's grant on one environment, and who it reaches.
+#[derive(Serialize, ToSchema)]
+pub struct EnvTeamAccess {
+    pub team_id: i64,
+    pub team_name: String,
+    pub role: EnvRole,
+    /// Null for the whole environment.
+    pub namespaces: Option<Vec<String>>,
+    /// Usernames, sorted.
+    pub members: Vec<String>,
+}
+
 fn ns_vec(g: &Grant) -> Option<Vec<String>> {
     g.namespaces.as_ref().map(|s| s.iter().cloned().collect())
 }
@@ -424,6 +436,40 @@ pub async fn user_access(
         e.namespaces = ns_vec(&merged);
     }
     out.sort_by(|a, b| a.env_name.cmp(&b.env_name));
+    Ok(Json(out))
+}
+
+#[utoipa::path(get, path = "/ee/envs/{env}/teams", operation_id = "listEnvTeamAccess",
+    tag = "enterprise", summary = "Teams with access to an environment, and their members",
+    params(("env" = String, Path, description = "Environment name")),
+    responses((status = 200, description = "By team name", body = [EnvTeamAccess])))]
+pub async fn env_teams(
+    State(s): State<AppState>,
+    _a: AdminUser,
+    ApiPath(env): ApiPath<String>,
+) -> ApiResult<Json<Vec<EnvTeamAccess>>> {
+    let env = s
+        .store
+        .list_environments()
+        .await?
+        .into_iter()
+        .find(|e| e.name == env)
+        .ok_or_else(|| fleetops_core::Error::NotFound(format!("environment '{env}'")))?;
+    let p = s.store.pool();
+    let mut out = Vec::new();
+    for (team, b) in db::env_teams(p, env.id).await? {
+        out.push(EnvTeamAccess {
+            members: db::members(p, team.id)
+                .await?
+                .into_iter()
+                .map(|u| u.username)
+                .collect(),
+            team_id: team.id,
+            team_name: team.name,
+            role: b.grant.role,
+            namespaces: ns_vec(&b.grant),
+        });
+    }
     Ok(Json(out))
 }
 

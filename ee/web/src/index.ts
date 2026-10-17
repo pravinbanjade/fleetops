@@ -3,7 +3,7 @@ import { KeyRound, UsersRound } from "lucide-react";
 import type { EeModule } from "@/ee-contract";
 import { AuditExport } from "./AuditExport";
 import { LicenseBanner } from "./LicenseBanner";
-import { UserTeamAccess } from "./UserTeamAccess";
+import { EnvTeamAccess, UserTeamAccess } from "./UserTeamAccess";
 
 /** The Enterprise UI (ee/LICENSE). `id` is the marker CI looks for in bundles. */
 export const ee: EeModule = {
@@ -29,5 +29,6 @@ export const ee: EeModule = {
     "shell.banner": { component: LicenseBanner },
     "audit.toolbar": { component: AuditExport, feature: "audit_export" },
     "user.access": { component: UserTeamAccess },
+    "env.access": { component: EnvTeamAccess },
   },
 };

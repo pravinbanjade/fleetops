@@ -238,7 +238,7 @@ function TeamAccessForm({ team, envs, frozen, onClose }: { team: TeamDetail; env
   return (
     <FormDialog
       title={`Access for ${team.name}`}
-      description="A member gets the strongest role from any of their teams or direct grants on an environment."
+      description="A member gets the strongest role from any of their teams or direct grants on an environment, and namespace lists add up. Operator on one namespace plus Viewer on the whole cluster makes them Operator on the whole cluster."
       submitLabel="Save"
       onClose={onClose}
       onSubmit={async () => {

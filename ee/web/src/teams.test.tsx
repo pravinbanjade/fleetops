@@ -97,6 +97,7 @@ describe("teams", () => {
     expect(within(role).getByRole("option", { name: "Operator" })).toBeDisabled();
     expect(within(role).getByRole("option", { name: "None" })).toBeEnabled();
     expect(within(dialog).getByText(/strongest role from any of their teams or direct grants/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Operator on one namespace plus Viewer on the whole cluster makes them Operator on the whole cluster/)).toBeInTheDocument();
   });
 
   it("user access dialog shows team-derived access with team names", async () => {
@@ -129,5 +130,26 @@ describe("teams", () => {
     expect(teams).toHaveTextContent("local");
     expect(teams).toHaveTextContent("operator");
     expect(teams).toHaveTextContent("ops, dev");
+  });
+
+  it("an environment's access view includes team members", async () => {
+    mockFetch({
+      ...routes(["teams"]),
+      "GET /api/v1/envs/local/access": { json: [] },
+      "GET /api/v1/ee/envs/local/teams": {
+        json: [{ team_id: 7, team_name: "ops", role: "operator", namespaces: null, members: ["bob", "carol"] }],
+      },
+    });
+    const { screen } = renderApp("/admin/envs");
+    const envs = await screen.findByRole("table", { name: "Environments" });
+    await waitFor(() => expect(within(envs).getAllByRole("row").length).toBeGreaterThan(1));
+    const local = within(envs).getAllByRole("row").find((r) => r.textContent?.includes("local"))!;
+    await userEvent.click(within(local).getByRole("button", { name: "Access" }));
+    const dialog = await screen.findByRole("dialog");
+    const teams = await within(dialog).findByRole("region", { name: "Through teams" });
+    expect(teams).toHaveTextContent("ops");
+    expect(teams).toHaveTextContent("operator");
+    expect(teams).toHaveTextContent("bob, carol");
+    expect(within(dialog).queryByText("Only admins can use this environment.")).toBeNull();
   });
 });

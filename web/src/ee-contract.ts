@@ -9,6 +9,8 @@ export interface SlotProps {
   "shell.banner": object;
   /** Under a user's grants in the Access dialog. */
   "user.access": { userId: number };
+  /** Under an environment's direct grants in its Access dialog. */
+  "env.access": { env: string };
 }
 
 export type SlotName = keyof SlotProps;
