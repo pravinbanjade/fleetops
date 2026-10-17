@@ -55,7 +55,7 @@ async fn admins_have_full_access_everywhere_and_their_bindings_return_on_demotio
         .unwrap();
     assert_eq!(
         s.env_grant(a.id, e1.id).await.unwrap(),
-        Some(Grant::full(EnvRole::Operator))
+        Some(Grant::admin())
     );
     assert_eq!(s.user_grants(a.id).await.unwrap().len(), 2);
     s.set_binding(a.id, e2.id, EnvRole::Viewer, None, 1)

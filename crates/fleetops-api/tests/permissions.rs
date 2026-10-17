@@ -760,3 +760,43 @@ async fn env_list_carries_each_grant_with_its_permissions() {
         json!(["pods.view", "secrets.reveal"])
     );
 }
+
+#[tokio::test]
+async fn any_grant_reads_a_node_and_its_namespaces() {
+    let r = Rig::new().await;
+    r.give(vec![custom(perms(&["pods.view"]))]);
+    for path in [
+        "/api/v1/envs/k/k8s/nodes/-/n1",
+        "/api/v1/envs/k/k8s/nodes/-/n1/events",
+        "/api/v1/envs/k/k8s/namespaces/-/apps",
+    ] {
+        let resp = r.send(&c("GET", path, None, "")).await;
+        assert_ne!(resp.status, 403, "{path}: {:?}", resp.json);
+    }
+    let cordon = r
+        .send(&c("POST", "/api/v1/envs/k/k8s/nodes/-/n1/cordon", None, ""))
+        .await;
+    assert_eq!(cordon.status, 403);
+}
+
+/// The verdict before custom roles, independent of the new code: a Viewer
+/// could make every GET and nothing else; an Operator could make every request.
+#[tokio::test]
+async fn builtin_roles_reach_what_they_reached_before() {
+    let r = Rig::new().await;
+    for role in [EnvRole::Viewer, EnvRole::Operator] {
+        r.give(vec![Grant::full(role)]);
+        for c in cases() {
+            let before = role == EnvRole::Operator || c.method == "GET";
+            let resp = r.send(&c).await;
+            assert_eq!(
+                resp.status != 403,
+                before,
+                "{role:?} {} {}: {:?}",
+                c.method,
+                c.path,
+                resp.json
+            );
+        }
+    }
+}

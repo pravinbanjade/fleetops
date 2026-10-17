@@ -34,7 +34,11 @@ struct Rig {
 
 async fn rig() -> Rig {
     let extra = Arc::new(Fixed::default());
-    let t = app_with_extra(extra.clone()).await;
+    let config = fleetops_api::ApiConfig {
+        helm: Some(Arc::new(FakeRenderer::default())),
+        ..Default::default()
+    };
+    let t = app_with_extra_and(extra.clone(), config).await;
     let admin = t.with_local().await;
     t.add_kube_env(&admin, "k").await;
     t.fake.kube.object(KubeKind::Secrets, "apps", "creds");
@@ -179,4 +183,46 @@ async fn secret_values_need_reveal() {
     assert!(!format!("{row:?}").contains("s3cret"));
     let admin = r.t.send(req("GET", path, None, Some(&r.admin))).await;
     assert_eq!(admin.status, 200);
+}
+
+#[tokio::test]
+async fn an_admin_reveals_secret_values_with_no_grant() {
+    let r = rig().await;
+    *r.extra.0.lock().unwrap() = vec![];
+    let path = "/api/v1/envs/k/k8s/secrets/apps/creds/values";
+    let resp = r.t.send(req("GET", path, None, Some(&r.admin))).await;
+    assert_eq!(resp.status, 200, "{:?}", resp.json);
+    let envs =
+        r.t.send(req("GET", "/api/v1/envs", None, Some(&r.admin)))
+            .await;
+    let k = envs
+        .json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "k")
+        .unwrap();
+    let perms = k["access"]["grants"][0]["permissions"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert!(perms.contains(&json!("secrets.reveal")), "{perms:?}");
+}
+
+#[tokio::test]
+async fn helm_plans_hide_values_and_notes_without_reveal() {
+    let r = rig().await;
+    let body = json!({"chart": {"oci": "oci://r/demo", "version": "0.2.0"}, "values": "replicas: 2\n", "dry_run": true});
+    let path = "/api/v1/envs/k/k8s/helm/releases/apps/demo/upgrade";
+    r.give(&["helm.view", "helm.operate"]);
+    let plan =
+        r.t.send(req("POST", path, Some(body.clone()), Some(&r.bob)))
+            .await;
+    assert_eq!(plan.status, 200, "{:?}", plan.json);
+    assert!(plan.json["values_before"].is_null(), "{:?}", plan.json);
+    assert!(plan.json["values_after"].is_null());
+    assert_eq!(plan.json["notes"], "");
+    r.give(&["helm.view", "helm.operate", "helm.reveal"]);
+    let plan = r.t.send(req("POST", path, Some(body), Some(&r.bob))).await;
+    assert!(plan.json["values_before"].is_string(), "{:?}", plan.json);
 }

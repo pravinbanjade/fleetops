@@ -657,6 +657,8 @@ impl KubeOps for FakeKube {
             revision: commit.then_some(if d.upgrade { 2 } else { 1 }),
             status: commit.then(|| "deployed".to_string()),
             notes: d.rendered.notes.clone(),
+            values_before: d.upgrade.then(|| "db:\n  password: s3cret\n".to_string()),
+            values_after: Some(serde_json::to_string(&d.config).unwrap_or_default()),
             ..Default::default()
         })
     }

@@ -129,6 +129,15 @@ async fn check_object(
     .await
 }
 
+/// What reading one object of `kind` needs before its namespace check: any
+/// grant for Nodes and Namespaces (as their lists), else View on its row.
+fn read_need(kind: KubeKind) -> Need {
+    match kind {
+        KubeKind::Nodes | KubeKind::Namespaces => Need::AnyGrant,
+        k => Need::Perm(on(k, Verb::View)),
+    }
+}
+
 /// `verb` on the grid row of `kind`.
 fn on(kind: KubeKind, verb: Verb) -> Permission {
     Permission::new(row_of(kind), verb)
@@ -397,7 +406,7 @@ pub async fn get(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<KubeObject>> {
     let k = p.checked()?;
-    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(on(k, Verb::View))).await?;
+    let k8 = kube_for(&s, &cu, &p.env, read_need(k)).await?;
     check_object(&s, &cu, &k8, k, &p, on(k, Verb::View)).await?;
     let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.get(k, &p.ns, &p.name).await?))
@@ -412,7 +421,7 @@ pub async fn events(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<Vec<KubeEvent>>> {
     let k = p.checked()?;
-    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(on(k, Verb::View))).await?;
+    let k8 = kube_for(&s, &cu, &p.env, read_need(k)).await?;
     check_object(&s, &cu, &k8, k, &p, on(k, Verb::View)).await?;
     let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.events(k, &p.ns, &p.name).await?))
@@ -807,7 +816,7 @@ pub async fn editable(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<EditableObject>> {
     let k = p.checked()?;
-    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(on(k, Verb::View))).await?;
+    let k8 = kube_for(&s, &cu, &p.env, read_need(k)).await?;
     check_object(&s, &cu, &k8, k, &p, on(k, Verb::View)).await?;
     let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.get_editable(k, &p.ns, &p.name).await?))

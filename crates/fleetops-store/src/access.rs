@@ -71,7 +71,7 @@ impl Store {
         .map_err(db_err)?;
         match row {
             None => Ok(None),
-            Some((u, _, _)) if u == "admin" => Ok(Some(Grant::full(EnvRole::Operator))),
+            Some((u, _, _)) if u == "admin" => Ok(Some(Grant::admin())),
             Some((_, Some(role), ns)) => grant(&role, ns.as_deref()).map(Some),
             Some(_) => Ok(None),
         }
@@ -89,10 +89,7 @@ impl Store {
                 .fetch_all(&self.pool)
                 .await
                 .map_err(db_err)?;
-            return Ok(ids
-                .into_iter()
-                .map(|id| (id, Grant::full(EnvRole::Operator)))
-                .collect());
+            return Ok(ids.into_iter().map(|id| (id, Grant::admin())).collect());
         }
         self.user_bindings(user_id)
             .await?

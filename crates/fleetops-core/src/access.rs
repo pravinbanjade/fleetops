@@ -200,6 +200,16 @@ impl Grant {
         Self::builtin(role, None)
     }
 
+    /// An admin's grant: everything, on the whole environment.
+    pub fn admin() -> Self {
+        Self {
+            role: EnvRole::Operator,
+            custom: None,
+            perms: crate::perm::admin_perms(),
+            namespaces: None,
+        }
+    }
+
     pub fn builtin(role: EnvRole, namespaces: Option<BTreeSet<String>>) -> Self {
         Self {
             role,

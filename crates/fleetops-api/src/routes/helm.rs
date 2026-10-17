@@ -285,7 +285,8 @@ pub async fn rollback(
     })
     .await;
     let r = crate::authz::deny_audited(&s, &cu, env_id, "helm.operate", r).await;
-    Ok(Json(hinted(&s, &k8, r?).await))
+    let plan = hide_values(&k8, &p.ns, r?);
+    Ok(Json(hinted(&s, &k8, plan).await))
 }
 
 #[utoipa::path(post, path = "/envs/{env}/k8s/helm/releases/{ns}/{name}/uninstall", operation_id = "uninstallHelmRelease", tag = "helm",
@@ -460,6 +461,7 @@ async fn deploy(
     expected_current: u32,
     action: &'static str,
 ) -> ApiResult<Json<HelmPlan>> {
+    let ns = d.namespace.clone();
     let perm = if action == "helm.install" {
         Permission::new(Row::Helm, Verb::Create)
     } else {
@@ -488,7 +490,21 @@ async fn deploy(
     })
     .await;
     let r = crate::authz::deny_audited(s, cu, env_id, &perm.to_string(), r).await;
-    Ok(Json(hinted(s, k8, r?).await))
+    let plan = hide_values(k8, &ns, r?);
+    Ok(Json(hinted(s, k8, plan).await))
+}
+
+/// A plan as a role without Reveal on Helm releases sees it: no values or notes.
+fn hide_values(k8: &KubeCtx, ns: &str, mut plan: HelmPlan) -> HelmPlan {
+    if !k8
+        .grants
+        .allows(Permission::new(Row::Helm, Verb::Reveal), Some(ns))
+    {
+        plan.values_before = None;
+        plan.values_after = None;
+        plan.notes.clear();
+    }
+    plan
 }
 
 #[utoipa::path(post, path = "/envs/{env}/k8s/helm/releases/{ns}", operation_id = "installHelmChart", tag = "helm",
