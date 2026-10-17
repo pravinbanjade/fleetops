@@ -117,7 +117,10 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<(TeamRecord, i64, i64)>> {
     .fetch_all(pool)
     .await
     .map_err(db_err)?;
-    Ok(rows.into_iter().map(|r| (r.team, r.members, r.envs)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.team, r.members, r.envs))
+        .collect())
 }
 
 pub async fn get(pool: &SqlitePool, id: i64) -> Result<TeamRecord> {

@@ -17,7 +17,14 @@ struct Fixed(Mutex<HashMap<(i64, i64), Grant>>);
 #[async_trait]
 impl ExtraGrants for Fixed {
     async fn env_grants(&self, user_id: i64, env_id: i64) -> Result<Vec<Grant>> {
-        Ok(self.0.lock().unwrap().get(&(user_id, env_id)).cloned().into_iter().collect())
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .get(&(user_id, env_id))
+            .cloned()
+            .into_iter()
+            .collect())
     }
     async fn user_grants(&self, user_id: i64) -> Result<HashMap<i64, Vec<Grant>>> {
         Ok(self
@@ -75,11 +82,20 @@ async fn create_container(t: &TestApp, bob: &Session) -> StatusCode {
 #[tokio::test]
 async fn extra_grant_alone_opens_an_env() {
     let (t, extra, bob, key) = docker().await;
-    extra.0.lock().unwrap().insert(key, Grant::full(EnvRole::Viewer));
+    extra
+        .0
+        .lock()
+        .unwrap()
+        .insert(key, Grant::full(EnvRole::Viewer));
     let r = t.send(req("GET", "/api/v1/envs", None, Some(&bob))).await;
     assert_eq!(r.json[0]["name"], "local");
     let r = t
-        .send(req("GET", "/api/v1/envs/local/containers", None, Some(&bob)))
+        .send(req(
+            "GET",
+            "/api/v1/envs/local/containers",
+            None,
+            Some(&bob),
+        ))
         .await;
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(create_container(&t, &bob).await, StatusCode::FORBIDDEN);
@@ -89,7 +105,11 @@ async fn extra_grant_alone_opens_an_env() {
 async fn direct_viewer_plus_extra_operator_is_operator() {
     let (t, extra, bob, key) = docker().await;
     t.grant("bob", "local", "viewer", None).await;
-    extra.0.lock().unwrap().insert(key, Grant::full(EnvRole::Operator));
+    extra
+        .0
+        .lock()
+        .unwrap()
+        .insert(key, Grant::full(EnvRole::Operator));
     assert_eq!(create_container(&t, &bob).await, StatusCode::CREATED);
 }
 
@@ -97,7 +117,12 @@ async fn direct_viewer_plus_extra_operator_is_operator() {
 async fn no_grants_reads_as_not_found() {
     let (t, _extra, bob, _) = docker().await;
     let r = t
-        .send(req("GET", "/api/v1/envs/local/containers", None, Some(&bob)))
+        .send(req(
+            "GET",
+            "/api/v1/envs/local/containers",
+            None,
+            Some(&bob),
+        ))
         .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
     let r = t.send(req("GET", "/api/v1/envs", None, Some(&bob))).await;
@@ -111,12 +136,18 @@ async fn kube_namespaces_union() {
     let admin = t.setup_admin().await;
     t.add_kube_env(&admin, "k").await;
     for n in ["a", "b", "c"] {
-        t.fake.kube.object(KubeKind::Deployments, n, &format!("d-{n}"));
+        t.fake
+            .kube
+            .object(KubeKind::Deployments, n, &format!("d-{n}"));
     }
     t.create_user(&admin, "bob", "bob-password-1", "user").await;
     t.grant("bob", "k", "viewer", Some(&["a"])).await;
     let key = ids(&t, "bob", "k").await;
-    extra.0.lock().unwrap().insert(key, ns(EnvRole::Viewer, &["b"]));
+    extra
+        .0
+        .lock()
+        .unwrap()
+        .insert(key, ns(EnvRole::Viewer, &["b"]));
     let bob = session_from(&t.login("bob", "bob-password-1").await);
     for (n, want) in [("a", 200), ("b", 200), ("c", 403)] {
         let r = t

@@ -44,6 +44,20 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
             routes::delete_license
         ))
         .routes(routes!(routes::export_audit))
+        .routes(routes!(teams::routes::list, teams::routes::create))
+        .routes(routes!(
+            teams::routes::get,
+            teams::routes::update,
+            teams::routes::delete
+        ))
+        .routes(routes!(
+            teams::routes::add_member,
+            teams::routes::remove_member
+        ))
+        .routes(routes!(
+            teams::routes::set_access,
+            teams::routes::revoke_access
+        ))
 }
 
 pub async fn init(store: &Store, config: EeConfig) -> Result<EeParts> {

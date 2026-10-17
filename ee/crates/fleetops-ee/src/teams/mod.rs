@@ -4,6 +4,7 @@
 
 pub mod db;
 pub mod grants;
+pub mod routes;
 
 use fleetops_core::{Error, Result};
 

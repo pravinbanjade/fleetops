@@ -4,8 +4,8 @@
 
 use crate::kube::{KubeKind, KubeList, WatchEvent};
 use crate::{Error, Result};
-use serde::{Deserialize, Serialize};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
 use utoipa::ToSchema;
