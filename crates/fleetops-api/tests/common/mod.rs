@@ -61,6 +61,25 @@ pub async fn app_with(config: ApiConfig) -> TestApp {
     }
 }
 
+/// An app that also takes grants from `g`, as an Enterprise build does from teams.
+pub async fn app_with_extra(g: Arc<dyn fleetops_core::access::ExtraGrants>) -> TestApp {
+    let store = Store::in_memory().await.unwrap();
+    let fake = FakeDocker::new();
+    let state = AppState::new(
+        store.clone(),
+        ApiConfig::default(),
+        Arc::new(FakeFactory(fake.clone())),
+    )
+    .with_extra_grants(g);
+    let router = fleetops_api::app(state.clone(), Router::new());
+    TestApp {
+        router,
+        store,
+        state,
+        fake,
+    }
+}
+
 /// An app whose entitlements are `e` instead of Community.
 pub async fn app_entitled(e: Arc<dyn fleetops_core::edition::Entitlements>) -> TestApp {
     let store = Store::in_memory().await.unwrap();

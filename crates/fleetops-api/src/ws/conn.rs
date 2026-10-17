@@ -128,7 +128,7 @@ pub async fn run(s: AppState, cu: CurrentUser, token_hash: String, socket: WebSo
             change = status.recv() => match change {
                 Ok(c) => {
                     let visible = match s.envs.get(&c.env) {
-                        Ok(env) => s.store.env_grant(cu.user.id, env.id()).await.ok().flatten().is_some(),
+                        Ok(env) => crate::authz::effective_grant(&s, cu.user.id, env.id()).await.ok().flatten().is_some(),
                         Err(_) => false,
                     };
                     if visible {

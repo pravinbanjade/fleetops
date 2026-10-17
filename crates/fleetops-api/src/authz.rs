@@ -3,10 +3,11 @@
 //! read fresh on every request.
 
 use crate::{auth::extract::CurrentUser, AppState};
-use fleetops_core::access::{EnvRole, Grant};
+use fleetops_core::access::{merge_grants, EnvRole, Grant};
 use fleetops_core::env::Environment;
 use fleetops_core::{now_unix, Error, Result, Role, User};
 use fleetops_store::NewAudit;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +61,27 @@ pub fn authorize_env(grant: Option<&Grant>, env_name: &str, action: Action) -> R
     }
 }
 
+/// The user's access to one environment: their direct grant merged with
+/// any extra grants (Enterprise teams). Every access lookup goes through
+/// here or [`effective_grants`] (scripts/check-editions.sh).
+pub async fn effective_grant(s: &AppState, user_id: i64, env_id: i64) -> Result<Option<Grant>> {
+    let direct = s.store.env_grant(user_id, env_id).await?;
+    let extra = s.extra_grants.env_grants(user_id, env_id).await?;
+    Ok(merge_grants(direct.into_iter().chain(extra)))
+}
+
+/// Every environment the user can see, with their merged grant on it.
+pub async fn effective_grants(s: &AppState, user_id: i64) -> Result<HashMap<i64, Grant>> {
+    let mut all = s.store.user_grants(user_id).await?;
+    for (env_id, extra) in s.extra_grants.user_grants(user_id).await? {
+        let direct = all.remove(&env_id);
+        if let Some(g) = merge_grants(direct.into_iter().chain(extra)) {
+            all.insert(env_id, g);
+        }
+    }
+    Ok(all)
+}
+
 /// Resolves `name`, checks `action` against the caller's grant, and
 /// returns both. A refusal on a visible environment is audited.
 pub async fn env_access(
@@ -69,7 +91,7 @@ pub async fn env_access(
     action: Action,
 ) -> Result<(Arc<dyn Environment>, Grant)> {
     let env = s.envs.get(name)?;
-    let grant = s.store.env_grant(cu.user.id, env.id()).await?;
+    let grant = effective_grant(s, cu.user.id, env.id()).await?;
     let r = authorize_env(grant.as_ref(), name, action);
     deny_audited(s, cu, env.id(), action.as_str(), r).await?;
     Ok((env, grant.expect("authorized")))

@@ -150,7 +150,7 @@ async fn new_enrollment(
     responses((status = 200, description = "All environments; agent environments include their agent's state", body = Vec<EnvView>))
 )]
 pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<Vec<EnvView>>> {
-    let grants = s.store.user_grants(cu.user.id).await?;
+    let grants = crate::authz::effective_grants(&s, cu.user.id).await?;
     let mut agents: std::collections::HashMap<i64, _> = s
         .store
         .list_agents()

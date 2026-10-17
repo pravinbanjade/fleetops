@@ -75,6 +75,9 @@ pub struct AppState {
     /// The edition and license in effect; Community unless an Enterprise
     /// build replaces it (editions spec §3.1).
     pub entitlements: Arc<dyn fleetops_core::edition::Entitlements>,
+    /// Grants beyond direct bindings; none unless an Enterprise build adds
+    /// team grants. Read only through `authz::effective_grant(s)`.
+    pub extra_grants: Arc<dyn fleetops_core::access::ExtraGrants>,
 }
 
 impl AppState {
@@ -92,12 +95,18 @@ impl AppState {
             agents: Arc::default(),
             agent_disconnects: Arc::default(),
             entitlements: Arc::new(fleetops_core::edition::Community),
+            extra_grants: Arc::new(fleetops_core::access::NoExtraGrants),
         }
     }
 
     /// Replaces the Community entitlements (Enterprise builds).
     pub fn with_entitlements(mut self, e: Arc<dyn fleetops_core::edition::Entitlements>) -> Self {
         self.entitlements = e;
+        self
+    }
+
+    pub fn with_extra_grants(mut self, g: Arc<dyn fleetops_core::access::ExtraGrants>) -> Self {
+        self.extra_grants = g;
         self
     }
 

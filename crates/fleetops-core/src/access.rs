@@ -5,7 +5,8 @@
 use crate::kube::{KubeKind, KubeList, WatchEvent};
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use async_trait::async_trait;
+use std::collections::{BTreeSet, HashMap};
 use std::str::FromStr;
 use utoipa::ToSchema;
 
@@ -102,6 +103,44 @@ pub fn check_doc(
         (true, Some(ns)) if set.contains(ns) => Ok(()),
         (true, Some(ns)) => Err(ns_denied(ns)),
         _ => Err(cluster_scoped_denied()),
+    }
+}
+
+/// One user's grants on one environment from every source, combined: the
+/// highest role wins, and any whole-environment grant beats namespace lists,
+/// which otherwise add up (teams spec, "Effective access").
+pub fn merge_grants(grants: impl IntoIterator<Item = Grant>) -> Option<Grant> {
+    grants.into_iter().reduce(|a, b| Grant {
+        role: a.role.max(b.role),
+        namespaces: match (a.namespaces, b.namespaces) {
+            (Some(mut x), Some(y)) => {
+                x.extend(y);
+                Some(x)
+            }
+            _ => None,
+        },
+    })
+}
+
+/// Grants from sources other than a user's direct bindings, such as
+/// Enterprise teams. `authz` merges them with the direct grant.
+#[async_trait]
+pub trait ExtraGrants: Send + Sync {
+    async fn env_grants(&self, user_id: i64, env_id: i64) -> Result<Vec<Grant>>;
+    /// The same for every environment, keyed by environment id.
+    async fn user_grants(&self, user_id: i64) -> Result<HashMap<i64, Vec<Grant>>>;
+}
+
+/// The Community edition: direct bindings only.
+pub struct NoExtraGrants;
+
+#[async_trait]
+impl ExtraGrants for NoExtraGrants {
+    async fn env_grants(&self, _: i64, _: i64) -> Result<Vec<Grant>> {
+        Ok(vec![])
+    }
+    async fn user_grants(&self, _: i64) -> Result<HashMap<i64, Vec<Grant>>> {
+        Ok(HashMap::new())
     }
 }
 
@@ -249,6 +288,29 @@ mod tests {
             namespaces: Some(ns.iter().map(|s| s.to_string()).collect()),
         }
     }
+    #[test]
+    fn merge_empty_is_none() {
+        assert_eq!(merge_grants([]), None);
+    }
+
+    #[test]
+    fn merge_highest_role_wins() {
+        let g = merge_grants([Grant::full(EnvRole::Viewer), Grant::full(EnvRole::Operator)]);
+        assert_eq!(g, Some(Grant::full(EnvRole::Operator)));
+    }
+
+    #[test]
+    fn merge_whole_beats_list() {
+        let g = merge_grants([Grant::full(EnvRole::Viewer), limited(&["a"])]);
+        assert_eq!(g, Some(Grant::full(EnvRole::Operator)));
+    }
+
+    #[test]
+    fn merge_unions_lists() {
+        let g = merge_grants([limited(&["a"]), limited(&["b", "c"])]);
+        assert_eq!(g, Some(limited(&["a", "b", "c"])));
+    }
+
     fn row(name: &str, ns: Option<&str>) -> KubeRow {
         KubeRow {
             name: name.into(),
