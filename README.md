@@ -17,7 +17,7 @@ It is an open-source alternative to Portainer: roles, Kubernetes namespace scopi
 - **Live by default.** Lists and detail pages update from Docker events and Kubernetes watches. There is no polling and no refresh button, and when live updates stop the page says so instead of showing stale data as current.
 - **Small and fast.** One static binary of about 17 MB, or a distroless image. CI checks that idle memory stays under 50 MiB on a host with 50 containers.
 - **Built for incidents.** A virtualized log viewer that handles 200k lines with search and ANSI colour, and a terminal that never silently starts a new shell. Every exec and every change is audited.
-- **Teams included.** Per-environment viewer and operator roles, namespace scoping on clusters, and an audit log are free and Apache-2.0.
+- **Access control included.** Per-environment viewer and operator roles, namespace scoping on clusters, and an audit log are free and Apache-2.0.
 - **No telemetry.** FleetOps never phones home.
 
 ## Screenshots
@@ -129,9 +129,12 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 | Roles and namespace scoping | ✓ | ✓ |
 | Audit log (90-day retention) | ✓ | ✓ |
 | Audit export (CSV, NDJSON) | | ✓ |
-| SSO (OIDC, LDAP), teams, API tokens, backup | | planned |
+| Teams with shared environment access | | ✓ |
+| SSO (OIDC, LDAP), API tokens, backup | | planned |
 
 The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license may cap the number of users: past the cap no new users can be created, and existing users keep working.
+
+Teams come with any Enterprise license: add a user to a team in **Admin → Teams** and they get its environment access, combined with their own (the strongest role wins). Without a license, teams are read-only and keep granting access; removing members or access always works. Running the Community image on the same data ignores teams, so access through them stops until you switch back.
 
 Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and production use needs a subscription. `make build` builds Community with no Enterprise code compiled in; `make build-ee` builds Enterprise.
 
