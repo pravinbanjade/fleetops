@@ -148,7 +148,16 @@ pub async fn get(
     Query(q): Query<RevisionQuery>,
 ) -> ApiResult<Json<ReleaseDetail>> {
     let k8 = readable(&s, &cu, &p).await?;
-    Ok(Json(k8.ops.helm_get(&p.ns, &p.name, q.revision).await?))
+    let mut d = k8.ops.helm_get(&p.ns, &p.name, q.revision).await?;
+    if !k8
+        .grants
+        .allows(Permission::new(Row::Helm, Verb::Reveal), Some(&p.ns))
+    {
+        d.values.clear();
+        d.notes.clear();
+        d.hidden = true;
+    }
+    Ok(Json(d))
 }
 
 #[utoipa::path(get, path = "/envs/{env}/k8s/helm/releases/{ns}/{name}/history", operation_id = "helmHistory", tag = "helm",

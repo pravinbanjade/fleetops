@@ -14,7 +14,7 @@ use futures_util::{AsyncBufReadExt, SinkExt, StreamExt, TryStreamExt};
 use k8s_openapi::api::{
     apps::v1::ReplicaSet,
     batch::v1::{CronJob, Job},
-    core::v1::{Event, Node, Pod},
+    core::v1::{Event, Node, Pod, Secret},
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Status;
 use kube::api::{
@@ -353,6 +353,17 @@ impl KubeOps for KubeClient {
 
     async fn count(&self, kind: KubeKind, ns: Option<&str>) -> Result<u64> {
         self.count_impl(kind, ns).await
+    }
+
+    async fn secret_values(&self, ns: &str, name: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        let api: Api<Secret> = Api::namespaced(self.client.clone(), ns);
+        let secret = timed(api.get(name)).await?;
+        Ok(secret
+            .data
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(k, v)| (k, v.0))
+            .collect())
     }
 
     async fn get(&self, kind: KubeKind, ns: &str, name: &str) -> Result<KubeObject> {

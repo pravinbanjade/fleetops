@@ -27,6 +27,9 @@ pub struct ExecHandle {
 
 /// One recorded write: what, the YAML, the mode, and the namespaces it
 /// was limited to.
+/// One Secret's keys and raw values.
+pub type SecretData = Vec<(String, Vec<u8>)>;
+
 pub type Applied = (String, String, ApplyMode, Option<BTreeSet<String>>);
 
 #[derive(Default)]
@@ -41,6 +44,8 @@ pub struct FakeKube {
     execs: Mutex<Vec<ExecHandle>>,
     watches: Mutex<Vec<WatchTx>>,
     pub applied: Mutex<Vec<Applied>>,
+    /// Secret data by (namespace, name).
+    pub secret_data: Mutex<BTreeMap<(String, String), SecretData>>,
     pub helm_releases: Mutex<Vec<HelmRelease>>,
     /// Every deploy asked for, with its mode.
     pub deploys: Mutex<Vec<(Deploy, HelmMode)>>,
@@ -461,6 +466,14 @@ impl KubeOps for FakeKube {
             rx.recv().await.map(|v| (v, rx))
         }))
     }
+    async fn secret_values(&self, ns: &str, name: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        self.secret_data
+            .lock()
+            .unwrap()
+            .get(&(ns.to_string(), name.to_string()))
+            .cloned()
+            .ok_or_else(|| Error::NotFound(format!("secret '{name}'")))
+    }
     async fn get_editable(&self, kind: KubeKind, ns: &str, name: &str) -> Result<EditableObject> {
         let o = self.find(kind, ns, name)?;
         Ok(EditableObject {
@@ -611,6 +624,7 @@ impl KubeOps for FakeKube {
             values: format!("db:\n  password: {MASK}\n"),
             manifest: "---\nkind: ConfigMap\n".into(),
             chart_source: None,
+            hidden: false,
         })
     }
     async fn helm_deploy(

@@ -20,6 +20,16 @@ pub const MASK: &str = "••••";
 /// Largest YAML accepted by apply and replace (spec §8).
 pub const APPLY_MAX_BYTES: usize = 1 << 20;
 
+/// One key of a Secret, for a role with Reveal on Secrets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SecretValue {
+    pub key: String,
+    /// The value as text, or base64 when it is not UTF-8.
+    pub value: String,
+    /// `value` is base64.
+    pub binary: bool,
+}
+
 /// What an apply guard sees of one document, after namespace defaulting.
 #[derive(Debug, Clone, Copy)]
 pub struct DocInfo<'a> {
@@ -634,6 +644,12 @@ pub trait KubeOps: Send + Sync {
     /// `ns` is ignored for cluster-scoped kinds; `None` lists all namespaces.
     async fn list(&self, kind: KubeKind, ns: Option<&str>) -> Result<KubeList>;
     async fn get(&self, kind: KubeKind, ns: &str, name: &str) -> Result<KubeObject>;
+    /// A Secret's data, decoded from base64: what Reveal on Secrets shows.
+    async fn secret_values(&self, _ns: &str, _name: &str) -> Result<Vec<(String, Vec<u8>)>> {
+        Err(Error::Invalid(
+            "this environment cannot show secret values".into(),
+        ))
+    }
     async fn events(&self, kind: KubeKind, ns: &str, name: &str) -> Result<Vec<KubeEvent>>;
     async fn delete(&self, kind: KubeKind, ns: &str, name: &str) -> Result<()>;
     async fn scale(&self, kind: KubeKind, ns: &str, name: &str, replicas: u32) -> Result<()>;

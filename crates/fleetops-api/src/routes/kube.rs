@@ -16,7 +16,7 @@ use fleetops_core::access::Grants;
 use fleetops_core::env::{EnvKind, Environment};
 use fleetops_core::kube::{
     ApplyAction, ApplyMode, ApplyResult, DocInfo, EditableObject, KubeCount, KubeEvent, KubeFilter,
-    KubeKind, KubeList, KubeObject, KubeOps, KubeUsage, APPLY_MAX_BYTES,
+    KubeKind, KubeList, KubeObject, KubeOps, KubeUsage, SecretValue, APPLY_MAX_BYTES,
 };
 use fleetops_core::perm::{row_of, row_of_kind_name, Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
@@ -416,6 +416,51 @@ pub async fn events(
     check_object(&s, &cu, &k8, k, &p, on(k, Verb::View)).await?;
     let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.events(k, &p.ns, &p.name).await?))
+}
+
+#[utoipa::path(get, path = "/envs/{env}/k8s/{kind}/{ns}/{name}/values", operation_id = "revealSecret", tag = "kubernetes",
+    summary = "A Secret's real values (needs Reveal on Secrets; audited)", params(ObjectPath),
+    responses((status = 200, description = "Each key, as text or base64", body = [SecretValue])))]
+pub async fn reveal_secret(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(p): ApiPath<ObjectPath>,
+) -> ApiResult<Json<Vec<SecretValue>>> {
+    use base64::Engine;
+    let k = p.checked()?;
+    if k != KubeKind::Secrets {
+        return Err(Error::Invalid("only secrets have values to reveal".into()).into());
+    }
+    let reveal = Permission::new(Row::Secrets, Verb::Reveal);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(reveal)).await?;
+    check_object(&s, &cu, &k8, k, &p, reveal).await?;
+    let r = k8.ops.secret_values(&p.ns, &p.name).await;
+    let err = r.as_ref().err().map(|e| e.to_string());
+    audit_with(
+        &s,
+        &cu,
+        k8.env.id(),
+        "secret.reveal",
+        &target(k, &p),
+        err.as_deref(),
+    )
+    .await;
+    Ok(Json(
+        r?.into_iter()
+            .map(|(key, bytes)| match String::from_utf8(bytes) {
+                Ok(value) => SecretValue {
+                    key,
+                    value,
+                    binary: false,
+                },
+                Err(e) => SecretValue {
+                    key,
+                    value: base64::engine::general_purpose::STANDARD.encode(e.into_bytes()),
+                    binary: true,
+                },
+            })
+            .collect(),
+    ))
 }
 
 #[utoipa::path(get, path = "/envs/{env}/k8s/{kind}/{ns}/{name}/pods", operation_id = "workloadPods", tag = "kubernetes",

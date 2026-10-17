@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+base64.workspace = true
 fleetops-core.workspace = true
 fleetops-store.workspace = true
 fleetops-tunnel.workspace = true

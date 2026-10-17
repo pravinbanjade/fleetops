@@ -19,6 +19,10 @@ pub struct FakeState {
     pub calls: Vec<String>,
     /// What `recent_events` replays.
     pub past_events: Vec<DockerEvent>,
+    /// Env vars by container id (`KEY=value`).
+    pub env: BTreeMap<String, Vec<String>>,
+    /// Every spec a container was created from, oldest first.
+    pub created_specs: Vec<ContainerSpec>,
     next_id: usize,
 }
 
@@ -124,17 +128,34 @@ impl ContainerOps for FakeDocker {
         let c = self
             .container(id)
             .ok_or_else(|| not_found("container", id))?;
+        let env = self
+            .state
+            .lock()
+            .unwrap()
+            .env
+            .get(&c.id)
+            .cloned()
+            .unwrap_or_default();
         Ok(
-            json!({"Id": c.id, "Name": format!("/{}", c.name), "State": {"Running": c.state == "running"}}),
+            json!({"Id": c.id, "Name": format!("/{}", c.name), "State": {"Running": c.state == "running"}, "Config": {"Env": env}}),
         )
     }
     async fn container_spec(&self, id: &str) -> Result<ContainerSpec> {
         let c = self
             .container(id)
             .ok_or_else(|| not_found("container", id))?;
+        let env = self
+            .state
+            .lock()
+            .unwrap()
+            .env
+            .get(&c.id)
+            .cloned()
+            .unwrap_or_default();
         Ok(ContainerSpec {
             name: Some(c.name),
             image: c.image,
+            env,
             ..Default::default()
         })
     }
@@ -151,6 +172,8 @@ impl ContainerOps for FakeDocker {
         }
         st.next_id += 1;
         let id = format!("new{}", st.next_id);
+        st.created_specs.push(spec.clone());
+        st.env.insert(id.clone(), spec.env.clone());
         let mut c = summary(&id, spec.name.as_deref().unwrap_or(&id), "created", None);
         c.image = spec.image.clone();
         c.labels = spec.labels.clone();

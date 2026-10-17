@@ -12,10 +12,14 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use fleetops_core::docker::{mask_env, unmask_env};
 use fleetops_core::docker::{
     ContainerAction, ContainerSpec, ContainerSummary, DirListing, PruneReport,
 };
+use fleetops_core::kube::MASK;
 use fleetops_core::perm::{Permission, Row, Verb};
+
+const REVEAL: Permission = Permission::new(Row::Containers, Verb::Reveal);
 use fleetops_core::recreate::recreate;
 use fleetops_core::{now_unix, Error};
 use serde::{Deserialize, Serialize};
@@ -131,7 +135,18 @@ pub async fn inspect(
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
-    Ok(Json(c.ops.inspect_container(&id).await?))
+    let mut v = c.ops.inspect_container(&id).await?;
+    if !c.grants.allows(REVEAL, None) {
+        if let Some(env) = v.pointer_mut("/Config/Env").and_then(Value::as_array_mut) {
+            let mut text: Vec<String> = env
+                .iter()
+                .filter_map(|e| e.as_str().map(str::to_string))
+                .collect();
+            mask_env(&mut text);
+            *env = text.into_iter().map(Value::String).collect();
+        }
+    }
+    Ok(Json(v))
 }
 
 #[utoipa::path(
@@ -149,7 +164,11 @@ pub async fn spec(
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<ContainerSpec>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
-    Ok(Json(c.ops.container_spec(&id).await?))
+    let mut spec = c.ops.container_spec(&id).await?;
+    if !c.grants.allows(REVEAL, None) {
+        mask_env(&mut spec.env);
+    }
+    Ok(Json(spec))
 }
 
 #[utoipa::path(
@@ -262,7 +281,7 @@ pub async fn recreate_container(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
-    ApiJson(spec): ApiJson<ContainerSpec>,
+    ApiJson(mut spec): ApiJson<ContainerSpec>,
 ) -> ApiResult<Json<RecreateResult>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Create)).await?;
     let delete = Permission::new(Row::Containers, Verb::Delete);
@@ -274,6 +293,11 @@ pub async fn recreate_container(
         c.grants.check_env(delete),
     )
     .await?;
+    // A spec read without Reveal carries masked values: keep the live ones.
+    if spec.env.iter().any(|e| e.ends_with(MASK)) {
+        let live = c.ops.container_spec(&id).await?;
+        unmask_env(&mut spec.env, &live.env);
+    }
     let res = recreate(&*c.ops, &id, &spec, now_unix()).await;
     c.audit(&s, "container.recreate", "container", &id, &res)
         .await;

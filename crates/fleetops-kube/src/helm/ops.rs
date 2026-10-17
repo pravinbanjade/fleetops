@@ -842,6 +842,7 @@ impl KubeClient {
             values: mask::values_yaml(&r.config),
             manifest: mask::manifest(&r.manifest),
             chart_source: self.chart_source(ns, name).await?,
+            hidden: false,
         })
     }
 

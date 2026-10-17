@@ -1033,6 +1033,11 @@ export type ReleaseDetail = {
     chart_source?: null | ChartRef;
     description: string;
     /**
+     * Values and notes were left out: the caller's role lacks Reveal on
+     * Helm releases.
+     */
+    hidden?: boolean;
+    /**
      * The rendered manifest, Secret values masked.
      */
     manifest: string;
@@ -1071,6 +1076,21 @@ export type RowHealth = 'ok' | 'warn' | 'bad' | 'unknown' | 'off';
 
 export type ScaleBody = {
     replicas: number;
+};
+
+/**
+ * One key of a Secret, for a role with Reveal on Secrets.
+ */
+export type SecretValue = {
+    /**
+     * `value` is base64.
+     */
+    binary: boolean;
+    key: string;
+    /**
+     * The value as text, or base64 when it is not UTF-8.
+     */
+    value: string;
 };
 
 /**
@@ -3780,6 +3800,39 @@ export type UncordonKubeResponses = {
 };
 
 export type UncordonKubeResponse = UncordonKubeResponses[keyof UncordonKubeResponses];
+
+export type RevealSecretData = {
+    body?: never;
+    path: {
+        env: string;
+        kind: string;
+        /**
+         * Namespace; `-` for cluster-scoped kinds.
+         */
+        ns: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/values';
+};
+
+export type RevealSecretErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RevealSecretError = RevealSecretErrors[keyof RevealSecretErrors];
+
+export type RevealSecretResponses = {
+    /**
+     * Each key, as text or base64
+     */
+    200: Array<SecretValue>;
+};
+
+export type RevealSecretResponse = RevealSecretResponses[keyof RevealSecretResponses];
 
 export type ListNetworksData = {
     body?: never;

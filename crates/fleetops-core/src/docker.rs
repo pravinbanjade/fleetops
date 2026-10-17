@@ -13,6 +13,35 @@ use utoipa::ToSchema;
 pub const COMPOSE_PROJECT_LABEL: &str = "com.docker.compose.project";
 pub const COMPOSE_SERVICE_LABEL: &str = "com.docker.compose.service";
 
+/// Each `KEY=value` as `KEY=<mask>`: env names without their values, for a
+/// role without Reveal on containers.
+pub fn mask_env(env: &mut [String]) {
+    for e in env.iter_mut() {
+        if let Some((k, _)) = e.split_once('=') {
+            *e = format!("{k}={}", crate::kube::MASK);
+        }
+    }
+}
+
+/// Puts back each masked value from `live`, so a recreate submitted from a
+/// masked spec keeps the real ones. A masked key `live` lacks is dropped.
+pub fn unmask_env(env: &mut Vec<String>, live: &[String]) {
+    let masked = format!("={}", crate::kube::MASK);
+    env.retain_mut(|e| {
+        let Some(key) = e.strip_suffix(masked.as_str()) else {
+            return true;
+        };
+        let prefix = format!("{key}=");
+        match live.iter().find(|l| l.starts_with(&prefix)) {
+            Some(l) => {
+                *e = l.clone();
+                true
+            }
+            None => false,
+        }
+    });
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct EngineVersion {
     pub version: String,

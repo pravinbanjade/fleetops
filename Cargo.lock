@@ -1062,6 +1062,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "axum",
+ "base64",
  "bytes",
  "fleetops-core",
  "fleetops-kube",

@@ -4609,6 +4609,80 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/k8s/{kind}/{ns}/{name}/values": {
+      "get": {
+        "tags": [
+          "kubernetes"
+        ],
+        "summary": "A Secret's real values (needs Reveal on Secrets; audited)",
+        "operationId": "revealSecret",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ns",
+            "in": "path",
+            "description": "Namespace; `-` for cluster-scoped kinds.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Each key, as text or base64",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SecretValue"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/networks": {
       "get": {
         "tags": [
@@ -8547,6 +8621,10 @@
           "description": {
             "type": "string"
           },
+          "hidden": {
+            "type": "boolean",
+            "description": "Values and notes were left out: the caller's role lacks Reveal on\nHelm releases."
+          },
           "manifest": {
             "type": "string",
             "description": "The rendered manifest, Secret values masked."
@@ -8634,6 +8712,28 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "SecretValue": {
+        "type": "object",
+        "description": "One key of a Secret, for a role with Reveal on Secrets.",
+        "required": [
+          "key",
+          "value",
+          "binary"
+        ],
+        "properties": {
+          "binary": {
+            "type": "boolean",
+            "description": "`value` is base64."
+          },
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string",
+            "description": "The value as text, or base64 when it is not UTF-8."
           }
         }
       },

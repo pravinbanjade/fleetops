@@ -64,6 +64,10 @@ pub struct ReleaseDetail {
     /// Where FleetOps last installed or upgraded the chart from (spec 3j §5).
     #[serde(default)]
     pub chart_source: Option<ChartRef>,
+    /// Values and notes were left out: the caller's role lacks Reveal on
+    /// Helm releases.
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
