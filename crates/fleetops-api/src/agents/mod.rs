@@ -66,7 +66,7 @@ pub fn enrollment_command(server_url: &str, join_token: &str) -> String {
         "docker rm -f fleetops-agent 2>/dev/null; \\\n\
          docker run -d --name fleetops-agent --restart unless-stopped \\\n  \
          -v fleetops-agent:/data -v /var/run/docker.sock:/var/run/docker.sock \\\n  \
-         --group-add \"$(stat -c %g /var/run/docker.sock)\" \\\n  \
+         --group-add \"$(docker run --rm -v /var/run/docker.sock:/s busybox:1.37 stat -c %g /s)\" \\\n  \
          {AGENT_IMAGE}:{} \\\n  \
          --server {server_url} --join-token {join_token}",
         env!("CARGO_PKG_VERSION")

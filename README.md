@@ -47,13 +47,13 @@ It is an open-source alternative to Portainer: roles, Kubernetes namespace scopi
 docker run -d --name fleetops -p 9000:9000 \
   -v fleetops-data:/data \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  --group-add "$(stat -c %g /var/run/docker.sock)" \
+  --group-add "$(docker run --rm -v /var/run/docker.sock:/s busybox:1.37 stat -c %g /s)" \
   fleets/fleetops
 ```
 
 Open <http://localhost:9000> and create the admin account. Setup locks if no admin is created within 10 minutes of starting, until the server restarts.
 
-The image runs as a non-root user on `distroless/static` for linux/amd64 and linux/arm64. It reaches the socket through the group that owns it, which `--group-add` grants. On Docker Desktop and Colima the socket lives inside a VM, so read its group from a container instead: `docker run --rm -v /var/run/docker.sock:/s busybox stat -c %g /s`.
+The image runs as a non-root user on `distroless/static` for linux/amd64 and linux/arm64. It reaches the socket through the group that owns it, which `--group-add` grants. That group is read from inside a throwaway container because on Docker Desktop and Colima the socket lives in a VM and its group differs from the one on the host; the same command works on Linux.
 
 > **Docker socket access is root on the host.** Don't expose FleetOps to an untrusted network without TLS (`--tls-bind`), and create the admin account right away.
 
