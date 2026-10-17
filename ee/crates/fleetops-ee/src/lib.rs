@@ -67,6 +67,13 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
         ))
         .routes(routes!(teams::routes::user_access))
         .routes(routes!(teams::routes::env_teams))
+        .routes(routes!(roles::routes::list, roles::routes::create))
+        .routes(routes!(roles::routes::catalog))
+        .routes(routes!(
+            roles::routes::get,
+            roles::routes::update,
+            roles::routes::delete
+        ))
 }
 
 pub async fn init(store: &Store, config: EeConfig) -> Result<EeParts> {

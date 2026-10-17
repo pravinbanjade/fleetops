@@ -475,11 +475,11 @@ async fn effective_access_lists_sources() {
         r.json(),
         json!([
             {"env_id": f.env, "env_name": "e", "env_kind": "docker-local", "role": "viewer", "namespaces": null,
-             "sources": [{"team_id": t, "team_name": "ops", "role": "viewer", "namespaces": null}]},
+             "sources": [{"team_id": t, "team_name": "ops", "role": "viewer", "role_id": null, "role_name": null, "namespaces": null}]},
             {"env_id": f.kube, "env_name": "k", "env_kind": "kube-config", "role": "operator", "namespaces": ["a", "b"],
              "sources": [
-                {"team_id": null, "team_name": null, "role": "viewer", "namespaces": ["a"]},
-                {"team_id": t, "team_name": "ops", "role": "operator", "namespaces": ["b"]}
+                {"team_id": null, "team_name": null, "role": "viewer", "role_id": null, "role_name": null, "namespaces": ["a"]},
+                {"team_id": t, "team_name": "ops", "role": "operator", "role_id": null, "role_name": null, "namespaces": ["b"]}
              ]}
         ])
     );
@@ -507,7 +507,7 @@ async fn env_team_access_lists_teams_and_members() {
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
     assert_eq!(
         r.json(),
-        json!([{"team_id": t, "team_name": "payments", "role": "operator", "namespaces": ["pay"],
+        json!([{"team_id": t, "team_name": "payments", "role": "operator", "role_id": null, "role_name": null, "namespaces": ["pay"],
                 "members": ["bob", "carol"]}])
     );
     assert_eq!(

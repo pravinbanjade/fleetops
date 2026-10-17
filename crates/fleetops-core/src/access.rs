@@ -124,26 +124,8 @@ pub fn check_doc(
     }
 }
 
-/// One user's grants on one environment from every source, combined: the
-/// highest role wins, and any whole-environment grant beats namespace lists,
-/// which otherwise add up (teams spec, "Effective access").
-pub fn merge_grants(grants: impl IntoIterator<Item = Grant>) -> Option<Grant> {
-    grants.into_iter().reduce(|a, b| Grant {
-        role: a.role.max(b.role),
-        custom: None,
-        perms: a.perms.union(b.perms),
-        namespaces: match (a.namespaces, b.namespaces) {
-            (Some(mut x), Some(y)) => {
-                x.extend(y);
-                Some(x)
-            }
-            _ => None,
-        },
-    })
-}
-
 /// Grants from sources other than a user's direct bindings, such as
-/// Enterprise teams. `authz` merges them with the direct grant.
+/// Enterprise teams and custom roles. `authz` checks them beside the direct grant.
 #[async_trait]
 pub trait ExtraGrants: Send + Sync {
     async fn env_grants(&self, user_id: i64, env_id: i64) -> Result<Vec<Grant>>;
@@ -545,28 +527,6 @@ mod tests {
             EnvRole::Operator,
             Some(ns.iter().map(|s| s.to_string()).collect()),
         )
-    }
-    #[test]
-    fn merge_empty_is_none() {
-        assert_eq!(merge_grants([]), None);
-    }
-
-    #[test]
-    fn merge_highest_role_wins() {
-        let g = merge_grants([Grant::full(EnvRole::Viewer), Grant::full(EnvRole::Operator)]);
-        assert_eq!(g, Some(Grant::full(EnvRole::Operator)));
-    }
-
-    #[test]
-    fn merge_whole_beats_list() {
-        let g = merge_grants([Grant::full(EnvRole::Viewer), limited(&["a"])]);
-        assert_eq!(g, Some(Grant::full(EnvRole::Operator)));
-    }
-
-    #[test]
-    fn merge_unions_lists() {
-        let g = merge_grants([limited(&["a"]), limited(&["b", "c"])]);
-        assert_eq!(g, Some(limited(&["a", "b", "c"])));
     }
 
     fn row(name: &str, ns: Option<&str>) -> KubeRow {

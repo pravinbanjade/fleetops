@@ -12,7 +12,7 @@ use fleetops_api::{
     extract::{ApiJson, ApiPath},
     AccessEntry, ApiResult, AppState, SetAccess, Wanted,
 };
-use fleetops_core::access::{merge_grants, normalize_namespaces, CustomRef, EnvRole, Grant};
+use fleetops_core::access::{normalize_namespaces, CustomRef, EnvRole, Grant};
 use fleetops_core::{edition::Feature, now_unix, Role, User};
 use fleetops_store::NewAudit;
 use serde::{Deserialize, Serialize};
@@ -52,17 +52,22 @@ pub struct AccessSource {
     pub team_id: Option<i64>,
     pub team_name: Option<String>,
     pub role: EnvRole,
+    /// Set when the grant is a custom role.
+    pub role_id: Option<i64>,
+    pub role_name: Option<String>,
     pub namespaces: Option<Vec<String>>,
 }
 
-/// A user's merged access to one environment, and what it is made of.
+/// A user's access to one environment, and the grants it is made of (each
+/// checked on its own).
 #[derive(Serialize, ToSchema)]
 pub struct EffectiveAccess {
     pub env_id: i64,
     pub env_name: String,
     pub env_kind: String,
+    /// The strongest built-in role among the sources.
     pub role: EnvRole,
-    /// Null for the whole environment.
+    /// Every namespace a source covers; null when one covers the whole environment.
     pub namespaces: Option<Vec<String>>,
     /// Direct grant first, then teams by name.
     pub sources: Vec<AccessSource>,
@@ -74,6 +79,8 @@ pub struct EnvTeamAccess {
     pub team_id: i64,
     pub team_name: String,
     pub role: EnvRole,
+    pub role_id: Option<i64>,
+    pub role_name: Option<String>,
     /// Null for the whole environment.
     pub namespaces: Option<Vec<String>>,
     /// Usernames, sorted.
@@ -415,22 +422,25 @@ pub async fn user_access(
     }
     // (env id, name, kind, grant, source), direct grants first.
     let mut parts: Vec<(i64, String, String, Grant, AccessSource)> = Vec::new();
+    let source = |team: Option<&TeamRecord>, g: &Grant| AccessSource {
+        team_id: team.map(|t| t.id),
+        team_name: team.map(|t| t.name.clone()),
+        role: g.role,
+        role_id: g.custom.as_ref().map(|c| c.id),
+        role_name: g.custom.as_ref().map(|c| c.name.clone()),
+        namespaces: ns_vec(g),
+    };
     for b in s.store.user_bindings(id).await? {
-        let src = AccessSource {
-            team_id: None,
-            team_name: None,
-            role: b.grant.role,
-            namespaces: ns_vec(&b.grant),
-        };
+        let src = source(None, &b.grant);
         parts.push((b.environment_id, b.env_name, b.env_kind, b.grant, src));
     }
+    for (env_id, g) in crate::roles::db::user_direct(s.store.pool(), id).await? {
+        let env = s.store.get_environment(env_id).await?;
+        let src = source(None, &g);
+        parts.push((env_id, env.name, env.kind, g, src));
+    }
     for (team, b) in db::user_team_bindings(s.store.pool(), id).await? {
-        let src = AccessSource {
-            team_id: Some(team.id),
-            team_name: Some(team.name),
-            role: b.grant.role,
-            namespaces: ns_vec(&b.grant),
-        };
+        let src = source(Some(&team), &b.grant);
         parts.push((b.environment_id, b.env_name, b.env_kind, b.grant, src));
     }
     let mut out: Vec<EffectiveAccess> = Vec::new();
@@ -455,9 +465,16 @@ pub async fn user_access(
         }
     }
     for (e, g) in out.iter_mut().zip(grants) {
-        let merged = merge_grants(g).expect("at least one source");
-        e.role = merged.role;
-        e.namespaces = ns_vec(&merged);
+        e.role = g.iter().map(|x| x.role).max().unwrap_or(EnvRole::Viewer);
+        e.namespaces = if g.iter().any(|x| x.namespaces.is_none()) {
+            None
+        } else {
+            let all: std::collections::BTreeSet<&String> = g
+                .iter()
+                .flat_map(|x| x.namespaces.iter().flatten())
+                .collect();
+            Some(all.into_iter().cloned().collect())
+        };
     }
     out.sort_by(|a, b| a.env_name.cmp(&b.env_name));
     Ok(Json(out))
@@ -491,6 +508,8 @@ pub async fn env_teams(
             team_id: team.id,
             team_name: team.name,
             role: b.grant.role,
+            role_id: b.grant.custom.as_ref().map(|c| c.id),
+            role_name: b.grant.custom.as_ref().map(|c| c.name.clone()),
             namespaces: ns_vec(&b.grant),
         });
     }

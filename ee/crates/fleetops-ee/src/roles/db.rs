@@ -310,3 +310,30 @@ pub async fn reconcile_direct_grants(pool: &SqlitePool) -> Result<()> {
     .map_err(db_err)?;
     Ok(())
 }
+
+/// Who holds the role, for its page: `(user id, username, environment)`
+/// for direct grants and `(team id, team name, environment)` for teams.
+pub async fn holder_rows(
+    pool: &SqlitePool,
+    id: i64,
+) -> Result<(Vec<(i64, String, String)>, Vec<(i64, String, String)>)> {
+    let users = sqlx::query_as(
+        "SELECT u.id, u.username, e.name FROM ee_user_role_bindings b
+         JOIN users u ON u.id = b.user_id JOIN environments e ON e.id = b.environment_id
+         WHERE b.role_id = ? ORDER BY u.username, e.name",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .map_err(db_err)?;
+    let teams = sqlx::query_as(
+        "SELECT t.id, t.name, e.name FROM ee_team_role_bindings b
+         JOIN ee_teams t ON t.id = b.team_id JOIN environments e ON e.id = b.environment_id
+         WHERE b.role_id = ? ORDER BY t.name, e.name",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .map_err(db_err)?;
+    Ok((users, teams))
+}
