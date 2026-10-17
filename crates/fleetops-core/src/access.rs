@@ -3,6 +3,7 @@
 //! produces grants, the API enforces them.
 
 use crate::kube::{KubeKind, KubeList, WatchEvent};
+use crate::perm::PermSet;
 use crate::{Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -43,10 +44,27 @@ impl FromStr for EnvRole {
     }
 }
 
-/// One user's access to one environment.
+/// A custom role a grant came from (Enterprise).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomRef {
+    pub id: i64,
+    pub name: String,
+}
+
+/// One grant on one environment: a role, the permissions it carries, and
+/// where it applies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct Grant {
+    /// The built-in role; for a custom role, the closest built-in (Viewer
+    /// when every permission is one Viewer has), for clients that know
+    /// only those two.
     pub role: EnvRole,
+    #[serde(skip)]
+    #[schema(ignore)]
+    pub custom: Option<CustomRef>,
+    #[serde(skip)]
+    #[schema(ignore)]
+    pub perms: PermSet,
     /// `None` is the whole environment; otherwise the only namespaces
     /// (Kubernetes) the grant covers.
     pub namespaces: Option<BTreeSet<String>>,
@@ -112,6 +130,8 @@ pub fn check_doc(
 pub fn merge_grants(grants: impl IntoIterator<Item = Grant>) -> Option<Grant> {
     grants.into_iter().reduce(|a, b| Grant {
         role: a.role.max(b.role),
+        custom: None,
+        perms: a.perms.union(b.perms),
         namespaces: match (a.namespaces, b.namespaces) {
             (Some(mut x), Some(y)) => {
                 x.extend(y);
@@ -146,9 +166,29 @@ impl ExtraGrants for NoExtraGrants {
 
 impl Grant {
     pub fn full(role: EnvRole) -> Self {
+        Self::builtin(role, None)
+    }
+
+    pub fn builtin(role: EnvRole, namespaces: Option<BTreeSet<String>>) -> Self {
         Self {
             role,
-            namespaces: None,
+            custom: None,
+            perms: role.perms(),
+            namespaces,
+        }
+    }
+
+    pub fn custom(r: CustomRef, perms: PermSet, namespaces: Option<BTreeSet<String>>) -> Self {
+        let role = if perms.is_subset(&EnvRole::Viewer.perms()) {
+            EnvRole::Viewer
+        } else {
+            EnvRole::Operator
+        };
+        Self {
+            role,
+            custom: Some(r),
+            perms,
+            namespaces,
         }
     }
 
@@ -283,10 +323,10 @@ mod tests {
     use crate::kube::{KubeList, KubeRow, RowHealth, WatchEvent};
 
     fn limited(ns: &[&str]) -> Grant {
-        Grant {
-            role: EnvRole::Operator,
-            namespaces: Some(ns.iter().map(|s| s.to_string()).collect()),
-        }
+        Grant::builtin(
+            EnvRole::Operator,
+            Some(ns.iter().map(|s| s.to_string()).collect()),
+        )
     }
     #[test]
     fn merge_empty_is_none() {

@@ -7,6 +7,7 @@ pub mod env;
 pub mod error;
 pub mod helm;
 pub mod kube;
+pub mod perm;
 pub mod recreate;
 pub mod streams;
 pub mod user;

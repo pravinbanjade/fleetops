@@ -92,14 +92,8 @@ async fn two_teams_both_contribute() {
     assert_eq!(
         got,
         vec![
-            Grant {
-                role: EnvRole::Viewer,
-                namespaces: Some(ns(&["x"]))
-            },
-            Grant {
-                role: EnvRole::Operator,
-                namespaces: Some(ns(&["y"]))
-            },
+            Grant::builtin(EnvRole::Viewer, Some(ns(&["x"]))),
+            Grant::builtin(EnvRole::Operator, Some(ns(&["y"]))),
         ]
     );
 }

@@ -39,10 +39,7 @@ impl ExtraGrants for Fixed {
 }
 
 fn ns(role: EnvRole, n: &[&str]) -> Grant {
-    Grant {
-        role,
-        namespaces: Some(n.iter().map(|s| s.to_string()).collect()),
-    }
+    Grant::builtin(role, Some(n.iter().map(|s| s.to_string()).collect()))
 }
 
 async fn ids(t: &TestApp, user: &str, env: &str) -> (i64, i64) {

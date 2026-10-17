@@ -25,10 +25,7 @@ async fn a_user_has_no_grant_until_one_is_set() {
         .unwrap();
     assert_eq!(
         s.env_grant(u.id, e.id).await.unwrap(),
-        Some(Grant {
-            role: EnvRole::Viewer,
-            namespaces: Some(set(&["a"]))
-        })
+        Some(Grant::builtin(EnvRole::Viewer, Some(set(&["a"]))))
     );
     // Upsert replaces role and namespaces.
     s.set_binding(u.id, e.id, EnvRole::Operator, None, 6)

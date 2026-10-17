@@ -327,10 +327,7 @@ pub async fn set_access(
     let team = db::get(p, id).await?;
     s.store.get_environment(env_id).await?;
     let ns = body.namespaces.map(normalize_namespaces).transpose()?;
-    let new = Grant {
-        role: body.role,
-        namespaces: ns,
-    };
+    let new = Grant::builtin(body.role, ns);
     let old = db::binding(p, id, env_id).await?;
     if !no_stronger(&new, old.as_ref().map(|b| &b.grant)) {
         require_feature(&s, Feature::Teams)?;
@@ -479,10 +476,7 @@ mod tests {
     use fleetops_core::access::EnvRole::{Operator, Viewer};
 
     fn g(role: fleetops_core::access::EnvRole, ns: Option<&[&str]>) -> Grant {
-        Grant {
-            role,
-            namespaces: ns.map(|n| n.iter().map(|s| s.to_string()).collect()),
-        }
+        Grant::builtin(role, ns.map(|n| n.iter().map(|s| s.to_string()).collect()))
     }
 
     #[test]

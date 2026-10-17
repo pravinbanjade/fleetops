@@ -46,10 +46,7 @@ fn grant(role: &str, namespaces: Option<&str>) -> Result<Grant> {
         .map(serde_json::from_str::<BTreeSet<String>>)
         .transpose()
         .map_err(|e| Error::Internal(format!("bad namespaces in ee_team_bindings: {e}")))?;
-    Ok(Grant {
-        role: role.parse()?,
-        namespaces,
-    })
+    Ok(Grant::builtin(role.parse()?, namespaces))
 }
 
 impl BindingRow {
