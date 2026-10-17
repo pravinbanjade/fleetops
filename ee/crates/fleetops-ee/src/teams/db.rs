@@ -298,7 +298,7 @@ pub async fn env_teams(pool: &SqlitePool, env_id: i64) -> Result<Vec<(TeamRecord
     for b in bindings {
         out.push((get(pool, b.team_id).await?, b));
     }
-    out.sort_by(|a, b| a.0.name.to_lowercase().cmp(&b.0.name.to_lowercase()));
+    out.sort_by_key(|(t, _)| t.name.to_lowercase());
     Ok(out)
 }
 
