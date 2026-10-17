@@ -58,6 +58,24 @@ describe("enterprise UI", () => {
     expect(put?.headers.get("content-type")).toBe("text/plain");
   });
 
+  it("lists the paid plans with yearly and monthly prices", async () => {
+    mockFetch({
+      ...loggedIn,
+      "GET /api/v1/edition": { json: { edition: "enterprise", features: [] } },
+      "GET /api/v1/ee/license": {
+        json: info({ status: "none", source: null, customer: null, id: null, expires_at: null, features: [] }),
+      },
+    });
+    const { screen } = renderApp("/admin/license");
+    const scale = await screen.findByRole("article", { name: "Scale plan" });
+    expect(scale).toHaveTextContent("$199");
+    expect(scale).toHaveTextContent("Recommended");
+    expect(screen.getByRole("article", { name: "Enterprise plan" })).toHaveTextContent("Custom");
+    await userEvent.click(screen.getByRole("button", { name: "Monthly" }));
+    expect(scale).toHaveTextContent("$19");
+    expect(screen.getByText(/No license installed/)).toBeInTheDocument();
+  });
+
   it("offers Remove only for an uploaded license", async () => {
     mockFetch({
       ...loggedIn,
