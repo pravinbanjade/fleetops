@@ -12,8 +12,8 @@ use fleetops_api::{
     extract::{ApiJson, ApiPath},
     AccessEntry, ApiResult, AppState, SetAccess,
 };
-use fleetops_core::access::{normalize_namespaces, Grant};
-use fleetops_core::{edition::Feature, now_unix, User};
+use fleetops_core::access::{merge_grants, normalize_namespaces, EnvRole, Grant};
+use fleetops_core::{edition::Feature, now_unix, Role, User};
 use fleetops_store::NewAudit;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -43,6 +43,33 @@ pub struct NewTeam {
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
+}
+
+/// Where part of a user's access comes from.
+#[derive(Serialize, ToSchema)]
+pub struct AccessSource {
+    /// Null for a direct grant.
+    pub team_id: Option<i64>,
+    pub team_name: Option<String>,
+    pub role: EnvRole,
+    pub namespaces: Option<Vec<String>>,
+}
+
+/// A user's merged access to one environment, and what it is made of.
+#[derive(Serialize, ToSchema)]
+pub struct EffectiveAccess {
+    pub env_id: i64,
+    pub env_name: String,
+    pub env_kind: String,
+    pub role: EnvRole,
+    /// Null for the whole environment.
+    pub namespaces: Option<Vec<String>>,
+    /// Direct grant first, then teams by name.
+    pub sources: Vec<AccessSource>,
+}
+
+fn ns_vec(g: &Grant) -> Option<Vec<String>> {
+    g.namespaces.as_ref().map(|s| s.iter().cloned().collect())
 }
 
 pub(crate) fn entry(b: &TeamBinding) -> AccessEntry {
@@ -336,6 +363,68 @@ pub async fn revoke_access(
         signal_members(&s, id).await?;
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(get, path = "/ee/users/{id}/access", operation_id = "listUserEffectiveAccess",
+    tag = "enterprise", summary = "A user's access from direct grants and teams, with its sources",
+    params(("id" = i64, Path, description = "User id")),
+    responses((status = 200, description = "By environment name; empty for admins, who have full access", body = [EffectiveAccess])))]
+pub async fn user_access(
+    State(s): State<AppState>,
+    _a: AdminUser,
+    ApiPath(id): ApiPath<i64>,
+) -> ApiResult<Json<Vec<EffectiveAccess>>> {
+    if s.store.get_user(id).await?.role == Role::Admin {
+        return Ok(Json(vec![]));
+    }
+    // (env id, name, kind, grant, source), direct grants first.
+    let mut parts: Vec<(i64, String, String, Grant, AccessSource)> = Vec::new();
+    for b in s.store.user_bindings(id).await? {
+        let src = AccessSource {
+            team_id: None,
+            team_name: None,
+            role: b.grant.role,
+            namespaces: ns_vec(&b.grant),
+        };
+        parts.push((b.environment_id, b.env_name, b.env_kind, b.grant, src));
+    }
+    for (team, b) in db::user_team_bindings(s.store.pool(), id).await? {
+        let src = AccessSource {
+            team_id: Some(team.id),
+            team_name: Some(team.name),
+            role: b.grant.role,
+            namespaces: ns_vec(&b.grant),
+        };
+        parts.push((b.environment_id, b.env_name, b.env_kind, b.grant, src));
+    }
+    let mut out: Vec<EffectiveAccess> = Vec::new();
+    let mut grants: Vec<Vec<Grant>> = Vec::new();
+    for (env_id, env_name, env_kind, grant, src) in parts {
+        match out.iter().position(|e| e.env_id == env_id) {
+            Some(i) => {
+                out[i].sources.push(src);
+                grants[i].push(grant);
+            }
+            None => {
+                out.push(EffectiveAccess {
+                    env_id,
+                    env_name,
+                    env_kind,
+                    role: grant.role,
+                    namespaces: None,
+                    sources: vec![src],
+                });
+                grants.push(vec![grant]);
+            }
+        }
+    }
+    for (e, g) in out.iter_mut().zip(grants) {
+        let merged = merge_grants(g).expect("at least one source");
+        e.role = merged.role;
+        e.namespaces = ns_vec(&merged);
+    }
+    out.sort_by(|a, b| a.env_name.cmp(&b.env_name));
+    Ok(Json(out))
 }
 
 #[cfg(test)]

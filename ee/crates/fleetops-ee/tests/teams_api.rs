@@ -445,3 +445,46 @@ async fn audit_rows() {
         }
     }
 }
+
+#[tokio::test]
+async fn effective_access_lists_sources() {
+    let f = fx().await;
+    let r = f
+        .call(
+            "PUT",
+            &format!("/api/v1/users/{}/access/{}", f.bob_id, f.kube),
+            Some(json!({"role": "viewer", "namespaces": ["a"]})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let t = f.team("ops").await;
+    f.add(t, f.bob_id).await;
+    f.grant(t, f.kube, json!({"role": "operator", "namespaces": ["b"]}))
+        .await;
+    f.grant(t, f.env, json!({"role": "viewer"})).await;
+
+    let r = f
+        .call(
+            "GET",
+            &format!("/api/v1/ee/users/{}/access", f.bob_id),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(
+        r.json(),
+        json!([
+            {"env_id": f.env, "env_name": "e", "env_kind": "docker-local", "role": "viewer", "namespaces": null,
+             "sources": [{"team_id": t, "team_name": "ops", "role": "viewer", "namespaces": null}]},
+            {"env_id": f.kube, "env_name": "k", "env_kind": "kube-config", "role": "operator", "namespaces": ["a", "b"],
+             "sources": [
+                {"team_id": null, "team_name": null, "role": "viewer", "namespaces": ["a"]},
+                {"team_id": t, "team_name": "ops", "role": "operator", "namespaces": ["b"]}
+             ]}
+        ])
+    );
+    let r = f.call("GET", "/api/v1/ee/users/999/access", None).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let r = f.call("GET", "/api/v1/ee/users/1/access", None).await;
+    assert_eq!(r.json(), json!([]), "admins have everything already");
+}

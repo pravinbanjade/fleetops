@@ -58,6 +58,7 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
             teams::routes::set_access,
             teams::routes::revoke_access
         ))
+        .routes(routes!(teams::routes::user_access))
 }
 
 pub async fn init(store: &Store, config: EeConfig) -> Result<EeParts> {
