@@ -26,6 +26,13 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                     binary,
                     insecure_repos: config.helm_insecure_repos,
                     timeout: fleetops_kube::helm::render::RENDER_TIMEOUT,
+                    // This binary, run with DISCARD_ARG (see main.rs).
+                    discard: std::env::current_exe().ok().map(|exe| {
+                        fleetops_kube::helm::render::Discard {
+                            program: exe.display().to_string(),
+                            args: vec![fleetops_kube::helm::render::DISCARD_ARG.into()],
+                        }
+                    }),
                 }) as Arc<dyn fleetops_kube::helm::render::ChartRenderer>
             }),
             ..ApiConfig::default()

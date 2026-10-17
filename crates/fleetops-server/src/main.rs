@@ -4,6 +4,11 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Helm 3's dry-run post-renderer: swallow the manifest, print nothing.
+    if std::env::args().nth(1).as_deref() == Some(fleetops_kube::helm::render::DISCARD_ARG) {
+        std::io::copy(&mut std::io::stdin().lock(), &mut std::io::sink())?;
+        return Ok(());
+    }
     let config = Config::parse();
     if config.openapi {
         println!("{}", fleetops_server::openapi_json());

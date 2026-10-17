@@ -42,6 +42,36 @@ pub struct HelmCli {
     pub binary: String,
     pub insecure_repos: bool,
     pub timeout: Duration,
+    /// Helm 3's dry-run post-renderer for charts with CRDs; see [`Discard`].
+    pub discard: Option<Discard>,
+}
+
+/// A program that reads a manifest on stdin and prints nothing. Helm 3's
+/// `install --dry-run=client` resolves every rendered object's kind against
+/// the cluster, so a chart whose templates use a kind from its own `crds/`
+/// fails before that CRD exists. The dry run is only for the chart object,
+/// notes and values, so handing its objects to this post-renderer loses
+/// nothing. Helm 4 needs none, and takes only plugins as post-renderers.
+#[derive(Debug, Clone)]
+pub struct Discard {
+    pub program: String,
+    pub args: Vec<String>,
+}
+
+/// The `fleetops` argument that makes the binary act as the [`Discard`].
+pub const DISCARD_ARG: &str = "__helm-post-render-discard";
+
+pub fn discard_args(d: &Discard) -> Vec<String> {
+    let mut a = vec!["--post-renderer".to_string(), d.program.clone()];
+    for x in &d.args {
+        a.extend(["--post-renderer-args".to_string(), x.clone()]);
+    }
+    a
+}
+
+/// Whether a dry run failed the Helm 3 way described on [`Discard`].
+fn needs_discard(e: &Error) -> bool {
+    matches!(e, Error::Invalid(m) if m.contains("ensure CRDs are installed first"))
 }
 
 pub fn chart_args(c: &ChartRef) -> Vec<String> {
@@ -309,7 +339,14 @@ impl ChartRenderer for HelmCli {
         }
         let out = self.helm(&template_args(r, &files), &w, &r.values).await?;
         let (manifest, hooks, crds) = split_template(&String::from_utf8_lossy(&out))?;
-        let json = self.helm(&dry_run_args(r, &files), &w, &r.values).await?;
+        let mut args = dry_run_args(r, &files);
+        let json = match (self.helm(&args, &w, &r.values).await, &self.discard) {
+            (Err(e), Some(d)) if needs_discard(&e) => {
+                args.extend(discard_args(d));
+                self.helm(&args, &w, &r.values).await?
+            }
+            (out, _) => out?,
+        };
         let (chart, notes, meta, config) = from_dry_run(&json)?;
         Ok(Rendered {
             manifest,
@@ -419,6 +456,37 @@ mod tests {
         assert_eq!(&a[..2], ["install", "rel"]);
         assert!(a.contains(&"--dry-run=client".to_string()));
         assert!(a.windows(2).any(|w| w == ["--output", "json"]));
+    }
+
+    #[test]
+    fn discard_args_name_the_program_and_each_argument() {
+        let d = Discard {
+            program: "/usr/bin/fleetops".into(),
+            args: vec![DISCARD_ARG.into(), "x y".into()],
+        };
+        assert_eq!(
+            discard_args(&d),
+            [
+                "--post-renderer",
+                "/usr/bin/fleetops",
+                "--post-renderer-args",
+                DISCARD_ARG,
+                "--post-renderer-args",
+                "x y"
+            ]
+        );
+    }
+
+    #[test]
+    fn only_helm_3s_missing_crd_failure_retries_with_the_discard() {
+        let helm3 = Error::Invalid("helm: Error: INSTALLATION FAILED: unable to build kubernetes objects from release manifest: resource mapping not found for name: \"a\" namespace: \"\" from \"\": no matches for kind \"Gadget\" in version \"fo.example/v1\"\nensure CRDs are installed first".into());
+        assert!(needs_discard(&helm3));
+        assert!(!needs_discard(&Error::Invalid(
+            "helm: Error: INSTALLATION FAILED: chart \"x\" not found".into()
+        )));
+        assert!(!needs_discard(&Error::Internal(
+            "ensure CRDs are installed first".into()
+        )));
     }
 
     #[test]

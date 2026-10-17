@@ -3,7 +3,8 @@ name: Release
 # A tag vX.Y.Z, matching the workspace version in Cargo.toml, publishes the
 # multi-arch Community, Enterprise and agent images to Docker Hub, and a
 # GitHub release with static linux binaries of each and SHA-256 checksums.
-# Needs the repository secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN.
+# Needs DOCKERHUB_USERNAME and DOCKERHUB_TOKEN as secrets of the
+# Production environment.
 
 on:
   push:
@@ -25,6 +26,9 @@ jobs:
   release:
     name: Images, binaries and release
     runs-on: ubuntu-latest
+    # The Docker Hub secrets live in this environment, so they reach only
+    # this job, and any protection rules set on it apply to every release.
+    environment: Production
     permissions:
       contents: write
     steps:
