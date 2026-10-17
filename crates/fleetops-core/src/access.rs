@@ -3,7 +3,7 @@
 //! produces grants, the API enforces them.
 
 use crate::kube::{KubeKind, KubeList, WatchEvent};
-use crate::perm::PermSet;
+use crate::perm::{row_of, PermSet, Permission, Row, Verb};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -292,6 +292,166 @@ impl Grant {
     /// outside the grant.
     pub fn filter_event(&self, kind: KubeKind, ev: WatchEvent) -> Option<WatchEvent> {
         filter_by(ev, |ns, name| self.row_visible(kind, ns, name))
+    }
+}
+
+/// Every grant one user holds on one environment, kept apart: a permission
+/// is allowed when a single grant both holds it and covers the target
+/// (custom roles spec, "How grants combine").
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Grants(pub Vec<Grant>);
+
+pub fn perm_denied(p: Permission) -> Error {
+    Error::Forbidden(format!("{p} permission required"))
+}
+
+/// Reading Nodes and Namespaces needs only some grant (the namespace
+/// picker must work for any role).
+fn open_read(p: Permission, kind: KubeKind) -> bool {
+    p.verb == Verb::View && matches!(kind, KubeKind::Nodes | KubeKind::Namespaces)
+}
+
+impl Grants {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Every permission any grant holds, wherever it applies: a UI hint.
+    pub fn perms_any(&self) -> PermSet {
+        self.0.iter().fold(PermSet::default(), |a, g| a.union(g.perms))
+    }
+
+    fn holding(&self, p: Permission) -> impl Iterator<Item = &Grant> {
+        self.0.iter().filter(move |g| g.perms.contains(p))
+    }
+
+    /// Ok when some candidate passes `check`; otherwise the first
+    /// candidate's refusal, or the missing permission when there is none.
+    fn first_ok<'a>(
+        p: Permission,
+        candidates: impl Iterator<Item = &'a Grant>,
+        check: impl Fn(&Grant) -> Result<()>,
+    ) -> Result<()> {
+        let mut first = None;
+        for g in candidates {
+            match check(g) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    first.get_or_insert(e);
+                }
+            }
+        }
+        Err(first.unwrap_or_else(|| perm_denied(p)))
+    }
+
+    /// `p` in namespace `ns`, or with `None`, across the whole environment.
+    pub fn allows(&self, p: Permission, ns: Option<&str>) -> bool {
+        self.holding(p).any(|g| match ns {
+            Some(ns) => g.allows_ns(ns),
+            None => g.namespaces.is_none(),
+        })
+    }
+
+    /// An action on the environment as a whole (Docker, cordon).
+    pub fn check_env(&self, p: Permission) -> Result<()> {
+        Self::first_ok(p, self.holding(p), |g| match g.namespaces {
+            None => Ok(()),
+            Some(_) => Err(cluster_scoped_denied()),
+        })
+    }
+
+    pub fn check_ns(&self, p: Permission, ns: &str) -> Result<()> {
+        Self::first_ok(p, self.holding(p), |g| g.check_ns(ns))
+    }
+
+    pub fn check_list(&self, p: Permission, kind: KubeKind, ns: Option<&str>) -> Result<()> {
+        if open_read(p, kind) {
+            return Self::first_ok(p, self.0.iter(), |g| g.check_list(kind, ns));
+        }
+        Self::first_ok(p, self.holding(p), |g| g.check_list(kind, ns))
+    }
+
+    pub fn check_object(&self, p: Permission, kind: KubeKind, ns: &str, name: &str) -> Result<()> {
+        if open_read(p, kind) {
+            return Self::first_ok(p, self.0.iter(), |g| g.check_object(kind, ns, name, false));
+        }
+        let write = p.verb != Verb::View;
+        Self::first_ok(p, self.holding(p), |g| g.check_object(kind, ns, name, write))
+    }
+
+    pub fn check_list_in(&self, p: Permission, namespaced: bool, ns: Option<&str>) -> Result<()> {
+        Self::first_ok(p, self.holding(p), |g| g.check_list_in(namespaced, ns))
+    }
+
+    pub fn check_object_in(&self, p: Permission, namespaced: bool, ns: &str) -> Result<()> {
+        Self::first_ok(p, self.holding(p), |g| g.check_object_in(namespaced, ns))
+    }
+
+    /// One applied document: `create` and `operate` from a single grant
+    /// that covers it.
+    pub fn check_doc(
+        &self,
+        create: Permission,
+        operate: Permission,
+        namespaced: bool,
+        ns: Option<&str>,
+    ) -> Result<()> {
+        let both = self
+            .0
+            .iter()
+            .filter(|g| g.perms.contains(create) && g.perms.contains(operate));
+        let missing = if self.holding(create).next().is_none() {
+            create
+        } else {
+            operate
+        };
+        Self::first_ok(missing, both, |g| {
+            check_doc(g.namespaces.as_ref(), namespaced, ns)
+        })
+    }
+
+    /// Where `p` applies: `None` is the whole environment, otherwise the
+    /// union of the namespace lists of the grants holding it.
+    pub fn namespaces_for(&self, p: Permission) -> Option<BTreeSet<String>> {
+        let mut out = BTreeSet::new();
+        for g in self.holding(p) {
+            out.extend(g.namespaces.as_ref()?.iter().cloned());
+        }
+        Some(out)
+    }
+
+    fn row_visible(&self, kind: KubeKind, ns: Option<&str>, name: &str) -> bool {
+        let view = Permission::new(row_of(kind), Verb::View);
+        let open = open_read(view, kind);
+        self.0
+            .iter()
+            .filter(|g| open || g.perms.contains(view))
+            .any(|g| g.row_visible(kind, ns, name))
+    }
+
+    fn visible_in(&self, namespaced: bool, ns: Option<&str>) -> bool {
+        let view = Permission::new(Row::K8sOther, Verb::View);
+        self.holding(view).any(|g| g.visible_in(namespaced, ns))
+    }
+
+    pub fn filter_list(&self, kind: KubeKind, mut list: KubeList) -> KubeList {
+        list.rows
+            .retain(|r| self.row_visible(kind, r.namespace.as_deref(), &r.name));
+        list
+    }
+
+    pub fn filter_list_in(&self, namespaced: bool, mut list: KubeList) -> KubeList {
+        list.rows
+            .retain(|r| self.visible_in(namespaced, r.namespace.as_deref()));
+        list
+    }
+
+    pub fn filter_event(&self, kind: KubeKind, ev: WatchEvent) -> Option<WatchEvent> {
+        filter_by(ev, |ns, name| self.row_visible(kind, ns, name))
+    }
+
+    pub fn filter_event_in(&self, namespaced: bool, ev: WatchEvent) -> Option<WatchEvent> {
+        filter_by(ev, |ns, _| self.visible_in(namespaced, ns))
     }
 }
 
@@ -609,5 +769,131 @@ mod tests {
                 }
             )
             .is_some());
+    }
+
+    // --- Grants: each grant on its own, per permission (custom roles spec) ---
+
+    fn pm(s: &str) -> crate::perm::Permission {
+        s.parse().unwrap()
+    }
+
+    fn custom(perms: &[&str], ns: Option<&[&str]>) -> Grant {
+        Grant::custom(
+            CustomRef { id: 1, name: "r".into() },
+            perms.iter().map(|p| pm(p)).collect(),
+            ns.map(|n| n.iter().map(|s| s.to_string()).collect()),
+        )
+    }
+
+    fn op_in(ns: &[&str]) -> Grants {
+        Grants(vec![limited(ns)])
+    }
+
+    #[test]
+    fn grants_port_the_namespace_rules() {
+        let g = op_in(&["team-a"]);
+        let v = pm("pods.view");
+        assert!(g.check_ns(v, "team-a").is_ok());
+        let e = g.check_ns(v, "team-b").unwrap_err();
+        assert!(matches!(&e, Error::Forbidden(m) if m == "namespace 'team-b' is not in your access"));
+        assert!(g.check_list(v, KubeKind::Pods, Some("team-a")).is_ok());
+        assert!(g.check_list(v, KubeKind::Pods, Some("team-b")).is_err());
+        assert!(g.check_list(v, KubeKind::Pods, None).is_ok(), "filtered, not refused");
+        assert!(g.check_object(pm("pods.delete"), KubeKind::Pods, "team-a", "p").is_ok());
+        assert!(g.check_object(v, KubeKind::Pods, "team-b", "p").is_err());
+        // nodes and own namespaces readable, nothing cluster-scoped writable
+        let k = pm("k8s-other.view");
+        assert!(g.check_list(k, KubeKind::Nodes, None).is_ok());
+        assert!(g.check_object(k, KubeKind::Namespaces, "-", "team-a").is_ok());
+        assert!(g.check_object(k, KubeKind::Namespaces, "-", "team-b").is_err());
+        let e = g.check_object(pm("k8s-other.operate"), KubeKind::Nodes, "-", "n1").unwrap_err();
+        assert_eq!(e.to_string(), cluster_scoped_denied().to_string());
+        assert!(g.check_list(pm("storage.view"), KubeKind::PersistentVolumes, None).is_err());
+        // generic kinds
+        assert!(g.check_list_in(k, true, Some("team-a")).is_ok());
+        assert!(g.check_list_in(k, true, Some("team-b")).is_err());
+        assert!(g.check_list_in(k, false, None).is_err());
+        assert!(g.check_object_in(pm("k8s-other.delete"), true, "team-a").is_ok());
+        // whole environment
+        let full = Grants(vec![Grant::full(EnvRole::Operator)]);
+        assert!(full.check_object(pm("k8s-other.operate"), KubeKind::Nodes, "-", "n1").is_ok());
+        assert!(full.check_env(pm("containers.delete")).is_ok());
+    }
+
+    #[test]
+    fn grants_filter_lists_and_events() {
+        let g = op_in(&["team-a"]);
+        let pods = KubeList {
+            rows: vec![row("a", Some("team-a")), row("b", Some("team-b"))],
+            truncated: false,
+        };
+        assert_eq!(g.filter_list(KubeKind::Pods, pods.clone()).rows.len(), 1);
+        assert_eq!(g.filter_list_in(true, pods).rows.len(), 1);
+        let nss = KubeList {
+            rows: vec![row("team-a", None), row("kube-system", None)],
+            truncated: false,
+        };
+        assert_eq!(g.filter_list(KubeKind::Namespaces, nss).rows.len(), 1);
+        let added = |ns: &str| WatchEvent::Added { row: row("x", Some(ns)) };
+        assert!(g.filter_event(KubeKind::Pods, added("team-b")).is_none());
+        assert!(g.filter_event(KubeKind::Pods, added("team-a")).is_some());
+        assert!(g.filter_event_in(true, added("team-b")).is_none());
+        assert!(g.filter_event(KubeKind::Pods, WatchEvent::Resync).is_some());
+    }
+
+    #[test]
+    fn narrow_operator_plus_wide_viewer_is_not_escalated() {
+        let g = Grants(vec![limited(&["a"]), Grant::full(EnvRole::Viewer)]);
+        let del = pm("pods.delete");
+        assert!(g.check_object(del, KubeKind::Pods, "b", "p").is_err());
+        assert!(g.check_object(del, KubeKind::Pods, "a", "p").is_ok());
+        assert!(g.check_list(pm("pods.view"), KubeKind::Pods, Some("b")).is_ok());
+        assert!(g.allows(del, Some("a")) && !g.allows(del, Some("b")));
+        assert_eq!(g.namespaces_for(del), Some(["a".to_string()].into()));
+        assert_eq!(g.namespaces_for(pm("pods.view")), None);
+    }
+
+    #[test]
+    fn filter_is_per_row() {
+        let g = Grants(vec![custom(&["pods.view"], None)]);
+        let list = || KubeList {
+            rows: vec![row("a", Some("x"))],
+            truncated: false,
+        };
+        assert_eq!(g.filter_list(KubeKind::Pods, list()).rows.len(), 1);
+        assert_eq!(g.filter_list(KubeKind::Secrets, list()).rows.len(), 0);
+        let e = g.check_list(pm("secrets.view"), KubeKind::Secrets, None).unwrap_err();
+        assert!(matches!(&e, Error::Forbidden(m) if m == "secrets.view permission required"), "{e}");
+        assert_eq!(g.perms_any().to_strs(), ["pods.view"]);
+        assert!(g.check_env(pm("containers.view")).is_err());
+    }
+
+    #[test]
+    fn nodes_and_namespaces_need_only_a_grant() {
+        let g = Grants(vec![custom(&["configmaps.view"], Some(&["a"]))]);
+        let k = pm("k8s-other.view");
+        assert!(g.check_list(k, KubeKind::Namespaces, None).is_ok());
+        assert!(g.check_list(k, KubeKind::Nodes, None).is_ok());
+        let nss = KubeList {
+            rows: vec![row("a", None), row("b", None)],
+            truncated: false,
+        };
+        let kept = g.filter_list(KubeKind::Namespaces, nss);
+        assert_eq!(kept.rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["a"]);
+        assert!(g.check_list(k, KubeKind::ServiceAccounts, Some("a")).is_err());
+    }
+
+    #[test]
+    fn check_doc_needs_both_from_one_grant() {
+        let (c, o) = (pm("configmaps.create"), pm("configmaps.operate"));
+        let split = Grants(vec![
+            custom(&["configmaps.create"], Some(&["a"])),
+            custom(&["configmaps.operate"], Some(&["a"])),
+        ]);
+        assert!(split.check_doc(c, o, true, Some("a")).is_err());
+        let one = Grants(vec![custom(&["configmaps.create", "configmaps.operate"], Some(&["a"]))]);
+        assert!(one.check_doc(c, o, true, Some("a")).is_ok());
+        assert!(one.check_doc(c, o, true, Some("b")).is_err());
+        assert!(one.check_doc(c, o, false, None).is_err());
     }
 }
