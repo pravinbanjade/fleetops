@@ -226,6 +226,41 @@ async fn grace_keeps_features_and_expiry_drops_them() {
 }
 
 #[tokio::test]
+async fn node_limit_is_reported_and_blocks_new_environments() {
+    let k = key();
+    let ee = ee_app(&k, None).await;
+    let admin = ee.admin().await;
+    let r = ee
+        .install(
+            &admin,
+            &license_for_nodes(&k, now_unix() + DAY, None, Some(0), &[]),
+        )
+        .await;
+    assert_eq!(r.json()["max_nodes"], 0);
+    assert_eq!(r.json()["nodes_in_use"], 0);
+    let body = json!({"name": "edge", "kind": "docker-local", "url": "unix:///edge.sock"});
+    let r = ee
+        .send(
+            "POST",
+            "/api/v1/envs",
+            Some(("application/json", body.to_string())),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "{}", r.text);
+    assert_eq!(r.json()["code"], "node_limit");
+}
+
+#[test]
+fn licenses_without_a_node_limit_still_verify() {
+    // Issued before max_nodes existed: no such key in the payload.
+    let k = key();
+    let text = license(&k, now_unix() + DAY, None, &[]);
+    let lic = fleetops_ee::license::verify(&text, &[k.verifying_key()]).unwrap();
+    assert_eq!(lic.payload.max_nodes, None);
+}
+
+#[tokio::test]
 async fn seat_limit_blocks_new_users_only() {
     let k = key();
     let ee = ee_app(&k, None).await;

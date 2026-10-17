@@ -232,6 +232,11 @@ pub async fn create(
     };
     let detail = exec_detail(prepared.as_ref());
     let _guard = s.envs.lock_mutations().await;
+    if let Some(max) = s.entitlements.max_nodes() {
+        if s.envs.count_nodes().await >= u64::from(max) {
+            return Err(Error::NodeLimit(max).into());
+        }
+    }
     let (rec, enrollment, credential) = match body.kind {
         EnvKind::DockerLocal => {
             let url = body

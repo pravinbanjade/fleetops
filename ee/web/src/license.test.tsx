@@ -16,6 +16,8 @@ const info = (over: Partial<LicenseInfo> = {}): LicenseInfo => ({
   max_users: 5,
   features: ["audit_export"],
   users_in_use: 1,
+  max_nodes: 10,
+  nodes_in_use: 2,
   ...over,
 });
 
@@ -32,6 +34,10 @@ describe("bannerFor", () => {
       /signature does not verify/,
     );
     expect(GRACE_SECS).toBe(14 * 86_400);
+  });
+  it("warns when more nodes are managed than the license covers", () => {
+    expect(bannerFor(info({ nodes_in_use: 12 }), NOW)).toMatch(/manages 12 nodes; the license covers 10/);
+    expect(bannerFor(info({ nodes_in_use: 10 }), NOW)).toBeNull();
   });
 });
 
@@ -53,6 +59,7 @@ describe("enterprise UI", () => {
     await userEvent.type(screen.getByLabelText("License key"), "abc.def");
     await userEvent.click(screen.getByRole("button", { name: "Install license" }));
     await screen.findByText("Acme");
+    expect(screen.getByText("2 of 10")).toBeInTheDocument();
     const put = calls.find((c) => c.method === "PUT");
     expect(put?.body).toBe("abc.def");
     expect(put?.headers.get("content-type")).toBe("text/plain");
@@ -85,6 +92,7 @@ describe("enterprise UI", () => {
     const { screen } = renderApp("/admin/license");
     await screen.findByText("Acme");
     expect(screen.queryByRole("button", { name: "Remove license" })).not.toBeInTheDocument();
+    expect(screen.getByText("Nodes")).toBeInTheDocument();
     expect(screen.getByText(/--license-file/)).toBeInTheDocument();
   });
 

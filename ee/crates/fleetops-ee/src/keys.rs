@@ -27,6 +27,7 @@ mod tests {
             issued_at: 0,
             expires_at: 1,
             max_users: None,
+            max_nodes: None,
             features: vec![],
         };
         sign(&p, &key)

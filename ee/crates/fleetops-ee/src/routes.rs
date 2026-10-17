@@ -30,7 +30,12 @@ fn day(ts: i64) -> String {
 }
 
 async fn info(s: &AppState, lic: &LicenseState) -> ApiResult<Json<LicenseInfo>> {
-    Ok(Json(lic.info(now_unix(), s.store.count_users().await?)))
+    let users = s.store.count_users().await?;
+    Ok(Json(lic.info(
+        now_unix(),
+        users,
+        s.envs.count_nodes().await,
+    )))
 }
 
 #[utoipa::path(
@@ -71,8 +76,11 @@ pub async fn put_license(
         return Err(Error::Invalid(format!("license: expired on {expired}")).into());
     }
     crate::db::put(s.store.pool(), body.trim(), now, admin.user.id).await?;
-    let detail =
-        json!({"customer": parsed.payload.customer, "expires_at": parsed.payload.expires_at});
+    let detail = json!({
+        "customer": parsed.payload.customer,
+        "expires_at": parsed.payload.expires_at,
+        "max_nodes": parsed.payload.max_nodes,
+    });
     let id = parsed.payload.id.clone();
     lic.set(Loaded::Ok(parsed), Some(Source::Uploaded));
     fleetops_api::audit_detail(

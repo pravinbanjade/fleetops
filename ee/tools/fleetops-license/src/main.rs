@@ -31,6 +31,9 @@ enum Cmd {
         /// Most users allowed; unlimited when unset.
         #[arg(long)]
         max_users: Option<u32>,
+        /// Most nodes allowed (Docker or Podman hosts plus Kubernetes nodes); unlimited when unset.
+        #[arg(long)]
+        max_nodes: Option<u32>,
         /// Comma-separated feature names, e.g. audit_export.
         #[arg(long, value_delimiter = ',')]
         features: Vec<String>,
@@ -55,6 +58,7 @@ fn main() -> Result<()> {
             customer,
             expires,
             max_users,
+            max_nodes,
             features,
             id,
         } => {
@@ -82,6 +86,7 @@ fn main() -> Result<()> {
                 issued_at: jiff::Timestamp::now().as_second(),
                 expires_at,
                 max_users,
+                max_nodes,
                 features,
             };
             println!("{}", license::sign(&payload, &key));

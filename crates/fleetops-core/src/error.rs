@@ -18,6 +18,9 @@ pub enum Error {
     /// Creating a user would pass the license's user limit (403).
     #[error("the license allows {0} users; remove a user or extend the license")]
     SeatLimit(u32),
+    /// Adding an environment would pass the license's node limit (403).
+    #[error("the license allows {0} nodes; remove an environment or extend the license")]
+    NodeLimit(u32),
     #[error("too many attempts; retry in {retry_after_secs}s")]
     RateLimited { retry_after_secs: u64 },
     #[error("environment unavailable: {0}")]
@@ -44,9 +47,10 @@ impl Error {
             | Error::EnvUnavailable(m)
             | Error::Internal(m) => m.clone(),
             Error::Upstream { message, .. } => message.clone(),
-            Error::RateLimited { .. } | Error::LicenseRequired(_) | Error::SeatLimit(_) => {
-                self.to_string()
-            }
+            Error::RateLimited { .. }
+            | Error::LicenseRequired(_)
+            | Error::SeatLimit(_)
+            | Error::NodeLimit(_) => self.to_string(),
         }
     }
 
@@ -59,6 +63,7 @@ impl Error {
             Error::Forbidden(_) => "forbidden",
             Error::LicenseRequired(_) => "license_required",
             Error::SeatLimit(_) => "seat_limit",
+            Error::NodeLimit(_) => "node_limit",
             Error::RateLimited { .. } => "rate_limited",
             Error::EnvUnavailable(_) => "env_unavailable",
             Error::Upstream { .. } => "upstream",
@@ -100,6 +105,7 @@ mod tests {
             "license_required"
         );
         assert_eq!(Error::SeatLimit(5).code(), "seat_limit");
+        assert_eq!(Error::NodeLimit(10).code(), "node_limit");
     }
 
     #[test]

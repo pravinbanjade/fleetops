@@ -65,6 +65,17 @@ pub fn license(
     max_users: Option<u32>,
     features: &[&str],
 ) -> String {
+    license_for_nodes(key, expires_at, max_users, None, features)
+}
+
+/// [`license`] with a node limit.
+pub fn license_for_nodes(
+    key: &SigningKey,
+    expires_at: i64,
+    max_users: Option<u32>,
+    max_nodes: Option<u32>,
+    features: &[&str],
+) -> String {
     sign(
         &Payload {
             v: VERSION,
@@ -73,6 +84,7 @@ pub fn license(
             issued_at: 0,
             expires_at,
             max_users,
+            max_nodes,
             features: features.iter().map(|s| s.to_string()).collect(),
         },
         key,

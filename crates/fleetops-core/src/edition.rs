@@ -42,6 +42,11 @@ pub trait Entitlements: Send + Sync {
     fn has(&self, feature: Feature) -> bool;
     /// The most users the license allows; `None` is unlimited.
     fn max_users(&self) -> Option<u32>;
+    /// The most nodes the license allows; `None` is unlimited. A node is a
+    /// Docker or Podman host, or a node of a Kubernetes cluster.
+    fn max_nodes(&self) -> Option<u32> {
+        None
+    }
 }
 
 /// The Community edition: no Enterprise features, no limits.
@@ -110,6 +115,7 @@ mod tests {
             serde_json::json!({"edition": "community", "features": []})
         );
         assert_eq!(Community.max_users(), None);
+        assert_eq!(Community.max_nodes(), None);
     }
 
     #[test]

@@ -43,9 +43,29 @@ function statusLine(l: LicenseInfo, now: number): string {
   }
 }
 
+/** "3 of 10", with a hairline track that turns red at the limit. */
+function Usage({ used, max }: { used: number; max: number | null }) {
+  const share = max ? used / max : undefined;
+  return (
+    <dd className="grid gap-1.5 tabular-nums">
+      <span className="text-lg font-semibold">
+        {used} of {max ?? "unlimited"}
+      </span>
+      {share !== undefined && (
+        <span aria-hidden className="h-0.5 overflow-hidden rounded-full bg-muted">
+          <span
+            className={cn("bar-fill", share >= 1 ? "bg-state-fail" : "bg-foreground/60")}
+            style={{ "--share": share } as CSSProperties}
+          />
+        </span>
+      )}
+    </dd>
+  );
+}
+
 function CurrentLicense({ l }: { l: LicenseInfo }) {
   const now = Date.now() / 1000;
-  const share = l.max_users ? l.users_in_use / l.max_users : undefined;
+  const over = l.max_nodes !== null && l.nodes_in_use > l.max_nodes;
   return (
     <Panel title="Current license" icon={ShieldCheck} aside={l.id ?? undefined}>
       <div className="grid gap-4">
@@ -54,7 +74,7 @@ function CurrentLicense({ l }: { l: LicenseInfo }) {
           <p className="text-sm text-muted-foreground">{statusLine(l, now)}</p>
         </div>
         {l.status !== "none" && (
-          <dl aria-label="License details" className="grid gap-4 sm:grid-cols-3">
+          <dl aria-label="License details" className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
             <div className="grid content-start gap-1">
               <dt className="text-xs font-medium text-muted-foreground">Customer</dt>
               <dd className="truncate text-lg font-semibold">{l.customer ?? "—"}</dd>
@@ -75,22 +95,16 @@ function CurrentLicense({ l }: { l: LicenseInfo }) {
               </dd>
             </div>
             <div className="grid content-start gap-1">
-              <dt className="text-xs font-medium text-muted-foreground">Users</dt>
-              <dd className="grid gap-1.5 tabular-nums">
-                <span className="text-lg font-semibold">
-                  {l.users_in_use} of {l.max_users ?? "unlimited"}
-                </span>
-                {share !== undefined && (
-                  <span aria-hidden className="h-0.5 overflow-hidden rounded-full bg-muted">
-                    <span
-                      className={cn("bar-fill", share >= 1 ? "bg-state-fail" : "bg-foreground/60")}
-                      style={{ "--share": share } as CSSProperties}
-                    />
-                  </span>
-                )}
-              </dd>
+              <dt className="text-xs font-medium text-muted-foreground">Nodes</dt>
+              <Usage used={l.nodes_in_use} max={l.max_nodes} />
             </div>
-            <div className="grid content-start gap-1 sm:col-span-3">
+            {l.max_users !== null && (
+              <div className="grid content-start gap-1">
+                <dt className="text-xs font-medium text-muted-foreground">Users</dt>
+                <Usage used={l.users_in_use} max={l.max_users} />
+              </div>
+            )}
+            <div className="col-span-full grid content-start gap-1">
               <dt className="text-xs font-medium text-muted-foreground">Features</dt>
               <dd className="flex flex-wrap gap-1.5">
                 {l.features.length ? (
@@ -106,6 +120,12 @@ function CurrentLicense({ l }: { l: LicenseInfo }) {
               </dd>
             </div>
           </dl>
+        )}
+        {over && (
+          <p role="status" className="text-sm text-state-fail-text">
+            Over the node limit. Everything keeps working, but new environments can't be added until you buy another
+            block of nodes or remove an environment.
+          </p>
         )}
         {l.source === "file" && (
           <p className="text-xs text-muted-foreground">

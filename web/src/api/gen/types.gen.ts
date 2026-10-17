@@ -522,7 +522,7 @@ export type EnvironmentRecord = {
 export type ErrorBody = {
     /**
      * Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,
-     * `forbidden`, `license_required`, `seat_limit`, `rate_limited`, `env_unavailable`, `upstream`, `internal`.
+     * `forbidden`, `license_required`, `seat_limit`, `node_limit`, `rate_limited`, `env_unavailable`, `upstream`, `internal`.
      */
     code: string;
     message: string;

@@ -45,6 +45,10 @@ pub struct LicenseInfo {
     /// The features the license names (in effect only while it is active).
     pub features: Vec<Feature>,
     pub users_in_use: i64,
+    /// `null`: unlimited.
+    pub max_nodes: Option<u32>,
+    /// Docker or Podman hosts plus Kubernetes nodes managed now.
+    pub nodes_in_use: u64,
 }
 
 pub struct LicenseState {
@@ -111,7 +115,7 @@ impl LicenseState {
         }
     }
 
-    pub fn info(&self, now: i64, users_in_use: i64) -> LicenseInfo {
+    pub fn info(&self, now: i64, users_in_use: i64, nodes_in_use: u64) -> LicenseInfo {
         let guard = self.loaded.read().expect("license lock");
         let (loaded, source) = &*guard;
         let source = *source;
@@ -125,6 +129,8 @@ impl LicenseState {
             max_users: None,
             features: vec![],
             users_in_use,
+            max_nodes: None,
+            nodes_in_use,
         };
         match loaded {
             Loaded::None => empty(Status::None, None),
@@ -139,6 +145,8 @@ impl LicenseState {
                 max_users: l.payload.max_users,
                 features: l.features.clone(),
                 users_in_use,
+                max_nodes: l.payload.max_nodes,
+                nodes_in_use,
             },
         }
     }
@@ -163,6 +171,9 @@ impl Entitlements for LicenseState {
     fn max_users(&self) -> Option<u32> {
         self.active(|l| l.payload.max_users).flatten()
     }
+    fn max_nodes(&self) -> Option<u32> {
+        self.active(|l| l.payload.max_nodes).flatten()
+    }
 }
 
 #[cfg(test)]
@@ -182,6 +193,7 @@ mod tests {
                 issued_at: 0,
                 expires_at,
                 max_users: Some(3),
+                max_nodes: Some(10),
                 features: vec!["audit_export".into()],
             },
             key,
@@ -218,14 +230,15 @@ mod tests {
         let s = store().await;
         let st = LicenseState::new(vec![key.verifying_key()], Some(file));
         st.load(&s).await.unwrap();
-        assert_eq!(st.info(now_unix(), 1).id.as_deref(), Some("from-file"));
+        assert_eq!(st.info(now_unix(), 1, 0).id.as_deref(), Some("from-file"));
         crate::db::put(s.pool(), &lic(&key, now_unix() + 1000, "uploaded"), 0, 1)
             .await
             .unwrap();
         st.load(&s).await.unwrap();
-        assert_eq!(st.info(now_unix(), 1).id.as_deref(), Some("uploaded"));
+        assert_eq!(st.info(now_unix(), 1, 0).id.as_deref(), Some("uploaded"));
         assert!(st.has(Feature::AuditExport));
         assert_eq!(st.max_users(), Some(3));
+        assert_eq!(st.max_nodes(), Some(10));
     }
 
     #[tokio::test]
@@ -236,7 +249,7 @@ mod tests {
         std::fs::write(&bad, "garbage").unwrap();
         let st = LicenseState::new(vec![key.verifying_key()], Some(bad));
         st.load(&store().await).await.unwrap();
-        let info = st.info(now_unix(), 1);
+        let info = st.info(now_unix(), 1, 0);
         assert_eq!(info.status, Status::Invalid);
         assert_eq!(info.reason.as_deref(), Some("not a FleetOps license"));
         let st = LicenseState::new(
@@ -260,5 +273,6 @@ mod tests {
         assert_eq!(st.status(now_unix()), Status::Expired);
         assert!(!st.has(Feature::AuditExport));
         assert_eq!(st.max_users(), None);
+        assert_eq!(st.max_nodes(), None);
     }
 }

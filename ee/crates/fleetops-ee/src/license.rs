@@ -22,6 +22,10 @@ pub struct Payload {
     pub expires_at: i64,
     /// `None`: unlimited.
     pub max_users: Option<u32>,
+    /// Docker or Podman hosts plus Kubernetes nodes; `None`: unlimited.
+    /// Licenses issued before node limits have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_nodes: Option<u32>,
     pub features: Vec<String>,
 }
 
@@ -143,6 +147,7 @@ mod tests {
             issued_at: 0,
             expires_at,
             max_users: Some(10),
+            max_nodes: Some(20),
             features: vec!["audit_export".into(), "from_the_future".into()],
         }
     }

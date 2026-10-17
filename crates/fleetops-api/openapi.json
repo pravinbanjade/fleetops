@@ -7298,7 +7298,7 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,\n`forbidden`, `license_required`, `seat_limit`, `rate_limited`, `env_unavailable`, `upstream`, `internal`."
+            "description": "Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,\n`forbidden`, `license_required`, `seat_limit`, `node_limit`, `rate_limited`, `env_unavailable`, `upstream`, `internal`."
           },
           "message": {
             "type": "string"

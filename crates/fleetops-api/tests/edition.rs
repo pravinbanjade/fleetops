@@ -18,6 +18,47 @@ impl Entitlements for Seats {
     }
 }
 
+/// A license for `.0` nodes and any number of users.
+struct Nodes(u32);
+impl Entitlements for Nodes {
+    fn edition(&self) -> Edition {
+        Edition::Enterprise
+    }
+    fn has(&self, _: Feature) -> bool {
+        false
+    }
+    fn max_users(&self) -> Option<u32> {
+        None
+    }
+    fn max_nodes(&self) -> Option<u32> {
+        Some(self.0)
+    }
+}
+
+#[tokio::test]
+async fn node_limit_counts_hosts_and_cluster_nodes() {
+    // One Docker host, then a three-node cluster: four nodes, at the limit.
+    let app = app_entitled(Arc::new(Nodes(4))).await;
+    let admin = app.setup_admin().await;
+    app.add_env(&admin, "local").await;
+    app.add_kube_env(&admin, "prod").await;
+    assert_eq!(app.state.envs.count_nodes().await, 4);
+    let r = app
+        .send(req(
+            "POST",
+            "/api/v1/envs",
+            Some(serde_json::json!({"name": "edge", "kind": "docker-local", "url": "unix:///edge.sock"})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    assert_eq!(r.json["code"], "node_limit");
+    assert!(r.json["message"]
+        .as_str()
+        .unwrap()
+        .contains("allows 4 nodes"));
+}
+
 #[tokio::test]
 async fn community_edition_has_no_features() {
     let app = app().await;

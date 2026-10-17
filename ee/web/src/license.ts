@@ -15,6 +15,9 @@ export interface LicenseInfo {
   max_users: number | null;
   features: Feature[];
   users_in_use: number;
+  /** Docker or Podman hosts plus Kubernetes nodes; null: unlimited. */
+  max_nodes: number | null;
+  nodes_in_use: number;
 }
 
 export const GRACE_SECS = 14 * 86_400;
@@ -43,6 +46,8 @@ export function bannerFor(l: LicenseInfo, now: number): string | null {
     case "grace":
       return `The Enterprise license expired on ${day(exp)}. Enterprise features turn off on ${day(exp + GRACE_SECS)}.`;
     case "valid":
+      if (l.max_nodes !== null && l.nodes_in_use > l.max_nodes)
+        return `FleetOps manages ${l.nodes_in_use} nodes; the license covers ${l.max_nodes}. New environments can't be added until you add nodes to the license.`;
       return exp - now < GRACE_SECS ? `The Enterprise license expires on ${day(exp)}.` : null;
     default:
       return null;
