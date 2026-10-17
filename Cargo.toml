@@ -28,7 +28,7 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 bollard = "0.21"
 bytes = "1"
 axum = { version = "0.8", features = ["ws", "multipart"] }
-axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
 clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
 flate2 = "1"
