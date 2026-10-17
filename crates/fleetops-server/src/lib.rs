@@ -53,7 +53,9 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         .await?;
         tokio::spawn(ee.background);
         fleetops_api::app_with(
-            state.with_entitlements(ee.entitlements),
+            state
+                .with_entitlements(ee.entitlements)
+                .with_extra_grants(ee.grants),
             static_files::router(),
             ee.routes,
         )

@@ -18,14 +18,18 @@ pub enum Edition {
 pub enum Feature {
     /// `GET /ee/audit/export`.
     AuditExport,
+    /// Teams that carry environment access (`/ee/teams`). Every active
+    /// license has it.
+    Teams,
 }
 
 impl Feature {
-    pub const ALL: &'static [Feature] = &[Feature::AuditExport];
+    pub const ALL: &'static [Feature] = &[Feature::AuditExport, Feature::Teams];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Feature::AuditExport => "audit_export",
+            Feature::Teams => "teams",
         }
     }
 

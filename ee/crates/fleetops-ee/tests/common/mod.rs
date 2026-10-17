@@ -34,6 +34,7 @@ impl EnvFactory for NoEnvs {
 pub struct Ee {
     pub router: Router,
     pub store: Store,
+    pub state: AppState,
 }
 
 pub struct Resp {
@@ -101,10 +102,12 @@ pub async fn ee_app(key: &SigningKey, file: Option<PathBuf>) -> Ee {
     .await
     .unwrap();
     let state = AppState::new(store.clone(), ApiConfig::default(), Arc::new(NoEnvs))
-        .with_entitlements(parts.entitlements);
+        .with_entitlements(parts.entitlements)
+        .with_extra_grants(parts.grants);
     Ee {
-        router: fleetops_api::app_with(state, Router::new(), parts.routes),
+        router: fleetops_api::app_with(state.clone(), Router::new(), parts.routes),
         store,
+        state,
     }
 }
 

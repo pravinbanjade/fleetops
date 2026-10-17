@@ -7359,7 +7359,8 @@
         "type": "string",
         "description": "An Enterprise feature a license can grant.",
         "enum": [
-          "audit_export"
+          "audit_export",
+          "teams"
         ]
       },
       "Grant": {

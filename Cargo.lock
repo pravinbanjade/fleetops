@@ -1121,6 +1121,7 @@ dependencies = [
 name = "fleetops-ee"
 version = "0.1.2"
 dependencies = [
+ "async-trait",
  "axum",
  "base64",
  "bytes",

@@ -550,7 +550,7 @@ export type ExecOptions = {
 /**
  * An Enterprise feature a license can grant.
  */
-export type Feature = 'audit_export';
+export type Feature = 'audit_export' | 'teams';
 
 /**
  * One user's access to one environment.

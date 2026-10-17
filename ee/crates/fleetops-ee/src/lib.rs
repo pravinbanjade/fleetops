@@ -8,11 +8,12 @@ pub mod keys;
 pub mod license;
 pub mod routes;
 pub mod state;
+pub mod teams;
 
 use axum::Extension;
 use ed25519_dalek::VerifyingKey;
 use fleetops_api::AppState;
-use fleetops_core::{edition::Entitlements, now_unix, Result};
+use fleetops_core::{access::ExtraGrants, edition::Entitlements, now_unix, Result};
 use fleetops_store::Store;
 use futures_util::future::BoxFuture;
 use state::LicenseState;
@@ -28,6 +29,8 @@ pub struct EeConfig {
 pub struct EeParts {
     pub entitlements: Arc<dyn Entitlements>,
     pub routes: OpenApiRouter<AppState>,
+    /// Team grants, merged with direct ones on every access check.
+    pub grants: Arc<dyn ExtraGrants>,
     /// Logs license status changes; spawn it.
     pub background: BoxFuture<'static, ()>,
 }
@@ -58,6 +61,7 @@ pub async fn init_with_keys(
     Ok(EeParts {
         entitlements: state.clone(),
         routes: api_routes().layer(Extension(state.clone())),
+        grants: Arc::new(teams::grants::TeamGrants::new(store.pool().clone())),
         background: Box::pin(watch(state)),
     })
 }

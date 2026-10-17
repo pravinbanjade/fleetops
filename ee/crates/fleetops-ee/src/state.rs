@@ -42,7 +42,8 @@ pub struct LicenseInfo {
     pub expires_at: Option<i64>,
     /// `null`: unlimited.
     pub max_users: Option<u32>,
-    /// The features the license names (in effect only while it is active).
+    /// The features the license grants, Teams always among them (in effect
+    /// only while it is active).
     pub features: Vec<Feature>,
     pub users_in_use: i64,
     /// `null`: unlimited.
@@ -143,7 +144,13 @@ impl LicenseState {
                 customer: Some(l.payload.customer.clone()),
                 expires_at: Some(l.payload.expires_at),
                 max_users: l.payload.max_users,
-                features: l.features.clone(),
+                features: {
+                    let mut f = l.features.clone();
+                    if !f.contains(&Feature::Teams) {
+                        f.push(Feature::Teams);
+                    }
+                    f
+                },
                 users_in_use,
                 max_nodes: l.payload.max_nodes,
                 nodes_in_use,
@@ -164,8 +171,10 @@ impl Entitlements for LicenseState {
     fn edition(&self) -> Edition {
         Edition::Enterprise
     }
+    /// Teams comes with every license, whatever its payload lists, so
+    /// licenses issued before it get it too (teams spec, "Licensing").
     fn has(&self, feature: Feature) -> bool {
-        self.active(|l| l.features.contains(&feature))
+        self.active(|l| feature == Feature::Teams || l.features.contains(&feature))
             .unwrap_or(false)
     }
     fn max_users(&self) -> Option<u32> {
@@ -274,5 +283,24 @@ mod tests {
         assert!(!st.has(Feature::AuditExport));
         assert_eq!(st.max_users(), None);
         assert_eq!(st.max_nodes(), None);
+    }
+
+    #[tokio::test]
+    async fn teams_comes_with_any_active_license() {
+        let key = key();
+        let at = |expires_at: i64| {
+            let st = LicenseState::new(vec![key.verifying_key()], None);
+            let l = crate::license::verify(&lic(&key, expires_at, "l"), &[key.verifying_key()])
+                .unwrap();
+            assert_eq!(l.features, vec![Feature::AuditExport]);
+            st.set(Loaded::Ok(l), None);
+            st.has(Feature::Teams)
+        };
+        assert!(at(now_unix() + 1000), "valid");
+        assert!(at(now_unix() - 10), "in grace");
+        assert!(!at(now_unix() - GRACE_SECS - 1), "expired");
+        let none = LicenseState::new(vec![key.verifying_key()], None);
+        none.load(&store().await).await.unwrap();
+        assert!(!none.has(Feature::Teams), "no license");
     }
 }
