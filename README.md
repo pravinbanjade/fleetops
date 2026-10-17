@@ -130,11 +130,18 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 | Audit log (90-day retention) | ✓ | ✓ |
 | Audit export (CSV, NDJSON) | | ✓ |
 | Teams with shared environment access | | ✓ |
+| Custom roles (fine-grained RBAC) | | ✓ |
 | SSO (OIDC, LDAP), API tokens, backup | | planned |
 
 The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license may cap the number of users: past the cap no new users can be created, and existing users keep working.
 
-Teams come with any Enterprise license: add a user to a team in **Admin → Teams** and they get its environment access, combined with their own: the strongest role wins and namespace lists add up, so Operator on one namespace plus Viewer on the whole cluster gives Operator on the whole cluster. Without a license, teams are read-only and keep granting access; removing members or access always works. Running the Community image on the same data ignores teams, so access through them stops until you switch back.
+Teams come with any Enterprise license: add a user to a team in **Admin → Teams** and they get its environment access, alongside their own. Each grant a user holds, direct or through a team, is checked on its own, so Operator on one namespace plus Viewer on the whole cluster is Operator on that namespace and Viewer everywhere else.
+
+Custom roles come with any Enterprise license too. In **Admin → Roles** an admin builds a role as a grid: a row per kind of resource (containers, images, volumes, networks, stacks; workloads, pods, ConfigMaps, Secrets, networking, storage, Helm releases, everything else) and a column per action (View, Create, Operate, Delete, Shell, Reveal). For example, a "Deployer" can start and restart containers but not delete them or prune volumes. A custom role is given to users and teams on an environment exactly like Viewer and Operator, namespaces included. **Reveal** covers secret material: container env vars and files, Helm values and notes, and the real values of a Kubernetes Secret, which no built-in role shows; every time Secret values are shown it is written to the audit log.
+
+Without a license, teams and custom roles are read-only and keep granting access; removing members, permissions, grants or whole roles always works. Running the Community image on the same data ignores teams and custom-role grants, so access through them stops until you switch back.
+
+Known limits of custom roles: Helm and Compose actions are checked against the Helm and Stacks rows only, not against what a chart or stack creates; Shell reaches whatever the container or pod can read; and *Create* on "everything else" includes Kubernetes RBAC objects, so it can bind a service account to cluster-admin inside the cluster (FleetOps access itself is not widened).
 
 Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and production use needs a subscription. `make build` builds Community with no Enterprise code compiled in; `make build-ee` builds Enterprise.
 
@@ -190,12 +197,12 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 
 ## Roadmap
 
-**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · Enterprise audit export.
+**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · Enterprise audit export, teams and custom roles.
 
 **Next:**
 - **Stacks and GitOps:** Compose authoring, a diff before deploy, rollback, and git-backed stacks synced by webhook or polling.
 - **Port-forward:** reach a pod's port through FleetOps.
-- **Enterprise:** SSO (OIDC, LDAP), teams, API tokens, backup and restore, SIEM forwarding and long audit retention.
+- **Enterprise:** SSO (OIDC, LDAP), API tokens, backup and restore, SIEM forwarding and long audit retention.
 
 ## Documentation
 

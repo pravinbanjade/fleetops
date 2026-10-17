@@ -22,7 +22,7 @@ export const PLANS: Plan[] = [
     monthly: 9,
     nodes: "10 to 30 nodes",
     support: "GitHub issues, Enterprise label",
-    features: ["Teams with shared environment access", "Audit export (CSV, NDJSON)", "Offline license, 14-day grace after expiry"],
+    features: ["Teams with shared environment access", "Custom roles", "Audit export (CSV, NDJSON)", "Offline license, 14-day grace after expiry"],
     cta: { label: "Subscribe", href: PRICING_URL },
   },
   {
