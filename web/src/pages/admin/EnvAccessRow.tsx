@@ -20,8 +20,15 @@ export function fromEntry(e: AccessEntry | undefined): Row {
 
 export const same = (a: Row, b: Row) => a.role === b.role && JSON.stringify(a.namespaces) === JSON.stringify(b.namespaces);
 
-/** One environment's role, and for a cluster its namespaces. */
-export function EnvRow({ env, row, onChange }: { env: EnvView; row: Row; onChange: (r: Row) => void }) {
+const RANK: Record<Row["role"], number> = { none: 0, viewer: 1, operator: 2 };
+
+/**
+ * One environment's role, and for a cluster its namespaces. With `limit`,
+ * the row can only be lowered or narrowed from it.
+ */
+export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; onChange: (r: Row) => void; limit?: Row }) {
+  const above = (role: Row["role"]) => limit !== undefined && RANK[role] > RANK[limit.role];
+  const listOnly = limit !== undefined && limit.namespaces !== null;
   const [typed, setTyped] = useState("");
   const kube = isKube(env.kind);
   const add = () => {
@@ -43,14 +50,23 @@ export function EnvRow({ env, row, onChange }: { env: EnvView; row: Row; onChang
           onChange={(e) => onChange({ role: e.target.value as Row["role"], namespaces: e.target.value === "none" ? null : row.namespaces })}
         >
           <option value="none">None</option>
-          <option value="viewer">Viewer</option>
-          <option value="operator">Operator</option>
+          <option value="viewer" disabled={above("viewer")}>
+            Viewer
+          </option>
+          <option value="operator" disabled={above("operator")}>
+            Operator
+          </option>
         </NativeSelect>
       </div>
       {kube && row.role !== "none" && (
         <>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={row.namespaces === null} onChange={(e) => onChange({ ...row, namespaces: e.target.checked ? null : [] })} />
+            <input
+              type="checkbox"
+              checked={row.namespaces === null}
+              disabled={listOnly && row.namespaces !== null}
+              onChange={(e) => onChange({ ...row, namespaces: e.target.checked ? null : [] })}
+            />
             Entire cluster
           </label>
           {row.namespaces !== null && (
@@ -65,19 +81,21 @@ export function EnvRow({ env, row, onChange }: { env: EnvView; row: Row; onChang
                   </span>
                 ))}
               </div>
-              <Input
-                aria-label={`Namespaces on ${env.name}`}
-                placeholder="Type a namespace, then Enter"
-                value={typed}
-                onChange={(e) => setTyped(e.target.value)}
-                onBlur={add}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === ",") {
-                    e.preventDefault();
-                    add();
-                  }
-                }}
-              />
+              {!listOnly && (
+                <Input
+                  aria-label={`Namespaces on ${env.name}`}
+                  placeholder="Type a namespace, then Enter"
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  onBlur={add}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      e.preventDefault();
+                      add();
+                    }
+                  }}
+                />
+              )}
             </div>
           )}
         </>

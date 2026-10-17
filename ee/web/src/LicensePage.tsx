@@ -15,7 +15,7 @@ import { PLANS, PRICING_URL, type Plan } from "./plans";
 
 const TONE: Record<LicenseStatus, Tone> = { valid: "run", grace: "wait", expired: "fail", invalid: "fail", none: "idle" };
 
-const FEATURE_NAMES: Record<string, string> = { audit_export: "Audit export" };
+const FEATURE_NAMES: Record<string, string> = { audit_export: "Audit export", teams: "Teams" };
 
 /** "in 12 days", "today", "3 days ago" for a Unix-seconds time. */
 function relDays(unix: number, now: number): string {
