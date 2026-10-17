@@ -5959,7 +5959,22 @@
             "description": "Null for the whole environment."
           },
           "role": {
-            "$ref": "#/components/schemas/EnvRole"
+            "$ref": "#/components/schemas/EnvRole",
+            "description": "The built-in role, or a custom role's closest built-in."
+          },
+          "role_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Set when the grant is a custom role (Enterprise)."
+          },
+          "role_name": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -7208,6 +7223,19 @@
           "role": {
             "$ref": "#/components/schemas/EnvRole"
           },
+          "role_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "role_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "user_id": {
             "type": "integer",
             "format": "int64"
@@ -7471,7 +7499,8 @@
         "description": "An Enterprise feature a license can grant.",
         "enum": [
           "audit_export",
-          "teams"
+          "teams",
+          "rbac"
         ]
       },
       "GrantView": {
@@ -9008,9 +9037,7 @@
       },
       "SetAccess": {
         "type": "object",
-        "required": [
-          "role"
-        ],
+        "description": "A built-in `role`, or a custom role by `role_id` (Enterprise): exactly one.",
         "properties": {
           "namespaces": {
             "type": [
@@ -9023,7 +9050,21 @@
             "description": "Kubernetes only; omit for the whole environment."
           },
           "role": {
-            "$ref": "#/components/schemas/EnvRole"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EnvRole"
+              }
+            ]
+          },
+          "role_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           }
         }
       },

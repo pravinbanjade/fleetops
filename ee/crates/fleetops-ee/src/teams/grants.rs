@@ -1,4 +1,5 @@
-//! Team grants as extra grants, merged with direct ones in core `authz`.
+//! Team grants and custom roles granted straight to users, as extra grants
+//! core `authz` checks beside direct built-in ones.
 
 use async_trait::async_trait;
 use fleetops_core::access::{ExtraGrants, Grant};
@@ -19,16 +20,20 @@ impl TeamGrants {
 #[async_trait]
 impl ExtraGrants for TeamGrants {
     async fn env_grants(&self, user_id: i64, env_id: i64) -> Result<Vec<Grant>> {
-        Ok(super::db::member_grants(&self.pool, user_id, Some(env_id))
+        let mut out: Vec<Grant> = super::db::member_grants(&self.pool, user_id, Some(env_id))
             .await?
             .into_iter()
             .map(|(_, g)| g)
-            .collect())
+            .collect();
+        out.extend(crate::roles::db::direct(&self.pool, user_id, env_id).await?);
+        Ok(out)
     }
 
     async fn user_grants(&self, user_id: i64) -> Result<HashMap<i64, Vec<Grant>>> {
         let mut out: HashMap<i64, Vec<Grant>> = HashMap::new();
-        for (env_id, g) in super::db::member_grants(&self.pool, user_id, None).await? {
+        let team = super::db::member_grants(&self.pool, user_id, None).await?;
+        let direct = crate::roles::db::user_direct(&self.pool, user_id).await?;
+        for (env_id, g) in team.into_iter().chain(direct) {
             out.entry(env_id).or_default().push(g);
         }
         Ok(out)

@@ -151,6 +151,55 @@ pub trait ExtraGrants: Send + Sync {
     async fn user_grants(&self, user_id: i64) -> Result<HashMap<i64, Vec<Grant>>>;
 }
 
+/// Custom-role grants made straight to a user (Enterprise). Core's access
+/// routes hand a `role_id` here, and clear it when they store a built-in
+/// role: one grant per (user, environment), either kind.
+#[async_trait]
+pub trait CustomRoles: Send + Sync {
+    /// Stores `role_id` on (user, environment), replacing any custom grant
+    /// there; checks the role exists and the license. Returns the grant.
+    async fn assign(
+        &self,
+        user_id: i64,
+        env_id: i64,
+        role_id: i64,
+        namespaces: Option<&BTreeSet<String>>,
+        now: i64,
+    ) -> Result<Grant>;
+    /// Removes the custom grant on (user, environment); whether there was one.
+    async fn clear(&self, user_id: i64, env_id: i64) -> Result<bool>;
+    /// A user's custom grants, by environment id.
+    async fn user_rows(&self, user_id: i64) -> Result<Vec<(i64, Grant)>>;
+    /// An environment's custom grants, by user id.
+    async fn env_rows(&self, env_id: i64) -> Result<Vec<(i64, Grant)>>;
+}
+
+/// The Community edition: no custom roles.
+pub struct NoCustomRoles;
+
+#[async_trait]
+impl CustomRoles for NoCustomRoles {
+    async fn assign(
+        &self,
+        _: i64,
+        _: i64,
+        _: i64,
+        _: Option<&BTreeSet<String>>,
+        _: i64,
+    ) -> Result<Grant> {
+        Err(Error::LicenseRequired("rbac".into()))
+    }
+    async fn clear(&self, _: i64, _: i64) -> Result<bool> {
+        Ok(false)
+    }
+    async fn user_rows(&self, _: i64) -> Result<Vec<(i64, Grant)>> {
+        Ok(vec![])
+    }
+    async fn env_rows(&self, _: i64) -> Result<Vec<(i64, Grant)>> {
+        Ok(vec![])
+    }
+}
+
 /// The Community edition: direct bindings only.
 pub struct NoExtraGrants;
 

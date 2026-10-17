@@ -10,9 +10,9 @@ use fleetops_api::{
     auth::extract::AdminUser,
     authz::require_feature,
     extract::{ApiJson, ApiPath},
-    AccessEntry, ApiResult, AppState, SetAccess,
+    AccessEntry, ApiResult, AppState, SetAccess, Wanted,
 };
-use fleetops_core::access::{merge_grants, normalize_namespaces, EnvRole, Grant};
+use fleetops_core::access::{merge_grants, normalize_namespaces, CustomRef, EnvRole, Grant};
 use fleetops_core::{edition::Feature, now_unix, Role, User};
 use fleetops_store::NewAudit;
 use serde::{Deserialize, Serialize};
@@ -90,6 +90,8 @@ pub(crate) fn entry(b: &TeamBinding) -> AccessEntry {
         env_name: b.env_name.clone(),
         env_kind: b.env_kind.clone(),
         role: b.grant.role,
+        role_id: b.grant.custom.as_ref().map(|c| c.id),
+        role_name: b.grant.custom.as_ref().map(|c| c.name.clone()),
         namespaces: b
             .grant
             .namespaces
@@ -98,11 +100,11 @@ pub(crate) fn entry(b: &TeamBinding) -> AccessEntry {
     }
 }
 
-/// Whether `new` gives nothing `old` did not: a role no higher, and
-/// namespaces within the old ones. Allowed without a license.
+/// Whether `new` gives nothing `old` did not: no permission the old one
+/// lacked, and namespaces within the old ones. Allowed without a license.
 fn no_stronger(new: &Grant, old: Option<&Grant>) -> bool {
     let Some(old) = old else { return false };
-    new.role <= old.role
+    new.perms.is_subset(&old.perms)
         && match (&new.namespaces, &old.namespaces) {
             (_, None) => true,
             (Some(n), Some(o)) => n.is_subset(o),
@@ -326,13 +328,37 @@ pub async fn set_access(
     let p = s.store.pool();
     let team = db::get(p, id).await?;
     s.store.get_environment(env_id).await?;
+    let wanted = body.wanted()?;
     let ns = body.namespaces.map(normalize_namespaces).transpose()?;
-    let new = Grant::builtin(body.role, ns);
+    let new = match wanted {
+        Wanted::Builtin(role) => Grant::builtin(role, ns),
+        Wanted::Custom(role_id) => {
+            let r = crate::roles::db::get(p, role_id).await?;
+            Grant::custom(
+                CustomRef {
+                    id: r.id,
+                    name: r.name,
+                },
+                r.perms,
+                ns,
+            )
+        }
+    };
     let old = db::binding(p, id, env_id).await?;
     if !no_stronger(&new, old.as_ref().map(|b| &b.grant)) {
         require_feature(&s, Feature::Teams)?;
+        if new.custom.is_some() {
+            require_feature(&s, Feature::Rbac)?;
+        }
     }
-    let b = db::set_binding(p, id, env_id, new.role, new.namespaces.as_ref(), now_unix()).await?;
+    let b = match &new.custom {
+        None => {
+            db::set_binding(p, id, env_id, new.role, new.namespaces.as_ref(), now_unix()).await?
+        }
+        Some(c) => {
+            db::set_custom_binding(p, id, env_id, c.id, new.namespaces.as_ref(), now_unix()).await?
+        }
+    };
     let e = entry(&b);
     audit(
         &s,
@@ -340,7 +366,8 @@ pub async fn set_access(
         "team.access.grant",
         &team,
         Some(env_id),
-        json!({"env": b.env_name, "role": e.role, "namespaces": e.namespaces}),
+        json!({"env": b.env_name, "role": e.role, "role_id": e.role_id,
+            "role_name": e.role_name, "namespaces": e.namespaces}),
     )
     .await;
     signal_members(&s, id).await?;
@@ -508,5 +535,34 @@ mod tests {
             "wider list"
         );
         assert!(!no_stronger(&g(Viewer, Some(a)), None), "no old grant");
+    }
+
+    #[test]
+    fn no_stronger_compares_permissions() {
+        use fleetops_core::access::EnvRole::{Operator, Viewer};
+        let custom = |perms: &[&str]| {
+            Grant::custom(
+                CustomRef {
+                    id: 1,
+                    name: "r".into(),
+                },
+                perms.iter().map(|p| p.parse().unwrap()).collect(),
+                None,
+            )
+        };
+        let view = custom(&["pods.view"]);
+        assert!(
+            no_stronger(&view, Some(&g(Viewer, None))),
+            "a subset of Viewer"
+        );
+        let reveal = custom(&["secrets.reveal"]);
+        assert!(
+            !no_stronger(&reveal, Some(&g(Operator, None))),
+            "Operator lacks secrets.reveal"
+        );
+        assert!(
+            !no_stronger(&g(Viewer, None), Some(&custom(&["pods.view"]))),
+            "Viewer is more than pods.view"
+        );
     }
 }

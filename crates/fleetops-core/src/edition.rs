@@ -21,15 +21,18 @@ pub enum Feature {
     /// Teams that carry environment access (`/ee/teams`). Every active
     /// license has it.
     Teams,
+    /// Custom roles (`/ee/roles`). Every active license has it.
+    Rbac,
 }
 
 impl Feature {
-    pub const ALL: &'static [Feature] = &[Feature::AuditExport, Feature::Teams];
+    pub const ALL: &'static [Feature] = &[Feature::AuditExport, Feature::Teams, Feature::Rbac];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Feature::AuditExport => "audit_export",
             Feature::Teams => "teams",
+            Feature::Rbac => "rbac",
         }
     }
 

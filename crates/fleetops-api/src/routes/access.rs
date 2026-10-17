@@ -6,7 +6,7 @@ use crate::{
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
-use fleetops_core::access::{normalize_namespaces, EnvRole};
+use fleetops_core::access::{normalize_namespaces, EnvRole, Grant};
 use fleetops_core::{now_unix, Error, Role};
 use fleetops_store::{BindingRecord, NewAudit};
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,11 @@ pub struct AccessEntry {
     pub env_id: i64,
     pub env_name: String,
     pub env_kind: String,
+    /// The built-in role, or a custom role's closest built-in.
     pub role: EnvRole,
+    /// Set when the grant is a custom role (Enterprise).
+    pub role_id: Option<i64>,
+    pub role_name: Option<String>,
     /// Null for the whole environment.
     pub namespaces: Option<Vec<String>>,
 }
@@ -28,22 +32,52 @@ pub struct EnvAccessEntry {
     pub user_id: i64,
     pub username: String,
     pub role: EnvRole,
+    pub role_id: Option<i64>,
+    pub role_name: Option<String>,
     pub namespaces: Option<Vec<String>>,
 }
 
+/// A built-in `role`, or a custom role by `role_id` (Enterprise): exactly one.
 #[derive(Deserialize, ToSchema)]
 pub struct SetAccess {
-    pub role: EnvRole,
+    #[serde(default)]
+    pub role: Option<EnvRole>,
+    #[serde(default)]
+    pub role_id: Option<i64>,
     /// Kubernetes only; omit for the whole environment.
     #[serde(default)]
     pub namespaces: Option<Vec<String>>,
 }
 
-fn ns_list(b: &BindingRecord) -> Option<Vec<String>> {
-    b.grant
-        .namespaces
+/// What a `SetAccess` asks for.
+pub enum Wanted {
+    Builtin(EnvRole),
+    Custom(i64),
+}
+
+impl SetAccess {
+    pub fn wanted(&self) -> fleetops_core::Result<Wanted> {
+        match (self.role, self.role_id) {
+            (Some(r), None) => Ok(Wanted::Builtin(r)),
+            (None, Some(id)) => Ok(Wanted::Custom(id)),
+            _ => Err(Error::Invalid("give a role or a role_id".into())),
+        }
+    }
+}
+
+/// The custom role a grant names, as (id, name).
+pub fn custom_of(g: &Grant) -> (Option<i64>, Option<String>) {
+    g.custom
         .as_ref()
-        .map(|s| s.iter().cloned().collect())
+        .map_or((None, None), |c| (Some(c.id), Some(c.name.clone())))
+}
+
+fn ns_of(g: &Grant) -> Option<Vec<String>> {
+    g.namespaces.as_ref().map(|s| s.iter().cloned().collect())
+}
+
+fn ns_list(b: &BindingRecord) -> Option<Vec<String>> {
+    ns_of(&b.grant)
 }
 
 impl From<&BindingRecord> for AccessEntry {
@@ -53,6 +87,8 @@ impl From<&BindingRecord> for AccessEntry {
             env_name: b.env_name.clone(),
             env_kind: b.env_kind.clone(),
             role: b.grant.role,
+            role_id: None,
+            role_name: None,
             namespaces: ns_list(b),
         }
     }
@@ -64,6 +100,8 @@ impl From<&BindingRecord> for EnvAccessEntry {
             user_id: b.user_id,
             username: b.username.clone(),
             role: b.grant.role,
+            role_id: None,
+            role_name: None,
             namespaces: ns_list(b),
         }
     }
@@ -102,14 +140,28 @@ pub async fn list_user(
     ApiPath(id): ApiPath<i64>,
 ) -> ApiResult<Json<Vec<AccessEntry>>> {
     s.store.get_user(id).await?;
-    Ok(Json(
-        s.store
-            .user_bindings(id)
-            .await?
-            .iter()
-            .map(AccessEntry::from)
-            .collect(),
-    ))
+    let mut out: Vec<AccessEntry> = s
+        .store
+        .user_bindings(id)
+        .await?
+        .iter()
+        .map(AccessEntry::from)
+        .collect();
+    for (env_id, g) in s.custom_roles.user_rows(id).await? {
+        let env = s.store.get_environment(env_id).await?;
+        let (role_id, role_name) = custom_of(&g);
+        out.push(AccessEntry {
+            env_id,
+            env_name: env.name,
+            env_kind: env.kind,
+            role: g.role,
+            role_id,
+            role_name,
+            namespaces: ns_of(&g),
+        });
+    }
+    out.sort_by(|a, b| a.env_name.cmp(&b.env_name));
+    Ok(Json(out))
 }
 
 #[utoipa::path(put, path = "/users/{id}/access/{env_id}", operation_id = "setUserAccess", tag = "users",
@@ -125,19 +177,50 @@ pub async fn set(
     if s.store.get_user(id).await?.role == Role::Admin {
         return Err(Error::Invalid("admins already have full access".into()).into());
     }
+    let wanted = body.wanted()?;
     let ns = body.namespaces.map(normalize_namespaces).transpose()?;
-    let b = s
-        .store
-        .set_binding(id, env_id, body.role, ns.as_ref(), now_unix())
-        .await?;
-    let entry = AccessEntry::from(&b);
+    let entry = match wanted {
+        Wanted::Builtin(role) => {
+            let b = s
+                .store
+                .set_binding(id, env_id, role, ns.as_ref(), now_unix())
+                .await?;
+            s.custom_roles.clear(id, env_id).await?;
+            AccessEntry::from(&b)
+        }
+        Wanted::Custom(role_id) => {
+            let env = s.store.get_environment(env_id).await?;
+            if ns.is_some() && !env.kind.starts_with("kube-") {
+                return Err(Error::Invalid(
+                    "only a Kubernetes environment takes namespaces".into(),
+                )
+                .into());
+            }
+            let g = s
+                .custom_roles
+                .assign(id, env_id, role_id, ns.as_ref(), now_unix())
+                .await?;
+            s.store.delete_binding(id, env_id).await?;
+            let (role_id, role_name) = custom_of(&g);
+            AccessEntry {
+                env_id,
+                env_name: env.name,
+                env_kind: env.kind,
+                role: g.role,
+                role_id,
+                role_name,
+                namespaces: ns_of(&g),
+            }
+        }
+    };
     audit(
         &s,
         admin.user.id,
         "access.grant",
         id,
         env_id,
-        json!({"env": b.env_name, "role": body.role, "namespaces": entry.namespaces}),
+        json!({"env": entry.env_name, "role": entry.role, "role_id": entry.role_id,
+            "role_name": entry.role_name, "namespaces": entry.namespaces}),
     )
     .await;
     s.hubs.access_changed(id);
@@ -155,7 +238,9 @@ pub async fn revoke(
 ) -> ApiResult<StatusCode> {
     s.store.get_user(id).await?;
     let env = s.store.get_environment(env_id).await?;
-    if s.store.delete_binding(id, env_id).await? {
+    let direct = s.store.delete_binding(id, env_id).await?;
+    let custom = s.custom_roles.clear(id, env_id).await?;
+    if direct || custom {
         audit(
             &s,
             admin.user.id,
@@ -179,12 +264,25 @@ pub async fn list_env(
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<EnvAccessEntry>>> {
     let env = s.envs.get(&env)?;
-    Ok(Json(
-        s.store
-            .env_bindings(env.id())
-            .await?
-            .iter()
-            .map(EnvAccessEntry::from)
-            .collect(),
-    ))
+    let mut out: Vec<EnvAccessEntry> = s
+        .store
+        .env_bindings(env.id())
+        .await?
+        .iter()
+        .map(EnvAccessEntry::from)
+        .collect();
+    for (user_id, g) in s.custom_roles.env_rows(env.id()).await? {
+        let user = s.store.get_user(user_id).await?;
+        let (role_id, role_name) = custom_of(&g);
+        out.push(EnvAccessEntry {
+            user_id,
+            username: user.username,
+            role: g.role,
+            role_id,
+            role_name,
+            namespaces: ns_of(&g),
+        });
+    }
+    out.sort_by(|a, b| a.username.cmp(&b.username));
+    Ok(Json(out))
 }

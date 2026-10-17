@@ -31,7 +31,7 @@ async fn an_admin_grants_lists_and_revokes() {
     assert_eq!(r.status, StatusCode::OK, "{:?}", r.json);
     assert_eq!(
         r.json,
-        json!({"env_id": k, "env_name": "k", "env_kind": "kube-config", "role": "operator", "namespaces": ["a", "b"]})
+        json!({"env_id": k, "env_name": "k", "env_kind": "kube-config", "role": "operator", "role_id": null, "role_name": null, "namespaces": ["a", "b"]})
     );
     let r = t
         .send(req(
@@ -47,7 +47,7 @@ async fn an_admin_grants_lists_and_revokes() {
         .await;
     assert_eq!(
         r.json,
-        json!([{"user_id": bob, "username": "bob", "role": "operator", "namespaces": ["a", "b"]}])
+        json!([{"user_id": bob, "username": "bob", "role": "operator", "role_id": null, "role_name": null, "namespaces": ["a", "b"]}])
     );
     let r = t
         .send(req(
@@ -150,4 +150,21 @@ async fn only_admins_manage_access() {
         .send(req("GET", "/api/v1/envs/k/access", None, Some(&s)))
         .await;
     assert_eq!(r.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn community_refuses_a_custom_role() {
+    let (t, admin, bob) = setup().await;
+    let k = env_id(&t, "k");
+    let path = format!("/api/v1/users/{bob}/access/{k}");
+    let r = t
+        .send(req("PUT", &path, Some(json!({"role_id": 1})), Some(&admin)))
+        .await;
+    assert_eq!(r.status, 403, "{:?}", r.json);
+    assert_eq!(r.json["code"], "license_required");
+    for body in [json!({}), json!({"role": "viewer", "role_id": 1})] {
+        let r = t.send(req("PUT", &path, Some(body), Some(&admin))).await;
+        assert_eq!(r.status, 400, "{:?}", r.json);
+        assert_eq!(r.json["message"], "invalid input: give a role or a role_id");
+    }
 }

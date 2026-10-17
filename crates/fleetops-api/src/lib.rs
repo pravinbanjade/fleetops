@@ -22,7 +22,7 @@ use utoipa_axum::router::OpenApiRouter;
 
 pub use auth::token::hash_token as auth_token_hash;
 pub use error::{ApiError, ApiResult};
-pub use routes::access::{AccessEntry, SetAccess};
+pub use routes::access::{AccessEntry, SetAccess, Wanted};
 pub use routes::audit_detail;
 pub use state::{ApiConfig, AppState};
 

@@ -1,6 +1,6 @@
 //! The team tables (`1000001_teams.sql`).
 
-use fleetops_core::access::{EnvRole, Grant};
+use fleetops_core::access::{CustomRef, EnvRole, Grant};
 use fleetops_core::{Error, Result, Role, User};
 use sqlx::SqlitePool;
 use std::collections::BTreeSet;
@@ -35,24 +35,50 @@ struct BindingRow {
     environment_id: i64,
     env_name: String,
     env_kind: String,
-    role: String,
+    role: Option<String>,
+    role_id: Option<i64>,
+    role_name: Option<String>,
+    permissions: Option<String>,
     namespaces: Option<String>,
     updated_at: i64,
 }
 
-/// The same encoding as `role_bindings.namespaces`.
-fn grant(role: &str, namespaces: Option<&str>) -> Result<Grant> {
+/// A grant from a row of `ee_team_grants` (built-in `role`, or a custom
+/// role's id, name and permissions). Namespaces as in `role_bindings`.
+pub(crate) fn grant(
+    role: Option<&str>,
+    custom: Option<(i64, &str, &str)>,
+    namespaces: Option<&str>,
+) -> Result<Grant> {
     let namespaces = namespaces
         .map(serde_json::from_str::<BTreeSet<String>>)
         .transpose()
-        .map_err(|e| Error::Internal(format!("bad namespaces in ee_team_bindings: {e}")))?;
-    Ok(Grant::builtin(role.parse()?, namespaces))
+        .map_err(|e| Error::Internal(format!("bad namespaces in a grant: {e}")))?;
+    match (role, custom) {
+        (Some(role), _) => Ok(Grant::builtin(role.parse()?, namespaces)),
+        (None, Some((id, name, perms))) => Ok(Grant::custom(
+            CustomRef {
+                id,
+                name: name.to_string(),
+            },
+            crate::roles::db::decode_perms(perms)?,
+            namespaces,
+        )),
+        (None, None) => Err(Error::Internal("a grant with no role".into())),
+    }
 }
 
 impl BindingRow {
     fn into_binding(self) -> Result<TeamBinding> {
         Ok(TeamBinding {
-            grant: grant(&self.role, self.namespaces.as_deref())?,
+            grant: grant(
+                self.role.as_deref(),
+                self.role_id
+                    .zip(self.role_name.as_deref())
+                    .zip(self.permissions.as_deref())
+                    .map(|((id, n), p)| (id, n, p)),
+                self.namespaces.as_deref(),
+            )?,
             team_id: self.team_id,
             environment_id: self.environment_id,
             env_name: self.env_name,
@@ -64,8 +90,8 @@ impl BindingRow {
 
 const TEAM_COLS: &str = "id, name, description, created_at, updated_at";
 const BINDING_SELECT: &str = "SELECT b.team_id, b.environment_id, e.name AS env_name,
-        e.kind AS env_kind, b.role, b.namespaces, b.updated_at
-    FROM ee_team_bindings b
+        e.kind AS env_kind, b.role, b.role_id, b.role_name, b.permissions, b.namespaces, b.updated_at
+    FROM ee_team_grants b
     JOIN environments e ON e.id = b.environment_id";
 
 fn name_taken(name: &str) -> impl FnOnce(sqlx::Error) -> Error + '_ {
@@ -108,7 +134,7 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<(TeamRecord, i64, i64)>> {
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT t.id, t.name, t.description, t.created_at, t.updated_at,
             (SELECT COUNT(*) FROM ee_team_members m WHERE m.team_id = t.id) AS members,
-            (SELECT COUNT(*) FROM ee_team_bindings b WHERE b.team_id = t.id) AS envs
+            (SELECT COUNT(*) FROM ee_team_grants b WHERE b.team_id = t.id) AS envs
          FROM ee_teams t ORDER BY t.name",
     )
     .fetch_all(pool)
@@ -264,6 +290,52 @@ pub async fn set_binding(
     .execute(pool)
     .await
     .map_err(db_err)?;
+    sqlx::query("DELETE FROM ee_team_role_bindings WHERE team_id = ? AND environment_id = ?")
+        .bind(team_id)
+        .bind(env_id)
+        .execute(pool)
+        .await
+        .map_err(db_err)?;
+    binding(pool, team_id, env_id)
+        .await?
+        .ok_or_else(|| Error::Internal("team binding vanished".into()))
+}
+
+/// Grants custom role `role_id` to a team, replacing its grant there.
+pub async fn set_custom_binding(
+    pool: &SqlitePool,
+    team_id: i64,
+    env_id: i64,
+    role_id: i64,
+    namespaces: Option<&BTreeSet<String>>,
+    now: i64,
+) -> Result<TeamBinding> {
+    crate::roles::db::get(pool, role_id).await?;
+    let ns = namespaces
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|e| Error::Internal(format!("encode namespaces: {e}")))?;
+    sqlx::query(
+        "INSERT INTO ee_team_role_bindings (team_id, environment_id, role_id, namespaces, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (team_id, environment_id) DO UPDATE SET role_id = excluded.role_id,
+             namespaces = excluded.namespaces, updated_at = excluded.updated_at",
+    )
+    .bind(team_id)
+    .bind(env_id)
+    .bind(role_id)
+    .bind(ns)
+    .bind(now)
+    .bind(now)
+    .execute(pool)
+    .await
+    .map_err(db_err)?;
+    sqlx::query("DELETE FROM ee_team_bindings WHERE team_id = ? AND environment_id = ?")
+        .bind(team_id)
+        .bind(env_id)
+        .execute(pool)
+        .await
+        .map_err(db_err)?;
     binding(pool, team_id, env_id)
         .await?
         .ok_or_else(|| Error::Internal("team binding vanished".into()))
@@ -271,13 +343,19 @@ pub async fn set_binding(
 
 /// Whether there was a grant to revoke.
 pub async fn delete_binding(pool: &SqlitePool, team_id: i64, env_id: i64) -> Result<bool> {
-    let r = sqlx::query("DELETE FROM ee_team_bindings WHERE team_id = ? AND environment_id = ?")
+    let mut n = 0;
+    for table in ["ee_team_bindings", "ee_team_role_bindings"] {
+        n += sqlx::query(&format!(
+            "DELETE FROM {table} WHERE team_id = ? AND environment_id = ?"
+        ))
         .bind(team_id)
         .bind(env_id)
         .execute(pool)
         .await
-        .map_err(db_err)?;
-    Ok(r.rows_affected() > 0)
+        .map_err(db_err)?
+        .rows_affected();
+    }
+    Ok(n > 0)
 }
 
 /// Every team with a grant on `env_id`, by name, with the grant.
@@ -333,9 +411,17 @@ pub(crate) async fn member_grants(
     user_id: i64,
     env_id: Option<i64>,
 ) -> Result<Vec<(i64, Grant)>> {
-    let rows: Vec<(i64, String, Option<String>)> = sqlx::query_as(
-        "SELECT b.environment_id, b.role, b.namespaces
-         FROM ee_team_members m JOIN ee_team_bindings b ON b.team_id = m.team_id
+    type Row = (
+        i64,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT b.environment_id, b.role, b.role_id, b.role_name, b.permissions, b.namespaces
+         FROM ee_team_members m JOIN ee_team_grants b ON b.team_id = m.team_id
          WHERE m.user_id = ?1 AND (?2 IS NULL OR b.environment_id = ?2)",
     )
     .bind(user_id)
@@ -344,6 +430,12 @@ pub(crate) async fn member_grants(
     .await
     .map_err(db_err)?;
     rows.into_iter()
-        .map(|(env, role, ns)| Ok((env, grant(&role, ns.as_deref())?)))
+        .map(|(env, role, id, name, perms, ns)| {
+            let custom = id
+                .zip(name.as_deref())
+                .zip(perms.as_deref())
+                .map(|((i, n), p)| (i, n, p));
+            Ok((env, grant(role.as_deref(), custom, ns.as_deref())?))
+        })
         .collect()
 }

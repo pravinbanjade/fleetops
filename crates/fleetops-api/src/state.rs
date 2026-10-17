@@ -78,6 +78,8 @@ pub struct AppState {
     /// Grants beyond direct bindings; none unless an Enterprise build adds
     /// team grants. Read only through `authz::effective_grant(s)`.
     pub extra_grants: Arc<dyn fleetops_core::access::ExtraGrants>,
+    /// Custom-role grants made to users; none in Community.
+    pub custom_roles: Arc<dyn fleetops_core::access::CustomRoles>,
 }
 
 impl AppState {
@@ -96,6 +98,7 @@ impl AppState {
             agent_disconnects: Arc::default(),
             entitlements: Arc::new(fleetops_core::edition::Community),
             extra_grants: Arc::new(fleetops_core::access::NoExtraGrants),
+            custom_roles: Arc::new(fleetops_core::access::NoCustomRoles),
         }
     }
 
@@ -107,6 +110,11 @@ impl AppState {
 
     pub fn with_extra_grants(mut self, g: Arc<dyn fleetops_core::access::ExtraGrants>) -> Self {
         self.extra_grants = g;
+        self
+    }
+
+    pub fn with_custom_roles(mut self, r: Arc<dyn fleetops_core::access::CustomRoles>) -> Self {
+        self.custom_roles = r;
         self
     }
 

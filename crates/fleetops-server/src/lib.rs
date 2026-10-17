@@ -55,7 +55,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         fleetops_api::app_with(
             state
                 .with_entitlements(ee.entitlements)
-                .with_extra_grants(ee.grants),
+                .with_extra_grants(ee.grants)
+                .with_custom_roles(ee.roles),
             static_files::router(),
             ee.routes,
         )

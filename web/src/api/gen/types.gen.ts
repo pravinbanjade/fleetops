@@ -12,7 +12,15 @@ export type AccessEntry = {
      * Null for the whole environment.
      */
     namespaces?: Array<string> | null;
+    /**
+     * The built-in role, or a custom role's closest built-in.
+     */
     role: EnvRole;
+    /**
+     * Set when the grant is a custom role (Enterprise).
+     */
+    role_id?: number | null;
+    role_name?: string | null;
 };
 
 export type AgentView = {
@@ -494,6 +502,8 @@ export type EntryKind = 'file' | 'dir' | 'symlink' | 'other';
 export type EnvAccessEntry = {
     namespaces?: Array<string> | null;
     role: EnvRole;
+    role_id?: number | null;
+    role_name?: string | null;
     user_id: number;
     username: string;
 };
@@ -571,7 +581,7 @@ export type ExecOptions = {
 /**
  * An Enterprise feature a license can grant.
  */
-export type Feature = 'audit_export' | 'teams';
+export type Feature = 'audit_export' | 'teams' | 'rbac';
 
 /**
  * One grant: where it applies and what it allows.
@@ -1158,12 +1168,16 @@ export type SessionView = {
     user_agent?: string | null;
 };
 
+/**
+ * A built-in `role`, or a custom role by `role_id` (Enterprise): exactly one.
+ */
 export type SetAccess = {
     /**
      * Kubernetes only; omit for the whole environment.
      */
     namespaces?: Array<string> | null;
-    role: EnvRole;
+    role?: null | EnvRole;
+    role_id?: number | null;
 };
 
 export type ShowBody = {

@@ -6,6 +6,7 @@ pub mod db;
 pub mod export;
 pub mod keys;
 pub mod license;
+pub mod roles;
 pub mod routes;
 pub mod state;
 pub mod teams;
@@ -13,7 +14,11 @@ pub mod teams;
 use axum::Extension;
 use ed25519_dalek::VerifyingKey;
 use fleetops_api::AppState;
-use fleetops_core::{access::ExtraGrants, edition::Entitlements, now_unix, Result};
+use fleetops_core::{
+    access::{CustomRoles, ExtraGrants},
+    edition::Entitlements,
+    now_unix, Result,
+};
 use fleetops_store::Store;
 use futures_util::future::BoxFuture;
 use state::LicenseState;
@@ -29,8 +34,10 @@ pub struct EeConfig {
 pub struct EeParts {
     pub entitlements: Arc<dyn Entitlements>,
     pub routes: OpenApiRouter<AppState>,
-    /// Team grants, merged with direct ones on every access check.
+    /// Team and custom-role grants, checked with direct ones on every request.
     pub grants: Arc<dyn ExtraGrants>,
+    /// Custom roles granted straight to users, through the core access routes.
+    pub roles: Arc<dyn CustomRoles>,
     /// Logs license status changes; spawn it.
     pub background: BoxFuture<'static, ()>,
 }
@@ -72,12 +79,17 @@ pub async fn init_with_keys(
     keys: Vec<VerifyingKey>,
 ) -> Result<EeParts> {
     db::migrate(store.pool()).await?;
+    roles::db::reconcile_direct_grants(store.pool()).await?;
     let state = Arc::new(LicenseState::new(keys, config.license_file));
     state.load(store).await?;
     Ok(EeParts {
         entitlements: state.clone(),
         routes: api_routes().layer(Extension(state.clone())),
         grants: Arc::new(teams::grants::TeamGrants::new(store.pool().clone())),
+        roles: Arc::new(roles::grants::EeRoles::new(
+            store.pool().clone(),
+            state.clone(),
+        )),
         background: Box::pin(watch(state)),
     })
 }
