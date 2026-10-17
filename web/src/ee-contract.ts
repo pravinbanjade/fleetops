@@ -3,8 +3,15 @@ import type { LucideIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import type { Feature } from "@/api/gen/types.gen";
 
-/** Places in the Community UI where an Enterprise build adds a component. */
-export type SlotName = "audit.toolbar" | "shell.banner";
+/** Places in the Community UI where an Enterprise build adds a component, and the props each gets. */
+export interface SlotProps {
+  "audit.toolbar": object;
+  "shell.banner": object;
+  /** Under a user's grants in the Access dialog. */
+  "user.access": { userId: number };
+}
+
+export type SlotName = keyof SlotProps;
 
 export interface EeNavItem {
   to: string;
@@ -14,8 +21,8 @@ export interface EeNavItem {
   feature?: Feature;
 }
 
-export interface EeSlot {
-  component: ComponentType;
+export interface EeSlot<N extends SlotName = SlotName> {
+  component: ComponentType<SlotProps[N]>;
   feature?: Feature;
 }
 
@@ -26,5 +33,5 @@ export interface EeModule {
   /** Pages under /admin. */
   adminRoutes: (admin: AnyRoute) => AnyRoute[];
   adminNav: EeNavItem[];
-  slots: Partial<Record<SlotName, EeSlot>>;
+  slots: { [N in SlotName]?: EeSlot<N> };
 }

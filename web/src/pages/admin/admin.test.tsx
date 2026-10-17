@@ -2,6 +2,7 @@ import { waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { User } from "@/api/gen/types.gen";
+import { isEnterpriseBuild } from "@/ee-slots";
 import { json, mockFetch } from "@/test/fetch";
 import { ADMIN, ENVS, KUBE_ENV, loggedIn, renderApp } from "@/test/app";
 
@@ -426,6 +427,17 @@ describe("access", () => {
     await userEvent.selectOptions(role, "none");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
+  });
+
+  it.runIf(!isEnterpriseBuild)("shows no team access in Community", async () => {
+    const calls = mockFetch({ ...routes, "GET /api/v1/users/2/access": { json: [] } });
+    const { screen } = renderApp("/admin/users");
+    await waitFor(() => expect(row(screen, "bob")).toBeTruthy());
+    await userEvent.click(within(row(screen, "bob")).getByRole("button", { name: "Access" }));
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText("Role on local");
+    expect(within(dialog).queryByText("Through teams")).toBeNull();
+    expect(calls.some((c) => c.path.startsWith("/api/v1/ee/"))).toBe(false);
   });
 
   it("has no Access button for admins", async () => {
