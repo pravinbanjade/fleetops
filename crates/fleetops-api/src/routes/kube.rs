@@ -15,10 +15,10 @@ use axum::{
 use fleetops_core::access::Grants;
 use fleetops_core::env::{EnvKind, Environment};
 use fleetops_core::kube::{
-    ApplyAction, ApplyMode, ApplyResult, EditableObject, KubeCount, KubeEvent, KubeFilter,
+    ApplyAction, ApplyMode, ApplyResult, DocInfo, EditableObject, KubeCount, KubeEvent, KubeFilter,
     KubeKind, KubeList, KubeObject, KubeOps, KubeUsage, APPLY_MAX_BYTES,
 };
-use fleetops_core::perm::{row_of, Permission, Row, Verb};
+use fleetops_core::perm::{row_of, row_of_kind_name, Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::NewAudit;
 use serde::{Deserialize, Serialize};
@@ -841,22 +841,30 @@ pub async fn apply(
         return Err(Error::Invalid("pick a namespace for documents that name none".into()).into());
     }
     check_namespace(&body.namespace)?;
-    let perm = Permission::new(Row::K8sOther, Verb::Operate);
-    let KubeCtx { env, ops, grants } = kube_for(&s, &cu, &env_name, Need::Perm(perm)).await?;
-    crate::authz::deny_audited(
-        &s,
-        &cu,
-        env.id(),
-        &perm.to_string(),
-        grants.check_ns(perm, &body.namespace),
-    )
-    .await?;
+    let KubeCtx { env, ops, grants } = kube_for(&s, &cu, &env_name, Need::AnyGrant).await?;
+    let default_ns_ok = if grants.0.iter().any(|g| g.allows_ns(&body.namespace)) {
+        Ok(())
+    } else {
+        Err(fleetops_core::access::ns_denied(&body.namespace))
+    };
+    crate::authz::deny_audited(&s, &cu, env.id(), "k8s.apply", default_ns_ok).await?;
+    // Every document needs Create and Operate on its row, from one grant
+    // that covers it; any refusal sends nothing (custom roles spec).
+    let guard = |d: &DocInfo| {
+        let row = row_of_kind_name(d.kind);
+        grants.check_doc(
+            Permission::new(row, Verb::Create),
+            Permission::new(row, Verb::Operate),
+            d.namespaced,
+            d.namespace,
+        )
+    };
     let mut results = ops
         .apply(
             &body.yaml,
             &body.namespace,
             mode(body.dry_run, body.force),
-            grants.namespaces_for(perm).as_ref(),
+            &guard,
         )
         .await?;
     let level = agent_level(&s, &env).await;

@@ -4,9 +4,9 @@
 use crate::{errors, kinds::api_resource, mask, summaries};
 use async_trait::async_trait;
 use fleetops_core::kube::{
-    ApiKind, ApplyAction, ApplyError, ApplyMode, ApplyResult, EditableObject, KubeEvent, KubeExec,
-    KubeFilter, KubeKind, KubeList, KubeObject, KubeOps, KubeRef, KubeVersion, WatchEvent,
-    FIELD_MANAGER, LIST_CAP, PAGE_SIZE, SUSPENDED_ANNOTATION,
+    guard_all, ApiKind, ApplyAction, ApplyError, ApplyGuard, ApplyMode, ApplyResult, DocInfo,
+    EditableObject, KubeEvent, KubeExec, KubeFilter, KubeKind, KubeList, KubeObject, KubeOps,
+    KubeRef, KubeVersion, WatchEvent, FIELD_MANAGER, LIST_CAP, PAGE_SIZE, SUSPENDED_ANNOTATION,
 };
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions, LogStream};
 use fleetops_core::{now_unix, Error, Result};
@@ -147,21 +147,17 @@ impl KubeClient {
         Ok(r)
     }
 
-    /// Server-side applies one document: its action, and the cleaned
-    /// before/after YAML.
-    async fn apply_doc(
+    /// Server-side applies one resolved, guarded document: its action, and
+    /// the cleaned before/after YAML.
+    async fn send_doc(
         &self,
         doc: &mut crate::apply::Doc,
-        default_ns: &str,
+        ar: &ApiResource,
         mode: ApplyMode,
-        allowed: Option<&std::collections::BTreeSet<String>>,
     ) -> Result<(ApplyAction, Option<String>, String)> {
-        let (ar, namespaced) = self.resolve(&doc.api_version, &doc.kind).await?;
-        crate::apply::set_namespace(doc, namespaced, default_ns);
-        fleetops_core::access::check_doc(allowed, namespaced, doc.namespace.as_deref())?;
         let api: Api<DynamicObject> = match &doc.namespace {
-            Some(ns) => Api::namespaced_with(self.client.clone(), ns, &ar),
-            None => Api::all_with(self.client.clone(), &ar),
+            Some(ns) => Api::namespaced_with(self.client.clone(), ns, ar),
+            None => Api::all_with(self.client.clone(), ar),
         };
         let live = timed(api.get_opt(&doc.name))
             .await?
@@ -618,12 +614,38 @@ impl KubeOps for KubeClient {
         yaml: &str,
         default_ns: &str,
         mode: ApplyMode,
-        allowed: Option<&std::collections::BTreeSet<String>>,
+        guard: ApplyGuard<'_>,
     ) -> Result<Vec<ApplyResult>> {
-        let docs = crate::apply::split(yaml)?;
+        let mut docs = crate::apply::split(yaml)?;
+        let mut resolved = Vec::with_capacity(docs.len());
+        for doc in &mut docs {
+            let r = self.resolve(&doc.api_version, &doc.kind).await;
+            if let Ok((_, namespaced)) = &r {
+                crate::apply::set_namespace(doc, *namespaced, default_ns);
+            }
+            resolved.push(r);
+        }
+        let infos: Vec<Option<DocInfo>> = docs
+            .iter()
+            .zip(&resolved)
+            .map(|(d, r)| {
+                r.as_ref().ok().map(|(_, namespaced)| DocInfo {
+                    kind: &d.kind,
+                    namespaced: *namespaced,
+                    namespace: d.namespace.as_deref(),
+                })
+            })
+            .collect();
+        let mut refused = guard_all(&infos, guard);
         let mut out = Vec::with_capacity(docs.len());
-        for mut doc in docs {
-            let r = self.apply_doc(&mut doc, default_ns, mode, allowed).await;
+        for (i, (mut doc, ar)) in docs.into_iter().zip(resolved).enumerate() {
+            let r = match (refused.as_mut(), ar) {
+                (_, Err(e)) => Err(e),
+                (Some(errs), Ok(_)) => {
+                    Err(errs[i].take().expect("a resolved document has a verdict"))
+                }
+                (None, Ok((ar, _))) => self.send_doc(&mut doc, &ar, mode).await,
+            };
             let mut res = doc.result();
             match r {
                 Ok((action, before, after)) => {

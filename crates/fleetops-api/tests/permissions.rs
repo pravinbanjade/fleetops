@@ -51,7 +51,11 @@ struct Rig {
 impl Rig {
     async fn new() -> Rig {
         let extra = Arc::new(Fixed::default());
-        let t = app_with_extra(extra.clone()).await;
+        let config = fleetops_api::ApiConfig {
+            helm: Some(Arc::new(FakeRenderer::default())),
+            ..Default::default()
+        };
+        let t = app_with_extra_and(extra.clone(), config).await;
         let admin = t.with_local().await;
         t.add_kube_env(&admin, "k").await;
         let k = &t.fake.kube;
@@ -610,4 +614,111 @@ async fn counts_skip_kinds_the_role_cannot_view() {
     assert_eq!(resp.status, 200, "{:?}", resp.json);
     assert_eq!(resp.json["pods"]["count"], 1);
     assert_eq!(resp.json["secrets"]["error"], "forbidden");
+}
+
+const CM_THEN_SECRET: &str = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n---\napiVersion: v1\nkind: Secret\nmetadata:\n  name: s\n";
+
+async fn apply(r: &Rig, yaml: &str, dry_run: bool) -> Resp {
+    r.t.send(req(
+        "POST",
+        "/api/v1/envs/k/k8s/apply",
+        Some(json!({"yaml": yaml, "namespace": "apps", "dry_run": dry_run})),
+        Some(&r.bob),
+    ))
+    .await
+}
+
+fn perms(v: &[&str]) -> PermSet {
+    v.iter().map(|s| p(s)).collect()
+}
+
+#[tokio::test]
+async fn apply_refusal_sends_nothing() {
+    let r = Rig::new().await;
+    r.give(vec![custom(perms(&[
+        "configmaps.create",
+        "configmaps.operate",
+    ]))]);
+    for dry_run in [true, false] {
+        let resp = apply(&r, CM_THEN_SECRET, dry_run).await;
+        assert_eq!(resp.status, 200, "{:?}", resp.json);
+        assert_eq!(
+            resp.json[0]["error"]["message"],
+            "not sent: another document was refused"
+        );
+        assert_eq!(
+            resp.json[1]["error"]["message"],
+            "secrets.create permission required"
+        );
+        assert!(resp.json[0]["action"].is_null() && resp.json[1]["action"].is_null());
+        assert!(
+            r.t.fake.kube.applied.lock().unwrap().is_empty(),
+            "dry_run {dry_run}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn apply_allows_with_create_and_operate() {
+    let r = Rig::new().await;
+    r.give(vec![custom(perms(&[
+        "configmaps.create",
+        "configmaps.operate",
+        "secrets.create",
+        "secrets.operate",
+    ]))]);
+    let resp = apply(&r, CM_THEN_SECRET, false).await;
+    assert!(
+        resp.json[0]["error"].is_null() && resp.json[1]["error"].is_null(),
+        "{:?}",
+        resp.json
+    );
+    assert_eq!(r.t.fake.kube.applied.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn apply_unknown_kind_maps_to_k8s_other() {
+    let r = Rig::new().await;
+    let yaml = "apiVersion: cert-manager.io/v1\nkind: Certificate\nmetadata:\n  name: c\n";
+    r.give(vec![custom(perms(&[
+        "workloads.create",
+        "workloads.operate",
+    ]))]);
+    let resp = apply(&r, yaml, false).await;
+    assert_eq!(
+        resp.json[0]["error"]["message"],
+        "k8s-other.create permission required"
+    );
+    r.give(vec![custom(perms(&[
+        "k8s-other.create",
+        "k8s-other.operate",
+    ]))]);
+    assert!(apply(&r, yaml, false).await.json[0]["error"].is_null());
+}
+
+#[tokio::test]
+async fn apply_without_any_create_is_refused_whole() {
+    let r = Rig::new().await;
+    r.give(vec![custom(perms(&["pods.view"]))]);
+    let resp = apply(&r, CM_THEN_SECRET, false).await;
+    assert_eq!(resp.status, 200);
+    assert_eq!(resp.json[0]["error"]["code"], "forbidden");
+}
+
+#[tokio::test]
+async fn helm_install_needs_helm_create_only() {
+    let r = Rig::new().await;
+    let body = json!({"name": "demo", "chart": {"repo_url": "https://c.example", "chart": "demo"}, "values": "", "dry_run": true, "expected_current": 0});
+    let install = c(
+        "POST",
+        "/api/v1/envs/k/k8s/helm/releases/apps",
+        Some(body),
+        "",
+    );
+    r.give(vec![custom(perms(&["helm.view", "helm.operate"]))]);
+    let resp = r.send(&install).await;
+    assert_eq!(resp.status, 403, "{:?}", resp.json);
+    assert_eq!(resp.json["message"], "helm.create permission required");
+    r.give(vec![custom(perms(&["helm.create"]))]);
+    assert_ne!(r.send(&install).await.status, 403);
 }

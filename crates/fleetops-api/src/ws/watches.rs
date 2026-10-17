@@ -372,7 +372,7 @@ mod tests {
             _: &str,
             _: &str,
             _: ApplyMode,
-            _: Option<&std::collections::BTreeSet<String>>,
+            _: fleetops_core::kube::ApplyGuard<'_>,
         ) -> Result<Vec<ApplyResult>> {
             unreachable!()
         }

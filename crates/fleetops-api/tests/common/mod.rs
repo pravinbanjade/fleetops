@@ -63,14 +63,18 @@ pub async fn app_with(config: ApiConfig) -> TestApp {
 
 /// An app that also takes grants from `g`, as an Enterprise build does from teams.
 pub async fn app_with_extra(g: Arc<dyn fleetops_core::access::ExtraGrants>) -> TestApp {
+    app_with_extra_and(g, ApiConfig::default()).await
+}
+
+/// [`app_with_extra`] with `config`.
+pub async fn app_with_extra_and(
+    g: Arc<dyn fleetops_core::access::ExtraGrants>,
+    config: ApiConfig,
+) -> TestApp {
     let store = Store::in_memory().await.unwrap();
     let fake = FakeDocker::new();
-    let state = AppState::new(
-        store.clone(),
-        ApiConfig::default(),
-        Arc::new(FakeFactory(fake.clone())),
-    )
-    .with_extra_grants(g);
+    let state = AppState::new(store.clone(), config, Arc::new(FakeFactory(fake.clone())))
+        .with_extra_grants(g);
     let router = fleetops_api::app(state.clone(), Router::new());
     TestApp {
         router,

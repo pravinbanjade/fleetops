@@ -142,17 +142,17 @@ async fn apply_passes_the_set_and_refuses_a_default_namespace_outside_it() {
         ))
         .await;
     assert_eq!(r.status, 200, "{:?}", r.json);
-    assert!(r.json[0]["error"].is_null());
+    // Nothing is sent when one document is refused (custom roles spec).
+    assert_eq!(
+        r.json[0]["error"]["message"],
+        "not sent: another document was refused"
+    );
     assert_eq!(r.json[1]["error"]["code"], "forbidden");
     assert_eq!(
         r.json[1]["error"]["message"],
         "namespace 'team-b' is not in your access"
     );
-    let limited_to = t.fake.kube.applied.lock().unwrap()[0].3.clone();
-    assert_eq!(
-        limited_to.unwrap().into_iter().collect::<Vec<_>>(),
-        ["team-a"]
-    );
+    assert!(t.fake.kube.applied.lock().unwrap().is_empty());
     let r = t
         .send(req(
             "POST",
@@ -170,5 +170,5 @@ async fn a_whole_cluster_grant_passes_no_set() {
     let admin = session_from(&t.login(ADMIN, ADMIN_PW).await);
     t.send(req("POST", "/api/v1/envs/k/k8s/apply", Some(json!({"yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: a\n", "namespace": "x"})), Some(&admin)))
         .await;
-    assert!(t.fake.kube.applied.lock().unwrap()[0].3.is_none());
+    assert_eq!(t.fake.kube.applied.lock().unwrap().len(), 1);
 }

@@ -475,12 +475,8 @@ impl KubeOps for FakeKube {
         yaml: &str,
         default_ns: &str,
         mode: ApplyMode,
-        allowed: Option<&BTreeSet<String>>,
+        guard: ApplyGuard<'_>,
     ) -> Result<Vec<ApplyResult>> {
-        self.applied
-            .lock()
-            .unwrap()
-            .push(("apply".into(), yaml.into(), mode, allowed.cloned()));
         let field = |doc: &str, key: &str| {
             doc.lines()
                 .find_map(|l| l.trim().strip_prefix(key))
@@ -488,31 +484,54 @@ impl KubeOps for FakeKube {
                 .trim()
                 .to_string()
         };
-        Ok(yaml
+        let docs: Vec<&str> = yaml
             .split("\n---\n")
             .filter(|d| !d.trim().is_empty())
+            .collect();
+        let shape = |doc: &str| {
+            let kind = field(doc, "kind:");
+            let namespaced = !matches!(
+                kind.as_str(),
+                "Namespace"
+                    | "Node"
+                    | "ClusterRole"
+                    | "ClusterRoleBinding"
+                    | "CustomResourceDefinition"
+            );
+            let ns = Some(field(doc, "namespace:"))
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| default_ns.to_string());
+            (kind, namespaced, ns)
+        };
+        let shapes: Vec<_> = docs.iter().map(|d| shape(d)).collect();
+        let infos: Vec<Option<DocInfo>> = shapes
+            .iter()
+            .map(|(kind, namespaced, ns)| {
+                Some(DocInfo {
+                    kind,
+                    namespaced: *namespaced,
+                    namespace: namespaced.then_some(ns.as_str()),
+                })
+            })
+            .collect();
+        // As the real client: every document is guarded before any is sent.
+        let mut refused = guard_all(&infos, guard);
+        if refused.is_none() {
+            self.applied
+                .lock()
+                .unwrap()
+                .push(("apply".into(), yaml.into(), mode, None));
+        }
+        Ok(docs
+            .iter()
+            .zip(shapes.iter())
             .enumerate()
-            .map(|(index, doc)| {
-                let kind = field(doc, "kind:");
-                let namespaced = !matches!(
-                    kind.as_str(),
-                    "Namespace"
-                        | "Node"
-                        | "ClusterRole"
-                        | "ClusterRoleBinding"
-                        | "CustomResourceDefinition"
-                );
-                let ns = Some(field(doc, "namespace:"))
-                    .filter(|n| !n.is_empty())
-                    .unwrap_or_else(|| default_ns.to_string());
-                // As the real client: refused before anything is sent.
-                let refused = fleetops_core::access::check_doc(
-                    allowed,
-                    namespaced,
-                    namespaced.then_some(ns.as_str()),
-                )
-                .err()
-                .map(|e| ApplyError::from(&e));
+            .map(|(index, (doc, (kind, _, ns)))| {
+                let (kind, ns, doc) = (kind.clone(), ns.clone(), *doc);
+                let refused = refused
+                    .as_mut()
+                    .and_then(|e| e[index].take())
+                    .map(|e| ApplyError::from(&e));
                 let error = refused.or_else(|| {
                     (kind == "ClusterRole").then(|| ApplyError {
                         code: "forbidden".into(),

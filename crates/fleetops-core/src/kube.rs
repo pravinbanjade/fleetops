@@ -19,6 +19,41 @@ pub const YAML_CAP: usize = 1 << 20;
 pub const MASK: &str = "••••";
 /// Largest YAML accepted by apply and replace (spec §8).
 pub const APPLY_MAX_BYTES: usize = 1 << 20;
+
+/// What an apply guard sees of one document, after namespace defaulting.
+#[derive(Debug, Clone, Copy)]
+pub struct DocInfo<'a> {
+    /// The document's `kind`, e.g. `Deployment`.
+    pub kind: &'a str,
+    pub namespaced: bool,
+    pub namespace: Option<&'a str>,
+}
+
+/// Decides whether one applied document may be sent.
+pub type ApplyGuard<'a> = &'a (dyn Fn(&DocInfo) -> Result<()> + Send + Sync);
+
+/// Why a document the guard allowed was not sent.
+pub const NOT_SENT: &str = "not sent: another document was refused";
+
+/// Runs `guard` on every document (`None`: one that already failed). All
+/// pass: `None`. Otherwise one error per document: the refusal, or
+/// [`NOT_SENT`]; `None` where the document had failed already.
+pub fn guard_all(docs: &[Option<DocInfo>], guard: ApplyGuard) -> Option<Vec<Option<Error>>> {
+    let verdicts: Vec<Option<Result<()>>> = docs.iter().map(|d| d.as_ref().map(guard)).collect();
+    if verdicts.iter().all(|v| !matches!(v, Some(Err(_)))) {
+        return None;
+    }
+    Some(
+        verdicts
+            .into_iter()
+            .map(|v| match v {
+                None => None,
+                Some(Ok(())) => Some(Error::Forbidden(NOT_SENT.into())),
+                Some(Err(e)) => Some(e),
+            })
+            .collect(),
+    )
+}
 /// Most documents in one apply (spec §8).
 pub const APPLY_MAX_DOCS: usize = 100;
 /// The field manager every FleetOps write uses.
@@ -648,15 +683,15 @@ pub trait KubeOps: Send + Sync {
     async fn get_editable(&self, kind: KubeKind, ns: &str, name: &str) -> Result<EditableObject>;
     /// Server-side apply of every document in `yaml`, in order. `Err` only
     /// when nothing could be attempted; per-document failures are in the results.
-    /// With `allowed`, a document that is cluster-scoped or names a namespace
-    /// outside it is refused (code `forbidden`) without being sent, dry run
-    /// included.
+    /// Every document is resolved and passed to `guard` first; if it refuses
+    /// any, none is sent (dry run included) and each result says why
+    /// ([`guard_all`]).
     async fn apply(
         &self,
         yaml: &str,
         default_ns: &str,
         mode: ApplyMode,
-        allowed: Option<&std::collections::BTreeSet<String>>,
+        guard: ApplyGuard<'_>,
     ) -> Result<Vec<ApplyResult>>;
     /// Replaces one object, refusing with `Error::Conflict` when it changed
     /// since `resource_version`.
@@ -960,5 +995,47 @@ mod pod_log_tests {
                 KubeKind::ReplicaSets
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    fn doc(kind: &'static str, ns: Option<&'static str>) -> Option<DocInfo<'static>> {
+        Some(DocInfo {
+            kind,
+            namespaced: ns.is_some(),
+            namespace: ns,
+        })
+    }
+
+    #[test]
+    fn every_document_is_guarded_before_any_is_sent() {
+        let refuse_secrets = |d: &DocInfo| {
+            if d.kind == "Secret" {
+                Err(Error::Forbidden(
+                    "secrets.create permission required".into(),
+                ))
+            } else {
+                Ok(())
+            }
+        };
+        let docs = [doc("ConfigMap", Some("a")), None, doc("Secret", Some("a"))];
+        let errs = guard_all(&docs, &refuse_secrets).expect("one is refused");
+        assert_eq!(
+            errs[0].as_ref().unwrap().to_string(),
+            Error::Forbidden(NOT_SENT.into()).to_string()
+        );
+        assert!(
+            errs[1].is_none(),
+            "a document that failed earlier keeps its own error"
+        );
+        assert!(errs[2]
+            .as_ref()
+            .unwrap()
+            .to_string()
+            .contains("secrets.create"));
+        assert!(guard_all(&[doc("ConfigMap", Some("a"))], &refuse_secrets).is_none());
     }
 }
