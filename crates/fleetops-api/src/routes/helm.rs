@@ -6,7 +6,7 @@ use super::kube::{
 };
 use crate::{
     auth::extract::CurrentUser,
-    authz::Action,
+    authz::Need,
     extract::{ApiJson, ApiPath},
     ApiResult, AppState,
 };
@@ -18,7 +18,10 @@ use fleetops_core::helm::{
     ChartRef, ChartShow, Deploy, HelmMode, HelmPlan, HelmRelease, HelmRevision, ReleaseDetail,
     HELM_OFF,
 };
+use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
+
+const HELM_VIEW: Permission = Permission::new(Row::Helm, Verb::View);
 use fleetops_kube::helm::{
     render::{ChartRenderer, RenderInput},
     values,
@@ -102,22 +105,36 @@ pub async fn list(
     if let Some(ns) = ns {
         check_namespace(ns)?;
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(HELM_VIEW)).await?;
     if let Some(ns) = ns {
-        crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.read", k8.grant.check_ns(ns)).await?;
+        crate::authz::deny_audited(
+            &s,
+            &cu,
+            k8.env.id(),
+            "helm.view",
+            k8.grants.check_ns(HELM_VIEW, ns),
+        )
+        .await?;
     }
     let rows = k8.ops.helm_list(ns).await?;
     Ok(Json(
         rows.into_iter()
-            .filter(|r| k8.grant.allows_ns(&r.namespace))
+            .filter(|r| k8.grants.allows(HELM_VIEW, Some(&r.namespace)))
             .collect(),
     ))
 }
 
 async fn readable(s: &AppState, cu: &CurrentUser, p: &ReleasePath) -> Result<KubeCtx> {
     p.checked()?;
-    let k8 = kube_for(s, cu, &p.env, Action::KubeRead).await?;
-    crate::authz::deny_audited(s, cu, k8.env.id(), "k8s.read", k8.grant.check_ns(&p.ns)).await?;
+    let k8 = kube_for(s, cu, &p.env, Need::Perm(HELM_VIEW)).await?;
+    crate::authz::deny_audited(
+        s,
+        cu,
+        k8.env.id(),
+        "helm.view",
+        k8.grants.check_ns(HELM_VIEW, &p.ns),
+    )
+    .await?;
     Ok(k8)
 }
 
@@ -146,10 +163,18 @@ pub async fn history(
     Ok(Json(k8.ops.helm_history(&p.ns, &p.name).await?))
 }
 
-async fn writable(s: &AppState, cu: &CurrentUser, p: &ReleasePath) -> Result<KubeCtx> {
+async fn writable(s: &AppState, cu: &CurrentUser, p: &ReleasePath, verb: Verb) -> Result<KubeCtx> {
     p.checked()?;
-    let k8 = kube_for(s, cu, &p.env, Action::KubeWrite).await?;
-    crate::authz::deny_audited(s, cu, k8.env.id(), "k8s.write", k8.grant.check_ns(&p.ns)).await?;
+    let perm = Permission::new(Row::Helm, verb);
+    let k8 = kube_for(s, cu, &p.env, Need::Perm(perm)).await?;
+    crate::authz::deny_audited(
+        s,
+        cu,
+        k8.env.id(),
+        &perm.to_string(),
+        k8.grants.check_ns(perm, &p.ns),
+    )
+    .await?;
     Ok(k8)
 }
 
@@ -215,8 +240,13 @@ pub async fn rollback(
     ApiPath(p): ApiPath<ReleasePath>,
     ApiJson(body): ApiJson<RollbackBody>,
 ) -> ApiResult<Json<HelmPlan>> {
-    let k8 = writable(&s, &cu, &p).await?;
-    let (ops, allowed, env_id) = (k8.ops.clone(), k8.grant.namespaces.clone(), k8.env.id());
+    let k8 = writable(&s, &cu, &p, Verb::Operate).await?;
+    let (ops, allowed, env_id) = (
+        k8.ops.clone(),
+        k8.grants
+            .namespaces_for(Permission::new(Row::Helm, Verb::Operate)),
+        k8.env.id(),
+    );
     let (st, user_id, ns, name, target) = (
         s.clone(),
         cu.user.id,
@@ -245,7 +275,7 @@ pub async fn rollback(
         r
     })
     .await;
-    let r = crate::authz::deny_audited(&s, &cu, env_id, "k8s.write", r).await;
+    let r = crate::authz::deny_audited(&s, &cu, env_id, "helm.operate", r).await;
     Ok(Json(hinted(&s, &k8, r?).await))
 }
 
@@ -258,8 +288,13 @@ pub async fn uninstall(
     ApiPath(p): ApiPath<ReleasePath>,
     ApiJson(body): ApiJson<UninstallBody>,
 ) -> ApiResult<Json<HelmPlan>> {
-    let k8 = writable(&s, &cu, &p).await?;
-    let (ops, allowed, env_id) = (k8.ops.clone(), k8.grant.namespaces.clone(), k8.env.id());
+    let k8 = writable(&s, &cu, &p, Verb::Delete).await?;
+    let (ops, allowed, env_id) = (
+        k8.ops.clone(),
+        k8.grants
+            .namespaces_for(Permission::new(Row::Helm, Verb::Delete)),
+        k8.env.id(),
+    );
     let (st, user_id, ns, name, target) = (
         s.clone(),
         cu.user.id,
@@ -291,7 +326,7 @@ pub async fn uninstall(
         r
     })
     .await;
-    let r = crate::authz::deny_audited(&s, &cu, env_id, "k8s.write", r).await;
+    let r = crate::authz::deny_audited(&s, &cu, env_id, "helm.delete", r).await;
     Ok(Json(hinted(&s, &k8, r?).await))
 }
 
@@ -353,7 +388,7 @@ pub async fn capabilities(
     cu: CurrentUser,
     ApiPath(p): ApiPath<ReleasesPath>,
 ) -> ApiResult<Json<HelmCapabilities>> {
-    kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    kube_for(&s, &cu, &p.env, Need::AnyGrant).await?;
     Ok(Json(HelmCapabilities {
         install: s.config.helm.is_some(),
     }))
@@ -370,7 +405,7 @@ pub async fn show(
 ) -> ApiResult<Json<ChartShow>> {
     let r = renderer(&s)?;
     body.chart.validate(r.insecure_repos())?;
-    kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
+    kube_for(&s, &cu, &p.env, Need::of(Row::Helm, Verb::Create)).await?;
     Ok(Json(r.show(&body.chart).await?))
 }
 
@@ -416,7 +451,12 @@ async fn deploy(
     expected_current: u32,
     action: &'static str,
 ) -> ApiResult<Json<HelmPlan>> {
-    let (ops, allowed, env_id) = (k8.ops.clone(), k8.grant.namespaces.clone(), k8.env.id());
+    let perm = if action == "helm.install" {
+        Permission::new(Row::Helm, Verb::Create)
+    } else {
+        Permission::new(Row::Helm, Verb::Operate)
+    };
+    let (ops, allowed, env_id) = (k8.ops.clone(), k8.grants.namespaces_for(perm), k8.env.id());
     let (st, user_id) = (s.clone(), cu.user.id);
     let mode = if dry_run {
         HelmMode::Plan
@@ -438,7 +478,7 @@ async fn deploy(
         r
     })
     .await;
-    let r = crate::authz::deny_audited(s, cu, env_id, "k8s.write", r).await;
+    let r = crate::authz::deny_audited(s, cu, env_id, &perm.to_string(), r).await;
     Ok(Json(hinted(s, k8, r?).await))
 }
 
@@ -458,7 +498,7 @@ pub async fn install(
         ns: p.ns,
         name: body.name.clone(),
     };
-    let k8 = writable(&s, &cu, &rp).await?;
+    let k8 = writable(&s, &cu, &rp, Verb::Create).await?;
     let none = serde_json::Value::Null;
     let rendered = render(
         r.as_ref(),
@@ -503,7 +543,7 @@ pub async fn upgrade(
 ) -> ApiResult<Json<HelmPlan>> {
     let r = renderer(&s)?;
     body.chart.validate(r.insecure_repos())?;
-    let k8 = writable(&s, &cu, &p).await?;
+    let k8 = writable(&s, &cu, &p, Verb::Operate).await?;
     values::parse(&body.values)?;
     let stored = k8.ops.helm_config(&p.ns, &p.name).await?;
     let rendered = render(

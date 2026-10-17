@@ -2,12 +2,13 @@ use super::{ctx, ForceQuery};
 use crate::openapi::{EnvIdParam, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
-    authz::Action,
+    authz::Need,
     extract::{ApiJson, ApiPath, ApiQuery},
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::docker::{ImageSummary, PruneReport};
+use fleetops_core::perm::{Row, Verb};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::{IntoParams, ToSchema};
@@ -51,7 +52,7 @@ pub async fn list(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ImageSummary>>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Images, Verb::View)).await?;
     Ok(Json(c.ops.list_images().await?))
 }
 
@@ -69,7 +70,7 @@ pub async fn inspect(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Images, Verb::View)).await?;
     Ok(Json(c.ops.inspect_image(&id).await?))
 }
 
@@ -87,7 +88,7 @@ pub async fn history(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Images, Verb::View)).await?;
     Ok(Json(c.ops.image_history(&id).await?))
 }
 
@@ -107,7 +108,7 @@ pub async fn tag(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<TagBody>,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Images, Verb::Create)).await?;
     let res = c.ops.tag_image(&id, &body.repo, &body.tag).await;
     c.audit(&s, "image.tag", "image", &id, &res).await;
     res?;
@@ -129,7 +130,7 @@ pub async fn remove(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiQuery(q): ApiQuery<ForceQuery>,
 ) -> ApiResult<Json<ImageRemoved>> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Images, Verb::Delete)).await?;
     let res = c.ops.remove_image(&id, q.force).await;
     c.audit(&s, "image.remove", "image", &id, &res).await;
     Ok(Json(ImageRemoved { removed: res? }))
@@ -151,7 +152,7 @@ pub async fn prune(
     ApiQuery(q): ApiQuery<PruneQuery>,
 ) -> ApiResult<Json<PruneReport>> {
     let all = q.all;
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Images, Verb::Delete)).await?;
     let res = c.ops.prune_images(all).await;
     c.audit(
         &s,

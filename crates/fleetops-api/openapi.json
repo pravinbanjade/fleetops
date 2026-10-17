@@ -7365,7 +7365,7 @@
       },
       "Grant": {
         "type": "object",
-        "description": "One user's access to one environment.",
+        "description": "One grant on one environment: a role, the permissions it carries, and\nwhere it applies.",
         "required": [
           "role"
         ],
@@ -7382,7 +7382,8 @@
             "uniqueItems": true
           },
           "role": {
-            "$ref": "#/components/schemas/EnvRole"
+            "$ref": "#/components/schemas/EnvRole",
+            "description": "The built-in role; for a custom role, the closest built-in (Viewer\nwhen every permission is one Viewer has), for clients that know\nonly those two."
           }
         }
       },

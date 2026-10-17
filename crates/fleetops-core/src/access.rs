@@ -318,7 +318,14 @@ impl Grants {
 
     /// Every permission any grant holds, wherever it applies: a UI hint.
     pub fn perms_any(&self) -> PermSet {
-        self.0.iter().fold(PermSet::default(), |a, g| a.union(g.perms))
+        self.0
+            .iter()
+            .fold(PermSet::default(), |a, g| a.union(g.perms))
+    }
+
+    /// Some grant holds `p`, wherever it applies.
+    pub fn holds(&self, p: Permission) -> bool {
+        self.holding(p).next().is_some()
     }
 
     fn holding(&self, p: Permission) -> impl Iterator<Item = &Grant> {
@@ -376,7 +383,9 @@ impl Grants {
             return Self::first_ok(p, self.0.iter(), |g| g.check_object(kind, ns, name, false));
         }
         let write = p.verb != Verb::View;
-        Self::first_ok(p, self.holding(p), |g| g.check_object(kind, ns, name, write))
+        Self::first_ok(p, self.holding(p), |g| {
+            g.check_object(kind, ns, name, write)
+        })
     }
 
     pub fn check_list_in(&self, p: Permission, namespaced: bool, ns: Option<&str>) -> Result<()> {
@@ -779,7 +788,10 @@ mod tests {
 
     fn custom(perms: &[&str], ns: Option<&[&str]>) -> Grant {
         Grant::custom(
-            CustomRef { id: 1, name: "r".into() },
+            CustomRef {
+                id: 1,
+                name: "r".into(),
+            },
             perms.iter().map(|p| pm(p)).collect(),
             ns.map(|n| n.iter().map(|s| s.to_string()).collect()),
         )
@@ -795,28 +807,47 @@ mod tests {
         let v = pm("pods.view");
         assert!(g.check_ns(v, "team-a").is_ok());
         let e = g.check_ns(v, "team-b").unwrap_err();
-        assert!(matches!(&e, Error::Forbidden(m) if m == "namespace 'team-b' is not in your access"));
+        assert!(
+            matches!(&e, Error::Forbidden(m) if m == "namespace 'team-b' is not in your access")
+        );
         assert!(g.check_list(v, KubeKind::Pods, Some("team-a")).is_ok());
         assert!(g.check_list(v, KubeKind::Pods, Some("team-b")).is_err());
-        assert!(g.check_list(v, KubeKind::Pods, None).is_ok(), "filtered, not refused");
-        assert!(g.check_object(pm("pods.delete"), KubeKind::Pods, "team-a", "p").is_ok());
+        assert!(
+            g.check_list(v, KubeKind::Pods, None).is_ok(),
+            "filtered, not refused"
+        );
+        assert!(g
+            .check_object(pm("pods.delete"), KubeKind::Pods, "team-a", "p")
+            .is_ok());
         assert!(g.check_object(v, KubeKind::Pods, "team-b", "p").is_err());
         // nodes and own namespaces readable, nothing cluster-scoped writable
         let k = pm("k8s-other.view");
         assert!(g.check_list(k, KubeKind::Nodes, None).is_ok());
-        assert!(g.check_object(k, KubeKind::Namespaces, "-", "team-a").is_ok());
-        assert!(g.check_object(k, KubeKind::Namespaces, "-", "team-b").is_err());
-        let e = g.check_object(pm("k8s-other.operate"), KubeKind::Nodes, "-", "n1").unwrap_err();
+        assert!(g
+            .check_object(k, KubeKind::Namespaces, "-", "team-a")
+            .is_ok());
+        assert!(g
+            .check_object(k, KubeKind::Namespaces, "-", "team-b")
+            .is_err());
+        let e = g
+            .check_object(pm("k8s-other.operate"), KubeKind::Nodes, "-", "n1")
+            .unwrap_err();
         assert_eq!(e.to_string(), cluster_scoped_denied().to_string());
-        assert!(g.check_list(pm("storage.view"), KubeKind::PersistentVolumes, None).is_err());
+        assert!(g
+            .check_list(pm("storage.view"), KubeKind::PersistentVolumes, None)
+            .is_err());
         // generic kinds
         assert!(g.check_list_in(k, true, Some("team-a")).is_ok());
         assert!(g.check_list_in(k, true, Some("team-b")).is_err());
         assert!(g.check_list_in(k, false, None).is_err());
-        assert!(g.check_object_in(pm("k8s-other.delete"), true, "team-a").is_ok());
+        assert!(g
+            .check_object_in(pm("k8s-other.delete"), true, "team-a")
+            .is_ok());
         // whole environment
         let full = Grants(vec![Grant::full(EnvRole::Operator)]);
-        assert!(full.check_object(pm("k8s-other.operate"), KubeKind::Nodes, "-", "n1").is_ok());
+        assert!(full
+            .check_object(pm("k8s-other.operate"), KubeKind::Nodes, "-", "n1")
+            .is_ok());
         assert!(full.check_env(pm("containers.delete")).is_ok());
     }
 
@@ -834,7 +865,9 @@ mod tests {
             truncated: false,
         };
         assert_eq!(g.filter_list(KubeKind::Namespaces, nss).rows.len(), 1);
-        let added = |ns: &str| WatchEvent::Added { row: row("x", Some(ns)) };
+        let added = |ns: &str| WatchEvent::Added {
+            row: row("x", Some(ns)),
+        };
         assert!(g.filter_event(KubeKind::Pods, added("team-b")).is_none());
         assert!(g.filter_event(KubeKind::Pods, added("team-a")).is_some());
         assert!(g.filter_event_in(true, added("team-b")).is_none());
@@ -847,7 +880,9 @@ mod tests {
         let del = pm("pods.delete");
         assert!(g.check_object(del, KubeKind::Pods, "b", "p").is_err());
         assert!(g.check_object(del, KubeKind::Pods, "a", "p").is_ok());
-        assert!(g.check_list(pm("pods.view"), KubeKind::Pods, Some("b")).is_ok());
+        assert!(g
+            .check_list(pm("pods.view"), KubeKind::Pods, Some("b"))
+            .is_ok());
         assert!(g.allows(del, Some("a")) && !g.allows(del, Some("b")));
         assert_eq!(g.namespaces_for(del), Some(["a".to_string()].into()));
         assert_eq!(g.namespaces_for(pm("pods.view")), None);
@@ -862,8 +897,13 @@ mod tests {
         };
         assert_eq!(g.filter_list(KubeKind::Pods, list()).rows.len(), 1);
         assert_eq!(g.filter_list(KubeKind::Secrets, list()).rows.len(), 0);
-        let e = g.check_list(pm("secrets.view"), KubeKind::Secrets, None).unwrap_err();
-        assert!(matches!(&e, Error::Forbidden(m) if m == "secrets.view permission required"), "{e}");
+        let e = g
+            .check_list(pm("secrets.view"), KubeKind::Secrets, None)
+            .unwrap_err();
+        assert!(
+            matches!(&e, Error::Forbidden(m) if m == "secrets.view permission required"),
+            "{e}"
+        );
         assert_eq!(g.perms_any().to_strs(), ["pods.view"]);
         assert!(g.check_env(pm("containers.view")).is_err());
     }
@@ -879,8 +919,16 @@ mod tests {
             truncated: false,
         };
         let kept = g.filter_list(KubeKind::Namespaces, nss);
-        assert_eq!(kept.rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["a"]);
-        assert!(g.check_list(k, KubeKind::ServiceAccounts, Some("a")).is_err());
+        assert_eq!(
+            kept.rows
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>(),
+            ["a"]
+        );
+        assert!(g
+            .check_list(k, KubeKind::ServiceAccounts, Some("a"))
+            .is_err());
     }
 
     #[test]
@@ -891,7 +939,10 @@ mod tests {
             custom(&["configmaps.operate"], Some(&["a"])),
         ]);
         assert!(split.check_doc(c, o, true, Some("a")).is_err());
-        let one = Grants(vec![custom(&["configmaps.create", "configmaps.operate"], Some(&["a"]))]);
+        let one = Grants(vec![custom(
+            &["configmaps.create", "configmaps.operate"],
+            Some(&["a"]),
+        )]);
         assert!(one.check_doc(c, o, true, Some("a")).is_ok());
         assert!(one.check_doc(c, o, true, Some("b")).is_err());
         assert!(one.check_doc(c, o, false, None).is_err());

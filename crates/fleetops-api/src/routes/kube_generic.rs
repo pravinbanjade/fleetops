@@ -7,7 +7,7 @@ use crate::routes::kube::{
 };
 use crate::{
     auth::extract::CurrentUser,
-    authz::Action,
+    authz::Need,
     extract::{ApiJson, ApiPath},
     ApiResult, AppState,
 };
@@ -20,6 +20,7 @@ use fleetops_core::kube::{
     ApiKind, ApplyResult, Discovery, EditableObject, KindRef, KubeEvent, KubeList, KubeObject,
     KubeOps,
 };
+use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{Error, Result};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -113,22 +114,18 @@ async fn object(
     s: &AppState,
     cu: &CurrentUser,
     p: &GenericObjectPath,
-    action: Action,
+    verb: Verb,
 ) -> Result<(KubeCtx, ApiKind)> {
     let r = p.checked()?;
-    let k8 = kube_for(s, cu, &p.env, action).await?;
+    let perm = Permission::new(Row::K8sOther, verb);
+    let k8 = kube_for(s, cu, &p.env, Need::Perm(perm)).await?;
     let k = resolve(&k8.ops, &r).await?;
-    let what = if action == Action::KubeWrite {
-        "k8s.write"
-    } else {
-        "k8s.read"
-    };
     crate::authz::deny_audited(
         s,
         cu,
         k8.env.id(),
-        what,
-        k8.grant.check_object_in(k.namespaced, &p.ns),
+        &perm.to_string(),
+        k8.grants.check_object_in(perm, k.namespaced, &p.ns),
     )
     .await?;
     Ok((k8, k))
@@ -151,9 +148,10 @@ pub async fn discovery(
     ApiPath(env): ApiPath<String>,
     Query(q): Query<DiscoveryQuery>,
 ) -> ApiResult<Json<Discovery>> {
-    let k8 = kube_for(&s, &cu, &env, Action::KubeRead).await?;
+    let k8 = kube_for(&s, &cu, &env, Need::AnyGrant).await?;
     let mut d = k8.ops.discover(q.refresh.as_deref() == Some("1")).await?;
-    if k8.grant.namespaces.is_some() {
+    let view = Permission::new(Row::K8sOther, Verb::View);
+    if k8.grants.namespaces_for(view).is_some() {
         d.kinds.retain(|k| k.namespaced);
     }
     Ok(Json(d))
@@ -173,19 +171,20 @@ pub async fn list(
     if let Some(ns) = ns {
         check_namespace(ns)?;
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
+    let view = Permission::new(Row::K8sOther, Verb::View);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(view)).await?;
     let k = resolve(&k8.ops, &r).await?;
     let ns = ns.filter(|_| k.namespaced);
     crate::authz::deny_audited(
         &s,
         &cu,
         k8.env.id(),
-        "k8s.read",
-        k8.grant.check_list_in(k.namespaced, ns),
+        &view.to_string(),
+        k8.grants.check_list_in(view, k.namespaced, ns),
     )
     .await?;
     let rows = k8.ops.generic_list(&k, ns).await?;
-    Ok(Json(k8.grant.filter_list_in(k.namespaced, rows)))
+    Ok(Json(k8.grants.filter_list_in(k.namespaced, rows)))
 }
 
 #[utoipa::path(get, path = "/envs/{env}/k8s/r/{group}/{version}/{resource}/{ns}/{name}", operation_id = "getGenericKube", tag = "kubernetes",
@@ -196,7 +195,7 @@ pub async fn get(
     cu: CurrentUser,
     ApiPath(p): ApiPath<GenericObjectPath>,
 ) -> ApiResult<Json<KubeObject>> {
-    let (k8, k) = object(&s, &cu, &p, Action::KubeRead).await?;
+    let (k8, k) = object(&s, &cu, &p, Verb::View).await?;
     Ok(Json(k8.ops.generic_get(&k, &p.ns, &p.name).await?))
 }
 
@@ -208,7 +207,7 @@ pub async fn events(
     cu: CurrentUser,
     ApiPath(p): ApiPath<GenericObjectPath>,
 ) -> ApiResult<Json<Vec<KubeEvent>>> {
-    let (k8, k) = object(&s, &cu, &p, Action::KubeRead).await?;
+    let (k8, k) = object(&s, &cu, &p, Verb::View).await?;
     Ok(Json(k8.ops.generic_events(&k, &p.ns, &p.name).await?))
 }
 
@@ -220,7 +219,7 @@ pub async fn editable(
     cu: CurrentUser,
     ApiPath(p): ApiPath<GenericObjectPath>,
 ) -> ApiResult<Json<EditableObject>> {
-    let (k8, k) = object(&s, &cu, &p, Action::KubeRead).await?;
+    let (k8, k) = object(&s, &cu, &p, Verb::View).await?;
     Ok(Json(k8.ops.generic_editable(&k, &p.ns, &p.name).await?))
 }
 
@@ -242,7 +241,7 @@ pub async fn replace(
         )
         .into());
     }
-    let (k8, k) = object(&s, &cu, &p, Action::KubeWrite).await?;
+    let (k8, k) = object(&s, &cu, &p, Verb::Operate).await?;
     verb(&k, "update", "edited")?;
     let r = k8
         .ops
@@ -278,7 +277,7 @@ pub async fn delete(
     cu: CurrentUser,
     ApiPath(p): ApiPath<GenericObjectPath>,
 ) -> ApiResult<StatusCode> {
-    let (k8, k) = object(&s, &cu, &p, Action::KubeWrite).await?;
+    let (k8, k) = object(&s, &cu, &p, Verb::Delete).await?;
     verb(&k, "delete", "deleted")?;
     let r = k8.ops.generic_delete(&k, &p.ns, &p.name).await;
     let err = r.as_ref().err().map(|e| e.to_string());

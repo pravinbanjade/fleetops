@@ -2,12 +2,13 @@ use super::ctx;
 use crate::openapi::{EnvIdParam, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
-    authz::Action,
+    authz::Need,
     extract::{ApiJson, ApiPath},
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::docker::{NetworkSpec, NetworkSummary, PruneReport};
+use fleetops_core::perm::{Row, Verb};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use utoipa::ToSchema;
@@ -39,7 +40,7 @@ pub async fn list(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<NetworkSummary>>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Networks, Verb::View)).await?;
     Ok(Json(c.ops.list_networks().await?))
 }
 
@@ -59,7 +60,7 @@ pub async fn create(
     ApiPath(env): ApiPath<String>,
     ApiJson(spec): ApiJson<NetworkSpec>,
 ) -> ApiResult<(StatusCode, Json<CreatedNetwork>)> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Networks, Verb::Create)).await?;
     let res = c.ops.create_network(&spec).await;
     c.audit(&s, "network.create", "network", &spec.name, &res)
         .await;
@@ -80,7 +81,7 @@ pub async fn inspect(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Networks, Verb::View)).await?;
     Ok(Json(c.ops.inspect_network(&id).await?))
 }
 
@@ -98,7 +99,7 @@ pub async fn remove(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Networks, Verb::Delete)).await?;
     let res = c.ops.remove_network(&id).await;
     c.audit(&s, "network.remove", "network", &id, &res).await;
     res?;
@@ -121,7 +122,7 @@ pub async fn connect(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<AttachBody>,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Networks, Verb::Operate)).await?;
     let res = c.ops.connect_network(&id, &body.container).await;
     c.audit(&s, "network.connect", "network", &id, &res).await;
     res?;
@@ -144,7 +145,7 @@ pub async fn disconnect(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<AttachBody>,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Networks, Verb::Operate)).await?;
     let res = c
         .ops
         .disconnect_network(&id, &body.container, body.force)
@@ -169,7 +170,7 @@ pub async fn prune(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<PruneReport>> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Networks, Verb::Delete)).await?;
     let res = c.ops.prune_networks().await;
     c.audit(&s, "network.prune", "network", "*", &res).await;
     Ok(Json(res?))

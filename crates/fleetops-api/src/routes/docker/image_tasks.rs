@@ -5,13 +5,14 @@ use super::ctx;
 use crate::openapi::{BuildForm, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
-    authz::Action,
+    authz::Need,
     extract::{ApiJson, ApiMultipart, ApiPath},
     tasks::{NewTask, TaskInfo, TaskStatus},
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::docker::split_image_reference;
+use fleetops_core::perm::{Row, Verb};
 use fleetops_core::streams::{BoxStream, BuildContext, BuildSpec};
 use fleetops_core::{now_unix, Error};
 use fleetops_store::NewAudit;
@@ -103,7 +104,7 @@ pub async fn pull(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<PullBody>,
 ) -> ApiResult<(StatusCode, Json<TaskStarted>)> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Images, Verb::Create)).await?;
     let (image, parsed_tag) = split_image_reference(&body.image)?;
     let tag = body.tag.filter(|t| !t.is_empty()).unwrap_or(parsed_tag);
     let target = if tag.is_empty() {
@@ -144,7 +145,7 @@ pub async fn build(
     ApiPath(env): ApiPath<String>,
     ApiMultipart(mut form): ApiMultipart,
 ) -> ApiResult<(StatusCode, Json<TaskStarted>)> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Images, Verb::Create)).await?;
     let (mut context, mut tag, mut dockerfile) = (None, None, None);
     while let Some(field) = form.next_field().await.map_err(bad)? {
         let name = field.name().unwrap_or_default().to_string();

@@ -553,7 +553,8 @@ export type ExecOptions = {
 export type Feature = 'audit_export' | 'teams';
 
 /**
- * One user's access to one environment.
+ * One grant on one environment: a role, the permissions it carries, and
+ * where it applies.
  */
 export type Grant = {
     /**
@@ -561,6 +562,11 @@ export type Grant = {
      * (Kubernetes) the grant covers.
      */
     namespaces?: Array<string> | null;
+    /**
+     * The built-in role; for a custom role, the closest built-in (Viewer
+     * when every permission is one Viewer has), for clients that know
+     * only those two.
+     */
     role: EnvRole;
 };
 

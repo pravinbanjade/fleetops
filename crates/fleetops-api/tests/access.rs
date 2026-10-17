@@ -73,7 +73,7 @@ async fn a_viewer_reads_but_cannot_change_and_the_refusal_is_audited() {
         ))
         .await;
     assert_eq!(r.status, StatusCode::FORBIDDEN);
-    assert_eq!(r.json["message"], "operator role required");
+    assert_eq!(r.json["message"], "containers.create permission required");
     assert_eq!(t.audit_actions().await[0], "access.denied");
 }
 

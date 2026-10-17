@@ -181,8 +181,14 @@ impl FromStr for Permission {
     fn from_str(s: &str) -> Result<Self> {
         let bad = || Error::Invalid(format!("unknown permission '{s}'"));
         let (r, v) = s.split_once('.').ok_or_else(bad)?;
-        let row = Row::ALL.into_iter().find(|x| x.as_str() == r).ok_or_else(bad)?;
-        let verb = Verb::ALL.into_iter().find(|x| x.as_str() == v).ok_or_else(bad)?;
+        let row = Row::ALL
+            .into_iter()
+            .find(|x| x.as_str() == r)
+            .ok_or_else(bad)?;
+        let verb = Verb::ALL
+            .into_iter()
+            .find(|x| x.as_str() == v)
+            .ok_or_else(bad)?;
         let p = Permission { row, verb };
         if p.valid() {
             Ok(p)
@@ -280,7 +286,12 @@ pub fn admin_perms() -> PermSet {
 pub fn row_of(kind: KubeKind) -> Row {
     use KubeKind::*;
     match kind {
-        Deployments | StatefulSets | DaemonSets | ReplicaSets | Jobs | CronJobs
+        Deployments
+        | StatefulSets
+        | DaemonSets
+        | ReplicaSets
+        | Jobs
+        | CronJobs
         | HorizontalPodAutoscalers => Row::Workloads,
         Pods => Row::Pods,
         ConfigMaps => Row::ConfigMaps,
@@ -321,7 +332,10 @@ mod tests {
     fn strings_round_trip_and_reject_invalid() {
         assert_eq!(p("volumes.delete").to_string(), "volumes.delete");
         let e = "volumes.shell".parse::<Permission>().unwrap_err();
-        assert_eq!(e.to_string(), crate::Error::Invalid("unknown permission 'volumes.shell'".into()).to_string());
+        assert_eq!(
+            e.to_string(),
+            crate::Error::Invalid("unknown permission 'volumes.shell'".into()).to_string()
+        );
         assert!("nope.view".parse::<Permission>().is_err());
         let set = PermSet::from_strs(&["pods.view".into(), "containers.delete".into()]).unwrap();
         assert_eq!(set.to_strs(), ["containers.delete", "pods.view"]);
@@ -331,7 +345,11 @@ mod tests {
     #[test]
     fn builtin_sets() {
         let v = EnvRole::Viewer.perms();
-        assert!(v.contains(p("pods.view")) && v.contains(p("containers.reveal")) && v.contains(p("helm.reveal")));
+        assert!(
+            v.contains(p("pods.view"))
+                && v.contains(p("containers.reveal"))
+                && v.contains(p("helm.reveal"))
+        );
         assert!(!v.contains(p("secrets.reveal")) && !v.contains(p("containers.delete")));
         let o = EnvRole::Operator.perms();
         assert!(o.contains(p("containers.delete")) && o.contains(p("pods.shell")));
@@ -346,7 +364,12 @@ mod tests {
         use KubeKind::*;
         for k in KubeKind::ALL {
             let want = match k {
-                Deployments | StatefulSets | DaemonSets | ReplicaSets | Jobs | CronJobs
+                Deployments
+                | StatefulSets
+                | DaemonSets
+                | ReplicaSets
+                | Jobs
+                | CronJobs
                 | HorizontalPodAutoscalers => Row::Workloads,
                 Pods => Row::Pods,
                 ConfigMaps => Row::ConfigMaps,

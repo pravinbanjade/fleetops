@@ -2,7 +2,7 @@ use super::{ctx, ForceQuery};
 use crate::openapi::{Bytes, ContainerActionName, EnvIdParam, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
-    authz::Action,
+    authz::Need,
     extract::{ApiJson, ApiPath, ApiQuery},
     ApiResult, AppState,
 };
@@ -15,6 +15,7 @@ use axum::{
 use fleetops_core::docker::{
     ContainerAction, ContainerSpec, ContainerSummary, DirListing, PruneReport,
 };
+use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::recreate::recreate;
 use fleetops_core::{now_unix, Error};
 use serde::{Deserialize, Serialize};
@@ -75,7 +76,7 @@ pub async fn list(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ContainerSummary>>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
     Ok(Json(c.ops.list_containers().await?))
 }
 
@@ -95,7 +96,7 @@ pub async fn create(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<CreateBody>,
 ) -> ApiResult<(StatusCode, Json<Created>)> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Create)).await?;
     body.spec.validate()?;
     let target = body
         .spec
@@ -129,7 +130,7 @@ pub async fn inspect(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
     Ok(Json(c.ops.inspect_container(&id).await?))
 }
 
@@ -147,7 +148,7 @@ pub async fn spec(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<ContainerSpec>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
     Ok(Json(c.ops.container_spec(&id).await?))
 }
 
@@ -166,7 +167,7 @@ pub async fn action(
     ApiPath((env, id, action)): ApiPath<(String, String, String)>,
 ) -> ApiResult<StatusCode> {
     let action: ContainerAction = action.parse()?;
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Operate)).await?;
     let res = c.ops.container_action(&id, action).await;
     c.audit(
         &s,
@@ -196,7 +197,7 @@ pub async fn rename(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<NameBody>,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Operate)).await?;
     let res = c.ops.rename_container(&id, &body.name).await;
     c.audit(&s, "container.rename", "container", &id, &res)
         .await;
@@ -219,7 +220,7 @@ pub async fn remove(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiQuery(q): ApiQuery<ForceQuery>,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Delete)).await?;
     let res = c.ops.remove_container(&id, q.force, q.volumes).await;
     c.audit(&s, "container.remove", "container", &id, &res)
         .await;
@@ -241,7 +242,7 @@ pub async fn prune(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<PruneReport>> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Delete)).await?;
     let res = c.ops.prune_containers().await;
     c.audit(&s, "container.prune", "container", "*", &res).await;
     Ok(Json(res?))
@@ -263,7 +264,16 @@ pub async fn recreate_container(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiJson(spec): ApiJson<ContainerSpec>,
 ) -> ApiResult<Json<RecreateResult>> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Create)).await?;
+    let delete = Permission::new(Row::Containers, Verb::Delete);
+    crate::authz::deny_audited(
+        &s,
+        &c.user,
+        c.env.id(),
+        &delete.to_string(),
+        c.grants.check_env(delete),
+    )
+    .await?;
     let res = recreate(&*c.ops, &id, &spec, now_unix()).await;
     c.audit(&s, "container.recreate", "container", &id, &res)
         .await;
@@ -291,7 +301,7 @@ pub async fn duplicate(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<NameBody>,
 ) -> ApiResult<(StatusCode, Json<Created>)> {
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Create)).await?;
     let mut spec = c.ops.container_spec(&id).await?;
     spec.name = Some(body.name);
     spec.validate()?;
@@ -323,7 +333,7 @@ pub async fn list_files(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiQuery(q): ApiQuery<PathQuery>,
 ) -> ApiResult<Json<DirListing>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Reveal)).await?;
     Ok(Json(c.ops.list_dir(&id, &q.path).await?))
 }
 
@@ -342,7 +352,7 @@ pub async fn download_file(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiQuery(q): ApiQuery<PathQuery>,
 ) -> ApiResult<Response> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Reveal)).await?;
     let data = c.ops.read_file(&id, &q.path, MAX_DOWNLOAD_BYTES).await?;
     let file_name: String = q
         .path

@@ -2,7 +2,7 @@ use super::ctx;
 use crate::openapi::EnvParam;
 use crate::{
     auth::extract::CurrentUser,
-    authz::Action,
+    authz::Need,
     extract::{ApiPath, ApiQuery},
     ApiResult, AppState,
 };
@@ -31,7 +31,7 @@ pub async fn info(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Value>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::AnyGrant).await?;
     Ok(Json(c.ops.info().await?))
 }
 
@@ -49,7 +49,7 @@ pub async fn disk_usage(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Value>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::AnyGrant).await?;
     Ok(Json(c.ops.disk_usage().await?))
 }
 
@@ -76,7 +76,7 @@ pub async fn recent_events(
     ApiPath(env): ApiPath<String>,
     ApiQuery(q): ApiQuery<EventsQuery>,
 ) -> ApiResult<Json<Vec<DockerEvent>>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::AnyGrant).await?;
     let now = now_unix();
     let since = q
         .since

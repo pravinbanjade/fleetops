@@ -3,7 +3,7 @@
 use crate::openapi::EnvParam;
 use crate::{
     auth::extract::CurrentUser,
-    authz::Action,
+    authz::Need,
     extract::{ApiJson, ApiPath},
     ApiResult, AppState,
 };
@@ -12,12 +12,14 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use fleetops_core::access::Grants;
 use fleetops_core::env::{EnvKind, Environment};
 use fleetops_core::kube::{
     ApplyAction, ApplyMode, ApplyResult, EditableObject, KubeCount, KubeEvent, KubeFilter,
     KubeKind, KubeList, KubeObject, KubeOps, KubeUsage, APPLY_MAX_BYTES,
 };
-use fleetops_core::{now_unix, Error, Grant, Result};
+use fleetops_core::perm::{row_of, Permission, Row, Verb};
+use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::NewAudit;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -87,7 +89,7 @@ pub(crate) fn wrong_kind(name: &str, kind: EnvKind) -> Error {
 pub(crate) struct KubeCtx {
     pub env: Arc<dyn Environment>,
     pub ops: Arc<dyn KubeOps>,
-    pub grant: Grant,
+    pub grants: Grants,
 }
 
 /// Resolves the environment, authorises, and returns its Kubernetes ops
@@ -96,16 +98,16 @@ pub(crate) async fn kube_for(
     s: &AppState,
     cu: &CurrentUser,
     name: &str,
-    action: Action,
+    need: Need,
 ) -> Result<KubeCtx> {
-    let (env, grant) = crate::authz::env_access(s, cu, name, action).await?;
+    let (env, grants) = crate::authz::env_access(s, cu, name, need).await?;
     if !env.kind().is_kube() {
         return Err(wrong_kind(name, env.kind()));
     }
     let ops = env
         .kube()
         .ok_or_else(|| Error::EnvUnavailable(format!("environment '{name}' is unreachable")))?;
-    Ok(KubeCtx { env, ops, grant })
+    Ok(KubeCtx { env, ops, grants })
 }
 
 /// The grant's verdict on one object, audited when it refuses.
@@ -115,17 +117,21 @@ async fn check_object(
     k8: &KubeCtx,
     kind: KubeKind,
     p: &ObjectPath,
-    write: bool,
+    perm: Permission,
 ) -> Result<()> {
-    let what = if write { "k8s.write" } else { "k8s.read" };
     crate::authz::deny_audited(
         s,
         cu,
         k8.env.id(),
-        what,
-        k8.grant.check_object(kind, &p.ns, &p.name, write),
+        &perm.to_string(),
+        k8.grants.check_object(perm, kind, &p.ns, &p.name),
     )
     .await
+}
+
+/// `verb` on the grid row of `kind`.
+fn on(kind: KubeKind, verb: Verb) -> Permission {
+    Permission::new(row_of(kind), verb)
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -259,26 +265,42 @@ pub async fn list(
     if let Some(f) = filter {
         f.check(k)?;
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
-    crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.read", k8.grant.check_list(k, ns))
-        .await?;
+    let view = on(k, Verb::View);
+    let k8 = kube_for(&s, &cu, &p.env, Need::AnyGrant).await?;
+    crate::authz::deny_audited(
+        &s,
+        &cu,
+        k8.env.id(),
+        &view.to_string(),
+        k8.grants.check_list(view, k, ns),
+    )
+    .await?;
     let rows = match filter {
         Some(f) => k8.ops.list_filtered(k, ns, f).await?,
         None => k8.ops.list(k, ns).await?,
     };
-    Ok(Json(k8.grant.filter_list(k, rows)))
+    Ok(Json(k8.grants.filter_list(k, rows)))
 }
 
 /// How many `kind` this grant can see, without listing bodies where the
 /// client can avoid it. A namespace-limited grant sums its namespaces.
 async fn count_one(k8: &KubeCtx, kind: KubeKind, ns: Option<&str>) -> Result<u64> {
-    let Some(set) = &k8.grant.namespaces else {
+    if kind == KubeKind::Nodes {
+        return k8.ops.count(kind, None).await;
+    }
+    if kind == KubeKind::Namespaces && k8.grants.namespaces_for(on(kind, Verb::View)).is_some() {
+        return Ok(k8
+            .grants
+            .filter_list(kind, k8.ops.list(kind, None).await?)
+            .rows
+            .len() as u64);
+    }
+    let Some(set) = k8.grants.namespaces_for(on(kind, Verb::View)) else {
         return k8.ops.count(kind, ns).await;
     };
     match kind {
-        KubeKind::Nodes => k8.ops.count(kind, None).await,
         KubeKind::Namespaces => Ok(k8
-            .grant
+            .grants
             .filter_list(kind, k8.ops.list(kind, None).await?)
             .rows
             .len() as u64),
@@ -317,13 +339,34 @@ pub async fn counts(
     if let Some(ns) = ns {
         check_namespace(ns)?;
     }
-    let k8 = kube_for(&s, &cu, &env_name, Action::KubeRead).await?;
-    for &k in &kinds {
-        crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.read", k8.grant.check_list(k, ns))
-            .await?;
+    let k8 = kube_for(&s, &cu, &env_name, Need::AnyGrant).await?;
+    // A kind the role can't view counts as refused; a namespace or scope
+    // outside the grants refuses the request, as before.
+    let open = |k: KubeKind| matches!(k, KubeKind::Nodes | KubeKind::Namespaces);
+    let viewable = |k: KubeKind| open(k) || k8.grants.holds(on(k, Verb::View));
+    for &k in kinds.iter().filter(|&&k| viewable(k)) {
+        let view = on(k, Verb::View);
+        crate::authz::deny_audited(
+            &s,
+            &cu,
+            k8.env.id(),
+            &view.to_string(),
+            k8.grants.check_list(view, k, ns),
+        )
+        .await?;
     }
-    let results =
-        futures_util::future::join_all(kinds.iter().map(|&k| count_one(&k8, k, ns))).await;
+    let k8 = &k8;
+    let results = futures_util::future::join_all(kinds.iter().map(|&k| {
+        let ok = viewable(k);
+        async move {
+            if ok {
+                count_one(k8, k, ns).await
+            } else {
+                Err(fleetops_core::access::perm_denied(on(k, Verb::View)))
+            }
+        }
+    }))
+    .await;
     Ok(Json(
         kinds
             .into_iter()
@@ -354,8 +397,8 @@ pub async fn get(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<KubeObject>> {
     let k = p.checked()?;
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
-    check_object(&s, &cu, &k8, k, &p, false).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(on(k, Verb::View))).await?;
+    check_object(&s, &cu, &k8, k, &p, on(k, Verb::View)).await?;
     let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.get(k, &p.ns, &p.name).await?))
 }
@@ -369,8 +412,8 @@ pub async fn events(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<Vec<KubeEvent>>> {
     let k = p.checked()?;
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
-    check_object(&s, &cu, &k8, k, &p, false).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(on(k, Verb::View))).await?;
+    check_object(&s, &cu, &k8, k, &p, on(k, Verb::View)).await?;
     let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.events(k, &p.ns, &p.name).await?))
 }
@@ -387,8 +430,9 @@ pub async fn workload_pods(
     if !k.has_pod_logs() {
         return Err(Error::Invalid(format!("{} have no pods of their own", k.as_str())).into());
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
-    check_object(&s, &cu, &k8, k, &p, false).await?;
+    let view = Permission::new(Row::Workloads, Verb::View);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(view)).await?;
+    check_object(&s, &cu, &k8, k, &p, view).await?;
     let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.workload_pods(k, &p.ns, &p.name).await?))
 }
@@ -410,12 +454,22 @@ pub async fn usage(
     if let Some(ns) = ns {
         check_namespace(ns)?;
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
-    crate::authz::deny_audited(&s, &cu, k8.env.id(), "k8s.read", k8.grant.check_list(k, ns))
-        .await?;
+    let view = on(k, Verb::View);
+    let k8 = kube_for(&s, &cu, &p.env, Need::AnyGrant).await?;
+    crate::authz::deny_audited(
+        &s,
+        &cu,
+        k8.env.id(),
+        &view.to_string(),
+        k8.grants.check_list(view, k, ns),
+    )
+    .await?;
     let mut u = k8.ops.usage(k, ns).await?;
-    u.rows
-        .retain(|r| r.namespace.as_deref().is_none_or(|n| k8.grant.allows_ns(n)));
+    u.rows.retain(|r| {
+        r.namespace
+            .as_deref()
+            .is_none_or(|n| k8.grants.allows(view, Some(n)))
+    });
     Ok(Json(u))
 }
 
@@ -442,8 +496,9 @@ pub async fn delete(
 ) -> ApiResult<StatusCode> {
     let k = p.checked()?;
     writable(k)?;
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
-    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let perm = on(k, Verb::Delete);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(perm)).await?;
+    check_object(&s, &cu, &k8, k, &p, perm).await?;
     let KubeCtx { env, ops, .. } = k8;
     let r = ops.delete(k, &p.ns, &p.name).await;
     audit(&s, &cu, env.id(), "k8s.delete", &target(k, &p), &r).await;
@@ -464,8 +519,9 @@ pub async fn scale(
     if !k.scalable() {
         return Err(Error::Invalid(format!("{} cannot be scaled", k.as_str())).into());
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
-    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let perm = Permission::new(Row::Workloads, Verb::Operate);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(perm)).await?;
+    check_object(&s, &cu, &k8, k, &p, perm).await?;
     let KubeCtx { env, ops, .. } = k8;
     let r = ops.scale(k, &p.ns, &p.name, body.replicas).await;
     audit(&s, &cu, env.id(), "k8s.scale", &target(k, &p), &r).await;
@@ -485,8 +541,9 @@ pub async fn restart(
     if !k.restartable() {
         return Err(Error::Invalid(format!("{} cannot be restarted", k.as_str())).into());
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
-    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let perm = Permission::new(Row::Workloads, Verb::Operate);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(perm)).await?;
+    check_object(&s, &cu, &k8, k, &p, perm).await?;
     let KubeCtx { env, ops, .. } = k8;
     let r = ops.restart(k, &p.ns, &p.name).await;
     audit(&s, &cu, env.id(), "k8s.restart", &target(k, &p), &r).await;
@@ -505,8 +562,9 @@ async fn set_suspended(
     if !k.suspendable() {
         return Err(Error::Invalid(format!("{} cannot be suspended", k.as_str())).into());
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
-    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let perm = Permission::new(Row::Workloads, Verb::Operate);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(perm)).await?;
+    check_object(&s, &cu, &k8, k, &p, perm).await?;
     let KubeCtx { env, ops, .. } = k8;
     let r = ops.suspend(k, &p.ns, &p.name, on).await;
     let action = if on { "k8s.suspend" } else { "k8s.resume" };
@@ -549,8 +607,9 @@ async fn set_cordoned(
     if k != KubeKind::Nodes {
         return Err(Error::Invalid("only nodes can be cordoned".into()).into());
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
-    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let perm = Permission::new(Row::K8sOther, Verb::Operate);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(perm)).await?;
+    check_object(&s, &cu, &k8, k, &p, perm).await?;
     let KubeCtx { env, ops, .. } = k8;
     let r = ops.cordon(&p.name, on).await;
     let action = if on { "k8s.cordon" } else { "k8s.uncordon" };
@@ -599,8 +658,9 @@ pub async fn trigger(
     if k != KubeKind::CronJobs {
         return Err(Error::Invalid("only cronjobs can be run now".into()).into());
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
-    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let perm = Permission::new(Row::Workloads, Verb::Operate);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(perm)).await?;
+    check_object(&s, &cu, &k8, k, &p, perm).await?;
     let KubeCtx { env, ops, .. } = k8;
     let r = ops.trigger(&p.ns, &p.name).await;
     let err = r.as_ref().err().map(|e| e.to_string());
@@ -702,8 +762,8 @@ pub async fn editable(
     ApiPath(p): ApiPath<ObjectPath>,
 ) -> ApiResult<Json<EditableObject>> {
     let k = p.checked()?;
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeRead).await?;
-    check_object(&s, &cu, &k8, k, &p, false).await?;
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(on(k, Verb::View))).await?;
+    check_object(&s, &cu, &k8, k, &p, on(k, Verb::View)).await?;
     let KubeCtx { ops, .. } = k8;
     Ok(Json(ops.get_editable(k, &p.ns, &p.name).await?))
 }
@@ -728,8 +788,9 @@ pub async fn replace(
         )
         .into());
     }
-    let k8 = kube_for(&s, &cu, &p.env, Action::KubeWrite).await?;
-    check_object(&s, &cu, &k8, k, &p, true).await?;
+    let perm = on(k, Verb::Operate);
+    let k8 = kube_for(&s, &cu, &p.env, Need::Perm(perm)).await?;
+    check_object(&s, &cu, &k8, k, &p, perm).await?;
     let KubeCtx { env, ops, .. } = k8;
     let r = ops
         .replace(
@@ -780,13 +841,14 @@ pub async fn apply(
         return Err(Error::Invalid("pick a namespace for documents that name none".into()).into());
     }
     check_namespace(&body.namespace)?;
-    let KubeCtx { env, ops, grant } = kube_for(&s, &cu, &env_name, Action::KubeWrite).await?;
+    let perm = Permission::new(Row::K8sOther, Verb::Operate);
+    let KubeCtx { env, ops, grants } = kube_for(&s, &cu, &env_name, Need::Perm(perm)).await?;
     crate::authz::deny_audited(
         &s,
         &cu,
         env.id(),
-        "k8s.write",
-        grant.check_ns(&body.namespace),
+        &perm.to_string(),
+        grants.check_ns(perm, &body.namespace),
     )
     .await?;
     let mut results = ops
@@ -794,7 +856,7 @@ pub async fn apply(
             &body.yaml,
             &body.namespace,
             mode(body.dry_run, body.force),
-            grant.namespaces.as_ref(),
+            grants.namespaces_for(perm).as_ref(),
         )
         .await?;
     let level = agent_level(&s, &env).await;
@@ -829,7 +891,7 @@ pub async fn templates(
     cu: CurrentUser,
     ApiPath(env_name): ApiPath<String>,
 ) -> ApiResult<Json<std::collections::BTreeMap<String, String>>> {
-    kube_for(&s, &cu, &env_name, Action::KubeRead).await?;
+    kube_for(&s, &cu, &env_name, Need::AnyGrant).await?;
     Ok(Json(
         KubeKind::ALL
             .into_iter()

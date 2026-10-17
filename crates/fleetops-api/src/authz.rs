@@ -3,98 +3,96 @@
 //! read fresh on every request.
 
 use crate::{auth::extract::CurrentUser, AppState};
-use fleetops_core::access::{merge_grants, EnvRole, Grant};
+use fleetops_core::access::{perm_denied, Grants};
 use fleetops_core::env::Environment;
+use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result, Role, User};
 use fleetops_store::NewAudit;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// What an environment request needs (custom roles spec, "The grid").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action {
-    /// See an environment and its status.
-    EnvRead,
-    /// Create, change or delete environments.
-    EnvManage,
-    DockerRead,
-    DockerWrite,
-    KubeRead,
-    KubeWrite,
+pub enum Need {
+    /// Any grant: see the environment, its status and engine info.
+    AnyGrant,
+    /// One permission, held by some grant. Where it applies (namespaces)
+    /// is checked by the handler against [`Grants`].
+    Perm(Permission),
 }
 
-impl Action {
-    fn needs(self) -> Option<EnvRole> {
-        match self {
-            Action::EnvRead | Action::DockerRead | Action::KubeRead => Some(EnvRole::Viewer),
-            Action::DockerWrite | Action::KubeWrite => Some(EnvRole::Operator),
-            Action::EnvManage => None,
-        }
+impl Need {
+    pub const fn of(row: Row, verb: Verb) -> Need {
+        Need::Perm(Permission::new(row, verb))
     }
 
-    fn as_str(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Action::EnvRead => "env.read",
-            Action::EnvManage => "env.manage",
-            Action::DockerRead => "docker.read",
-            Action::DockerWrite => "docker.write",
-            Action::KubeRead => "k8s.read",
-            Action::KubeWrite => "k8s.write",
+            Need::AnyGrant => "env.read".into(),
+            Need::Perm(p) => p.to_string(),
         }
     }
 }
 
-pub fn authorize_global(user: &User, action: Action) -> Result<()> {
-    match action {
-        Action::EnvManage if user.role != Role::Admin => {
-            Err(Error::Forbidden("admin role required".into()))
-        }
-        _ => Ok(()),
+/// Global actions (manage environments) need the admin role.
+pub fn require_admin(user: &User) -> Result<()> {
+    if user.role == Role::Admin {
+        Ok(())
+    } else {
+        Err(Error::Forbidden("admin role required".into()))
     }
 }
 
 /// No grant reads exactly like a missing environment.
-pub fn authorize_env(grant: Option<&Grant>, env_name: &str, action: Action) -> Result<()> {
-    let g = grant.ok_or_else(|| Error::NotFound(format!("environment '{env_name}'")))?;
-    match action.needs() {
-        Some(role) => g.require(role),
-        None => Err(Error::Forbidden("admin role required".into())),
+pub fn authorize_env(grants: &Grants, env_name: &str, need: Need) -> Result<()> {
+    if grants.is_empty() {
+        return Err(Error::NotFound(format!("environment '{env_name}'")));
+    }
+    match need {
+        Need::AnyGrant => Ok(()),
+        Need::Perm(p) if grants.holds(p) => Ok(()),
+        Need::Perm(p) => Err(perm_denied(p)),
     }
 }
 
-/// The user's access to one environment: their direct grant merged with
-/// any extra grants (Enterprise teams). Every access lookup goes through
-/// here or [`effective_grants`] (scripts/check-editions.sh).
-pub async fn effective_grant(s: &AppState, user_id: i64, env_id: i64) -> Result<Option<Grant>> {
+/// The user's grants on one environment: their direct grant plus any extra
+/// grants (Enterprise teams and custom roles), kept apart. Every access
+/// lookup goes through here or [`effective_grants`] (scripts/check-editions.sh).
+pub async fn effective_grant(s: &AppState, user_id: i64, env_id: i64) -> Result<Grants> {
     let direct = s.store.env_grant(user_id, env_id).await?;
     let extra = s.extra_grants.env_grants(user_id, env_id).await?;
-    Ok(merge_grants(direct.into_iter().chain(extra)))
+    Ok(Grants(direct.into_iter().chain(extra).collect()))
 }
 
-/// Every environment the user can see, with their merged grant on it.
-pub async fn effective_grants(s: &AppState, user_id: i64) -> Result<HashMap<i64, Grant>> {
-    let mut all = s.store.user_grants(user_id).await?;
+/// Every environment the user can see, with their grants on it.
+pub async fn effective_grants(s: &AppState, user_id: i64) -> Result<HashMap<i64, Grants>> {
+    let mut all: HashMap<i64, Grants> = s
+        .store
+        .user_grants(user_id)
+        .await?
+        .into_iter()
+        .map(|(id, g)| (id, Grants(vec![g])))
+        .collect();
     for (env_id, extra) in s.extra_grants.user_grants(user_id).await? {
-        let direct = all.remove(&env_id);
-        if let Some(g) = merge_grants(direct.into_iter().chain(extra)) {
-            all.insert(env_id, g);
-        }
+        all.entry(env_id).or_default().0.extend(extra);
     }
+    all.retain(|_, g| !g.is_empty());
     Ok(all)
 }
 
-/// Resolves `name`, checks `action` against the caller's grant, and
+/// Resolves `name`, checks `need` against the caller's grants, and
 /// returns both. A refusal on a visible environment is audited.
 pub async fn env_access(
     s: &AppState,
     cu: &CurrentUser,
     name: &str,
-    action: Action,
-) -> Result<(Arc<dyn Environment>, Grant)> {
+    need: Need,
+) -> Result<(Arc<dyn Environment>, Grants)> {
     let env = s.envs.get(name)?;
-    let grant = effective_grant(s, cu.user.id, env.id()).await?;
-    let r = authorize_env(grant.as_ref(), name, action);
-    deny_audited(s, cu, env.id(), action.as_str(), r).await?;
-    Ok((env, grant.expect("authorized")))
+    let grants = effective_grant(s, cu.user.id, env.id()).await?;
+    let r = authorize_env(&grants, name, need);
+    deny_audited(s, cu, env.id(), &need.label(), r).await?;
+    Ok((env, grants))
 }
 
 /// Passes `r` through; a `Forbidden` is first written to the audit log.
@@ -115,7 +113,7 @@ pub async fn deny_audited<T>(
             target_type: Some("env"),
             target_id: Some(&id),
             result: "denied",
-            detail: Some(serde_json::json!({ "action": what, "error": e.to_string() })),
+            detail: Some(serde_json::json!({ "permission": what, "error": e.to_string() })),
         };
         if let Err(e) = s.store.insert_audit(&entry).await {
             tracing::error!(error = %e, "failed to write audit log");
@@ -150,30 +148,28 @@ mod tests {
 
     #[test]
     fn only_admins_manage_environments() {
-        assert!(authorize_global(&user(Role::Admin), Action::EnvManage).is_ok());
+        assert!(require_admin(&user(Role::Admin)).is_ok());
         assert!(matches!(
-            authorize_global(&user(Role::User), Action::EnvManage),
+            require_admin(&user(Role::User)),
             Err(Error::Forbidden(_))
         ));
-        assert!(authorize_global(&user(Role::User), Action::EnvRead).is_ok());
     }
 
     #[test]
-    fn environment_actions_follow_the_grant() {
-        let v = Grant::full(EnvRole::Viewer);
-        let o = Grant::full(EnvRole::Operator);
-        for a in [Action::EnvRead, Action::DockerRead, Action::KubeRead] {
-            assert!(authorize_env(Some(&v), "e", a).is_ok());
-        }
-        for a in [Action::DockerWrite, Action::KubeWrite] {
-            assert!(matches!(
-                authorize_env(Some(&v), "e", a),
-                Err(Error::Forbidden(_))
-            ));
-            assert!(authorize_env(Some(&o), "e", a).is_ok());
-        }
+    fn environment_needs_follow_the_grants() {
+        use fleetops_core::access::{EnvRole, Grant};
+        let v = Grants(vec![Grant::full(EnvRole::Viewer)]);
+        let o = Grants(vec![Grant::full(EnvRole::Operator)]);
+        let read = Need::of(Row::Containers, Verb::View);
+        let del = Need::of(Row::Volumes, Verb::Delete);
+        assert!(authorize_env(&v, "e", Need::AnyGrant).is_ok());
+        assert!(authorize_env(&v, "e", read).is_ok());
         assert!(
-            matches!(authorize_env(None, "e", Action::DockerRead), Err(Error::NotFound(m)) if m == "environment 'e'")
+            matches!(authorize_env(&v, "e", del), Err(Error::Forbidden(m)) if m == "volumes.delete permission required")
+        );
+        assert!(authorize_env(&o, "e", del).is_ok());
+        assert!(
+            matches!(authorize_env(&Grants::default(), "e", read), Err(Error::NotFound(m)) if m == "environment 'e'")
         );
     }
 }

@@ -8,7 +8,8 @@ pub mod networks;
 pub mod system;
 pub mod volumes;
 
-use crate::{auth::extract::CurrentUser, authz::Action, ApiResult, AppState};
+use crate::{auth::extract::CurrentUser, authz::Need, ApiResult, AppState};
+use fleetops_core::access::Grants;
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
 use fleetops_core::{now_unix, Error, Result};
@@ -24,22 +25,24 @@ pub struct EnvCtx {
     pub user: CurrentUser,
     pub env: Arc<dyn Environment>,
     pub ops: Arc<dyn DockerOps>,
+    /// The caller's grants, for checks beyond the one `ctx` made.
+    pub grants: Grants,
 }
 
-pub async fn ctx(
-    s: &AppState,
-    user: CurrentUser,
-    env_name: &str,
-    action: Action,
-) -> ApiResult<EnvCtx> {
-    let (env, _) = crate::authz::env_access(s, &user, env_name, action).await?;
+pub async fn ctx(s: &AppState, user: CurrentUser, env_name: &str, need: Need) -> ApiResult<EnvCtx> {
+    let (env, grants) = crate::authz::env_access(s, &user, env_name, need).await?;
     if env.kind().is_kube() {
         return Err(crate::routes::kube::wrong_kind(env_name, env.kind()).into());
     }
     let ops = env
         .docker()
         .ok_or_else(|| Error::EnvUnavailable(format!("environment '{env_name}' is unreachable")))?;
-    Ok(EnvCtx { user, env, ops })
+    Ok(EnvCtx {
+        user,
+        env,
+        ops,
+        grants,
+    })
 }
 
 impl EnvCtx {

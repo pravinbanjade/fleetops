@@ -2,13 +2,14 @@ use super::ctx;
 use crate::openapi::{ComposeActionName, EnvParam};
 use crate::{
     auth::extract::CurrentUser,
-    authz::Action,
+    authz::Need,
     compose::{group_projects, project_members, ComposeProject},
     extract::ApiPath,
     ApiResult, AppState,
 };
 use axum::{extract::State, Json};
 use fleetops_core::docker::ContainerAction;
+use fleetops_core::perm::{Row, Verb};
 use fleetops_core::Error;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -27,7 +28,7 @@ pub async fn list(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ComposeProject>>> {
-    let c = ctx(&s, cu, &env, Action::DockerRead).await?;
+    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     Ok(Json(group_projects(&c.ops.list_containers().await?)))
 }
 
@@ -54,7 +55,11 @@ pub async fn action(
         "down" => None,
         other => return Err(Error::NotFound(format!("unknown compose action '{other}'")).into()),
     };
-    let c = ctx(&s, cu, &env, Action::DockerWrite).await?;
+    let need = match op {
+        Some(_) => Need::of(Row::Stacks, Verb::Operate),
+        None => Need::of(Row::Stacks, Verb::Delete),
+    };
+    let c = ctx(&s, cu, &env, need).await?;
     let all = c.ops.list_containers().await?;
     let members = project_members(&all, &project);
     if members.is_empty() {
