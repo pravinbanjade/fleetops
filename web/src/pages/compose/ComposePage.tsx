@@ -56,7 +56,9 @@ function ProjectCard({ env, project }: { env: string; project: ComposeProject })
   const qc = useQueryClient();
   const containers = useQuery(containersQuery(env));
   const [downing, setDowning] = useState(false);
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
+  const canOperate = can("stacks.operate");
+  const canDown = can("stacks.delete");
   const members = (containers.data ?? []).filter((c) => c.compose_project === project.name);
   const run = async (action: ComposeActionName) => {
     const { data } = await composeAction({ path: { env, project: project.name, action } });
@@ -78,9 +80,9 @@ function ProjectCard({ env, project }: { env: string; project: ComposeProject })
             {project.running} of {project.containers} running
           </span>
         </CardTitle>
-        {canWrite && (
+        {(canOperate || canDown) && (
           <div className="flex flex-wrap gap-2">
-            {(["start", "stop", "restart"] as const).map((a) => {
+            {(canOperate ? (["start", "stop", "restart"] as const) : []).map((a) => {
               const Icon = ICON[a];
               return (
                 <Button key={a} variant="outline" size="sm" disabled={act.isPending} onClick={() => act.mutate(a)}>
@@ -89,15 +91,17 @@ function ProjectCard({ env, project }: { env: string; project: ComposeProject })
                 </Button>
               );
             })}
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => setDowning(true)}
-            >
-              <ArrowDownToLine />
-              Down
-            </Button>
+            {canDown && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setDowning(true)}
+              >
+                <ArrowDownToLine />
+                Down
+              </Button>
+            )}
           </div>
         )}
       </CardHeader>

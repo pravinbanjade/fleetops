@@ -19,7 +19,7 @@ import { imageName, RemoveImagesDialog, TagDialog } from "./dialogs";
 
 export function ImagePage() {
   const { env, id } = useParams({ from: "/authed/shell/envs/$env/images/$id" });
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const navigate = useNavigate();
   const q = useQuery(imageQuery(env, id));
   const [tagging, setTagging] = useState(false);
@@ -37,16 +37,18 @@ export function ImagePage() {
     <Page
       title={name}
       actions={
-        canWrite && (
-          <>
+        <>
+          {can("images.create") && (
             <Button variant="outline" onClick={() => setTagging(true)}>
               Tag
             </Button>
+          )}
+          {can("images.delete") && (
             <Button variant="destructive" onClick={() => setRemoving(true)}>
               Remove
             </Button>
-          </>
-        )
+          )}
+        </>
       }
     >
       <Tabs defaultValue="overview">

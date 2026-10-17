@@ -28,9 +28,11 @@ async fn a_user_sees_only_environments_they_are_granted() {
         .map(|e| e["name"].clone())
         .collect();
     assert_eq!(names, [json!("local")]);
+    assert_eq!(r.json[0]["access"]["role"], "viewer");
+    assert!(r.json[0]["access"]["namespaces"].is_null());
     assert_eq!(
-        r.json[0]["access"],
-        json!({"role": "viewer", "namespaces": null})
+        r.json[0]["access"]["grants"][0]["permissions"][0],
+        "configmaps.view"
     );
     let r = t.send(req("GET", "/api/v1/envs", None, Some(&admin))).await;
     assert_eq!(r.json.as_array().unwrap().len(), 2);

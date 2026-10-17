@@ -18,7 +18,7 @@ import { BUILTIN_NETWORKS, RemoveNetworksDialog } from "./dialogs";
 
 export function NetworkPage() {
   const { env, id } = useParams({ from: "/authed/shell/envs/$env/networks/$id" });
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const navigate = useNavigate();
   const q = useQuery(networkQuery(env, id));
   const [removing, setRemoving] = useState(false);
@@ -35,7 +35,7 @@ export function NetworkPage() {
     <Page
       title={n.Name}
       actions={
-        canWrite &&
+        can("networks.delete") &&
         !BUILTIN_NETWORKS.includes(n.Name) && (
           <Button variant="destructive" onClick={() => setRemoving(true)}>
             Remove
@@ -82,7 +82,7 @@ function Attached({ env, n }: { env: string; n: NetworkInspect }) {
   const attached = Object.entries(n.Containers ?? {});
   const others = (containers.data ?? []).filter((c) => !n.Containers?.[c.id]);
   const [pick, setPick] = useState("");
-  const { canWrite } = useEnvAccess(env);
+  const canWrite = useEnvAccess(env).can("networks.operate");
   const refresh = () => qc.invalidateQueries({ queryKey: keys.networks(env) });
   const connect = useMutation({
     meta: { inline: true },

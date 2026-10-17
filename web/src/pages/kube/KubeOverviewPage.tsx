@@ -219,7 +219,7 @@ function AttentionPanel({
   where: string;
 }) {
   const id = useId();
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const [parking, setParking] = useState<SuspendTarget | null>(null);
   const podRows = pods.q.data?.rows;
   if (pods.q.isPending && !pods.forbidden) return <Loading label="Loading pods" />;
@@ -321,7 +321,7 @@ function AttentionPanel({
                 <span className="ml-auto shrink-0 tabular-nums @2xl:ml-0 @2xl:text-right">{t.detail ?? ""}</span>
                 {/* Above the strip's stretched link, so it takes its own click. */}
                 <span className="relative z-10 shrink-0 @2xl:justify-self-end">
-                  {canWrite && t.suspend && (
+                  {t.suspend && can("workloads.operate", t.namespace ?? null) && (
                     <button
                       type="button"
                       onClick={() => setParking(t.suspend!)}

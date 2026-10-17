@@ -50,7 +50,7 @@ const loading = <p className="text-sm text-muted-foreground">Loading…</p>;
 
 export function ContainerPage() {
   const { env, id } = useParams({ from: FROM });
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const { tab = "overview", path = "/" } = useSearch({ from: FROM });
   const navigate = useNavigate({ from: "/envs/$env/containers/$id" });
   const q = useQuery(containerQuery(env, id));
@@ -79,11 +79,11 @@ export function ContainerPage() {
           )}
         </span>
       }
-      actions={canWrite && <ContainerActions env={env} c={c} name={name} />}
+      actions={<ContainerActions env={env} c={c} name={name} can={can} />}
     >
       <Tabs value={tab} onValueChange={(t) => void navigate({ search: { tab: t as ContainerTab }, replace: true })}>
         <TabsList>
-          {TABS.filter(([value]) => canWrite || value !== "terminal").map(([value, label, Icon]) => (
+          {TABS.filter(([value]) => (value !== "terminal" || can("containers.shell")) && (value !== "files" || can("containers.reveal"))).map(([value, label, Icon]) => (
             <TabsTrigger key={value} value={value}>
               <Icon aria-hidden strokeWidth={1.75} />
               {label}
@@ -113,16 +113,18 @@ export function ContainerPage() {
         <TabsContent value="logs">
           <LogsTab env={env} id={id} name={name} running={c.State.Running === true} startedAt={c.State.StartedAt} />
         </TabsContent>
-        {canWrite && (
+        {can("containers.shell") && (
           <TabsContent value="terminal">
             <Suspense fallback={loading}>
               <TerminalTab env={env} id={id} running={c.State.Running === true} />
             </Suspense>
           </TabsContent>
         )}
-        <TabsContent value="files">
-          <FilesTab env={env} id={id} path={path} />
-        </TabsContent>
+        {can("containers.reveal") && (
+          <TabsContent value="files">
+            <FilesTab env={env} id={id} path={path} />
+          </TabsContent>
+        )}
       </Tabs>
     </Page>
   );
@@ -140,7 +142,7 @@ const TABS: [ContainerTab, string, typeof Info][] = [
   ["files", "Files", FolderTree],
 ];
 
-function ContainerActions({ env, c, name }: { env: string; c: ContainerInspect; name: string }) {
+function ContainerActions({ env, c, name, can }: { env: string; c: ContainerInspect; name: string; can: (p: string) => boolean }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [renaming, setRenaming] = useState(false);
@@ -151,47 +153,57 @@ function ContainerActions({ env, c, name }: { env: string; c: ContainerInspect; 
   });
   return (
     <>
-      <div role="group" aria-label="Lifecycle" className="flex overflow-hidden rounded-md border border-input bg-card shadow-[0_1px_1px_oklch(0_0_0/0.04)]">
-        {actionsFor(c.State.Status).map((a) => {
-          const x = ACTIONS.find((y) => y.action === a)!;
-          return (
-            <Button
-              key={a}
-              variant="ghost"
-              className="rounded-none border-l border-input text-foreground first:border-l-0"
-              disabled={act.isPending}
-              onClick={() => act.mutate(a)}
-            >
-              <x.icon />
-              {x.label}
-            </Button>
-          );
-        })}
-      </div>
-      <Button variant="outline" onClick={() => setRenaming(true)}>
-        <PencilLine />
-        Rename
-      </Button>
-      <Button variant="outline" asChild>
-        <Link to="/envs/$env/containers/$id/edit" params={{ env, id: c.Id }}>
-          <SlidersHorizontal />
-          Edit
-        </Link>
-      </Button>
-      <Button variant="outline" asChild>
-        <Link to="/envs/$env/containers/new" params={{ env }} search={{ from: c.Id }}>
-          <Copy />
-          Duplicate
-        </Link>
-      </Button>
-      <Button
-        variant="outline"
-        className="text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
-        onClick={() => setRemoving(true)}
-      >
-        <Trash2 />
-        Remove
-      </Button>
+      {can("containers.operate") && (
+        <div role="group" aria-label="Lifecycle" className="flex overflow-hidden rounded-md border border-input bg-card shadow-[0_1px_1px_oklch(0_0_0/0.04)]">
+          {actionsFor(c.State.Status).map((a) => {
+            const x = ACTIONS.find((y) => y.action === a)!;
+            return (
+              <Button
+                key={a}
+                variant="ghost"
+                className="rounded-none border-l border-input text-foreground first:border-l-0"
+                disabled={act.isPending}
+                onClick={() => act.mutate(a)}
+              >
+                <x.icon />
+                {x.label}
+              </Button>
+            );
+          })}
+        </div>
+      )}
+      {can("containers.operate") && (
+        <Button variant="outline" onClick={() => setRenaming(true)}>
+          <PencilLine />
+          Rename
+        </Button>
+      )}
+      {can("containers.create") && can("containers.delete") && (
+        <Button variant="outline" asChild>
+          <Link to="/envs/$env/containers/$id/edit" params={{ env, id: c.Id }}>
+            <SlidersHorizontal />
+            Edit
+          </Link>
+        </Button>
+      )}
+      {can("containers.create") && (
+        <Button variant="outline" asChild>
+          <Link to="/envs/$env/containers/new" params={{ env }} search={{ from: c.Id }}>
+            <Copy />
+            Duplicate
+          </Link>
+        </Button>
+      )}
+      {can("containers.delete") && (
+        <Button
+          variant="outline"
+          className="text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => setRemoving(true)}
+        >
+          <Trash2 />
+          Remove
+        </Button>
+      )}
       {renaming && <RenameDialog env={env} id={c.Id} name={name} onClose={() => setRenaming(false)} />}
       {removing && (
         <RemoveDialog

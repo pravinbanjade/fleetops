@@ -47,7 +47,8 @@ function networkColumns(env: string): Column<NetworkSummary>[] {
 
 export function NetworksPage() {
   const { env } = useParams({ from: "/authed/shell/envs/$env/networks" });
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
+  const canDelete = can("networks.delete");
   const list = useQuery(networksQuery(env));
   const [cols] = useState(() => networkColumns(env));
   const [removing, setRemoving] = useState<NetworkSummary[] | null>(null);
@@ -57,14 +58,14 @@ export function NetworksPage() {
     <Page
       title="Networks"
       actions={
-        canWrite && (
-          <>
+        <>
+          {canDelete && (
             <Button variant="outline" onClick={() => setPruning(true)}>
               Prune
             </Button>
-            <Button onClick={() => setCreating(true)}>Create network</Button>
-          </>
-        )
+          )}
+          {can("networks.create") && <Button onClick={() => setCreating(true)}>Create network</Button>}
+        </>
       }
     >
       <DataTable
@@ -75,9 +76,9 @@ export function NetworksPage() {
         getRowId={(n) => n.id}
         empty="No networks in this environment."
         initialSorting={[{ id: "name", desc: false }]}
-        selectable={canWrite}
+        selectable={canDelete}
         actions={
-          canWrite
+          canDelete
             ? (selected, clear) => (
                 <Button
                   variant="destructive"

@@ -1,6 +1,7 @@
 import type { KubeKind, KubeRow } from "@/api/gen/types.gen";
 import { actsFor, type Act } from "./Act";
 import { READ_ONLY } from "./kinds";
+import { actPerm, kubePerm, type Can } from "./perms";
 
 /**
  * What can be done from a list to the rows chosen: open one of a single
@@ -16,18 +17,24 @@ export type KubeQuick =
  * where to look first (one object only), then its YAML, then the changes,
  * Delete last. A viewer gets only what reads.
  */
-export function kubeQuick(kind: KubeKind, rows: KubeRow[], canWrite: boolean): KubeQuick[] {
+export function kubeQuick(kind: KubeKind, rows: KubeRow[], may: boolean | Can): KubeQuick[] {
   if (READ_ONLY.includes(kind) || rows.length === 0) return [];
+  const can: Can = typeof may === "boolean" ? () => may : may;
+  const where = (r: KubeRow) => r.namespace ?? null;
   const out: KubeQuick[] = [];
   if (rows.length === 1) {
+    const ns = where(rows[0]);
     if (kind === "pods") {
       out.push({ type: "open", tab: "logs" });
       // A shell needs a running container to start in.
-      if (canWrite && rows[0].status === "Running") out.push({ type: "open", tab: "terminal" });
+      if (can("pods.shell", ns) && rows[0].status === "Running") out.push({ type: "open", tab: "terminal" });
     }
     out.push({ type: "open", tab: "events" });
-    if (canWrite) out.push({ type: "edit" });
+    if (can(kubePerm(kind, "operate"), ns)) out.push({ type: "edit" });
   }
-  if (canWrite) for (const { act, rows: of } of actsFor(kind, rows)) out.push({ type: "act", act, rows: of });
+  for (const { act, rows: of } of actsFor(kind, rows)) {
+    const allowed = of.filter((r) => can(actPerm(kind, act), where(r)));
+    if (allowed.length > 0) out.push({ type: "act", act, rows: allowed });
+  }
   return out;
 }

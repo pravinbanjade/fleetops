@@ -393,7 +393,11 @@ function EnvSwitcher({ current, kube }: { current?: string; kube: boolean }) {
             <EnvTag name={e.name} size="sm" />
             {e.name}
             {isKube(e.kind) && <Boxes aria-label="Kubernetes" className="size-3.5 text-muted-foreground" />}
-            {accessOf(e).role === "viewer" && <span className="rounded border px-1 text-[10px] text-muted-foreground">Viewer</span>}
+            {(() => {
+              const a = accessOf(e);
+              const badge = a.roleName ?? (a.role === "viewer" ? "Viewer" : null);
+              return badge && <span className="rounded border px-1 text-[10px] text-muted-foreground">{badge}</span>;
+            })()}
             {e.name === current && <Check className="ml-auto size-4 text-primary" />}
           </DropdownMenuItem>
         ))}

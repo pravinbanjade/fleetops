@@ -15,7 +15,7 @@ import { RemoveVolumesDialog } from "./dialogs";
 
 export function VolumePage() {
   const { env, name } = useParams({ from: "/authed/shell/envs/$env/volumes/$name" });
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const navigate = useNavigate();
   const q = useQuery(volumeQuery(env, name));
   const containers = useQuery(containersQuery(env));
@@ -33,7 +33,7 @@ export function VolumePage() {
     <Page
       title={v.Name}
       actions={
-        canWrite && (
+        can("volumes.delete") && (
           <Button variant="destructive" onClick={() => setRemoving(true)}>
             Remove
           </Button>

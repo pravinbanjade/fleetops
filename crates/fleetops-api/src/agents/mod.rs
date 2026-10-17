@@ -121,8 +121,67 @@ pub struct EnvView {
     pub agent: Option<AgentView>,
     /// What may be shown of a stored kubeconfig (kube-config environments).
     pub kube: Option<fleetops_core::env::KubeconfigSummary>,
-    /// The caller's access here (admins: operator on the whole environment).
-    pub access: Option<fleetops_core::access::Grant>,
+    /// The caller's access here (admins: everything on the whole environment).
+    pub access: Option<CallerAccess>,
+}
+
+/// The caller's grants on one environment, for the UI to offer only what
+/// they allow. A hint: the server checks every request.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CallerAccess {
+    /// The strongest built-in role among the grants (custom roles count as
+    /// their closest built-in).
+    pub role: fleetops_core::access::EnvRole,
+    /// The custom role's name, when exactly one grant is a custom role.
+    pub role_name: Option<String>,
+    /// Every namespace any grant covers; null when one covers the whole environment.
+    pub namespaces: Option<Vec<String>>,
+    pub grants: Vec<GrantView>,
+}
+
+/// One grant: where it applies and what it allows.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct GrantView {
+    /// Null: the whole environment.
+    pub namespaces: Option<Vec<String>>,
+    /// `row.verb` permissions, e.g. `volumes.delete`.
+    pub permissions: Vec<String>,
+}
+
+impl CallerAccess {
+    pub fn of(g: &fleetops_core::access::Grants) -> Self {
+        let role =
+            g.0.iter()
+                .map(|x| x.role)
+                .max()
+                .unwrap_or(fleetops_core::access::EnvRole::Viewer);
+        let customs: Vec<&str> =
+            g.0.iter()
+                .filter_map(|x| x.custom.as_ref().map(|c| c.name.as_str()))
+                .collect();
+        let namespaces = if g.0.iter().any(|x| x.namespaces.is_none()) {
+            None
+        } else {
+            let all: std::collections::BTreeSet<&String> =
+                g.0.iter()
+                    .flat_map(|x| x.namespaces.iter().flatten())
+                    .collect();
+            Some(all.into_iter().cloned().collect())
+        };
+        Self {
+            role,
+            role_name: (customs.len() == 1).then(|| customs[0].to_string()),
+            namespaces,
+            grants: g
+                .0
+                .iter()
+                .map(|x| GrantView {
+                    namespaces: x.namespaces.as_ref().map(|n| n.iter().cloned().collect()),
+                    permissions: x.perms.to_strs(),
+                })
+                .collect(),
+        }
+    }
 }
 
 /// A newly created environment; an agent one carries its enrollment once.

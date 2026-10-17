@@ -722,3 +722,41 @@ async fn helm_install_needs_helm_create_only() {
     r.give(vec![custom(perms(&["helm.create"]))]);
     assert_ne!(r.send(&install).await.status, 403);
 }
+
+#[tokio::test]
+async fn env_list_carries_each_grant_with_its_permissions() {
+    let r = Rig::new().await;
+    r.give(vec![
+        Grant::builtin(EnvRole::Operator, Some(["apps".to_string()].into())),
+        custom(perms(&["pods.view", "secrets.reveal"])),
+    ]);
+    let envs =
+        r.t.send(req("GET", "/api/v1/envs", None, Some(&r.bob)))
+            .await;
+    let k = envs
+        .json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "k")
+        .unwrap();
+    let a = &k["access"];
+    assert_eq!(a["role"], "operator");
+    assert_eq!(a["role_name"], "test");
+    assert!(
+        a["namespaces"].is_null(),
+        "a whole-environment grant makes the union whole"
+    );
+    let grants = a["grants"].as_array().unwrap();
+    assert_eq!(grants.len(), 2);
+    assert_eq!(grants[0]["namespaces"], json!(["apps"]));
+    assert!(grants[0]["permissions"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("pods.delete")));
+    assert_eq!(grants[1]["namespaces"], Value::Null);
+    assert_eq!(
+        grants[1]["permissions"],
+        json!(["pods.view", "secrets.reveal"])
+    );
+}

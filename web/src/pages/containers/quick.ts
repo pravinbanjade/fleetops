@@ -12,20 +12,22 @@ export type ContainerQuick =
  * container only), then each Docker action with the containers whose state
  * it fits, Remove last. A viewer gets only what reads.
  */
-export function containerQuick(rows: ContainerSummary[], canWrite: boolean): ContainerQuick[] {
+export function containerQuick(rows: ContainerSummary[], may: boolean | ((permission: string) => boolean)): ContainerQuick[] {
   if (rows.length === 0) return [];
+  const can = typeof may === "boolean" ? () => may : may;
   const out: ContainerQuick[] = [];
   if (rows.length === 1) {
     const running = rows[0].state === "running";
     out.push({ type: "open", tab: "logs" });
-    if (canWrite && running) out.push({ type: "open", tab: "terminal" });
+    if (can("containers.shell") && running) out.push({ type: "open", tab: "terminal" });
     if (running) out.push({ type: "open", tab: "stats" });
   }
-  if (!canWrite) return out;
-  for (const a of ACTIONS) {
-    const of = rows.filter((c) => actionsFor(c.state).includes(a.action));
-    if (of.length > 0) out.push({ type: "action", action: a.action, rows: of });
+  if (can("containers.operate")) {
+    for (const a of ACTIONS) {
+      const of = rows.filter((c) => actionsFor(c.state).includes(a.action));
+      if (of.length > 0) out.push({ type: "action", action: a.action, rows: of });
+    }
   }
-  out.push({ type: "remove", rows });
+  if (can("containers.delete")) out.push({ type: "remove", rows });
   return out;
 }

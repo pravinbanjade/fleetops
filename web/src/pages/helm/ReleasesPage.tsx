@@ -53,13 +53,13 @@ export function ReleasesPage() {
   const list = useQuery(helmReleasesQuery(env, ns || undefined));
   const cols = useMemo(() => releaseColumns(env), [env]);
   const caps = useQuery(helmCapabilitiesQuery(env));
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const [installing, setInstalling] = useState(false);
   return (
     <Page title="Helm releases">
       <TopBarActions>
         <NamespacePicker env={env} value={ns} onChange={setNs} />
-        {canWrite && caps.data?.install && (
+        {can("helm.create", ns || "default") && caps.data?.install && (
           <Button size="sm" onClick={() => setInstalling(true)}>
             Install chart
           </Button>

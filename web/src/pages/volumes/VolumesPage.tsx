@@ -59,7 +59,8 @@ function volumeColumns(env: string): Column<Row>[] {
 
 export function VolumesPage() {
   const { env } = useParams({ from: "/authed/shell/envs/$env/volumes" });
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
+  const canDelete = can("volumes.delete");
   const list = useQuery(volumesQuery(env));
   const containers = useQuery(containersQuery(env));
   const [cols] = useState(() => volumeColumns(env));
@@ -75,14 +76,14 @@ export function VolumesPage() {
     <Page
       title="Volumes"
       actions={
-        canWrite && (
-          <>
+        <>
+          {canDelete && (
             <Button variant="outline" onClick={() => setPruning(true)}>
               Prune
             </Button>
-            <Button onClick={() => setCreating(true)}>Create volume</Button>
-          </>
-        )
+          )}
+          {can("volumes.create") && <Button onClick={() => setCreating(true)}>Create volume</Button>}
+        </>
       }
     >
       <DataTable
@@ -94,9 +95,9 @@ export function VolumesPage() {
         empty="No volumes in this environment."
         initialSorting={[{ id: "name", desc: false }]}
         initialHidden={["mountpoint"]}
-        selectable={canWrite}
+        selectable={canDelete}
         actions={
-          canWrite
+          canDelete
             ? (selected, clear) => (
                 <Button
                   variant="destructive"

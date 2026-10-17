@@ -30,7 +30,8 @@ export function GenericObjectPage() {
   const r = useMemo<Ref>(() => ({ group, version, resource }), [group, version, resource]);
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
+  const where = ns === "-" ? null : ns;
   const { kind: k } = useDiscoveredKind(env, r);
   const obj = useQuery(genericObjectQuery(env, r, ns, name));
   const events = useQuery({ ...genericEventsQuery(env, r, ns, name), enabled: tab === "events" });
@@ -52,8 +53,8 @@ export function GenericObjectPage() {
   );
   if (obj.error) return <DetailError error={obj.error} what={label.toLowerCase()} back={back} />;
   const o = obj.data;
-  const canEdit = canWrite && !!k?.verbs.includes("update");
-  const canDelete = canWrite && !!k?.verbs.includes("delete");
+  const canEdit = can("k8s-other.operate", where) && !!k?.verbs.includes("update");
+  const canDelete = can("k8s-other.delete", where) && !!k?.verbs.includes("delete");
   const actions =
     canEdit || canDelete ? (
       <div className="flex flex-wrap gap-2">

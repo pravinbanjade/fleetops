@@ -6302,6 +6302,43 @@
           }
         }
       },
+      "CallerAccess": {
+        "type": "object",
+        "description": "The caller's grants on one environment, for the UI to offer only what\nthey allow. A hint: the server checks every request.",
+        "required": [
+          "role",
+          "grants"
+        ],
+        "properties": {
+          "grants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GrantView"
+            }
+          },
+          "namespaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Every namespace any grant covers; null when one covers the whole environment."
+          },
+          "role": {
+            "$ref": "#/components/schemas/EnvRole",
+            "description": "The strongest built-in role among the grants (custom roles count as\ntheir closest built-in)."
+          },
+          "role_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The custom role's name, when exactly one grant is a custom role."
+          }
+        }
+      },
       "ChangePassword": {
         "type": "object",
         "required": [
@@ -7297,8 +7334,8 @@
                     "type": "null"
                   },
                   {
-                    "$ref": "#/components/schemas/Grant",
-                    "description": "The caller's access here (admins: operator on the whole environment)."
+                    "$ref": "#/components/schemas/CallerAccess",
+                    "description": "The caller's access here (admins: everything on the whole environment)."
                   }
                 ]
               },
@@ -7437,11 +7474,11 @@
           "teams"
         ]
       },
-      "Grant": {
+      "GrantView": {
         "type": "object",
-        "description": "One grant on one environment: a role, the permissions it carries, and\nwhere it applies.",
+        "description": "One grant: where it applies and what it allows.",
         "required": [
-          "role"
+          "permissions"
         ],
         "properties": {
           "namespaces": {
@@ -7452,12 +7489,14 @@
             "items": {
               "type": "string"
             },
-            "description": "`None` is the whole environment; otherwise the only namespaces\n(Kubernetes) the grant covers.",
-            "uniqueItems": true
+            "description": "Null: the whole environment."
           },
-          "role": {
-            "$ref": "#/components/schemas/EnvRole",
-            "description": "The built-in role; for a custom role, the closest built-in (Viewer\nwhen every permission is one Viewer has), for clients that know\nonly those two."
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`row.verb` permissions, e.g. `volumes.delete`."
           }
         }
       },

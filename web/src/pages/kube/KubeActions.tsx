@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
 import type { KubeKind, KubeRow } from "@/api/gen/types.gen";
 import { useEnvAccess } from "@/api/access";
+import { actPerm, kubePerm } from "./perms";
 import { Button } from "@/components/ui/button";
 import { ActDialog, actIcon, actLabel, actsFor, type Act } from "./Act";
 import { READ_ONLY } from "./kinds";
@@ -11,10 +12,14 @@ const YamlDialog = lazy(() => import("@/components/yaml-editor/YamlDialog"));
 /** The object page's actions: the same set a list offers for a selection of one. */
 export function KubeActions({ env, kind, ns, name, row }: { env: string; kind: KubeKind; ns: string; name: string; row: KubeRow }) {
   const navigate = useNavigate();
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const [open, setOpen] = useState<Act | "edit" | null>(null);
-  if (!canWrite || READ_ONLY.includes(kind)) return null;
-  const acts = actsFor(kind, [row]).map((a) => a.act);
+  const where = ns === "-" ? null : ns;
+  const canEdit = can(kubePerm(kind, "operate"), where);
+  const acts = actsFor(kind, [row])
+    .map((a) => a.act)
+    .filter((act) => can(actPerm(kind, act), where));
+  if (READ_ONLY.includes(kind) || (!canEdit && acts.length === 0)) return null;
   const done = (act: Act, results: (string | undefined)[]) => {
     setOpen(null);
     if (act === "delete") void navigate({ to: "/envs/$env/k8s/$kind", params: { env, kind } });
@@ -24,9 +29,11 @@ export function KubeActions({ env, kind, ns, name, row }: { env: string; kind: K
   };
   return (
     <div className="flex flex-wrap gap-2">
-      <Button variant="outline" size="sm" onClick={() => setOpen("edit")}>
-        Edit YAML
-      </Button>
+      {canEdit && (
+        <Button variant="outline" size="sm" onClick={() => setOpen("edit")}>
+          Edit YAML
+        </Button>
+      )}
       {acts.map((act) => {
         const Icon = actIcon(act);
         return (

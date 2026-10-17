@@ -75,15 +75,15 @@ export function GenericListPage() {
   const qc = useQueryClient();
   const { kind: k, discovery } = useDiscoveredKind(env, r);
   const [ns, setNs] = useNamespace(env);
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const scoped = k?.namespaced ?? true;
   const live = useKubeWatch(env, refKind(r), scoped ? ns : undefined);
   const list = useQuery({ ...genericListQuery(env, r, scoped ? ns : undefined), enabled: !live.synced });
   const [doomed, setDoomed] = useState<{ rows: KubeRow[]; clear: () => void } | null>(null);
   const [editing, setEditing] = useState<{ ns: string; name: string } | null>(null);
   const navigate = useNavigate();
-  const canEdit = canWrite && !!k?.verbs.includes("update");
-  const canDelete = canWrite && !!k?.verbs.includes("delete");
+  const canEdit = can("k8s-other.operate") && !!k?.verbs.includes("update");
+  const canDelete = can("k8s-other.delete") && !!k?.verbs.includes("delete");
   /** What can be done to `of`: its events and YAML need exactly one; Delete takes any number. */
   const quick = (of: KubeRow[], clear: () => void): QuickItem[] => {
     const out: QuickItem[] = [];

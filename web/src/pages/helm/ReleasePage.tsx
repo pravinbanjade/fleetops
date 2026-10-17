@@ -38,13 +38,15 @@ export function ReleasePage() {
   const { env, ns, name } = route.useParams();
   const { tab = "overview" } = route.useSearch();
   const navigate = useNavigate();
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const detail = useQuery(helmReleaseQuery(env, ns, name));
   const history = useQuery({ ...helmHistoryQuery(env, ns, name), enabled: tab === "history" });
   const [action, setAction] = useState<HelmAction | null>(null);
   const caps = useQuery(helmCapabilitiesQuery(env));
   const [upgrading, setUpgrading] = useState(false);
   const r = detail.data?.release;
+  const hidden = detail.data?.hidden === true;
+  const HIDDEN = "Values are hidden: your role lacks Reveal on Helm releases.";
   return (
     <Page
       title={name}
@@ -57,17 +59,20 @@ export function ReleasePage() {
         )
       }
       actions={
-        canWrite &&
-        r && (
+        r &&
+        (can("helm.operate", ns) || can("helm.delete", ns)) && (
           <span className="flex items-center gap-2">
-            {caps.data?.install && (
+            {/* Upgrade starts from the current values, so it needs to see them. */}
+            {caps.data?.install && can("helm.operate", ns) && !hidden && (
               <Button variant="outline" size="sm" onClick={() => setUpgrading(true)}>
                 Upgrade
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => setAction({ kind: "uninstall" })}>
-              Uninstall
-            </Button>
+            {can("helm.delete", ns) && (
+              <Button variant="outline" size="sm" onClick={() => setAction({ kind: "uninstall" })}>
+                Uninstall
+              </Button>
+            )}
           </span>
         )
       }
@@ -149,7 +154,7 @@ export function ReleasePage() {
                     <td>{h.description}</td>
                     <td>{h.updated ? formatAgo(h.updated) : ""}</td>
                     <td className="text-right">
-                      {canWrite && r && h.revision !== r.revision && h.status !== "unreadable" && (
+                      {can("helm.operate", ns) && r && h.revision !== r.revision && h.status !== "unreadable" && (
                         <Button variant="outline" size="sm" onClick={() => setAction({ kind: "rollback", revision: h.revision })}>
                           Roll back to {h.revision}
                         </Button>
@@ -162,13 +167,13 @@ export function ReleasePage() {
         </TabsContent>
         <TabsContent value="values">
           <p className="mb-2 text-xs text-muted-foreground">Keys that look like credentials are masked.</p>
-          <Text label="Values" text={detail.data?.values ?? ""} empty="No values were supplied." />
+          <Text label="Values" text={detail.data?.values ?? ""} empty={hidden ? HIDDEN : "No values were supplied."} />
         </TabsContent>
         <TabsContent value="manifest">
           <Text label="Manifest" text={detail.data?.manifest ?? ""} empty="The manifest is empty." />
         </TabsContent>
         <TabsContent value="notes">
-          <Text label="Notes" text={detail.data?.notes ?? ""} empty="This chart has no notes." />
+          <Text label="Notes" text={detail.data?.notes ?? ""} empty={hidden ? HIDDEN : "This chart has no notes."} />
         </TabsContent>
       </Tabs>
     </Page>

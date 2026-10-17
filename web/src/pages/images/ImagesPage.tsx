@@ -53,7 +53,9 @@ function imageColumns(env: string): Column<ImageSummary>[] {
 
 export function ImagesPage() {
   const { env } = useParams({ from: "/authed/shell/envs/$env/images" });
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
+  const canCreate = can("images.create");
+  const canDelete = can("images.delete");
   const list = useQuery(imagesQuery(env));
   const [cols] = useState(() => imageColumns(env));
   const [removing, setRemoving] = useState<ImageSummary[] | null>(null);
@@ -64,15 +66,21 @@ export function ImagesPage() {
     <Page
       title="Images"
       actions={
-        canWrite && (
+        (canCreate || canDelete) && (
           <>
-            <Button variant="outline" onClick={() => setPruning(true)}>
-              Prune
-            </Button>
-            <Button variant="outline" onClick={() => setBuilding(true)}>
-              Build
-            </Button>
-            <Button onClick={() => setPulling(true)}>Pull</Button>
+            {canDelete && (
+              <Button variant="outline" onClick={() => setPruning(true)}>
+                Prune
+              </Button>
+            )}
+            {canCreate && (
+              <>
+                <Button variant="outline" onClick={() => setBuilding(true)}>
+                  Build
+                </Button>
+                <Button onClick={() => setPulling(true)}>Pull</Button>
+              </>
+            )}
           </>
         )
       }
@@ -85,9 +93,9 @@ export function ImagesPage() {
         getRowId={(i) => i.id}
         empty="No images in this environment."
         initialSorting={[{ id: "created", desc: true }]}
-        selectable={canWrite}
+        selectable={canDelete}
         actions={
-          canWrite
+          canDelete
             ? (selected, clear) => (
                 <Button
                   variant="destructive"

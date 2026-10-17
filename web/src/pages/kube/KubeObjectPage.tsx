@@ -4,6 +4,8 @@ import { FileText, Info, ListTree, ScrollText, TerminalSquare } from "lucide-rea
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import type { KubeKind, KubeRef, KubeRow } from "@/api/gen/types.gen";
 import { useEnvAccess } from "@/api/access";
+import { kubePerm } from "./perms";
+import { SecretValues } from "./SecretValues";
 import { keys, kubeEventsQuery, kubeObjectQuery } from "@/api/queries";
 import { useKubeWatch } from "@/live/kubeWatch";
 import { DetailError, Details } from "@/components/Details";
@@ -31,7 +33,9 @@ export function KubeObjectPage() {
   const { tab = "summary", container } = route.useSearch();
   const navigate = useNavigate();
   const kind = asKind(raw) ?? "pods";
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
+  const where = ns === "-" ? null : ns;
+  const canShell = can("pods.shell", where);
   const obj = useQuery(kubeObjectQuery(env, kind, ns, name));
   const events = useQuery({ ...kubeEventsQuery(env, kind, ns, name), enabled: tab === "events" });
   const qc = useQueryClient();
@@ -75,13 +79,13 @@ export function KubeObjectPage() {
     ["yaml", "YAML", FileText],
     ["events", "Events", ListTree],
     ...(isPod || isWorkload ? ([["logs", "Logs", ScrollText]] as [KubeTab, string, typeof Info][]) : []),
-    ...(isPod && canWrite ? ([["terminal", "Terminal", TerminalSquare]] as [KubeTab, string, typeof Info][]) : []),
+    ...(isPod && canShell ? ([["terminal", "Terminal", TerminalSquare]] as [KubeTab, string, typeof Info][]) : []),
   ];
   return (
     <Page title={name} meta={o && <Meta env={env} ns={ns} health={<KubeHealth health={o.row.health} label={o.row.status} />} owners={o.owners} />} actions={
         o && (
           <div className="flex items-center gap-2">
-            {isWorkload && canWrite && <WorkloadTerminal env={env} kind={kind} ns={ns} name={name} />}
+            {isWorkload && canShell && <WorkloadTerminal env={env} kind={kind} ns={ns} name={name} />}
             <KubeActions env={env} kind={kind} ns={ns} name={name} row={o.row} />
           </div>
         )
@@ -109,8 +113,9 @@ export function KubeObjectPage() {
           {o && (
             <div className="grid gap-4">
               <Details label="Summary" items={[...summaryItems(env, kind, o.row), ...usage]} />
+              {kind === "secrets" && can("secrets.reveal", where) && <SecretValues env={env} ns={ns} name={name} />}
               <Suspense fallback={o.conditions.length > 0 && <Conditions conditions={o.conditions} />}>
-                <ObjectSpec env={env} kind={kind} ns={ns} name={name} yaml={o.yaml} canWrite={canWrite && !READ_ONLY.includes(kind)} owners={o.owners}>
+                <ObjectSpec env={env} kind={kind} ns={ns} name={name} yaml={o.yaml} canWrite={can(kubePerm(kind, "operate"), where) && !READ_ONLY.includes(kind)} owners={o.owners}>
                   {o.conditions.length > 0 && <Conditions conditions={o.conditions} />}
                 </ObjectSpec>
               </Suspense>
@@ -139,7 +144,7 @@ export function KubeObjectPage() {
                 />
               </Suspense>
             </TabsContent>
-            {canWrite && (
+            {canShell && (
               <TabsContent value="terminal">
                 <Suspense fallback={null}>
                   <TerminalTab key={chosen} env={env} id={`${ns}/${name}`} running={running} container={chosen} />

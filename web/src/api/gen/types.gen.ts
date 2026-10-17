@@ -163,6 +163,27 @@ export type BuildForm = {
     tag?: string | null;
 };
 
+/**
+ * The caller's grants on one environment, for the UI to offer only what
+ * they allow. A hint: the server checks every request.
+ */
+export type CallerAccess = {
+    grants: Array<GrantView>;
+    /**
+     * Every namespace any grant covers; null when one covers the whole environment.
+     */
+    namespaces?: Array<string> | null;
+    /**
+     * The strongest built-in role among the grants (custom roles count as
+     * their closest built-in).
+     */
+    role: EnvRole;
+    /**
+     * The custom role's name, when exactly one grant is a custom role.
+     */
+    role_name?: string | null;
+};
+
 export type ChangePassword = {
     current_password: string;
     new_password: string;
@@ -502,7 +523,7 @@ export type EnvVersion = (EngineVersion & {
  * An environment as listed: agent environments carry their agent's state.
  */
 export type EnvView = EnvironmentRecord & {
-    access?: null | Grant;
+    access?: null | CallerAccess;
     agent?: null | AgentView;
     kube?: null | KubeconfigSummary;
 };
@@ -553,21 +574,17 @@ export type ExecOptions = {
 export type Feature = 'audit_export' | 'teams';
 
 /**
- * One grant on one environment: a role, the permissions it carries, and
- * where it applies.
+ * One grant: where it applies and what it allows.
  */
-export type Grant = {
+export type GrantView = {
     /**
-     * `None` is the whole environment; otherwise the only namespaces
-     * (Kubernetes) the grant covers.
+     * Null: the whole environment.
      */
     namespaces?: Array<string> | null;
     /**
-     * The built-in role; for a custom role, the closest built-in (Viewer
-     * when every permission is one Viewer has), for clients that know
-     * only those two.
+     * `row.verb` permissions, e.g. `volumes.delete`.
      */
-    role: EnvRole;
+    permissions: Array<string>;
 };
 
 export type Health = {

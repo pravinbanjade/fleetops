@@ -165,9 +165,7 @@ pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<
         .await?
         .into_iter()
         .filter_map(|env| {
-            // Display only until the per-grant view (custom roles plan, Task 6).
-            let access =
-                fleetops_core::access::merge_grants(grants.get(&env.id)?.0.iter().cloned())?;
+            let access = crate::agents::CallerAccess::of(grants.get(&env.id)?);
             let agent = agents
                 .remove(&env.id)
                 .map(|a| AgentView::new(a, s.agents.get(env.id).is_some()));

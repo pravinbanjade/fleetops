@@ -128,7 +128,7 @@ function Ports({ container }: { container: ContainerSummary }) {
 
 export function ContainersPage() {
   const { env } = route.useParams();
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const { q } = route.useSearch();
   const qc = useQueryClient();
   const list = useQuery(containersQuery(env));
@@ -151,7 +151,7 @@ export function ContainersPage() {
   const navigate = useNavigate();
   /** The quick actions for `of` as bar buttons and menu items. */
   const quick = (of: ContainerSummary[], clear: () => void): QuickItem[] =>
-    containerQuick(of, canWrite).map((q): QuickItem => {
+    containerQuick(of, can).map((q): QuickItem => {
       switch (q.type) {
         case "open":
           return {
@@ -179,20 +179,22 @@ export function ContainersPage() {
     <Page
       title="Containers"
       actions={
-        canWrite && (
-          <>
+        <>
+          {can("containers.delete") && (
             <Button variant="outline" onClick={() => setPruning(true)}>
               <Trash2 />
               Prune
             </Button>
+          )}
+          {can("containers.create") && (
             <Button asChild>
               <Link to="/envs/$env/containers/new" params={{ env }}>
                 <Plus />
                 Create container
               </Link>
             </Button>
-          </>
-        )
+          )}
+        </>
       }
     >
       <DataTable
@@ -207,7 +209,7 @@ export function ContainersPage() {
         initialFilter={q}
         bays={{ column: "state", of: (c) => BAYS[urgency(c)] }}
         phoneColumns={["state", "name", "status"]}
-        selectable={canWrite}
+        selectable={can("containers.operate") || can("containers.delete")}
         actions={(selected, clear) => <QuickButtons items={quick(selected, clear)} />}
         rowMenu={{ label: (c) => c.name, items: (c) => quick([c], () => {}) }}
       />

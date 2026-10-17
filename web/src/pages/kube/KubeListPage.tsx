@@ -3,6 +3,7 @@ import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { FileCode2, ListTree, ScrollText, TerminalSquare } from "lucide-react";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { useEnvAccess } from "@/api/access";
+import { kubePerm } from "./perms";
 import { Button } from "@/components/ui/button";
 import type { KubeKind, KubeRow, KubeUsageRow } from "@/api/gen/types.gen";
 import { ApiError } from "@/api/client";
@@ -219,7 +220,7 @@ export function KubeListPage() {
   const { q } = route.useSearch();
   const kind = asKind(raw) ?? "pods";
   const [ns, setNs] = useNamespace(env);
-  const { canWrite } = useEnvAccess(env);
+  const { can } = useEnvAccess(env);
   const scoped = !CLUSTER_SCOPED.includes(kind);
   const live = useKubeWatch(env, kind, scoped ? ns : undefined);
   // Once the watch has its snapshot the cache follows the cluster; a REST
@@ -253,7 +254,8 @@ export function KubeListPage() {
           };
       }
     });
-  const selectable = canWrite && !READ_ONLY.includes(kind);
+  const selectable = !READ_ONLY.includes(kind) && (can(kubePerm(kind, "operate")) || can(kubePerm(kind, "delete")));
+  const createIn = scoped ? ns || "default" : null;
   const metered = kind === "pods" || kind === "nodes";
   const usage = useKubeUsage(env, kind === "nodes" ? "nodes" : "pods", kind === "pods" ? ns : undefined, metered);
   const withUsage = metered && usage.available;
@@ -275,7 +277,7 @@ export function KubeListPage() {
               <NamespacePicker env={env} value={ns} onChange={setNs} />
             </TopBarActions>
           )}
-          {canWrite && !NO_CREATE.includes(kind) && !READ_ONLY.includes(kind) && (
+          {can(kubePerm(kind, "create"), createIn) && can(kubePerm(kind, "operate"), createIn) && !NO_CREATE.includes(kind) && !READ_ONLY.includes(kind) && (
             <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
               Create
             </Button>
@@ -318,11 +320,11 @@ export function KubeListPage() {
         getRowId={(r) => `${r.namespace ?? "-"}/${r.name}`}
         initialFilter={q}
         selectable={selectable}
-        actions={(selected, clear) => <QuickButtons items={quickItems(kubeQuick(kind, selected, canWrite), selected, clear)} />}
+        actions={(selected, clear) => <QuickButtons items={quickItems(kubeQuick(kind, selected, can), selected, clear)} />}
         rowMenu={
           READ_ONLY.includes(kind)
             ? undefined
-            : { label: (r) => r.name, items: (r) => quickItems(kubeQuick(kind, [r], canWrite), [r], () => {}) }
+            : { label: (r) => r.name, items: (r) => quickItems(kubeQuick(kind, [r], can), [r], () => {}) }
         }
         {...(kind === "events"
           ? {
