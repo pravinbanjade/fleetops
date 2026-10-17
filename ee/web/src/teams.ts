@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { apiFetch } from "@/api/client";
-import type { AccessEntry, EnvRole, User } from "@/api/gen/types.gen";
+import type { AccessEntry, EnvRole, SetAccess, User } from "@/api/gen/types.gen";
 
 export interface TeamSummary {
   id: number;
@@ -23,6 +23,9 @@ export interface AccessSource {
   team_id: number | null;
   team_name: string | null;
   role: EnvRole;
+  /** Set for a custom role. */
+  role_id: number | null;
+  role_name: string | null;
   namespaces: string[] | null;
 }
 
@@ -40,6 +43,8 @@ export interface EnvTeamAccess {
   team_id: number;
   team_name: string;
   role: EnvRole;
+  role_id: number | null;
+  role_name: string | null;
   namespaces: string[] | null;
   members: string[];
 }
@@ -83,10 +88,7 @@ export const addTeamMember = (id: number, userId: number) =>
   apiFetch<void>(`${URL}/${id}/members/${userId}`, { method: "PUT" });
 export const removeTeamMember = (id: number, userId: number) =>
   apiFetch<void>(`${URL}/${id}/members/${userId}`, { method: "DELETE" });
-export const setTeamAccess = (id: number, envId: number, role: EnvRole, namespaces: string[] | null) =>
-  apiFetch<AccessEntry>(`${URL}/${id}/access/${envId}`, {
-    method: "PUT",
-    ...json({ role, ...(namespaces ? { namespaces } : {}) }),
-  });
+export const setTeamAccess = (id: number, envId: number, body: SetAccess) =>
+  apiFetch<AccessEntry>(`${URL}/${id}/access/${envId}`, { method: "PUT", ...json(body) });
 export const revokeTeamAccess = (id: number, envId: number) =>
   apiFetch<void>(`${URL}/${id}/access/${envId}`, { method: "DELETE" });

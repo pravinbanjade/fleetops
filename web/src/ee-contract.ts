@@ -28,6 +28,12 @@ export interface EeSlot<N extends SlotName = SlotName> {
   feature?: Feature;
 }
 
+/** A custom role the access editors can offer (Enterprise). */
+export interface RoleOption {
+  id: number;
+  name: string;
+}
+
 /** What an edition's UI module exports as `ee` (editions spec §5). */
 export interface EeModule {
   /** "ce" in the stub; the Enterprise module's bundle marker otherwise. */
@@ -36,4 +42,6 @@ export interface EeModule {
   adminRoutes: (admin: AnyRoute) => AnyRoute[];
   adminNav: EeNavItem[];
   slots: { [N in SlotName]?: EeSlot<N> };
+  /** Custom roles for the role pickers; absent in Community. A hook. */
+  useRoleOptions?: () => RoleOption[];
 }

@@ -5,7 +5,7 @@ import { revokeUserAccess, setUserAccess } from "@/api/gen/sdk.gen";
 import type { AccessEntry, EnvView, User } from "@/api/gen/types.gen";
 import { envsQuery, keys, userAccessQuery } from "@/api/queries";
 import { Slot } from "@/ee-slots";
-import { EnvRow, fromEntry, same, type Row } from "./EnvAccessRow";
+import { accessBody, EnvRow, fromEntry, same, type Row } from "./EnvAccessRow";
 import { FormDialog } from "./FormDialog";
 
 /** What `user` may do in each environment; saves only the rows that changed. */
@@ -51,7 +51,7 @@ function AccessForm({
           if (same(row, initial[e.id])) continue;
           const path = { id: user.id, env_id: e.id };
           if (row.role === "none") await revokeUserAccess({ path, throwOnError: true });
-          else await setUserAccess({ path, body: { role: row.role, ...(row.namespaces ? { namespaces: row.namespaces } : {}) }, throwOnError: true });
+          else await setUserAccess({ path, body: accessBody(row), throwOnError: true });
         }
         await onSaved();
         toast.success(`Saved access for ${user.username}`);

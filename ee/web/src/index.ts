@@ -1,8 +1,10 @@
 import { createRoute, lazyRouteComponent } from "@tanstack/react-router";
-import { KeyRound, UsersRound } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { KeyRound, ShieldCheck, UsersRound } from "lucide-react";
 import type { EeModule } from "@/ee-contract";
 import { AuditExport } from "./AuditExport";
 import { LicenseBanner } from "./LicenseBanner";
+import { rolesQuery } from "./roles";
 import { EnvTeamAccess, UserTeamAccess } from "./UserTeamAccess";
 
 /** The Enterprise UI (ee/LICENSE). `id` is the marker CI looks for in bundles. */
@@ -19,10 +21,16 @@ export const ee: EeModule = {
       path: "teams",
       component: lazyRouteComponent(() => import("./TeamsPage"), "TeamsPage"),
     }),
+    createRoute({
+      getParentRoute: () => admin,
+      path: "roles",
+      component: lazyRouteComponent(() => import("./RolesPage"), "RolesPage"),
+    }),
   ],
-  // Teams shows without a license too: frozen teams stay visible and removable.
+  // Teams and Roles show without a license too: frozen ones stay visible and removable.
   adminNav: [
     { to: "/admin/teams", label: "Teams", icon: UsersRound },
+    { to: "/admin/roles", label: "Roles", icon: ShieldCheck },
     { to: "/admin/license", label: "License", icon: KeyRound },
   ],
   slots: {
@@ -31,4 +39,6 @@ export const ee: EeModule = {
     "user.access": { component: UserTeamAccess },
     "env.access": { component: EnvTeamAccess },
   },
+  // Only admin pages offer roles, so only admins ask for them.
+  useRoleOptions: () => useQuery(rolesQuery).data ?? [],
 };

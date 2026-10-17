@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useFeatures } from "@/ee-slots";
 import { errorMessage } from "@/lib/errors";
-import { EnvRow, fromEntry, NONE, same, type Row } from "@/pages/admin/EnvAccessRow";
+import { accessBody, EnvRow, fromEntry, NONE, same, type Row } from "@/pages/admin/EnvAccessRow";
 import { FormDialog } from "@/pages/admin/FormDialog";
 import {
   addTeamMember,
@@ -238,7 +238,7 @@ function TeamAccessForm({ team, envs, frozen, onClose }: { team: TeamDetail; env
   return (
     <FormDialog
       title={`Access for ${team.name}`}
-      description="A member gets the strongest role from any of their teams or direct grants on an environment, and namespace lists add up. Operator on one namespace plus Viewer on the whole cluster makes them Operator on the whole cluster."
+      description="Members get this access. Each of a member's grants (direct or through teams) is checked on its own: Operator on one namespace stays Operator on that namespace only."
       submitLabel="Save"
       onClose={onClose}
       onSubmit={async () => {
@@ -252,7 +252,7 @@ function TeamAccessForm({ team, envs, frozen, onClose }: { team: TeamDetail; env
           const row = rows[e.id];
           if (same(row, initial[e.id])) continue;
           if (row.role === "none") await revokeTeamAccess(team.id, e.id);
-          else await setTeamAccess(team.id, e.id, row.role, row.namespaces);
+          else await setTeamAccess(team.id, e.id, accessBody(row));
         }
         await changed();
         toast.success(`Saved access for ${team.name}`);

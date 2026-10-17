@@ -1,13 +1,15 @@
 import { X } from "lucide-react";
 import { useState } from "react";
-import type { AccessEntry, EnvRole, EnvView } from "@/api/gen/types.gen";
+import type { AccessEntry, EnvRole, EnvView, SetAccess } from "@/api/gen/types.gen";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { useRoleOptions } from "@/ee-slots";
 import { isKube } from "@/lib/env";
 
 /** One environment's row in the dialog: its role, and for a cluster, the namespaces. */
 export interface Row {
-  role: EnvRole | "none";
+  /** A built-in role, `custom:<id>` for a custom role (Enterprise), or none. */
+  role: EnvRole | "none" | `custom:${number}`;
   /** Null: the whole environment. */
   namespaces: string[] | null;
 }
@@ -15,19 +17,32 @@ export interface Row {
 export const NONE: Row = { role: "none", namespaces: null };
 
 export function fromEntry(e: AccessEntry | undefined): Row {
-  return e ? { role: e.role, namespaces: e.namespaces ?? null } : NONE;
+  if (!e) return NONE;
+  return { role: e.role_id != null ? `custom:${e.role_id}` : e.role, namespaces: e.namespaces ?? null };
+}
+
+/** What to send to store `row` (not "none"). */
+export function accessBody(row: Row): SetAccess {
+  const ns = row.namespaces ? { namespaces: row.namespaces } : {};
+  return row.role.startsWith("custom:") ? { role_id: Number(row.role.slice(7)), ...ns } : { role: row.role as EnvRole, ...ns };
 }
 
 export const same = (a: Row, b: Row) => a.role === b.role && JSON.stringify(a.namespaces) === JSON.stringify(b.namespaces);
 
-const RANK: Record<Row["role"], number> = { none: 0, viewer: 1, operator: 2 };
+const RANK: Record<string, number> = { none: 0, viewer: 1, operator: 2 };
 
 /**
  * One environment's role, and for a cluster its namespaces. With `limit`,
  * the row can only be lowered or narrowed from it.
  */
 export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; onChange: (r: Row) => void; limit?: Row }) {
-  const above = (role: Row["role"]) => limit !== undefined && RANK[role] > RANK[limit.role];
+  const roles = useRoleOptions();
+  // Frozen (`limit`): a built-in no higher than the old one, or the same custom role.
+  const above = (role: Row["role"]) => {
+    if (limit === undefined || role === limit.role) return false;
+    if (role.startsWith("custom:") || limit.role.startsWith("custom:")) return role !== "none";
+    return RANK[role] > RANK[limit.role];
+  };
   const listOnly = limit !== undefined && limit.namespaces !== null;
   const [typed, setTyped] = useState("");
   const kube = isKube(env.kind);
@@ -56,6 +71,11 @@ export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; 
           <option value="operator" disabled={above("operator")}>
             Operator
           </option>
+          {roles.map((r) => (
+            <option key={r.id} value={`custom:${r.id}`} disabled={above(`custom:${r.id}`)}>
+              {r.name}
+            </option>
+          ))}
         </NativeSelect>
       </div>
       {kube && row.role !== "none" && (

@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { ee } from "@ee";
 import type { Feature } from "@/api/gen/types.gen";
 import { editionQuery } from "@/api/queries";
-import type { EeNavItem, EeSlot, SlotName, SlotProps } from "./ee-contract";
+import type { EeNavItem, EeSlot, RoleOption, SlotName, SlotProps } from "./ee-contract";
 
 // The only module that imports `@ee` (scripts/check-editions.sh).
 
@@ -24,6 +24,14 @@ export function Slot<N extends SlotName>({ name, props }: { name: N; props?: Slo
   const slot = ee.slots[name] as EeSlot<N> | undefined;
   if (!slot || !allowed(features, slot.feature)) return null;
   return createElement(slot.component, props ?? ({} as SlotProps[N]));
+}
+
+const noRoles = (): RoleOption[] => [];
+const roleOptions = ee.useRoleOptions ?? noRoles;
+
+/** Custom roles the access editors offer after Viewer and Operator; none in Community. */
+export function useRoleOptions(): RoleOption[] {
+  return roleOptions();
 }
 
 export function useEeAdminNav(): EeNavItem[] {

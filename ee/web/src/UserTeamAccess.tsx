@@ -22,7 +22,7 @@ export function UserTeamAccess({ userId }: SlotProps["user.access"]) {
             <span className="text-muted-foreground">
               {e.sources
                 .filter((s) => s.team_name !== null)
-                .map((s) => s.team_name)
+                .map((s) => (s.role_name ? `${s.team_name} (${s.role_name})` : s.team_name))
                 .join(", ")}
             </span>
           </li>
@@ -46,7 +46,7 @@ export function EnvTeamAccess({ env }: SlotProps["env.access"]) {
         {data.map((t) => (
           <li key={t.team_id} className="grid gap-0.5 rounded-md border px-3 py-1.5">
             <span>
-              <span className="font-medium">{t.team_name}</span> · {t.role}
+              <span className="font-medium">{t.team_name}</span> · {t.role_name ?? t.role}
               <span className="font-mono text-xs"> {t.namespaces ? t.namespaces.join(", ") : "Entire environment"}</span>
             </span>
             <span className="text-muted-foreground">{t.members.length ? t.members.join(", ") : "No members"}</span>

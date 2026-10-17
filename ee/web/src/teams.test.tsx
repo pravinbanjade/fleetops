@@ -96,8 +96,8 @@ describe("teams", () => {
     await waitFor(() => expect(role).toHaveValue("viewer"));
     expect(within(role).getByRole("option", { name: "Operator" })).toBeDisabled();
     expect(within(role).getByRole("option", { name: "None" })).toBeEnabled();
-    expect(within(dialog).getByText(/strongest role from any of their teams or direct grants/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/Operator on one namespace plus Viewer on the whole cluster makes them Operator on the whole cluster/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Operator on one namespace stays Operator on that namespace only/)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/makes them Operator on the whole cluster/)).toBeNull();
   });
 
   it("user access dialog shows team-derived access with team names", async () => {

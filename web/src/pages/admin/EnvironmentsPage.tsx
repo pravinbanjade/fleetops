@@ -445,7 +445,7 @@ function EnvAccess({ env, onClose }: { env: string; onClose: () => void }) {
               {q.data.map((a) => (
                 <tr key={a.user_id} className="border-t">
                   <td className="py-1.5 font-medium">{a.username}</td>
-                  <td className="py-1.5">{a.role}</td>
+                  <td className="py-1.5">{a.role_name ?? a.role}</td>
                   <td className="py-1.5 font-mono text-xs">{a.namespaces ? a.namespaces.join(", ") : "Entire environment"}</td>
                 </tr>
               ))}
