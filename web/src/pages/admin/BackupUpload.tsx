@@ -28,7 +28,7 @@ export function BackupUpload({ mode }: { mode: "admin" | "setup" }) {
     <form onSubmit={submit} className="grid gap-4">
       <div className="grid gap-2">
         <Label htmlFor="backup-file">Backup file</Label>
-        <Input id="backup-file" type="file" accept=".fob" required onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        <Input id="backup-file" type="file" accept=".fob" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
       </div>
       <div className="grid gap-2">
         <Label htmlFor="backup-passphrase">Passphrase</Label>

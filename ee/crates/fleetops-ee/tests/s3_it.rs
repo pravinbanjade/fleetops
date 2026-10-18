@@ -1,4 +1,4 @@
-//! Against a real MinIO (make test-s3): FLEETOPS_S3_IT is its URL.
+//! Against a real S3-compatible server (make test-s3): FLEETOPS_S3_IT is its URL.
 
 use fleetops_ee::backup::targets::{S3Sink, Sink};
 use fleetops_store::backup::backup_name;

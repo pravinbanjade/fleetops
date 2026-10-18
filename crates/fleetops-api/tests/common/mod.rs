@@ -106,7 +106,8 @@ pub async fn app_with_data(
     config: ApiConfig,
 ) -> BackupApp {
     let data = tempfile::tempdir().unwrap();
-    let store = Store::in_memory().await.unwrap();
+    // File-backed, as in production: a backup snapshot needs it.
+    let store = Store::open(&data.path().join("fleetops.db")).await.unwrap();
     let fake = FakeDocker::new();
     let restarts = Arc::new(RecordRestart::default());
     let mut state = AppState::new(

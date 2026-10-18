@@ -43,7 +43,10 @@ test("an admin backs up to a directory and restores from the recent list", async
     await dialog.getByLabel("Passphrase", { exact: true }).fill(PASSPHRASE);
     await dialog.getByLabel("Passphrase again").fill(PASSPHRASE);
     await dialog.getByRole("button", { name: "Save passphrase" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText("set", { exact: true })).toBeVisible();
     await page.getByLabel("Directory").fill(out);
+    await expect(page.getByLabel("Directory")).toHaveValue(out);
     await page.getByRole("group", { name: "Local directory" }).getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("group", { name: "Local directory" }).getByRole("button", { name: "Test" })).toBeVisible();
   });

@@ -113,7 +113,11 @@ pub async fn ee_app_full(
     config: ApiConfig,
     endpoints: fleetops_ee::sso::flow::Endpoints,
 ) -> Ee {
-    let store = Store::in_memory().await.unwrap();
+    // File-backed when there is a data directory: a backup snapshot needs it.
+    let store = match &config.data_dir {
+        Some(d) => Store::open(&d.join("fleetops.db")).await.unwrap(),
+        None => Store::in_memory().await.unwrap(),
+    };
     let parts = fleetops_ee::init_with_keys(
         &store,
         EeConfig {

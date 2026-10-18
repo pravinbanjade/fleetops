@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 
 const METHODS: [&str; 5] = ["get", "post", "put", "patch", "delete"];
 /// Documented operations; update when adding or removing a route.
-const OPERATIONS: usize = 103;
+const OPERATIONS: usize = 109;
 
 fn operations() -> Vec<(&'static str, &'static str, &'static Value)> {
     let mut out = Vec::new();
@@ -119,6 +119,8 @@ fn mutations_need_a_session_and_a_csrf_token_and_reads_a_session() {
         "getAuthStatus",
         "getAuthProviders",
         "setup",
+        "stageSetupBackup",
+        "restoreSetupBackup",
         "login",
     ];
     for (path, m, op) in operations() {

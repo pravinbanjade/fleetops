@@ -33,7 +33,9 @@ pub fn due(
     started_at: i64,
 ) -> Option<db::Trigger> {
     let slot = last_slot(now, hour_utc);
-    if slot > last_attempt.unwrap_or(started_at) {
+    // Only slots that passed while this server ran; one missed while it was
+    // down is caught up below, after the startup delay.
+    if slot > last_attempt.unwrap_or(started_at).max(started_at) {
         return Some(db::Trigger::Schedule);
     }
     let stale = last_success.is_none_or(|t| t < now - DAY);

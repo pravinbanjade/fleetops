@@ -135,7 +135,7 @@ ldap-up:
 test-ldap: ldap-up
 	FLEETOPS_LDAP_IT=ldap://127.0.0.1:3389 cargo test -p fleetops-ee --features ldap-it --test ldap_it
 
-# The MinIO container the S3 backup tests write to (127.0.0.1:9100).
+# The S3-compatible container the backup tests write to (127.0.0.1:9100).
 minio-up:
 	scripts/minio-up.sh
 

@@ -408,7 +408,7 @@ pub async fn recent(State(s): State<AppState>, _a: AdminUser) -> ApiResult<Json<
             }),
         }
     }
-    backups.sort_by(|a, b| b.file.created_at.cmp(&a.file.created_at));
+    backups.sort_by_key(|b| std::cmp::Reverse(b.file.created_at));
     backups.truncate(RECENT);
     Ok(Json(RecentBackups { backups, errors }))
 }

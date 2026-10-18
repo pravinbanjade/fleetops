@@ -58,8 +58,12 @@ use std::{fs::File, path::Path};
 
 const PW: &str = "correct horse battery";
 
-pub async fn populated(key: &SecretKey) -> Store {
-    let store = Store::in_memory().await.unwrap().with_secret_key(key);
+/// A file-backed store, as in production: `VACUUM INTO` needs one.
+pub async fn populated(key: &SecretKey, dir: &Path) -> Store {
+    let store = Store::open(&dir.join("live.db"))
+        .await
+        .unwrap()
+        .with_secret_key(key);
     let u = store.create_first_admin("admin", "hash", 1).await.unwrap();
     store
         .create_environment_with_credential(
@@ -124,7 +128,7 @@ pub async fn backup_file(store: &Store, dir: &Path) -> std::path::PathBuf {
 #[tokio::test]
 async fn backup_round_trip_keeps_data_drops_sessions() {
     let dir = tempfile::tempdir().unwrap();
-    let store = populated(&SecretKey::random()).await;
+    let store = populated(&SecretKey::random(), dir.path()).await;
     let file = backup_file(&store, dir.path()).await;
     let opened = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o")).unwrap();
     let c = &opened.manifest.counts;
@@ -151,7 +155,7 @@ async fn backup_round_trip_keeps_data_drops_sessions() {
 async fn manifest_carries_key_and_sealed() {
     let dir = tempfile::tempdir().unwrap();
     let key = SecretKey::random();
-    let store = populated(&key).await;
+    let store = populated(&key, dir.path()).await;
     let file = backup_file(&store, dir.path()).await;
     let m = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o"))
         .unwrap()
@@ -166,7 +170,7 @@ async fn manifest_carries_key_and_sealed() {
 #[tokio::test]
 async fn ee_tables_come_along() {
     let dir = tempfile::tempdir().unwrap();
-    let store = populated(&SecretKey::random()).await;
+    let store = populated(&SecretKey::random(), dir.path()).await;
     for sql in [
         "CREATE TABLE ee_sso_states (state TEXT)",
         "INSERT INTO ee_sso_states VALUES ('s')",
@@ -229,11 +233,13 @@ fn manifest_json() -> Vec<u8> {
     .unwrap()
 }
 
+type Build = Box<dyn FnOnce(&mut tar::Builder<Vec<u8>>)>;
+
 #[test]
 fn rejects_unexpected_tar_entries() {
     let dir = tempfile::tempdir().unwrap();
     let m = manifest_json();
-    let cases: Vec<(&str, Box<dyn FnOnce(&mut tar::Builder<Vec<u8>>)>)> = vec![
+    let cases: Vec<(&str, Build)> = vec![
         ("traversal", Box::new(|b| file_entry(b, "../x", b"x"))),
         (
             "absolute",
@@ -307,7 +313,7 @@ use fleetops_store::backup::{
 };
 
 async fn opened_from(key: &SecretKey, dir: &Path) -> fleetops_store::backup::Opened {
-    let store = populated(key).await;
+    let store = populated(key, dir).await;
     let file = backup_file(&store, dir).await;
     open_backup(File::open(&file).unwrap(), PW, &dir.join("o")).unwrap()
 }

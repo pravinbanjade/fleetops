@@ -46,7 +46,7 @@ test("back up a server and restore it on a new one", async ({ page }) => {
     await page.getByLabel("Passphrase").fill(PASSPHRASE);
     await page.getByRole("button", { name: "Open backup" }).click();
     await expect(page.getByText("Users")).toBeVisible();
-    await page.getByRole("button", { name: "Restore" }).click();
+    await page.getByRole("button", { name: "Restore", exact: true }).click();
     await expect(page.getByText("Log in to FleetOps")).toBeVisible({ timeout: 60_000 });
   });
 
@@ -54,6 +54,7 @@ test("back up a server and restore it on a new one", async ({ page }) => {
     await page.getByLabel("Username").fill("admin");
     await page.getByLabel("Password").fill(PASSWORD);
     await page.getByRole("button", { name: "Log in" }).click();
+    await expect(page).not.toHaveURL(/\/login/);
     await page.goto(`${b.url}/admin/users`);
     await expect(page.getByRole("table", { name: "Users" }).getByText("bob")).toBeVisible();
   });
