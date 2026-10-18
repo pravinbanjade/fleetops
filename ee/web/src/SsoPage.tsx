@@ -210,6 +210,11 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
   const [secrets, setSecrets] = useState<SsoSecrets>({});
   const [requireMapped, setRequireMapped] = useState(conn?.require_mapped_group ?? false);
   const [hours, setHours] = useState(String(conn?.session_hours ?? 12));
+  // List fields keep what was typed; they are split on save.
+  const initial = conn?.settings;
+  const [domains, setDomains] = useState(initial?.kind === "google" ? initial.hosted_domains.join(", ") : "");
+  const [orgs, setOrgs] = useState(initial?.kind === "github" ? initial.orgs.join(", ") : "");
+  const [scopes, setScopes] = useState(initial?.kind === "oidc" ? initial.scopes.join(" ") : "openid profile email");
   const saved = (s: string) => conn?.secrets_set.includes(s) ?? false;
   const set = (patch: Partial<SsoSettings>) => setSettings((s) => ({ ...s, ...patch }) as SsoSettings);
   const secretField = (key: keyof SsoSecrets, label: string, multiline = false) => {
@@ -234,9 +239,17 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
       onClose={onClose}
       onSubmit={async () => {
         const sent: SsoSecrets = Object.fromEntries(Object.entries(secrets).filter(([, v]) => v)) as SsoSecrets;
+        const lists: SsoSettings =
+          settings.kind === "google"
+            ? { ...settings, hosted_domains: list(domains) }
+            : settings.kind === "github"
+              ? { ...settings, orgs: list(orgs) }
+              : settings.kind === "oidc"
+                ? { ...settings, scopes: scopes.split(/\s+/).filter(Boolean) }
+                : settings;
         const body = {
           name: name.trim(),
-          settings,
+          settings: lists,
           secrets: sent,
           require_mapped_group: requireMapped,
           session_hours: Number(hours),
@@ -275,7 +288,7 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
             <Input id="sso-groups-claim" value={settings.groups_claim} onChange={(e) => set({ groups_claim: e.target.value })} />
           </Field>
           <Field id="sso-scopes" label="Scopes">
-            <Input id="sso-scopes" value={settings.scopes.join(" ")} onChange={(e) => set({ scopes: e.target.value.split(/\s+/).filter(Boolean) })} />
+            <Input id="sso-scopes" value={scopes} onChange={(e) => setScopes(e.target.value)} />
           </Field>
         </>
       )}
@@ -286,7 +299,7 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
       {settings.kind === "google" && (
         <>
           <Field id="sso-domains" label="Allowed domains" hint="Comma-separated. Empty allows any Google account.">
-            <Input id="sso-domains" value={settings.hosted_domains.join(", ")} onChange={(e) => set({ hosted_domains: list(e.target.value) })} />
+            <Input id="sso-domains" value={domains} onChange={(e) => setDomains(e.target.value)} />
           </Field>
           <Field id="sso-admin-email" label="Workspace admin email" hint="To read groups: the service account acts as this admin.">
             <Input id="sso-admin-email" value={settings.admin_email ?? ""} onChange={(e) => set({ admin_email: e.target.value || null })} />
@@ -297,7 +310,7 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
       {settings.kind === "github" && (
         <>
           <Field id="sso-orgs" label="Allowed organisations" hint="Comma-separated. Teams in them become groups as org/team.">
-            <Input id="sso-orgs" required value={settings.orgs.join(", ")} onChange={(e) => set({ orgs: list(e.target.value) })} />
+            <Input id="sso-orgs" required value={orgs} onChange={(e) => setOrgs(e.target.value)} />
           </Field>
           <Field id="sso-base-url" label="GitHub Enterprise URL" hint="Leave empty for github.com.">
             <Input id="sso-base-url" value={settings.base_url ?? ""} onChange={(e) => set({ base_url: e.target.value || null })} />

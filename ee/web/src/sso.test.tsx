@@ -86,7 +86,7 @@ describe("single sign-on", () => {
     await waitFor(() => expect(row(screen, "Acme Okta")).toBeTruthy());
     await userEvent.click(within(row(screen, "Acme Okta")).getByRole("button", { name: "Mappings" }));
     const dialog = await screen.findByRole("dialog");
-    await within(dialog).findByText("team Ops", { exact: false });
+    await within(dialog).findByText("ops");
     await userEvent.type(within(dialog).getByLabelText("Group"), "admins");
     await userEvent.selectOptions(within(dialog).getByLabelText("Gives"), "admin");
     await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
