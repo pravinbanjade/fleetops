@@ -158,12 +158,17 @@ export function SsoPage() {
 function PasswordLoginSetting({ frozen }: { frozen: boolean }) {
   const qc = useQueryClient();
   const settings = useQuery(ssoSettingsQuery);
+  // The choice shows at once; a refusal puts the saved value back.
+  const [picked, setPicked] = useState<PasswordLogin | null>(null);
   const save = useMutation({
     mutationFn: putSsoSettings,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ssoKeys.settings }),
-    onError: (e) => toast.error(errorMessage(e)),
+    onError: (e) => {
+      setPicked(null);
+      toast.error(errorMessage(e));
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ssoKeys.settings }),
   });
-  const value = settings.data?.password_login;
+  const value = picked ?? settings.data?.password_login;
   const option = (v: PasswordLogin, label: string, hint: string) => (
     <label className="flex items-start gap-2 text-sm">
       <input
@@ -172,7 +177,10 @@ function PasswordLoginSetting({ frozen }: { frozen: boolean }) {
         className="mt-1"
         checked={value === v}
         disabled={save.isPending || (frozen && v === "local_admins")}
-        onChange={() => save.mutate(v)}
+        onChange={() => {
+          setPicked(v);
+          save.mutate(v);
+        }}
       />
       <span>
         {label}

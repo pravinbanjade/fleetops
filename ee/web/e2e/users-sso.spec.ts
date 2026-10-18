@@ -10,6 +10,8 @@ const IDP = `http://127.0.0.1:${process.env.MOCK_IDP_PORT ?? 9124}`;
 async function logIn(page: Page, username: string) {
   await page.goto("/login");
   const link = page.getByRole("button", { name: "Sign in with password" });
+  const field = page.getByLabel("Username");
+  await expect(link.or(field)).toBeVisible();
   if (await link.isVisible()) await link.click();
   await page.getByLabel("Username").fill(username);
   await page.getByLabel("Password").fill(PASSWORD);
@@ -35,7 +37,7 @@ test("an admin connects a provider and a new user signs in into team ops", async
     await dialog.getByLabel("Group").fill("ops");
     await dialog.getByLabel("Gives").selectOption({ label: "Team ops" });
     await dialog.getByRole("button", { name: "Add" }).click();
-    await expect(dialog.getByText("team ops")).toBeVisible();
+    await expect(dialog.getByRole("listitem").filter({ hasText: "team ops" })).toBeVisible();
     await page.keyboard.press("Escape");
     await row.getByRole("button", { name: "Test" }).click();
     await dialog.getByRole("button", { name: "Run test" }).click();
@@ -74,6 +76,7 @@ test("an admin connects a provider and a new user signs in into team ops", async
 
   await test.step("password login can be limited to local admins", async () => {
     await page.goto("/admin/sso");
+    await expect(page.getByRole("radio", { name: /^Everyone/ })).toBeChecked();
     await page.getByRole("radio", { name: /Local admins only/ }).check();
     await expect(page.getByRole("radio", { name: /Local admins only/ })).toBeChecked();
     const ctx = await browser.newContext();

@@ -26,9 +26,9 @@ export const SSO_ERROR_TEXT: Record<SsoError, string> = {
   invalid: "Sign-in failed. Try again, or ask an admin to check the SSO settings.",
 };
 
-/** Enabled single sign-on providers; none in Community or when the server can't say. */
-function useProviders(): LoginProvider[] {
-  const [providers, setProviders] = useState<LoginProvider[]>([]);
+/** Enabled single sign-on providers (null while loading); none in Community or when the server can't say. */
+function useProviders(): LoginProvider[] | null {
+  const [providers, setProviders] = useState<LoginProvider[] | null>(null);
   useEffect(() => {
     let live = true;
     getAuthProviders()
@@ -66,7 +66,8 @@ export function LoginPage() {
     m.mutate();
   };
   const returnTo = encodeURIComponent(redirect ?? "/");
-  const passwordForm = providers.length === 0 || showPassword;
+  // Nothing until the providers are known, so the form doesn't flash and vanish.
+  const passwordForm = providers !== null && (providers.length === 0 || showPassword);
 
   return (
     <AuthLayout title="Log in to FleetOps">
@@ -76,7 +77,7 @@ export function LoginPage() {
             {SSO_ERROR_TEXT[sso_error]}
           </p>
         )}
-        {providers.length > 0 && (
+        {providers && providers.length > 0 && (
           <div className="grid gap-2">
             {providers.map((p) => (
               <Button key={p.id} variant="outline" asChild>
@@ -85,7 +86,7 @@ export function LoginPage() {
             ))}
           </div>
         )}
-        {!passwordForm && (
+        {providers && !passwordForm && (
           <button
             type="button"
             className="justify-self-center text-sm text-muted-foreground underline-offset-4 hover:underline"
