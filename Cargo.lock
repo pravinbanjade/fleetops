@@ -1402,12 +1402,15 @@ name = "fleetops-store"
 version = "0.2.0"
 dependencies = [
  "aes-gcm",
+ "argon2",
  "base64 0.22.1",
+ "flate2",
  "fleetops-core",
  "rand 0.8.8",
  "serde",
  "serde_json",
  "sqlx",
+ "tar",
  "tempfile",
  "tokio",
  "utoipa",

@@ -1,6 +1,8 @@
 //! Backup and restore (backup spec): one passphrase-sealed file holding a
 //! snapshot of the database and what is needed to open its secrets.
 
+pub mod format;
+
 use serde::{Deserialize, Serialize};
 
 /// Enterprise migrations start at this version, so a database's highest
