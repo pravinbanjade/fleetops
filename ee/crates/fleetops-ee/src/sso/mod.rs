@@ -7,6 +7,7 @@ pub mod flow;
 pub mod github;
 pub mod google;
 pub mod hook;
+pub mod ldap;
 pub mod microsoft;
 pub mod model;
 pub mod oidc;

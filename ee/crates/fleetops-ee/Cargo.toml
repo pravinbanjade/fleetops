@@ -24,6 +24,7 @@ futures-util.workspace = true
 hex.workspace = true
 jiff.workspace = true
 jsonwebtoken.workspace = true
+ldap3.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
