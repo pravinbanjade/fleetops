@@ -1,6 +1,10 @@
 //! Core's [`ExternalAuth`] hook, answered from the SSO tables.
 
-use super::{db, password_login, PasswordLogin};
+use super::{
+    db, ldap, password_login,
+    provision::{self, Claims, Refusal},
+    PasswordLogin,
+};
 use async_trait::async_trait;
 use fleetops_api::{external::ExternalAuth, AppState};
 use fleetops_core::{external::LoginProvider, Result, Role, User};
@@ -55,11 +59,39 @@ impl ExternalAuth for EeSso {
 
     async fn directory_login(
         &self,
-        _: &AppState,
-        _: &str,
-        _: &str,
+        s: &AppState,
+        username: &str,
+        password: &str,
     ) -> Result<Option<(User, Option<i64>)>> {
-        Ok(None)
+        let Some(conn) = db::ldap_connection(self.store.pool()).await? else {
+            return Ok(None);
+        };
+        let bind_password = db::secrets(&self.store, conn.id).await?.bind_password;
+        let entry =
+            match ldap::authenticate(&conn.settings, bind_password.as_deref(), username, password)
+                .await
+            {
+                Ok(Some(entry)) => entry,
+                Ok(None) => return Ok(None),
+                // A directory outage looks like a wrong password to the client;
+                // local accounts were already checked.
+                Err(e) => {
+                    tracing::warn!(connection = conn.id, error = %e, "LDAP sign-in failed");
+                    provision::refused(s, &conn, Refusal::Invalid, &e.to_string()).await;
+                    return Ok(None);
+                }
+            };
+        let claims = Claims {
+            subject: entry.subject,
+            preferred_username: None,
+            email: entry.email,
+            login: Some(entry.username),
+            groups: entry.groups,
+        };
+        Ok(match provision::login(s, &conn, claims).await? {
+            Ok(user) => Some((user, Some(conn.session_hours))),
+            Err(_) => None,
+        })
     }
 
     async fn managed_users(&self) -> Result<HashMap<i64, String>> {

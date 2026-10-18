@@ -521,6 +521,9 @@ pub struct TestBody {
     /// Google: also list this user's groups through the service account.
     #[serde(default)]
     pub email: Option<String>,
+    /// LDAP: also look this user up and list their groups.
+    #[serde(default)]
+    pub username: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -546,6 +549,27 @@ pub async fn test(
     rt.oidc.forget();
     let outcome: Result<(String, Option<Vec<String>>), Error> = async {
         match &c.settings {
+            ConnectionSettings::Ldap { bind_dn, .. } => {
+                let pw = db::secrets(&s.store, id).await?.bind_password;
+                match body
+                    .username
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|u| !u.is_empty())
+                {
+                    None => {
+                        super::ldap::check(&c.settings, pw.as_deref()).await?;
+                        Ok((
+                            format!("bound as {}", bind_dn.as_deref().unwrap_or("anonymous")),
+                            None,
+                        ))
+                    }
+                    Some(u) => match super::ldap::lookup(&c.settings, pw.as_deref(), u).await? {
+                        Some(e) => Ok((format!("found {}", e.dn), Some(e.groups))),
+                        None => Err(Error::NotFound(format!("no single entry for {u}"))),
+                    },
+                }
+            }
             ConnectionSettings::Github { .. } => {
                 let api = super::github::api_base(&rt, &c);
                 let _: serde_json::Value = rt.oidc.get_json(&format!("{api}/meta"), None).await?;

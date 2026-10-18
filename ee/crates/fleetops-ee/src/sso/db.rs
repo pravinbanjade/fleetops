@@ -301,3 +301,11 @@ pub async fn delete_mapping(pool: &SqlitePool, connection_id: i64, id: i64) -> R
         .map_err(db_err)?;
     Ok(r.rows_affected() > 0)
 }
+
+/// The enabled LDAP connection, if there is one.
+pub async fn ldap_connection(pool: &SqlitePool) -> Result<Option<Connection>> {
+    Ok(list(pool)
+        .await?
+        .into_iter()
+        .find(|c| c.enabled && !c.settings.is_redirect()))
+}
