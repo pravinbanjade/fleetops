@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+pub mod idp;
+
 use axum::{
     body::Body,
     extract::ConnectInfo,
@@ -51,8 +53,8 @@ impl Resp {
 
 #[derive(Clone)]
 pub struct Session {
-    cookie: String,
-    csrf: String,
+    pub cookie: String,
+    pub csrf: String,
 }
 
 pub fn key() -> SigningKey {
@@ -101,10 +103,23 @@ pub const PUBLIC_URL: &str = "https://fleet.test";
 
 /// [`ee_app`] with `config`.
 pub async fn ee_app_with(key: &SigningKey, file: Option<PathBuf>, config: ApiConfig) -> Ee {
+    ee_app_full(key, file, config, Default::default()).await
+}
+
+/// [`ee_app_with`], with identity providers at `endpoints`.
+pub async fn ee_app_full(
+    key: &SigningKey,
+    file: Option<PathBuf>,
+    config: ApiConfig,
+    endpoints: fleetops_ee::sso::flow::Endpoints,
+) -> Ee {
     let store = Store::in_memory().await.unwrap();
     let parts = fleetops_ee::init_with_keys(
         &store,
-        EeConfig { license_file: file },
+        EeConfig {
+            license_file: file,
+            sso_endpoints: endpoints,
+        },
         vec![key.verifying_key()],
     )
     .await

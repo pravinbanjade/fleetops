@@ -52,6 +52,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             &store,
             fleetops_ee::EeConfig {
                 license_file: config.license_file.clone(),
+                sso_endpoints: Default::default(),
             },
         )
         .await?;

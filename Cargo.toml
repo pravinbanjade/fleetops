@@ -40,10 +40,12 @@ hyper-util = { version = "0.1", features = ["client-legacy", "server", "http1", 
 k8s-openapi = { version = "0.28", features = ["v1_32"] }
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "ring", "ws", "runtime"] }
 jiff = "0.2.37"
+jsonwebtoken = "9"
 jsonschema = { version = "0.58", default-features = false }
 mime_guess = "2"
 rand = "0.8"
 rcgen = "0.13"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde = { version = "1", features = ["derive"] }
@@ -68,6 +70,7 @@ utoipa-axum = "0.2"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 webpki-roots = "0.26"
+wiremock = "0.6"
 yamux = "0.14"
 
 # Release binaries ship without debug symbols (the image is about 20 MB).

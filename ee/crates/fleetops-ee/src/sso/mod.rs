@@ -3,8 +3,13 @@
 //! signing in without a license; adding or widening anything needs one.
 
 pub mod db;
+pub mod flow;
+pub mod github;
+pub mod google;
 pub mod hook;
+pub mod microsoft;
 pub mod model;
+pub mod oidc;
 pub mod provision;
 pub mod routes;
 

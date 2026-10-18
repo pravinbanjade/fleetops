@@ -30,6 +30,9 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 pub struct EeConfig {
     /// `--license-file` / `FLEETOPS_LICENSE_FILE`.
     pub license_file: Option<PathBuf>,
+    /// Where identity providers live; tests point these at a mock.
+    #[doc(hidden)]
+    pub sso_endpoints: sso::flow::Endpoints,
 }
 
 /// What the server wires in (editions spec §3.4).
@@ -82,6 +85,9 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(sso::routes::get, sso::routes::update, sso::routes::delete))
         .routes(routes!(sso::routes::list_mappings, sso::routes::create_mapping))
         .routes(routes!(sso::routes::delete_mapping))
+        .routes(routes!(sso::routes::test))
+        .routes(routes!(sso::flow::start))
+        .routes(routes!(sso::flow::callback))
         .routes(routes!(sso::routes::get_settings, sso::routes::put_settings))
 }
 
@@ -100,7 +106,9 @@ pub async fn init_with_keys(
     state.load(store).await?;
     Ok(EeParts {
         entitlements: state.clone(),
-        routes: api_routes().layer(Extension(state.clone())),
+        routes: api_routes()
+            .layer(Extension(state.clone()))
+            .layer(Extension(Arc::new(sso::flow::Runtime::new(config.sso_endpoints)))),
         grants: Arc::new(teams::grants::TeamGrants::new(store.pool().clone())),
         roles: Arc::new(roles::grants::EeRoles::new(
             store.pool().clone(),
