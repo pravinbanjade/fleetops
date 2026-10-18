@@ -51,7 +51,8 @@ async fn provider(issuer_path: &str, mut settings: Value, secrets: Value) -> P {
     )
     .await;
     let admin = ee.admin().await;
-    ee.install(&admin, &license(&k, now_unix() + 86_400, None, &[])).await;
+    ee.install(&admin, &license(&k, now_unix() + 86_400, None, &[]))
+        .await;
     settings["client_id"] = json!(CLIENT_ID);
     let mut secrets = secrets;
     secrets["client_secret"] = json!(CLIENT_SECRET);
@@ -65,7 +66,12 @@ async fn provider(issuer_path: &str, mut settings: Value, secrets: Value) -> P {
         .await;
     assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
     let conn = r.json()["id"].as_i64().unwrap();
-    P { ee, admin, idp, conn }
+    P {
+        ee,
+        admin,
+        idp,
+        conn,
+    }
 }
 
 impl P {
@@ -73,7 +79,12 @@ impl P {
     async fn start(&self) -> (String, String, String) {
         let r = self
             .ee
-            .send("GET", &format!("/api/v1/ee/sso/{}/start", self.conn), None, None)
+            .send(
+                "GET",
+                &format!("/api/v1/ee/sso/{}/start", self.conn),
+                None,
+                None,
+            )
             .await;
         assert_eq!(r.status, StatusCode::FOUND, "{}", r.text);
         let loc = r.headers["location"].to_str().unwrap();
@@ -82,8 +93,18 @@ impl P {
             .query_pairs()
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect();
-        let cookie = r.headers["set-cookie"].to_str().unwrap().split(';').next().unwrap().to_string();
-        (q["state"].clone(), q.get("nonce").cloned().unwrap_or_default(), cookie)
+        let cookie = r.headers["set-cookie"]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string();
+        (
+            q["state"].clone(),
+            q.get("nonce").cloned().unwrap_or_default(),
+            cookie,
+        )
     }
 
     async fn finish(&self, state: &str, cookie: &str) -> Resp {
@@ -94,7 +115,10 @@ impl P {
         self.ee
             .send(
                 "GET",
-                &format!("/api/v1/ee/sso/{}/callback?code=c1&state={state}", self.conn),
+                &format!(
+                    "/api/v1/ee/sso/{}/callback?code=c1&state={state}",
+                    self.conn
+                ),
                 None,
                 Some(&s),
             )
@@ -104,16 +128,19 @@ impl P {
     /// An OIDC sign-in with `claims` in the ID token.
     async fn oidc_sign_in(&self, issuer: &str, claims: Value) -> Resp {
         let (state, nonce, cookie) = self.start().await;
-        self.idp.answer_token(Some(self.idp.id_token(issuer, &nonce, claims))).await;
+        self.idp
+            .answer_token(Some(self.idp.id_token(issuer, &nonce, claims)))
+            .await;
         self.finish(&state, &cookie).await
     }
 
     async fn groups_of(&self, subject: &str) -> Vec<String> {
-        let g: String = sqlx::query_scalar("SELECT groups FROM ee_sso_identities WHERE subject = ?")
-            .bind(subject)
-            .fetch_one(self.ee.store.pool())
-            .await
-            .unwrap();
+        let g: String =
+            sqlx::query_scalar("SELECT groups FROM ee_sso_identities WHERE subject = ?")
+                .bind(subject)
+                .fetch_one(self.ee.store.pool())
+                .await
+                .unwrap();
         serde_json::from_str(&g).unwrap()
     }
 }
@@ -141,7 +168,10 @@ fn ms_issuer(p: &P) -> String {
 async fn microsoft_groups_from_token() {
     let p = microsoft().await;
     let r = p
-        .oidc_sign_in(&ms_issuer(&p), json!({"oid": "o1", "tid": TENANT, "groups": ["g1", "g2"]}))
+        .oidc_sign_in(
+            &ms_issuer(&p),
+            json!({"oid": "o1", "tid": TENANT, "groups": ["g1", "g2"]}),
+        )
         .await;
     assert_eq!(location(&r), "/", "{}", location(&r));
     assert_eq!(p.groups_of(&format!("o1:{TENANT}")).await, vec!["g1", "g2"]);
@@ -169,7 +199,9 @@ async fn microsoft_overage_reads_graph() {
 #[tokio::test]
 async fn microsoft_graph_failure_logs_in_without_groups() {
     let p = microsoft().await;
-    p.idp.status("/v1.0/me/transitiveMemberOf/microsoft.graph.group", 403).await;
+    p.idp
+        .status("/v1.0/me/transitiveMemberOf/microsoft.graph.group", 403)
+        .await;
     let r = p
         .oidc_sign_in(
             &ms_issuer(&p),
@@ -209,7 +241,10 @@ async fn google(admin_email: Option<&str>) -> P {
 async fn google_hd_not_allowed() {
     let p = google(None).await;
     let r = p
-        .oidc_sign_in(&p.idp.uri(), json!({"email_verified": true, "hd": "other.io"}))
+        .oidc_sign_in(
+            &p.idp.uri(),
+            json!({"email_verified": true, "hd": "other.io"}),
+        )
         .await;
     assert_eq!(location(&r), "/login?sso_error=not_allowed");
 }
@@ -218,7 +253,10 @@ async fn google_hd_not_allowed() {
 async fn google_unverified_email_refused() {
     let p = google(None).await;
     let r = p
-        .oidc_sign_in(&p.idp.uri(), json!({"email_verified": false, "hd": "acme.io"}))
+        .oidc_sign_in(
+            &p.idp.uri(),
+            json!({"email_verified": false, "hd": "acme.io"}),
+        )
         .await;
     assert_eq!(location(&r), "/login?sso_error=not_allowed");
 }
@@ -229,7 +267,8 @@ async fn google_service_account_groups_mapped() {
     Mock::given(method("POST"))
         .and(path("/sa-token"))
         .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"access_token": "sa-1", "expires_in": 3600})),
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"access_token": "sa-1", "expires_in": 3600})),
         )
         .mount(&p.idp.server)
         .await;
@@ -247,16 +286,20 @@ async fn google_service_account_groups_mapped() {
         .await;
     assert_eq!(location(&r), "/");
     assert_eq!(p.groups_of("g-1").await, vec!["ops@acme.io"]);
-    let test = p
-        .ee
-        .send(
+    let test =
+        p.ee.send(
             "POST",
             &format!("/api/v1/ee/sso/connections/{}/test", p.conn),
             body(json!({"email": "jane@acme.io"})),
             Some(&p.admin),
         )
         .await;
-    assert_eq!(test.json()["groups"], json!(["ops@acme.io"]), "{}", test.text);
+    assert_eq!(
+        test.json()["groups"],
+        json!(["ops@acme.io"]),
+        "{}",
+        test.text
+    );
 }
 
 // ---- GitHub -----------------------------------------------------------------------
@@ -268,7 +311,9 @@ async fn github(orgs: Value, teams: Value) -> P {
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"access_token": "gh-1"})))
         .mount(&p.idp.server)
         .await;
-    p.idp.json("/api/user", json!({"id": 42, "login": "octo"})).await;
+    p.idp
+        .json("/api/user", json!({"id": 42, "login": "octo"}))
+        .await;
     p.idp.json("/api/user/orgs", orgs).await;
     p.idp
         .json(
@@ -314,9 +359,8 @@ async fn test_route_reports_discovery_failure() {
         json!({}),
     )
     .await;
-    let r = p
-        .ee
-        .send(
+    let r =
+        p.ee.send(
             "POST",
             &format!("/api/v1/ee/sso/connections/{}/test", p.conn),
             body(json!({})),

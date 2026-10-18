@@ -57,12 +57,15 @@ async fn admin_installs_a_license_and_features_turn_on() {
     assert_eq!(info["customer"], "Acme");
     assert_eq!(info["max_users"], 5);
     assert_eq!(info["users_in_use"], 1);
-    // Teams and custom roles come with every license, listed or not.
-    assert_eq!(info["features"], json!(["audit_export", "teams", "rbac"]));
+    // Teams, custom roles and SSO come with every license, listed or not.
+    assert_eq!(
+        info["features"],
+        json!(["audit_export", "teams", "rbac", "sso"])
+    );
     let r = ee.send("GET", "/api/v1/edition", None, Some(&admin)).await;
     assert_eq!(
         r.json()["features"],
-        json!(["audit_export", "teams", "rbac"])
+        json!(["audit_export", "teams", "rbac", "sso"])
     );
     assert!(ee.actions().await.contains(&"license.update".to_string()));
 }
@@ -168,7 +171,7 @@ async fn delete_falls_back_to_file_then_none() {
     assert_eq!(r.json()["source"], "file");
     assert_eq!(
         r.json()["features"],
-        json!(["teams", "rbac"]),
+        json!(["teams", "rbac", "sso"]),
         "back on the file's license, which names no features"
     );
     std::fs::remove_file(&file).unwrap();

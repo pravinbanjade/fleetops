@@ -118,20 +118,40 @@ fn check_enable(s: &AppState, secrets: &Secrets) -> Result<(), Error> {
         ));
     }
     if secrets.client_secret.is_none() {
-        return Err(Error::Invalid("save the client secret before enabling".into()));
+        return Err(Error::Invalid(
+            "save the client secret before enabling".into(),
+        ));
     }
     Ok(())
 }
 
-pub(crate) async fn audit(s: &AppState, admin: i64, action: &str, c: &Connection, mut detail: serde_json::Value) {
+pub(crate) async fn audit(
+    s: &AppState,
+    admin: i64,
+    action: &str,
+    c: &Connection,
+    mut detail: serde_json::Value,
+) {
     detail["connection"] = json!(c.name);
-    audit_detail(s, Some(admin), action, "sso_connection", &c.id.to_string(), "success", Some(detail)).await;
+    audit_detail(
+        s,
+        Some(admin),
+        action,
+        "sso_connection",
+        &c.id.to_string(),
+        "success",
+        Some(detail),
+    )
+    .await;
 }
 
 #[utoipa::path(get, path = "/ee/sso/connections", operation_id = "listSsoConnections", tag = "enterprise",
     summary = "Single sign-on connections",
     responses((status = 200, description = "Connections by name", body = Vec<ConnectionView>)))]
-pub async fn list(State(s): State<AppState>, _a: AdminUser) -> ApiResult<Json<Vec<ConnectionView>>> {
+pub async fn list(
+    State(s): State<AppState>,
+    _a: AdminUser,
+) -> ApiResult<Json<Vec<ConnectionView>>> {
     let mut out = vec![];
     for c in db::list(s.store.pool()).await? {
         out.push(view(&s, c).await?);
@@ -151,7 +171,8 @@ pub async fn create(
     let name = validate_name(&body.name)?;
     let settings = ConnectionSettings::parse(body.settings)?.validated()?;
     validate_secrets(&body.secrets)?;
-    let session_hours = validate_session_hours(body.session_hours.unwrap_or(SESSION_HOURS_DEFAULT))?;
+    let session_hours =
+        validate_session_hours(body.session_hours.unwrap_or(SESSION_HOURS_DEFAULT))?;
     if body.enabled {
         check_enable(&s, &body.secrets)?;
     }
@@ -168,7 +189,14 @@ pub async fn create(
         },
     )
     .await?;
-    audit(&s, admin.user.id, "sso.connection.create", &c, json!({"kind": settings.kind()})).await;
+    audit(
+        &s,
+        admin.user.id,
+        "sso.connection.create",
+        &c,
+        json!({"kind": settings.kind()}),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(view(&s, c).await?)))
 }
 
@@ -230,7 +258,11 @@ pub async fn update(
     let c = db::update(&s.store, &c, &secrets, now_unix()).await?;
     rt.oidc.forget();
     if old.enabled != c.enabled {
-        let action = if c.enabled { "sso.connection.enable" } else { "sso.connection.disable" };
+        let action = if c.enabled {
+            "sso.connection.enable"
+        } else {
+            "sso.connection.disable"
+        };
         audit(&s, admin.user.id, action, &c, json!({})).await;
         if !c.enabled {
             super::provision::detach_connection(&s, c.id).await?;
@@ -249,7 +281,10 @@ pub async fn update(
 #[utoipa::path(get, path = "/ee/sso/settings", operation_id = "getSsoSettings", tag = "enterprise",
     summary = "Who may log in with a local password",
     responses((status = 200, description = "Settings", body = SsoSettings)))]
-pub async fn get_settings(State(s): State<AppState>, _a: AdminUser) -> ApiResult<Json<SsoSettings>> {
+pub async fn get_settings(
+    State(s): State<AppState>,
+    _a: AdminUser,
+) -> ApiResult<Json<SsoSettings>> {
     Ok(Json(SsoSettings {
         password_login: password_login(&s.store).await?,
     }))
@@ -309,7 +344,14 @@ pub async fn delete(
     // Before the delete: the cascade would turn sync rows into manual ones.
     super::provision::detach_connection(&s, id).await?;
     db::delete(s.store.pool(), id).await?;
-    audit(&s, admin.user.id, "sso.connection.delete", &c, json!({"users_left": users.len()})).await;
+    audit(
+        &s,
+        admin.user.id,
+        "sso.connection.delete",
+        &c,
+        json!({"users_left": users.len()}),
+    )
+    .await;
     Ok(Json(DeletedConnection {
         users_left: users.len() as i64,
     }))
@@ -382,7 +424,9 @@ pub async fn create_mapping(
     }
     match (body.team_id, body.admin) {
         (Some(_), true) | (None, false) => {
-            return Err(Error::Invalid("map the group to exactly one of a team or admin".into()).into())
+            return Err(
+                Error::Invalid("map the group to exactly one of a team or admin".into()).into(),
+            )
         }
         (Some(t), false) => {
             crate::teams::db::get(s.store.pool(), t).await?;
@@ -395,8 +439,14 @@ pub async fn create_mapping(
         .into_iter()
         .find(|m| m.id == mid)
         .ok_or_else(|| Error::Internal("mapping vanished".into()))?;
-    audit(&s, admin.user.id, "sso.mapping.create", &c,
-        json!({"group": m.group_value, "team": m.team_name, "admin": m.is_admin})).await;
+    audit(
+        &s,
+        admin.user.id,
+        "sso.mapping.create",
+        &c,
+        json!({"group": m.group_value, "team": m.team_name, "admin": m.is_admin}),
+    )
+    .await;
     Ok((StatusCode::CREATED, Json(mapping_view(m))))
 }
 
@@ -410,12 +460,21 @@ pub async fn delete_mapping(
     ApiPath((id, mapping_id)): ApiPath<(i64, i64)>,
 ) -> ApiResult<StatusCode> {
     let c = db::get(s.store.pool(), id).await?;
-    let m = db::mappings(s.store.pool(), id).await?.into_iter().find(|m| m.id == mapping_id);
+    let m = db::mappings(s.store.pool(), id)
+        .await?
+        .into_iter()
+        .find(|m| m.id == mapping_id);
     if db::delete_mapping(s.store.pool(), id, mapping_id).await? {
         super::provision::resync_connection(&s, id).await?;
         if let Some(m) = m {
-            audit(&s, admin.user.id, "sso.mapping.delete", &c,
-                json!({"group": m.group_value, "team": m.team_name, "admin": m.is_admin})).await;
+            audit(
+                &s,
+                admin.user.id,
+                "sso.mapping.delete",
+                &c,
+                json!({"group": m.group_value, "team": m.team_name, "admin": m.is_admin}),
+            )
+            .await;
         }
     }
     Ok(StatusCode::NO_CONTENT)
@@ -459,7 +518,11 @@ pub async fn test(
             ConnectionSettings::Google { admin_email, .. } => {
                 let issuer = super::flow::issuer(&rt, &c);
                 rt.oidc.discover(&issuer).await?;
-                match (body.email.as_deref(), db::secrets(&s.store, id).await?.service_account_json, admin_email) {
+                match (
+                    body.email.as_deref(),
+                    db::secrets(&s.store, id).await?.service_account_json,
+                    admin_email,
+                ) {
                     (Some(email), Some(key), Some(admin)) => {
                         let g = super::google::groups(&rt, &key, admin, email).await?;
                         Ok((format!("found {} groups for {email}", g.len()), Some(g)))
@@ -480,7 +543,15 @@ pub async fn test(
     }
     .await;
     Ok(Json(match outcome {
-        Ok((detail, groups)) => TestResult { ok: true, detail, groups },
-        Err(e) => TestResult { ok: false, detail: e.to_string(), groups: None },
+        Ok((detail, groups)) => TestResult {
+            ok: true,
+            detail,
+            groups,
+        },
+        Err(e) => TestResult {
+            ok: false,
+            detail: e.to_string(),
+            groups: None,
+        },
     }))
 }

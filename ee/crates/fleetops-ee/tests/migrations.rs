@@ -24,7 +24,12 @@ async fn community_store_opens_a_database_enterprise_used() {
 async fn sso_tables_exist_and_members_carry_a_source() {
     let store = Store::in_memory().await.unwrap();
     fleetops_ee::db::migrate(store.pool()).await.unwrap();
-    for table in ["ee_sso_connections", "ee_sso_identities", "ee_sso_mappings", "ee_sso_states"] {
+    for table in [
+        "ee_sso_connections",
+        "ee_sso_identities",
+        "ee_sso_mappings",
+        "ee_sso_states",
+    ] {
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = ?")
             .bind(table)
             .fetch_one(store.pool())
@@ -37,5 +42,8 @@ async fn sso_tables_exist_and_members_carry_a_source() {
             .fetch_all(store.pool())
             .await
             .unwrap();
-    assert!(cols.contains(&"source_connection_id".to_string()), "{cols:?}");
+    assert!(
+        cols.contains(&"source_connection_id".to_string()),
+        "{cols:?}"
+    );
 }

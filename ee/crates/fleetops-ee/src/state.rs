@@ -177,7 +177,8 @@ impl Entitlements for LicenseState {
     /// licenses issued before it get it too (teams spec, "Licensing").
     fn has(&self, feature: Feature) -> bool {
         self.active(|l| {
-            matches!(feature, Feature::Teams | Feature::Rbac | Feature::Sso) || l.features.contains(&feature)
+            matches!(feature, Feature::Teams | Feature::Rbac | Feature::Sso)
+                || l.features.contains(&feature)
         })
         .unwrap_or(false)
     }

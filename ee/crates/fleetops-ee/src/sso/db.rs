@@ -149,8 +149,9 @@ pub async fn secrets(store: &Store, id: i64) -> Result<Secrets> {
         return Ok(Secrets::default());
     };
     match store.secrets().open(&aad(id), &sealed) {
-        Ok(plain) => serde_json::from_slice(&plain)
-            .map_err(|e| Error::Internal(format!("SSO secrets: {e}"))),
+        Ok(plain) => {
+            serde_json::from_slice(&plain).map_err(|e| Error::Internal(format!("SSO secrets: {e}")))
+        }
         Err(e) => {
             tracing::warn!(connection = id, error = %e, "SSO secrets do not open with this server key");
             Ok(Secrets::default())
@@ -158,7 +159,12 @@ pub async fn secrets(store: &Store, id: i64) -> Result<Secrets> {
     }
 }
 
-pub async fn update(store: &Store, c: &Connection, secrets: &Secrets, now: i64) -> Result<Connection> {
+pub async fn update(
+    store: &Store,
+    c: &Connection,
+    secrets: &Secrets,
+    now: i64,
+) -> Result<Connection> {
     sqlx::query(
         "UPDATE ee_sso_connections SET name = ?, enabled = ?, settings = ?, secrets = ?,
              require_mapped_group = ?, session_hours = ?, updated_at = ? WHERE id = ?",
@@ -199,11 +205,13 @@ pub async fn user_counts(pool: &SqlitePool) -> Result<std::collections::HashMap<
 
 /// The user ids a connection manages.
 pub async fn connection_users(pool: &SqlitePool, id: i64) -> Result<Vec<i64>> {
-    sqlx::query_scalar("SELECT user_id FROM ee_sso_identities WHERE connection_id = ? ORDER BY user_id")
-        .bind(id)
-        .fetch_all(pool)
-        .await
-        .map_err(db_err)
+    sqlx::query_scalar(
+        "SELECT user_id FROM ee_sso_identities WHERE connection_id = ? ORDER BY user_id",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .map_err(db_err)
 }
 
 /// Every SSO user with their connection's name.

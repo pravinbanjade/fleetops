@@ -5745,9 +5745,6 @@
               }
             }
           },
-          "409": {
-            "description": "The user is managed by single sign-on"
-          },
           "default": {
             "description": "Error: `{code, message, request_id}`",
             "content": {

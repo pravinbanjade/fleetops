@@ -82,13 +82,23 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
             roles::routes::delete
         ))
         .routes(routes!(sso::routes::list, sso::routes::create))
-        .routes(routes!(sso::routes::get, sso::routes::update, sso::routes::delete))
-        .routes(routes!(sso::routes::list_mappings, sso::routes::create_mapping))
+        .routes(routes!(
+            sso::routes::get,
+            sso::routes::update,
+            sso::routes::delete
+        ))
+        .routes(routes!(
+            sso::routes::list_mappings,
+            sso::routes::create_mapping
+        ))
         .routes(routes!(sso::routes::delete_mapping))
         .routes(routes!(sso::routes::test))
         .routes(routes!(sso::flow::start))
         .routes(routes!(sso::flow::callback))
-        .routes(routes!(sso::routes::get_settings, sso::routes::put_settings))
+        .routes(routes!(
+            sso::routes::get_settings,
+            sso::routes::put_settings
+        ))
 }
 
 pub async fn init(store: &Store, config: EeConfig) -> Result<EeParts> {
@@ -108,7 +118,9 @@ pub async fn init_with_keys(
         entitlements: state.clone(),
         routes: api_routes()
             .layer(Extension(state.clone()))
-            .layer(Extension(Arc::new(sso::flow::Runtime::new(config.sso_endpoints)))),
+            .layer(Extension(Arc::new(sso::flow::Runtime::new(
+                config.sso_endpoints,
+            )))),
         grants: Arc::new(teams::grants::TeamGrants::new(store.pool().clone())),
         roles: Arc::new(roles::grants::EeRoles::new(
             store.pool().clone(),

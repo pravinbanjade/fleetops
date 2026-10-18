@@ -70,7 +70,10 @@ async fn service_token(rt: &Runtime, key_json: &str, admin: &str) -> Result<Stri
         ])
         .send()
         .await
-        .map_err(|e| Error::Upstream { status: 502, message: format!("Google token: {e}") })?;
+        .map_err(|e| Error::Upstream {
+            status: 502,
+            message: format!("Google token: {e}"),
+        })?;
     if !res.status().is_success() {
         let status = res.status();
         let text = res.text().await.unwrap_or_default();
@@ -124,14 +127,21 @@ pub async fn identify(
     claims: &Value,
     secrets: &Secrets,
 ) -> std::result::Result<Claims, (Refusal, String)> {
-    let ConnectionSettings::Google { hosted_domains, admin_email, .. } = &c.settings else {
+    let ConnectionSettings::Google {
+        hosted_domains,
+        admin_email,
+        ..
+    } = &c.settings
+    else {
         unreachable!()
     };
     if claims.get("email_verified").and_then(Value::as_bool) != Some(true) {
         return Err((Refusal::NotAllowed, "email not verified".into()));
     }
     let email = claim_str(claims, "email").ok_or((Refusal::Invalid, "no email".into()))?;
-    let hd = claim_str(claims, "hd").unwrap_or_default().to_ascii_lowercase();
+    let hd = claim_str(claims, "hd")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     if !hosted_domains.is_empty() && !hosted_domains.contains(&hd) {
         return Err((Refusal::NotAllowed, format!("domain '{hd}' not allowed")));
     }
@@ -140,8 +150,16 @@ pub async fn identify(
             Ok(g) => g,
             Err(e) => {
                 tracing::warn!(connection = c.id, error = %e, "Google groups failed");
-                audit_detail(s, None, "sso.login", "sso_connection", &c.id.to_string(), "failure",
-                    Some(json!({"connection": c.name, "groups_error": e.to_string()}))).await;
+                audit_detail(
+                    s,
+                    None,
+                    "sso.login",
+                    "sso_connection",
+                    &c.id.to_string(),
+                    "failure",
+                    Some(json!({"connection": c.name, "groups_error": e.to_string()})),
+                )
+                .await;
                 vec![]
             }
         },

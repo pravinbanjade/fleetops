@@ -121,7 +121,11 @@ pub fn plan(mappings: &[Mapping], groups: &[String], synced: &[i64], manual: &[i
             .copied()
             .filter(|t| !synced.contains(t) && !manual.contains(t))
             .collect(),
-        remove: synced.iter().copied().filter(|t| !want.contains(t)).collect(),
+        remove: synced
+            .iter()
+            .copied()
+            .filter(|t| !want.contains(t))
+            .collect(),
         admin,
     }
 }
@@ -131,7 +135,11 @@ fn db_err(e: sqlx::Error) -> Error {
 }
 
 /// (sync-made, manual) team ids of `user_id` for connection `conn_id`.
-async fn memberships(pool: &SqlitePool, user_id: i64, conn_id: i64) -> Result<(Vec<i64>, Vec<i64>)> {
+async fn memberships(
+    pool: &SqlitePool,
+    user_id: i64,
+    conn_id: i64,
+) -> Result<(Vec<i64>, Vec<i64>)> {
     let rows: Vec<(i64, Option<i64>)> = sqlx::query_as(
         "SELECT team_id, source_connection_id FROM ee_team_members WHERE user_id = ?",
     )
@@ -139,8 +147,16 @@ async fn memberships(pool: &SqlitePool, user_id: i64, conn_id: i64) -> Result<(V
     .fetch_all(pool)
     .await
     .map_err(db_err)?;
-    let synced = rows.iter().filter(|r| r.1 == Some(conn_id)).map(|r| r.0).collect();
-    let manual = rows.iter().filter(|r| r.1 != Some(conn_id)).map(|r| r.0).collect();
+    let synced = rows
+        .iter()
+        .filter(|r| r.1 == Some(conn_id))
+        .map(|r| r.0)
+        .collect();
+    let manual = rows
+        .iter()
+        .filter(|r| r.1 != Some(conn_id))
+        .map(|r| r.0)
+        .collect();
     Ok((synced, manual))
 }
 
@@ -192,15 +208,33 @@ async fn apply(s: &AppState, conn: &Connection, user: User, p: &Plan) -> Result<
     if !p.add.is_empty() || !p.remove.is_empty() || detail.get("role").is_some() {
         s.hubs.access_changed(user.id);
     }
-    if detail.get("role").is_some() || detail.get("kept_last_admin").is_some() || !p.add.is_empty() || !p.remove.is_empty() {
-        audit_detail(s, Some(user.id), "sso.sync", "user", &user.id.to_string(), "success", Some(detail)).await;
+    if detail.get("role").is_some()
+        || detail.get("kept_last_admin").is_some()
+        || !p.add.is_empty()
+        || !p.remove.is_empty()
+    {
+        audit_detail(
+            s,
+            Some(user.id),
+            "sso.sync",
+            "user",
+            &user.id.to_string(),
+            "success",
+            Some(detail),
+        )
+        .await;
     }
     Ok(user)
 }
 
 /// Records a refused sign-in.
 pub async fn refused(s: &AppState, conn: &Connection, why: Refusal, detail: &str) {
-    tracing::info!(connection = conn.id, code = why.code(), detail, "single sign-on refused");
+    tracing::info!(
+        connection = conn.id,
+        code = why.code(),
+        detail,
+        "single sign-on refused"
+    );
     audit_detail(
         s,
         None,
@@ -215,7 +249,11 @@ pub async fn refused(s: &AppState, conn: &Connection, why: Refusal, detail: &str
 
 /// Finds or creates the user for `c`, then syncs them. A refusal is
 /// audited here.
-pub async fn login(s: &AppState, conn: &Connection, c: Claims) -> Result<std::result::Result<User, Refusal>> {
+pub async fn login(
+    s: &AppState,
+    conn: &Connection,
+    c: Claims,
+) -> Result<std::result::Result<User, Refusal>> {
     let pool = s.store.pool();
     if !conn.enabled {
         refused(s, conn, Refusal::Disabled, "connection disabled").await;
@@ -271,7 +309,10 @@ pub async fn login(s: &AppState, conn: &Connection, c: Claims) -> Result<std::re
                 .collect();
             let username = derive_username(&c, |n| taken.contains(&n.to_lowercase()));
             let role = if first.admin { Role::Admin } else { Role::User };
-            let user = s.store.create_user(&username, NO_PASSWORD, role, now).await?;
+            let user = s
+                .store
+                .create_user(&username, NO_PASSWORD, role, now)
+                .await?;
             let linked = sqlx::query(
                 "INSERT INTO ee_sso_identities (user_id, connection_id, subject, email, groups, last_login_at)
                  VALUES (?, ?, ?, ?, ?, ?)",
@@ -387,17 +428,31 @@ mod tests {
     #[test]
     fn derive_username_sanitises_and_suffixes() {
         let none = |_: &str| false;
-        assert_eq!(derive_username(&claims(Some("Jane Doe@x"), None, None), none), "Jane_Doe_x");
-        assert_eq!(derive_username(&claims(None, Some("jane@acme.io"), None), none), "jane");
-        assert_eq!(derive_username(&claims(None, None, Some("octo")), none), "octo");
-        assert_eq!(derive_username(&claims(None, None, None), none), "user");
-        assert_eq!(derive_username(&claims(Some("jane"), None, None), |n| n == "jane"), "jane-2");
         assert_eq!(
-            derive_username(&claims(Some("jane"), None, None), |n| n == "jane" || n == "jane-2"),
+            derive_username(&claims(Some("Jane Doe@x"), None, None), none),
+            "Jane_Doe_x"
+        );
+        assert_eq!(
+            derive_username(&claims(None, Some("jane@acme.io"), None), none),
+            "jane"
+        );
+        assert_eq!(
+            derive_username(&claims(None, None, Some("octo")), none),
+            "octo"
+        );
+        assert_eq!(derive_username(&claims(None, None, None), none), "user");
+        assert_eq!(
+            derive_username(&claims(Some("jane"), None, None), |n| n == "jane"),
+            "jane-2"
+        );
+        assert_eq!(
+            derive_username(&claims(Some("jane"), None, None), |n| n == "jane"
+                || n == "jane-2"),
             "jane-3"
         );
         let long = "a".repeat(80);
-        let got = derive_username(&claims(Some(&long), None, None), |n| n.len() == 64);
+        let full = "a".repeat(64);
+        let got = derive_username(&claims(Some(&long), None, None), |n| n == full);
         assert!(got.len() <= 64 && got.ends_with("-2"), "{got}");
     }
 

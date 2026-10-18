@@ -169,7 +169,10 @@ async fn detail(s: &AppState, team: TeamRecord) -> ApiResult<Json<TeamDetail>> {
         synced: db::synced_members(p, team.id)
             .await?
             .into_iter()
-            .map(|(user_id, connection)| SyncedMember { user_id, connection })
+            .map(|(user_id, connection)| SyncedMember {
+                user_id,
+                connection,
+            })
             .collect(),
         access: db::bindings(p, team.id).await?.iter().map(entry).collect(),
         id: team.id,
@@ -327,7 +330,8 @@ pub async fn remove_member(
         .any(|(u, _)| *u == user_id)
     {
         return Err(fleetops_core::Error::Conflict(
-            "managed by single sign-on: remove the group mapping or the user's group instead".into(),
+            "managed by single sign-on: remove the group mapping or the user's group instead"
+                .into(),
         )
         .into());
     }

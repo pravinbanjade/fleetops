@@ -4528,10 +4528,6 @@ export type UpdateUserData = {
 
 export type UpdateUserErrors = {
     /**
-     * The user is managed by single sign-on
-     */
-    409: unknown;
-    /**
      * Error: `{code, message, request_id}`
      */
     default: ErrorBody;

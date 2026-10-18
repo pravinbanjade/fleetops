@@ -129,7 +129,9 @@ fn binding_cookie(value: &str, tls: bool) -> HeaderValue {
 }
 
 fn clear_binding() -> HeaderValue {
-    HeaderValue::from_static("fleetops_sso=; HttpOnly; SameSite=Lax; Path=/api/v1/ee/sso; Max-Age=0")
+    HeaderValue::from_static(
+        "fleetops_sso=; HttpOnly; SameSite=Lax; Path=/api/v1/ee/sso; Max-Age=0",
+    )
 }
 
 fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -151,11 +153,17 @@ async fn authorize_endpoint(rt: &Runtime, c: &Connection) -> Result<(String, Str
             "read:user user:email read:org".into(),
         ),
         ConnectionSettings::Oidc { scopes, .. } => (
-            rt.oidc.discover(&issuer(rt, c)).await?.authorization_endpoint,
+            rt.oidc
+                .discover(&issuer(rt, c))
+                .await?
+                .authorization_endpoint,
             scopes.join(" "),
         ),
         ConnectionSettings::Microsoft { .. } | ConnectionSettings::Google { .. } => (
-            rt.oidc.discover(&issuer(rt, c)).await?.authorization_endpoint,
+            rt.oidc
+                .discover(&issuer(rt, c))
+                .await?
+                .authorization_endpoint,
             "openid profile email".into(),
         ),
     })
@@ -223,8 +231,12 @@ async fn start_inner(
     let callback = callback_url(s, id).ok_or((Refusal::Invalid, "no public URL".into()))?;
     let (auth, scopes) = authorize_endpoint(rt, &c).await.map_err(invalid)?;
     let now = now_unix();
-    let (state, nonce, verifier, binding) =
-        (random_token(), random_token(), random_token(), random_token());
+    let (state, nonce, verifier, binding) = (
+        random_token(),
+        random_token(),
+        random_token(),
+        random_token(),
+    );
     let pool = s.store.pool();
     sqlx::query("DELETE FROM ee_sso_states WHERE expires_at < ?")
         .bind(now)
@@ -326,8 +338,8 @@ async fn callback_inner(
     .await
     .map_err(|e| (Refusal::Invalid, e.to_string()))?;
     let row = row.ok_or((Refusal::Invalid, "unknown or used state".into()))?;
-    let binding = cookie(headers, BINDING_COOKIE)
-        .ok_or((Refusal::Invalid, "no binding cookie".into()))?;
+    let binding =
+        cookie(headers, BINDING_COOKIE).ok_or((Refusal::Invalid, "no binding cookie".into()))?;
     if sha256_b64(&binding) != row.binding_hash {
         return Err((Refusal::Invalid, "binding cookie does not match".into()));
     }
@@ -341,7 +353,11 @@ async fn callback_inner(
         return Err((Refusal::Disabled, "connection disabled".into()));
     }
     if let Some(e) = q.error {
-        let code = if e == "access_denied" { Refusal::Denied } else { Refusal::Invalid };
+        let code = if e == "access_denied" {
+            Refusal::Denied
+        } else {
+            Refusal::Invalid
+        };
         return Err((code, format!("provider error: {e}")));
     }
     let code = q.code.ok_or((Refusal::Invalid, "no code".into()))?;
@@ -387,12 +403,19 @@ async fn identify(
         ("code_verifier", verifier),
     ];
     if let ConnectionSettings::Github { .. } = &c.settings {
-        let token_url = format!("{}/login/oauth/access_token", super::github::web_base(rt, c));
+        let token_url = format!(
+            "{}/login/oauth/access_token",
+            super::github::web_base(rt, c)
+        );
         let tokens = rt.oidc.exchange(&token_url, &form).await.map_err(invalid)?;
         return super::github::identify(rt, c, &tokens.access_token).await;
     }
     let d = rt.oidc.discover(&issuer(rt, c)).await.map_err(invalid)?;
-    let tokens = rt.oidc.exchange(&d.token_endpoint, &form).await.map_err(invalid)?;
+    let tokens = rt
+        .oidc
+        .exchange(&d.token_endpoint, &form)
+        .await
+        .map_err(invalid)?;
     let id_token = tokens
         .id_token
         .ok_or((Refusal::Invalid, "the provider sent no ID token".into()))?;

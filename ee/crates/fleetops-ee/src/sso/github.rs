@@ -13,7 +13,9 @@ use serde_json::Value;
 /// The web base (authorize, token) for a connection.
 pub fn web_base(rt: &Runtime, c: &Connection) -> String {
     match &c.settings {
-        ConnectionSettings::Github { base_url: Some(b), .. } => b.clone(),
+        ConnectionSettings::Github {
+            base_url: Some(b), ..
+        } => b.clone(),
         _ => rt.endpoints.github_web.clone(),
     }
 }
@@ -21,7 +23,9 @@ pub fn web_base(rt: &Runtime, c: &Connection) -> String {
 /// The REST API base: `<base>/api/v3` on GitHub Enterprise Server.
 pub fn api_base(rt: &Runtime, c: &Connection) -> String {
     match &c.settings {
-        ConnectionSettings::Github { base_url: Some(b), .. } => format!("{b}/api/v3"),
+        ConnectionSettings::Github {
+            base_url: Some(b), ..
+        } => format!("{b}/api/v3"),
         _ => rt.endpoints.github_api.clone(),
     }
 }
@@ -43,13 +47,21 @@ async fn get_all(rt: &Runtime, url: &str, token: &str) -> fleetops_core::Result<
     Ok(out)
 }
 
-pub async fn identify(rt: &Runtime, c: &Connection, token: &str) -> Result<Claims, (Refusal, String)> {
+pub async fn identify(
+    rt: &Runtime,
+    c: &Connection,
+    token: &str,
+) -> Result<Claims, (Refusal, String)> {
     let ConnectionSettings::Github { orgs, .. } = &c.settings else {
         unreachable!()
     };
     let invalid = |e: fleetops_core::Error| (Refusal::Invalid, e.to_string());
     let api = api_base(rt, c);
-    let user: Value = rt.oidc.get_json(&format!("{api}/user"), Some(token)).await.map_err(invalid)?;
+    let user: Value = rt
+        .oidc
+        .get_json(&format!("{api}/user"), Some(token))
+        .await
+        .map_err(invalid)?;
     let id = user
         .get("id")
         .and_then(Value::as_i64)
@@ -65,17 +77,25 @@ pub async fn identify(rt: &Runtime, c: &Connection, token: &str) -> Result<Claim
     if !member_of.iter().any(|o| allowed.contains(o)) {
         return Err((Refusal::NotAllowed, "not in an allowed organisation".into()));
     }
-    let emails = get_all(rt, &format!("{api}/user/emails"), token).await.unwrap_or_default();
+    let emails = get_all(rt, &format!("{api}/user/emails"), token)
+        .await
+        .unwrap_or_default();
     let email = emails
         .iter()
-        .find(|e| e.get("primary") == Some(&Value::Bool(true)) && e.get("verified") == Some(&Value::Bool(true)))
+        .find(|e| {
+            e.get("primary") == Some(&Value::Bool(true))
+                && e.get("verified") == Some(&Value::Bool(true))
+        })
         .and_then(|e| claim_str(e, "email"));
     let groups = get_all(rt, &format!("{api}/user/teams"), token)
         .await
         .map_err(invalid)?
         .iter()
         .filter_map(|t| {
-            let org = t.get("organization").and_then(|o| claim_str(o, "login"))?.to_lowercase();
+            let org = t
+                .get("organization")
+                .and_then(|o| claim_str(o, "login"))?
+                .to_lowercase();
             let slug = claim_str(t, "slug")?.to_lowercase();
             allowed.contains(&org).then(|| format!("{org}/{slug}"))
         })

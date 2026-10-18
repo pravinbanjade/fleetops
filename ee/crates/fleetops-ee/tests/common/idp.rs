@@ -53,7 +53,9 @@ impl Idp {
         let server = MockServer::start().await;
         let issuer = format!("{}{issuer_path}", server.uri());
         Mock::given(method("GET"))
-            .and(path(format!("{issuer_path}/.well-known/openid-configuration")))
+            .and(path(format!(
+                "{issuer_path}/.well-known/openid-configuration"
+            )))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "issuer": issuer,
                 "authorization_endpoint": format!("{}/authorize", server.uri()),
@@ -96,7 +98,8 @@ impl Idp {
 
     /// The token endpoint answers with `id_token` (and an access token).
     pub async fn answer_token(&self, id_token: Option<String>) {
-        let mut body = json!({"access_token": "access-1", "token_type": "Bearer", "expires_in": 300});
+        let mut body =
+            json!({"access_token": "access-1", "token_type": "Bearer", "expires_in": 300});
         if let Some(t) = id_token {
             body["id_token"] = json!(t);
         }
@@ -129,6 +132,10 @@ impl Idp {
 pub fn sign(claims: &Value, kid: &str) -> String {
     let mut h = Header::new(Algorithm::RS256);
     h.kid = Some(kid.into());
-    jsonwebtoken::encode(&h, claims, &EncodingKey::from_rsa_pem(PRIVATE_KEY.as_bytes()).unwrap())
-        .unwrap()
+    jsonwebtoken::encode(
+        &h,
+        claims,
+        &EncodingKey::from_rsa_pem(PRIVATE_KEY.as_bytes()).unwrap(),
+    )
+    .unwrap()
 }

@@ -34,7 +34,10 @@ async fn licensed() -> (Ee, Session) {
     .await;
     let admin = ee.admin().await;
     let r = ee
-        .install(&admin, &license(&k, now_unix() + 30 * DAY, None, &["audit_export"]))
+        .install(
+            &admin,
+            &license(&k, now_unix() + 30 * DAY, None, &["audit_export"]),
+        )
         .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
     (ee, admin)
@@ -75,7 +78,9 @@ async fn create_connection_hides_secrets() {
 #[tokio::test]
 async fn secret_survives_patch_without_secret() {
     let (ee, admin) = licensed().await;
-    let id = create(&ee, &admin, oidc("Acme")).await.json()["id"].as_i64().unwrap();
+    let id = create(&ee, &admin, oidc("Acme")).await.json()["id"]
+        .as_i64()
+        .unwrap();
     let r = ee
         .send(
             "PATCH",
@@ -95,7 +100,8 @@ async fn enable_needs_public_url() {
     let k = key();
     let ee = ee_app(&k, None).await;
     let admin = ee.admin().await;
-    ee.install(&admin, &license(&k, now_unix() + DAY, None, &[])).await;
+    ee.install(&admin, &license(&k, now_unix() + DAY, None, &[]))
+        .await;
     let mut v = oidc("Acme");
     v["enabled"] = json!(true);
     let r = create(&ee, &admin, v).await;
@@ -118,7 +124,12 @@ async fn rejects_common_tenant() {
 #[tokio::test]
 async fn ldap_kind_refused_for_now() {
     let (ee, admin) = licensed().await;
-    let r = create(&ee, &admin, json!({"name": "AD", "settings": {"kind": "ldap"}})).await;
+    let r = create(
+        &ee,
+        &admin,
+        json!({"name": "AD", "settings": {"kind": "ldap"}}),
+    )
+    .await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
     assert!(r.text.contains("later release"), "{}", r.text);
 }
@@ -129,7 +140,9 @@ async fn unlicensed_create_refused_but_disable_allowed() {
     let mut v = oidc("Acme");
     v["enabled"] = json!(true);
     let id = create(&ee, &admin, v).await.json()["id"].as_i64().unwrap();
-    let r = ee.send("DELETE", "/api/v1/ee/license", None, Some(&admin)).await;
+    let r = ee
+        .send("DELETE", "/api/v1/ee/license", None, Some(&admin))
+        .await;
     assert!(r.status.is_success(), "{}", r.text);
     let r = create(&ee, &admin, oidc("Other")).await;
     assert_eq!(r.json()["code"], "license_required", "{}", r.text);
@@ -195,7 +208,9 @@ async fn password_mode_local_admins_blocks_local_user_but_not_local_admin() {
 async fn local_admins_mode_refused_without_a_local_admin() {
     let (ee, admin) = licensed().await;
     // Make the only admin an SSO user.
-    let conn = create(&ee, &admin, oidc("Acme")).await.json()["id"].as_i64().unwrap();
+    let conn = create(&ee, &admin, oidc("Acme")).await.json()["id"]
+        .as_i64()
+        .unwrap();
     sqlx::query("INSERT INTO ee_sso_identities (user_id, connection_id, subject, last_login_at) VALUES (1, ?, 'x', 0)")
         .bind(conn)
         .execute(ee.store.pool())
@@ -215,7 +230,9 @@ async fn local_admins_mode_refused_without_a_local_admin() {
 #[tokio::test]
 async fn sso_user_password_login_looks_like_a_wrong_password() {
     let (ee, admin) = licensed().await;
-    let conn = create(&ee, &admin, oidc("Acme")).await.json()["id"].as_i64().unwrap();
+    let conn = create(&ee, &admin, oidc("Acme")).await.json()["id"]
+        .as_i64()
+        .unwrap();
     let id = ee.user(&admin, "sam").await.json()["id"].as_i64().unwrap();
     sqlx::query("INSERT INTO ee_sso_identities (user_id, connection_id, subject, last_login_at) VALUES (?, ?, 'sam', 0)")
         .bind(id)
@@ -224,14 +241,26 @@ async fn sso_user_password_login_looks_like_a_wrong_password() {
         .await
         .unwrap();
     let wrong = ee
-        .send("POST", "/api/v1/auth/login", body(json!({"username": "admin", "password": "nope-nope"})), None)
+        .send(
+            "POST",
+            "/api/v1/auth/login",
+            body(json!({"username": "admin", "password": "nope-nope"})),
+            None,
+        )
         .await;
     for pw in [PW, "!sso"] {
         let r = ee
-            .send("POST", "/api/v1/auth/login", body(json!({"username": "sam", "password": pw})), None)
+            .send(
+                "POST",
+                "/api/v1/auth/login",
+                body(json!({"username": "sam", "password": pw})),
+                None,
+            )
             .await;
         assert_eq!(r.status, wrong.status);
-        assert_eq!(r.text, wrong.text);
+        for k in ["code", "message"] {
+            assert_eq!(r.json()[k], wrong.json()[k]);
+        }
     }
 }
 
@@ -240,9 +269,14 @@ async fn sso_user_password_login_looks_like_a_wrong_password() {
 use fleetops_ee::sso::provision::{self, Claims};
 
 async fn team(ee: &Ee, admin: &Session, name: &str) -> i64 {
-    ee.send("POST", "/api/v1/ee/teams", body(json!({"name": name})), Some(admin))
-        .await
-        .json()["id"]
+    ee.send(
+        "POST",
+        "/api/v1/ee/teams",
+        body(json!({"name": name})),
+        Some(admin),
+    )
+    .await
+    .json()["id"]
         .as_i64()
         .unwrap()
 }
@@ -264,7 +298,9 @@ async fn map(ee: &Ee, admin: &Session, conn: i64, v: Value) -> Resp {
 }
 
 async fn jane(ee: &Ee, conn: i64, groups: &[&str]) -> fleetops_core::User {
-    let c = fleetops_ee::sso::db::get(ee.store.pool(), conn).await.unwrap();
+    let c = fleetops_ee::sso::db::get(ee.store.pool(), conn)
+        .await
+        .unwrap();
     provision::login(
         &ee.state,
         &c,
@@ -293,8 +329,14 @@ async fn mapping_needs_exactly_one_target() {
     let (ee, admin) = licensed().await;
     let conn = enabled(&ee, &admin).await;
     let ops = team(&ee, &admin, "Ops").await;
-    for v in [json!({"group": "ops"}), json!({"group": "ops", "team_id": ops, "admin": true})] {
-        assert_eq!(map(&ee, &admin, conn, v).await.status, StatusCode::BAD_REQUEST);
+    for v in [
+        json!({"group": "ops"}),
+        json!({"group": "ops", "team_id": ops, "admin": true}),
+    ] {
+        assert_eq!(
+            map(&ee, &admin, conn, v).await.status,
+            StatusCode::BAD_REQUEST
+        );
     }
     let r = map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops})).await;
     assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
@@ -308,7 +350,9 @@ async fn deleting_mapping_removes_sync_membership_now() {
     let (ee, admin) = licensed().await;
     let conn = enabled(&ee, &admin).await;
     let ops = team(&ee, &admin, "Ops").await;
-    let mid = map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops})).await.json()["id"]
+    let mid = map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops}))
+        .await
+        .json()["id"]
         .as_i64()
         .unwrap();
     let u = jane(&ee, conn, &["ops"]).await;
@@ -363,13 +407,23 @@ async fn deleting_connection_keeps_users_and_reports_count() {
     let conn = enabled(&ee, &admin).await;
     let u = jane(&ee, conn, &[]).await;
     let r = ee
-        .send("DELETE", &format!("/api/v1/ee/sso/connections/{conn}"), None, Some(&admin))
+        .send(
+            "DELETE",
+            &format!("/api/v1/ee/sso/connections/{conn}"),
+            None,
+            Some(&admin),
+        )
         .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
     assert_eq!(r.json()["users_left"], 1);
     assert_eq!(ee.store.get_user(u.id).await.unwrap().username, "jane");
     let pw = ee
-        .send("POST", "/api/v1/auth/login", body(json!({"username": "jane", "password": "!sso"})), None)
+        .send(
+            "POST",
+            "/api/v1/auth/login",
+            body(json!({"username": "jane", "password": "!sso"})),
+            None,
+        )
         .await;
     assert_eq!(pw.status, StatusCode::UNAUTHORIZED);
 }
@@ -379,10 +433,13 @@ async fn unlicensed_add_mapping_refused_delete_allowed() {
     let (ee, admin) = licensed().await;
     let conn = enabled(&ee, &admin).await;
     let ops = team(&ee, &admin, "Ops").await;
-    let mid = map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops})).await.json()["id"]
+    let mid = map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops}))
+        .await
+        .json()["id"]
         .as_i64()
         .unwrap();
-    ee.send("DELETE", "/api/v1/ee/license", None, Some(&admin)).await;
+    ee.send("DELETE", "/api/v1/ee/license", None, Some(&admin))
+        .await;
     let r = map(&ee, &admin, conn, json!({"group": "dev", "team_id": ops})).await;
     assert_eq!(r.json()["code"], "license_required");
     let r = ee
@@ -420,8 +477,18 @@ async fn team_member_list_marks_sync_rows() {
     let ops = team(&ee, &admin, "Ops").await;
     map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops})).await;
     let u = jane(&ee, conn, &["ops"]).await;
-    let r = ee.send("GET", &format!("/api/v1/ee/teams/{ops}"), None, Some(&admin)).await;
-    assert_eq!(r.json()["synced"], json!([{"user_id": u.id, "connection": "Acme"}]));
+    let r = ee
+        .send(
+            "GET",
+            &format!("/api/v1/ee/teams/{ops}"),
+            None,
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(
+        r.json()["synced"],
+        json!([{"user_id": u.id, "connection": "Acme"}])
+    );
     let rm = ee
         .send(
             "DELETE",

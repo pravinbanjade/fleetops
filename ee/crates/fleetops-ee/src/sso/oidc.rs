@@ -125,11 +125,7 @@ impl Oidc {
     }
 
     /// Exchanges an authorization code (with its PKCE verifier) for tokens.
-    pub async fn exchange(
-        &self,
-        token_endpoint: &str,
-        form: &[(&str, &str)],
-    ) -> Result<Tokens> {
+    pub async fn exchange(&self, token_endpoint: &str, form: &[(&str, &str)]) -> Result<Tokens> {
         let res = self
             .http
             .post(token_endpoint)

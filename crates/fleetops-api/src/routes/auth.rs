@@ -16,9 +16,8 @@ use axum::{
     Json,
 };
 use fleetops_core::{
-    external::LoginProvider,
-    now_unix, user::PASSWORD_MAX, user::USERNAME_MAX, validate_password, validate_username, Error,
-    User,
+    external::LoginProvider, now_unix, user::PASSWORD_MAX, user::USERNAME_MAX, validate_password,
+    validate_username, Error, User,
 };
 use fleetops_store::NewSession;
 use serde::{Deserialize, Serialize};

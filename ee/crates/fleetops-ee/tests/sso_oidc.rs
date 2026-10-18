@@ -43,7 +43,8 @@ impl Flow {
         )
         .await;
         let admin = ee.admin().await;
-        ee.install(&admin, &license(&k, now_unix() + DAY, None, &[])).await;
+        ee.install(&admin, &license(&k, now_unix() + DAY, None, &[]))
+            .await;
         let r = ee
             .send(
                 "POST",
@@ -60,7 +61,12 @@ impl Flow {
             .await;
         assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
         let conn = r.json()["id"].as_i64().unwrap();
-        Flow { ee, admin, idp, conn }
+        Flow {
+            ee,
+            admin,
+            idp,
+            conn,
+        }
     }
 
     async fn start(&self, return_to: &str) -> Started {
@@ -75,7 +81,10 @@ impl Flow {
             .await;
         assert_eq!(r.status, StatusCode::FOUND, "{}", r.text);
         let loc = r.headers["location"].to_str().unwrap();
-        assert!(loc.starts_with(&format!("{}/authorize?", self.idp.uri())), "{loc}");
+        assert!(
+            loc.starts_with(&format!("{}/authorize?", self.idp.uri())),
+            "{loc}"
+        );
         let query: HashMap<String, String> = url::Url::parse(loc)
             .unwrap()
             .query_pairs()
@@ -104,7 +113,10 @@ impl Flow {
         self.ee
             .send(
                 "GET",
-                &format!("/api/v1/ee/sso/{}/callback?code=c1&state={state}{extra}", self.conn),
+                &format!(
+                    "/api/v1/ee/sso/{}/callback?code=c1&state={state}{extra}",
+                    self.conn
+                ),
                 None,
                 cookie.map(|_| &s),
             )
@@ -148,8 +160,16 @@ async fn full_login_sets_session_and_redirects() {
     let r = f.sign_in(json!({"groups": ["ops"]})).await;
     assert_eq!(r.status, StatusCode::FOUND, "{}", r.text);
     assert_eq!(location(&r), "/envs");
-    let cookies: Vec<&str> = r.headers.get_all("set-cookie").iter().map(|v| v.to_str().unwrap()).collect();
-    assert!(cookies.iter().any(|c| c.contains("Max-Age=43200")), "{cookies:?}");
+    let cookies: Vec<&str> = r
+        .headers
+        .get_all("set-cookie")
+        .iter()
+        .map(|v| v.to_str().unwrap())
+        .collect();
+    assert!(
+        cookies.iter().any(|c| c.contains("Max-Age=43200")),
+        "{cookies:?}"
+    );
     assert_eq!(f.users().await, 2);
 }
 
@@ -157,8 +177,16 @@ async fn full_login_sets_session_and_redirects() {
 async fn session_cookie_lifetime_is_session_hours() {
     let f = Flow::new(3).await;
     let r = f.sign_in(json!({})).await;
-    let cookies: Vec<&str> = r.headers.get_all("set-cookie").iter().map(|v| v.to_str().unwrap()).collect();
-    assert!(cookies.iter().any(|c| c.contains("Max-Age=10800")), "{cookies:?}");
+    let cookies: Vec<&str> = r
+        .headers
+        .get_all("set-cookie")
+        .iter()
+        .map(|v| v.to_str().unwrap())
+        .collect();
+    assert!(
+        cookies.iter().any(|c| c.contains("Max-Age=10800")),
+        "{cookies:?}"
+    );
 }
 
 async fn rejected(f: &Flow, r: Resp) {
@@ -176,7 +204,11 @@ async fn rejects_bad_signature() {
     // Flip a byte of the signature.
     let mut parts: Vec<String> = t.split('.').map(String::from).collect();
     let sig = parts[2].clone();
-    parts[2] = format!("{}{}", if sig.starts_with('A') { "B" } else { "A" }, &sig[1..]);
+    parts[2] = format!(
+        "{}{}",
+        if sig.starts_with('A') { "B" } else { "A" },
+        &sig[1..]
+    );
     f.idp.answer_token(Some(parts.join("."))).await;
     let r = f.callback(&st.state, Some(&st.binding), "").await;
     rejected(&f, r).await;
@@ -186,7 +218,9 @@ async fn rejects_bad_signature() {
 async fn rejects_wrong_aud() {
     let f = Flow::new(12).await;
     let st = f.start("/").await;
-    let t = f.idp.id_token(&f.idp.uri(), &st.nonce, json!({"aud": "someone-else"}));
+    let t = f
+        .idp
+        .id_token(&f.idp.uri(), &st.nonce, json!({"aud": "someone-else"}));
     f.idp.answer_token(Some(t)).await;
     rejected(&f, f.callback(&st.state, Some(&st.binding), "").await).await;
 }
@@ -205,7 +239,11 @@ async fn rejects_expired() {
     let f = Flow::new(12).await;
     let st = f.start("/").await;
     let past = now_unix() - 3600;
-    let t = f.idp.id_token(&f.idp.uri(), &st.nonce, json!({"iat": past - 300, "exp": past}));
+    let t = f.idp.id_token(
+        &f.idp.uri(),
+        &st.nonce,
+        json!({"iat": past - 300, "exp": past}),
+    );
     f.idp.answer_token(Some(t)).await;
     rejected(&f, f.callback(&st.state, Some(&st.binding), "").await).await;
 }
@@ -224,7 +262,9 @@ async fn rejects_unknown_key() {
     let f = Flow::new(12).await;
     let st = f.start("/").await;
     let claims = f.idp.base_claims(&f.idp.uri(), &st.nonce, json!({}));
-    f.idp.answer_token(Some(sign(&claims, "rotated-away"))).await;
+    f.idp
+        .answer_token(Some(sign(&claims, "rotated-away")))
+        .await;
     rejected(&f, f.callback(&st.state, Some(&st.binding), "").await).await;
 }
 
@@ -235,7 +275,11 @@ async fn state_is_single_use() {
     let t = f.idp.id_token(&f.idp.uri(), &st.nonce, json!({}));
     f.idp.answer_token(Some(t)).await;
     let first = f.callback(&st.state, Some(&st.binding), "").await;
-    assert!(!location(&first).contains("sso_error"), "{}", location(&first));
+    assert!(
+        !location(&first).contains("sso_error"),
+        "{}",
+        location(&first)
+    );
     let again = f.callback(&st.state, Some(&st.binding), "").await;
     assert_eq!(location(&again), "/login?sso_error=invalid");
 }
@@ -279,9 +323,13 @@ async fn disabled_connection_start_refused() {
         Some(&f.admin),
     )
     .await;
-    let r = f
-        .ee
-        .send("GET", &format!("/api/v1/ee/sso/{}/start", f.conn), None, None)
+    let r =
+        f.ee.send(
+            "GET",
+            &format!("/api/v1/ee/sso/{}/start", f.conn),
+            None,
+            None,
+        )
         .await;
     assert_eq!(location(&r), "/login?sso_error=disabled");
 }

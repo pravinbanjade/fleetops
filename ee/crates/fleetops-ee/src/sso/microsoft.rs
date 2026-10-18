@@ -62,8 +62,16 @@ pub async fn identify(
             Ok(g) => g,
             Err(e) => {
                 tracing::warn!(connection = c.id, error = %e, "Microsoft Graph groups failed");
-                audit_detail(s, None, "sso.login", "sso_connection", &c.id.to_string(), "failure",
-                    Some(json!({"connection": c.name, "groups_error": e.to_string()}))).await;
+                audit_detail(
+                    s,
+                    None,
+                    "sso.login",
+                    "sso_connection",
+                    &c.id.to_string(),
+                    "failure",
+                    Some(json!({"connection": c.name, "groups_error": e.to_string()})),
+                )
+                .await;
                 vec![]
             }
         }

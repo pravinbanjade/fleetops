@@ -28,7 +28,12 @@ pub enum Feature {
 }
 
 impl Feature {
-    pub const ALL: &'static [Feature] = &[Feature::AuditExport, Feature::Teams, Feature::Rbac, Feature::Sso];
+    pub const ALL: &'static [Feature] = &[
+        Feature::AuditExport,
+        Feature::Teams,
+        Feature::Rbac,
+        Feature::Sso,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {

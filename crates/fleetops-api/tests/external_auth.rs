@@ -89,7 +89,9 @@ async fn password_login_refused_when_hook_disallows_it() {
     let wrong = app.login("admin", "not-the-password").await;
     assert_eq!(refused.status, StatusCode::UNAUTHORIZED);
     assert_eq!(refused.status, wrong.status);
-    assert_eq!(refused.json, wrong.json);
+    for k in ["code", "message"] {
+        assert_eq!(refused.json[k], wrong.json[k]);
+    }
 }
 
 #[tokio::test]
@@ -140,7 +142,9 @@ async fn users_route_fills_sso_name() {
     let app = app_with_external(Arc::new(stub)).await;
     let admin = app.setup_admin().await;
     app.create_user(&admin, "sam", "sam-password", "user").await;
-    let r = app.send(req("GET", "/api/v1/users", None, Some(&admin))).await;
+    let r = app
+        .send(req("GET", "/api/v1/users", None, Some(&admin)))
+        .await;
     let users = r.json.as_array().unwrap();
     assert_eq!(users[0].get("sso"), None);
     assert_eq!(users[1]["sso"], "Acme Okta");
@@ -155,7 +159,10 @@ async fn update_refuses_role_or_password_for_managed_user() {
     let app = app_with_external(Arc::new(stub)).await;
     let admin = app.setup_admin().await;
     app.create_user(&admin, "sam", "sam-password", "user").await;
-    for body in [json!({"role": "admin"}), json!({"password": "new-password"})] {
+    for body in [
+        json!({"role": "admin"}),
+        json!({"password": "new-password"}),
+    ] {
         let r = app
             .send(req("PATCH", "/api/v1/users/2", Some(body), Some(&admin)))
             .await;

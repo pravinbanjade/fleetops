@@ -27,8 +27,11 @@ pub trait ExternalAuth: Send + Sync {
     async fn password_allowed(&self, user: &User) -> Result<bool>;
     /// Directory login for a username whose local check failed or that has
     /// no local account: the user and their session lifetime in hours.
-    async fn directory_login(&self, username: &str, password: &str)
-        -> Result<Option<(User, Option<i64>)>>;
+    async fn directory_login(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<Option<(User, Option<i64>)>>;
     /// The connection name for every user an identity provider manages.
     async fn managed_users(&self) -> Result<HashMap<i64, String>>;
 }

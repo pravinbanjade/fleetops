@@ -91,10 +91,7 @@ pub async fn create(
     summary = "Change a user's role or password",
     params(("id" = i64, Path, description = "User id")),
     request_body = UpdateUser,
-    responses(
-        (status = 200, description = "Updated", body = User),
-        (status = 409, description = "The user is managed by single sign-on")
-    )
+    responses((status = 200, description = "Updated", body = User))
 )]
 pub async fn update(
     State(s): State<AppState>,

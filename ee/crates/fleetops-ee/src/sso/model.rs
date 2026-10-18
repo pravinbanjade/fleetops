@@ -149,7 +149,9 @@ impl ConnectionSettings {
                     .filter(|e| !e.is_empty());
                 if let Some(e) = &admin_email {
                     if !e.contains('@') {
-                        return Err(Error::Invalid("admin_email must be an email address".into()));
+                        return Err(Error::Invalid(
+                            "admin_email must be an email address".into(),
+                        ));
                     }
                 }
                 Self::Google {
@@ -169,7 +171,9 @@ impl ConnectionSettings {
                     .filter(|o| !o.is_empty())
                     .collect::<Vec<_>>();
                 if orgs.is_empty() {
-                    return Err(Error::Invalid("list at least one GitHub organisation".into()));
+                    return Err(Error::Invalid(
+                        "list at least one GitHub organisation".into(),
+                    ));
                 }
                 let base_url = base_url
                     .map(|u| u.trim().trim_end_matches('/').to_string())
@@ -280,8 +284,7 @@ fn is_domain(s: &str) -> bool {
 
 /// `https://`, or `http://` on the loopback interface (tests, local IdPs).
 fn check_url(u: &str, field: &str) -> Result<()> {
-    let parsed =
-        url::Url::parse(u).map_err(|_| Error::Invalid(format!("{field} is not a URL")))?;
+    let parsed = url::Url::parse(u).map_err(|_| Error::Invalid(format!("{field} is not a URL")))?;
     let local = matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
     match parsed.scheme() {
         "https" => Ok(()),

@@ -49,6 +49,9 @@ impl ExternalAuth for EeSso {
     }
 
     async fn managed_users(&self) -> Result<HashMap<i64, String>> {
-        Ok(db::managed_users(self.store.pool()).await?.into_iter().collect())
+        Ok(db::managed_users(self.store.pool())
+            .await?
+            .into_iter()
+            .collect())
     }
 }
