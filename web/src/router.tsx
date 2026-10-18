@@ -14,7 +14,7 @@ import { Shell } from "@/components/Shell";
 import { isKube } from "@/lib/env";
 import { LiveProvider } from "@/live/LiveProvider";
 import { TaskProvider } from "@/live/TaskProvider";
-import { LoginPage } from "@/pages/LoginPage";
+import { LoginPage, SSO_ERRORS, type SsoError } from "@/pages/LoginPage";
 import { NoEnvironmentsPage, NotFoundPage } from "@/pages/misc";
 import { CONTAINER_TABS, type ContainerTab } from "@/pages/containers/tabs";
 import { HELM_TABS, type HelmTab } from "@/pages/helm/tabs";
@@ -63,7 +63,10 @@ const setupRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  validateSearch: (s: Record<string, unknown>): { redirect?: string } => ({ redirect: safeRedirect(s.redirect) }),
+  validateSearch: (s: Record<string, unknown>): { redirect?: string; sso_error?: SsoError } => ({
+    redirect: safeRedirect(s.redirect),
+    sso_error: SSO_ERRORS.find((e) => e === s.sso_error),
+  }),
   beforeLoad: async ({ context, search }) => {
     const status = await context.queryClient.fetchQuery(authStatusQuery);
     if (status.setup_required) throw redirect({ to: "/setup" });

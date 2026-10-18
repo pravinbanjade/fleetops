@@ -36,6 +36,11 @@ export function UsersPage() {
           <UserAvatar name={c.getValue()} />
           {c.getValue()}
           {c.row.original.id === me.id && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+          {c.row.original.sso && (
+            <span className="rounded border px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+              Signed in with {c.row.original.sso}
+            </span>
+          )}
         </span>
       ),
     }),
@@ -51,12 +56,18 @@ export function UsersPage() {
               Access
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "role", user: c.row.original })}>
-            Change role
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "password", user: c.row.original })}>
-            Reset password
-          </Button>
+          {c.row.original.sso ? (
+            <span className="self-center text-xs text-muted-foreground">Role managed by single sign-on</span>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "role", user: c.row.original })}>
+                Change role
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "password", user: c.row.original })}>
+                Reset password
+              </Button>
+            </>
+          )}
           <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "delete", user: c.row.original })}>
             Delete
           </Button>

@@ -96,4 +96,27 @@ describe("login page", () => {
     await user.click(screen.getByRole("button", { name: "Log in" }));
     await waitFor(() => expect(history.location.pathname).toBe("/envs/local"));
   });
+
+  it("offers single sign-on and keeps the password form one click away", async () => {
+    mockFetch({ ...out, "GET /api/v1/auth/providers": { json: [{ id: 3, name: "Acme Okta", kind: "oidc" }] } });
+    const { screen } = renderApp("/login?redirect=%2Fenvs");
+    const link = await screen.findByRole("link", { name: "Sign in with Acme Okta" });
+    expect(link).toHaveAttribute("href", "/api/v1/ee/sso/3/start?return_to=%2Fenvs");
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Sign in with password" }));
+    expect(await screen.findByLabelText("Password")).toBeInTheDocument();
+  });
+
+  it("explains why single sign-on sent the user back", async () => {
+    mockFetch(out);
+    const { screen } = renderApp("/login?sso_error=seat_limit");
+    expect(await screen.findByRole("alert")).toHaveTextContent("FleetOps has reached its licensed user limit. Ask an admin.");
+  });
+
+  it("ignores an unknown sso_error", async () => {
+    mockFetch(out);
+    const { screen } = renderApp("/login?sso_error=%3Cscript%3E");
+    await screen.findByLabelText("Password");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

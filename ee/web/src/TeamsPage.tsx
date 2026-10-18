@@ -209,14 +209,27 @@ function MembersDialog({ team, frozen, onClose }: { team: TeamSummary; frozen: b
         </div>
         {detail.data && members.length === 0 && <p className="text-sm text-muted-foreground">No members yet.</p>}
         <ul className="grid gap-1">
-          {members.map((m) => (
-            <li key={m.id} className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm">
-              {m.username}
-              <Button variant="outline" size="sm" aria-label={`Remove ${m.username}`} disabled={busy} onClick={() => run(() => removeTeamMember(team.id, m.id))}>
-                Remove
-              </Button>
-            </li>
-          ))}
+          {members.map((m) => {
+            const via = detail.data?.synced.find((s) => s.user_id === m.id)?.connection;
+            return (
+              <li key={m.id} className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm">
+                <span>
+                  {m.username}
+                  {via && <span className="ml-2 text-xs text-muted-foreground">via {via}</span>}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={`Remove ${m.username}`}
+                  title={via ? `Added by ${via} group sync: change the group mapping or the user's groups instead` : undefined}
+                  disabled={busy || !!via}
+                  onClick={() => run(() => removeTeamMember(team.id, m.id))}
+                >
+                  Remove
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       </DialogContent>
     </Dialog>

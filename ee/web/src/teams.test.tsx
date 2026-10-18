@@ -14,6 +14,7 @@ const OPS_DETAIL: TeamDetail = {
   name: "ops",
   description: "on call",
   members: [BOB],
+  synced: [],
   access: [{ env_id: 1, env_name: "local", env_kind: "docker-local", role: "viewer", namespaces: null }],
 };
 
@@ -34,7 +35,7 @@ describe("teams", () => {
   it("lists teams and creates one", async () => {
     const calls = mockFetch({
       ...routes(["teams"]),
-      "POST /api/v1/ee/teams": { status: 201, json: { ...OPS_DETAIL, id: 8, name: "dev", members: [], access: [] } },
+      "POST /api/v1/ee/teams": { status: 201, json: { ...OPS_DETAIL, id: 8, name: "dev", members: [], synced: [], access: [] } },
     });
     const { screen } = renderApp("/admin/teams");
     await waitFor(() => expect(row(screen, "ops")).toHaveTextContent("on call"));

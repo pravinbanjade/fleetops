@@ -15,6 +15,8 @@ export interface TeamDetail {
   name: string;
   description: string | null;
   members: User[];
+  /** Members single sign-on group sync added; they leave through the identity provider. */
+  synced: { user_id: number; connection: string }[];
   access: AccessEntry[];
 }
 

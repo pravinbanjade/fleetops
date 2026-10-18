@@ -1,6 +1,6 @@
 import { createRoute, lazyRouteComponent } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { KeyRound, ShieldCheck, UsersRound } from "lucide-react";
+import { KeyRound, LogIn, ShieldCheck, UsersRound } from "lucide-react";
 import type { EeModule } from "@/ee-contract";
 import { AuditExport } from "./AuditExport";
 import { LicenseBanner } from "./LicenseBanner";
@@ -26,11 +26,17 @@ export const ee: EeModule = {
       path: "roles",
       component: lazyRouteComponent(() => import("./RolesPage"), "RolesPage"),
     }),
+    createRoute({
+      getParentRoute: () => admin,
+      path: "sso",
+      component: lazyRouteComponent(() => import("./SsoPage"), "SsoPage"),
+    }),
   ],
-  // Teams and Roles show without a license too: frozen ones stay visible and removable.
+  // Teams, Roles and SSO show without a license too: frozen ones stay visible and removable.
   adminNav: [
     { to: "/admin/teams", label: "Teams", icon: UsersRound },
     { to: "/admin/roles", label: "Roles", icon: ShieldCheck },
+    { to: "/admin/sso", label: "Single sign-on", icon: LogIn },
     { to: "/admin/license", label: "License", icon: KeyRound },
   ],
   slots: {

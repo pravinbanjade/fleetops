@@ -31,6 +31,16 @@ describe("admin access", () => {
 });
 
 describe("users", () => {
+  it("marks single sign-on users and locks their role and password", async () => {
+    mockFetch({ ...routes, "GET /api/v1/users": { json: [ADMIN.user, { ...BOB, sso: "Acme Okta" }] } });
+    const { screen } = renderApp("/admin/users");
+    await waitFor(() => expect(row(screen, "bob")).toHaveTextContent("Signed in with Acme Okta"));
+    expect(within(row(screen, "bob")).queryByRole("button", { name: "Change role" })).toBeNull();
+    expect(within(row(screen, "bob")).queryByRole("button", { name: "Reset password" })).toBeNull();
+    expect(row(screen, "bob")).toHaveTextContent("Role managed by single sign-on");
+    expect(within(row(screen, "admin")).getByRole("button", { name: "Change role" })).toBeInTheDocument();
+  });
+
   it("lists users and marks the current one", async () => {
     mockFetch(routes);
     const { screen } = renderApp("/admin/users");
