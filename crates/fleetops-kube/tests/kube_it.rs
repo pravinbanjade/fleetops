@@ -336,7 +336,8 @@ async fn the_create_check_rejects_bad_credentials() {
 }
 
 use common::kube_client;
-use fleetops_core::kube::{ApplyAction, ApplyMode, WatchEvent};
+use fleetops_core::access;
+use fleetops_core::kube::{ApplyAction, ApplyMode, DocInfo, WatchEvent, NOT_SENT};
 use futures_util::StreamExt;
 
 fn uniq(prefix: &str) -> String {
@@ -385,7 +386,10 @@ async fn apply_creates_then_is_unchanged_and_a_dry_run_writes_nothing() {
     let name = uniq("apply");
     let yaml =
         format!("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\ndata:\n  a: \"1\"\n");
-    let dry = ops.apply(&yaml, NS, ApplyMode::DryRun, None).await.unwrap();
+    let dry = ops
+        .apply(&yaml, NS, ApplyMode::DryRun, &|_| Ok(()))
+        .await
+        .unwrap();
     assert_eq!(dry[0].action, Some(ApplyAction::Created), "{dry:?}");
     let cms: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
     assert!(
@@ -393,12 +397,12 @@ async fn apply_creates_then_is_unchanged_and_a_dry_run_writes_nothing() {
         "a dry run writes nothing"
     );
     let r = ops
-        .apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+        .apply(&yaml, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
         .await
         .unwrap();
     assert_eq!(r[0].action, Some(ApplyAction::Created), "{:?}", r[0].error);
     let again = ops
-        .apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+        .apply(&yaml, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
         .await
         .unwrap();
     assert_eq!(again[0].action, Some(ApplyAction::Unchanged), "{again:?}");
@@ -422,7 +426,7 @@ async fn a_field_owned_by_another_manager_conflicts_until_forced() {
     let ours =
         format!("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\ndata:\n  k: ours\n");
     let r = ops
-        .apply(&ours, NS, ApplyMode::Commit { force: false }, None)
+        .apply(&ours, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
         .await
         .unwrap();
     assert_eq!(
@@ -431,7 +435,7 @@ async fn a_field_owned_by_another_manager_conflicts_until_forced() {
         "{r:?}"
     );
     let forced = ops
-        .apply(&ours, NS, ApplyMode::Commit { force: true }, None)
+        .apply(&ours, NS, ApplyMode::Commit { force: true }, &|_| Ok(()))
         .await
         .unwrap();
     assert_eq!(
@@ -519,7 +523,7 @@ async fn a_narrow_token_cannot_create_a_cluster_role() {
     let ops = fleetops_kube::KubeClient::new(common::tunnel_client_with("narrow-token"));
     let yaml = "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: fleetops-it-nope\nrules: []\n";
     let r = ops
-        .apply(yaml, NS, ApplyMode::Commit { force: false }, None)
+        .apply(yaml, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
         .await
         .unwrap();
     let e = r[0].error.as_ref().expect("forbidden");
@@ -559,7 +563,7 @@ async fn reviewing_a_secret_value_change_says_it_changes() {
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: {name}\nstringData:\n  password: newer\n"
     );
     let a = ops
-        .apply(&applied, NS, ApplyMode::DryRun, None)
+        .apply(&applied, NS, ApplyMode::DryRun, &|_| Ok(()))
         .await
         .unwrap();
     assert_eq!(a[0].action, Some(ApplyAction::Configured), "{a:?}");
@@ -567,17 +571,22 @@ async fn reviewing_a_secret_value_change_says_it_changes() {
 }
 
 #[tokio::test]
-async fn a_limited_apply_sends_only_documents_in_its_namespaces() {
+async fn a_guarded_apply_sends_nothing_when_a_document_is_refused() {
     let ops = common::ops();
     let name = uniq("limited");
     let yaml = format!(
         "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\n  namespace: {NS}\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: {name}\n  namespace: default\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: {name}\nrules: []\n"
     );
-    let allowed: std::collections::BTreeSet<String> = [NS.to_string()].into();
+    let guard = |d: &DocInfo| match d.namespace {
+        Some(ns) if ns == NS => Ok(()),
+        Some(ns) => Err(access::ns_denied(ns)),
+        None => Err(access::cluster_scoped_denied()),
+    };
+    let inside: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
     let outside: Api<ConfigMap> = Api::namespaced(kube_client(), "default");
     for mode in [ApplyMode::DryRun, ApplyMode::Commit { force: false }] {
-        let r = ops.apply(&yaml, NS, mode, Some(&allowed)).await.unwrap();
-        assert!(r[0].error.is_none(), "{:?}", r[0].error);
+        let r = ops.apply(&yaml, NS, mode, &guard).await.unwrap();
+        assert_eq!(r[0].error.as_ref().expect("held back").message, NOT_SENT);
         let e = r[1].error.as_ref().expect("refused");
         assert_eq!(
             (e.code.as_str(), e.message.as_str()),
@@ -587,15 +596,11 @@ async fn a_limited_apply_sends_only_documents_in_its_namespaces() {
             r[2].error.as_ref().unwrap().message,
             "cluster-scoped objects are outside your access"
         );
-        assert!(
-            outside.get_opt(&name).await.unwrap().is_none(),
-            "a refused document is never sent"
-        );
+        assert!(inside.get_opt(&name).await.unwrap().is_none());
+        assert!(outside.get_opt(&name).await.unwrap().is_none());
     }
     let roles: Api<k8s_openapi::api::rbac::v1::ClusterRole> = Api::all(kube_client());
     assert!(roles.get_opt(&name).await.unwrap().is_none());
-    let cms: Api<ConfigMap> = Api::namespaced(kube_client(), NS);
-    cms.delete(&name, &Default::default()).await.unwrap();
 }
 
 #[tokio::test]
@@ -674,7 +679,7 @@ async fn suspend_keeps_the_replicas_and_resume_brings_them_back() {
         "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: {name}\nspec:\n  replicas: 2\n  selector:\n    matchLabels: {{app: {name}}}\n  template:\n    metadata:\n      labels: {{app: {name}}}\n    spec:\n      containers:\n      - name: main\n        image: busybox:1.36\n        command: [sleep, '3600']\n"
     );
     let r = ops
-        .apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+        .apply(&yaml, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
         .await
         .unwrap();
     assert!(r[0].error.is_none(), "{r:?}");
@@ -712,7 +717,7 @@ async fn a_cronjob_suspends_with_its_own_flag() {
     let yaml = format!(
         "apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: {name}\nspec:\n  schedule: '0 2 * * *'\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          restartPolicy: Never\n          containers:\n          - name: main\n            image: busybox:1.36\n"
     );
-    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
         .await
         .unwrap();
     ops.suspend(KubeKind::CronJobs, NS, &name, true)
@@ -739,7 +744,7 @@ async fn run_now_starts_a_job_the_cronjob_owns() {
     let yaml = format!(
         "apiVersion: batch/v1\nkind: CronJob\nmetadata:\n  name: {name}\nspec:\n  schedule: '0 2 * * *'\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          restartPolicy: Never\n          containers:\n          - name: main\n            image: busybox:1.36\n            command: [\"true\"]\n"
     );
-    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
         .await
         .unwrap();
     let job = ops.trigger(NS, &name).await.unwrap();
@@ -960,7 +965,7 @@ async fn a_deployments_merged_log_tracks_scale_and_rollout() {
     let yaml = format!(
         "apiVersion: apps/v1\nkind: Deployment\nmetadata: {{name: {name}, namespace: {NS}}}\nspec:\n  replicas: 2\n  selector: {{matchLabels: {{app: {name}}}}}\n  template:\n    metadata: {{labels: {{app: {name}}}}}\n    spec:\n      terminationGracePeriodSeconds: 1\n      containers:\n        - {{name: main, image: busybox:1.37, imagePullPolicy: IfNotPresent, command: [sh, -c, 'while true; do echo up $HOSTNAME; sleep 1; done']}}\n"
     );
-    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
         .await
         .unwrap();
     let opts = LogOptions {
@@ -1098,7 +1103,7 @@ async fn a_crashing_pod_rejoins_with_its_new_runs_first_lines() {
     let yaml = format!(
         "apiVersion: apps/v1\nkind: Deployment\nmetadata: {{name: {name}, namespace: {NS}}}\nspec:\n  replicas: 1\n  selector: {{matchLabels: {{app: {name}}}}}\n  template:\n    metadata: {{labels: {{app: {name}}}}}\n    spec:\n      terminationGracePeriodSeconds: 1\n      volumes: [{{name: mark, emptyDir: {{}}}}]\n      containers:\n        - {{name: main, image: busybox:1.37, imagePullPolicy: IfNotPresent, volumeMounts: [{{name: mark, mountPath: /mark}}], command: [sh, -c, 'if [ -f /mark/ran ]; then echo second-run; sleep 3600; else touch /mark/ran; echo first-run; sleep 2; exit 1; fi']}}\n"
     );
-    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, None)
+    ops.apply(&yaml, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
         .await
         .unwrap();
     let mut s = ops.workload_logs(KubeKind::Deployments, NS, &name, &LogOptions::default());
