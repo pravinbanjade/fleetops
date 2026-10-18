@@ -639,14 +639,28 @@ async fn usage_without_metrics_server_is_unavailable_not_an_error() {
 #[tokio::test]
 async fn counts_match_the_list_without_reading_bodies() {
     let ops = common::ops();
+    // Other tests create and delete pods alongside this one, so a count is
+    // only compared with a list that did not move around it.
+    let settled = |kind: KubeKind, ns: Option<&'static str>, min: u64| {
+        let ops = &ops;
+        async move {
+            let before = ops.list(kind, ns).await.unwrap().rows.len() as u64;
+            let counted = ops.count(kind, ns).await.unwrap();
+            let after = ops.list(kind, ns).await.unwrap().rows.len() as u64;
+            before == after && counted == before && before >= min
+        }
+    };
     for kind in [KubeKind::Pods, KubeKind::ConfigMaps, KubeKind::Secrets] {
-        let listed = ops.list(kind, Some(NS)).await.unwrap().rows.len() as u64;
-        assert_eq!(ops.count(kind, Some(NS)).await.unwrap(), listed, "{kind:?}");
+        common::eventually(&format!("{kind:?} count to match"), || {
+            settled(kind, Some(NS), 0)
+        })
+        .await;
     }
     // Past one page, the count comes from remainingItemCount.
-    let all = ops.list(KubeKind::Pods, None).await.unwrap().rows.len() as u64;
-    assert!(all > 1);
-    assert_eq!(ops.count(KubeKind::Pods, None).await.unwrap(), all);
+    common::eventually("cluster pod count to match", || {
+        settled(KubeKind::Pods, None, 2)
+    })
+    .await;
 }
 
 #[tokio::test]
