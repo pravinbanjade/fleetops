@@ -18,6 +18,33 @@ const OKTA: SsoConnection = {
   user_count: 4,
 };
 
+const LDAP: SsoConnection = {
+  id: 5,
+  name: "Corp directory",
+  kind: "ldap",
+  enabled: true,
+  settings: {
+    kind: "ldap",
+    preset: "openldap",
+    url: "ldap://dc.acme.io",
+    starttls: false,
+    skip_tls_verify: false,
+    ca_cert: null,
+    bind_dn: "cn=admin,dc=acme,dc=io",
+    user_base_dn: "dc=acme,dc=io",
+    user_filter: "(&(objectClass=inetOrgPerson)(uid={username}))",
+    username_attr: "uid",
+    email_attr: "mail",
+    group_base_dn: null,
+    group_filter: "",
+  },
+  secrets_set: ["bind_password"],
+  require_mapped_group: false,
+  session_hours: 12,
+  callback_url: null,
+  user_count: 0,
+};
+
 const routes = (features: string[]) => ({
   ...loggedIn,
   "GET /api/v1/edition": { json: { edition: "enterprise", features } },
@@ -104,5 +131,68 @@ describe("single sign-on", () => {
     expect(within(row(screen, "Acme Okta")).getByRole("button", { name: "Disable" })).toBeEnabled();
     expect(within(row(screen, "Acme Okta")).getByRole("button", { name: "Delete" })).toBeEnabled();
     expect(screen.getByRole("radio", { name: /Local admins only/ })).toBeDisabled();
+  });
+
+  it("creates an LDAP connection from a preset", async () => {
+    const calls = mockFetch({
+      ...routes(["sso"]),
+      "POST /api/v1/ee/sso/connections": { status: 201, json: LDAP },
+    });
+    const { screen } = renderApp("/admin/sso");
+    await waitFor(() => expect(row(screen, "Acme Okta")).toBeTruthy());
+    await userEvent.click(screen.getByRole("button", { name: "New connection" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Provider"), "ldap");
+    expect(within(dialog).queryByLabelText("Client ID")).toBeNull();
+    expect(within(dialog).queryByLabelText("Callback URL")).toBeNull();
+    await userEvent.selectOptions(within(dialog).getByLabelText("Directory"), "openldap");
+    expect(within(dialog).getByLabelText("User filter")).toHaveValue("(&(objectClass=inetOrgPerson)(uid={username}))");
+    await userEvent.type(within(dialog).getByLabelText("Name"), "Corp directory");
+    await userEvent.type(within(dialog).getByLabelText("Server URL"), "ldap://dc.acme.io");
+    await userEvent.type(within(dialog).getByLabelText("Bind DN"), "cn=admin,dc=acme,dc=io");
+    await userEvent.type(within(dialog).getByLabelText("Bind password"), "bind-pw");
+    await userEvent.type(within(dialog).getByLabelText("User base DN"), "dc=acme,dc=io");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const sent = calls.find((c) => c.method === "POST")?.body as { settings: Record<string, unknown>; secrets: object };
+    expect(sent.settings).toMatchObject({ kind: "ldap", preset: "openldap", url: "ldap://dc.acme.io", username_attr: "uid" });
+    expect(sent.secrets).toEqual({ bind_password: "bind-pw" });
+  });
+
+  it("warns when TLS verification is skipped", async () => {
+    mockFetch(routes(["sso"]));
+    const { screen } = renderApp("/admin/sso");
+    await waitFor(() => expect(row(screen, "Acme Okta")).toBeTruthy());
+    await userEvent.click(screen.getByRole("button", { name: "New connection" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Provider"), "ldap");
+    await userEvent.click(within(dialog).getByLabelText("Skip TLS verification"));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("not verified");
+  });
+
+  it("tests LDAP with a username, not an email", async () => {
+    const calls = mockFetch({
+      ...routes(["sso"]),
+      "GET /api/v1/ee/sso/connections": { json: [OKTA, LDAP] },
+      "POST /api/v1/ee/sso/connections/5/test": { json: { ok: true, detail: "found uid=alice", groups: ["cn=ops"] } },
+    });
+    const { screen } = renderApp("/admin/sso");
+    await waitFor(() => expect(row(screen, "Corp directory")).toBeTruthy());
+    await userEvent.click(within(row(screen, "Corp directory")).getByRole("button", { name: "Test" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByLabelText(/List groups for/)).toBeNull();
+    await userEvent.type(within(dialog).getByLabelText("Look up username (optional)"), "alice");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Run test" }));
+    await within(dialog).findByText("cn=ops");
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ username: "alice" });
+  });
+
+  it("offers LDAP only while there is none", async () => {
+    mockFetch({ ...routes(["sso"]), "GET /api/v1/ee/sso/connections": { json: [OKTA, LDAP] } });
+    const { screen } = renderApp("/admin/sso");
+    await waitFor(() => expect(row(screen, "Corp directory")).toBeTruthy());
+    await userEvent.click(screen.getByRole("button", { name: "New connection" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(within(dialog).getByLabelText("Provider")).queryByRole("option", { name: "LDAP / Active Directory" })).toBeNull();
   });
 });

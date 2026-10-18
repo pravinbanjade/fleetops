@@ -22,6 +22,8 @@ import {
   deleteConnection,
   deleteMapping,
   KIND_LABEL,
+  LDAP_PRESETS,
+  PRESET_LABEL,
   list,
   mappingsQuery,
   putSsoSettings,
@@ -29,6 +31,7 @@ import {
   ssoSettingsQuery,
   testConnection,
   updateConnection,
+  type LdapPreset,
   type PasswordLogin,
   type SsoConnection,
   type SsoKind,
@@ -128,7 +131,9 @@ export function SsoPage() {
         />
         <PasswordLoginSetting frozen={frozen} />
       </div>
-      {dialog?.kind === "new" && <ConnectionDialog onClose={close} onDone={refresh} />}
+      {dialog?.kind === "new" && (
+        <ConnectionDialog hasLdap={conns.data?.some((c) => c.kind === "ldap") ?? false} onClose={close} onDone={refresh} />
+      )}
       {dialog?.kind === "edit" && <ConnectionDialog conn={dialog.conn} onClose={close} onDone={refresh} />}
       {dialog?.kind === "mappings" && <MappingsDialog conn={dialog.conn} frozen={frozen} onClose={close} />}
       {dialog?.kind === "test" && <TestDialog conn={dialog.conn} onClose={close} />}
@@ -212,7 +217,18 @@ function Field(props: { id: string; label: string; hint?: string; children: Reac
 }
 
 /** Creates a connection, or edits `conn`. Secrets are never shown; empty keeps the saved one. */
-export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnection; onClose: () => void; onDone: () => Promise<unknown> }) {
+export function ConnectionDialog({
+  conn,
+  hasLdap = false,
+  onClose,
+  onDone,
+}: {
+  conn?: SsoConnection;
+  /** One LDAP connection is the limit; hide the kind once it exists. */
+  hasLdap?: boolean;
+  onClose: () => void;
+  onDone: () => Promise<unknown>;
+}) {
   const [name, setName] = useState(conn?.name ?? "");
   const [settings, setSettings] = useState<SsoSettings>(conn?.settings ?? blankSettings("oidc"));
   const [secrets, setSecrets] = useState<SsoSecrets>({});
@@ -271,7 +287,7 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
       {!conn && (
         <Field id="sso-kind" label="Provider">
           <NativeSelect id="sso-kind" value={settings.kind} onChange={(e) => setSettings(blankSettings(e.target.value as SsoKind))}>
-            {(Object.keys(KIND_LABEL) as SsoKind[]).map((k) => (
+            {(Object.keys(KIND_LABEL) as SsoKind[]).filter((k) => k !== "ldap" || !hasLdap).map((k) => (
               <option key={k} value={k}>
                 {KIND_LABEL[k]}
               </option>
@@ -279,7 +295,11 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
           </NativeSelect>
         </Field>
       )}
-      <Field id="sso-name" label="Name" hint="Shown on the login page as “Sign in with …”.">
+      <Field
+        id="sso-name"
+        label="Name"
+        hint={settings.kind === "ldap" ? "Shown on the login page as “Use your … account”." : "Shown on the login page as “Sign in with …”."}
+      >
         <Input id="sso-name" required value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       {settings.kind === "microsoft" && (
@@ -300,10 +320,15 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
           </Field>
         </>
       )}
-      <Field id="sso-client-id" label="Client ID">
-        <Input id="sso-client-id" required value={settings.client_id} onChange={(e) => set({ client_id: e.target.value })} />
-      </Field>
-      {secretField("client_secret", "Client secret")}
+      {settings.kind !== "ldap" && (
+        <>
+          <Field id="sso-client-id" label="Client ID">
+            <Input id="sso-client-id" required value={settings.client_id} onChange={(e) => set({ client_id: e.target.value })} />
+          </Field>
+          {secretField("client_secret", "Client secret")}
+        </>
+      )}
+      {settings.kind === "ldap" && <LdapFields settings={settings} set={set} secretField={secretField} />}
       {settings.kind === "google" && (
         <>
           <Field id="sso-domains" label="Allowed domains" hint="Comma-separated Workspace domains whose accounts may sign in.">
@@ -325,7 +350,7 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
           </Field>
         </>
       )}
-      {conn && (
+      {conn && conn.kind !== "ldap" && (
         <Field id="sso-callback" label="Callback URL" hint="Register this redirect URI with the provider.">
           <Input
             id="sso-callback"
@@ -343,6 +368,74 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
         Only people in a mapped group may sign in
       </label>
     </FormDialog>
+  );
+}
+
+type LdapSettings = Extract<SsoSettings, { kind: "ldap" }>;
+
+function LdapFields({
+  settings,
+  set,
+  secretField,
+}: {
+  settings: LdapSettings;
+  set: (patch: Partial<LdapSettings>) => void;
+  secretField: (key: keyof SsoSecrets, label: string) => React.ReactNode;
+}) {
+  const text = (key: keyof LdapSettings, label: string, opts: { hint?: string; required?: boolean; nullable?: boolean } = {}) => (
+    <Field id={`sso-${key}`} label={label} hint={opts.hint}>
+      <Input
+        id={`sso-${key}`}
+        required={opts.required}
+        value={(settings[key] as string | null | undefined) ?? ""}
+        onChange={(e) => set({ [key]: opts.nullable ? e.target.value || null : e.target.value })}
+      />
+    </Field>
+  );
+  return (
+    <>
+      <Field id="sso-preset" label="Directory">
+        <NativeSelect
+          id="sso-preset"
+          value={settings.preset}
+          onChange={(e) => {
+            const preset = e.target.value as LdapPreset;
+            set({ preset, ...LDAP_PRESETS[preset] });
+          }}
+        >
+          {(Object.keys(PRESET_LABEL) as LdapPreset[]).map((p) => (
+            <option key={p} value={p}>
+              {PRESET_LABEL[p]}
+            </option>
+          ))}
+        </NativeSelect>
+      </Field>
+      {text("url", "Server URL", { required: true, hint: "ldap://dc.acme.io or ldaps://dc.acme.io:636" })}
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox id="sso-starttls" checked={settings.starttls} onCheckedChange={(v) => set({ starttls: !!v })} />
+        Use StartTLS (ldap:// only)
+      </label>
+      <Field id="sso-ca_cert" label="CA certificate (PEM, optional)" hint="Trust this CA instead of the system's.">
+        <Textarea id="sso-ca_cert" rows={3} value={settings.ca_cert ?? ""} onChange={(e) => set({ ca_cert: e.target.value || null })} />
+      </Field>
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox id="sso-skip-verify" checked={settings.skip_tls_verify} onCheckedChange={(v) => set({ skip_tls_verify: !!v })} />
+        Skip TLS verification
+      </label>
+      {settings.skip_tls_verify && (
+        <p role="alert" className="text-xs text-destructive">
+          The server's certificate is not verified: anyone on the network path can read passwords. Use a CA certificate instead.
+        </p>
+      )}
+      {text("bind_dn", "Bind DN", { nullable: true, hint: "The service account that searches. Empty searches anonymously." })}
+      {secretField("bind_password", "Bind password")}
+      {text("user_base_dn", "User base DN", { required: true, hint: "e.g. ou=people,dc=acme,dc=io" })}
+      {text("user_filter", "User filter", { required: settings.preset === "custom", hint: "{username} is what the person types." })}
+      {text("username_attr", "Username attribute", { required: settings.preset === "custom" })}
+      {text("email_attr", "Email attribute")}
+      {text("group_base_dn", "Group base DN", { nullable: true, hint: "Empty reads no groups." })}
+      {text("group_filter", "Group filter", { hint: "{user_dn} and {username} are filled in. Groups map by their DN." })}
+    </>
   );
 }
 
@@ -427,9 +520,14 @@ export function MappingsDialog({ conn, frozen, onClose }: { conn: SsoConnection;
 }
 
 function TestDialog({ conn, onClose }: { conn: SsoConnection; onClose: () => void }) {
-  const [email, setEmail] = useState("");
+  const [who, setWho] = useState("");
   const [result, setResult] = useState<TestResult | null>(null);
-  const run = useMutation({ mutationFn: () => testConnection(conn.id, email.trim() || undefined), onSuccess: setResult, meta: { inline: true } });
+  const key = conn.kind === "ldap" ? "username" : "email";
+  const run = useMutation({
+    mutationFn: () => testConnection(conn.id, who.trim() ? { [key]: who.trim() } : {}),
+    onSuccess: setResult,
+    meta: { inline: true },
+  });
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
@@ -446,7 +544,12 @@ function TestDialog({ conn, onClose }: { conn: SsoConnection; onClose: () => voi
         >
           {conn.kind === "google" && (
             <Field id="test-email" label="List groups for (optional)">
-              <Input id="test-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input id="test-email" type="email" value={who} onChange={(e) => setWho(e.target.value)} />
+            </Field>
+          )}
+          {conn.kind === "ldap" && (
+            <Field id="test-username" label="Look up username (optional)">
+              <Input id="test-username" value={who} onChange={(e) => setWho(e.target.value)} />
             </Field>
           )}
           <Button type="submit" disabled={run.isPending}>

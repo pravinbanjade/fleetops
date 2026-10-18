@@ -107,6 +107,24 @@ describe("login page", () => {
     expect(await screen.findByLabelText("Password")).toBeInTheDocument();
   });
 
+  it("shows the password form at once for an LDAP directory, which is not a button", async () => {
+    mockFetch({
+      ...out,
+      "GET /api/v1/auth/providers": {
+        json: [
+          { id: 3, name: "Acme Okta", kind: "oidc" },
+          { id: 4, name: "Corp directory", kind: "ldap" },
+        ],
+      },
+    });
+    const { screen } = renderApp("/login");
+    expect(await screen.findByLabelText("Password")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign in with Acme Okta" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Corp directory/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign in with password" })).toBeNull();
+    expect(screen.getByText("Use your Corp directory account.")).toBeInTheDocument();
+  });
+
   it("explains why single sign-on sent the user back", async () => {
     mockFetch(out);
     const { screen } = renderApp("/login?sso_error=seat_limit");

@@ -66,8 +66,11 @@ export function LoginPage() {
     m.mutate();
   };
   const returnTo = encodeURIComponent(redirect ?? "/");
+  // An LDAP directory signs in on the password form, not through a button.
+  const buttons = providers?.filter((p) => p.kind !== "ldap") ?? null;
+  const directory = providers?.find((p) => p.kind === "ldap");
   // Nothing until the providers are known, so the form doesn't flash and vanish.
-  const passwordForm = providers !== null && (providers.length === 0 || showPassword);
+  const passwordForm = buttons !== null && (buttons.length === 0 || !!directory || showPassword);
 
   return (
     <AuthLayout title="Log in to FleetOps">
@@ -77,16 +80,16 @@ export function LoginPage() {
             {SSO_ERROR_TEXT[sso_error]}
           </p>
         )}
-        {providers && providers.length > 0 && (
+        {buttons && buttons.length > 0 && (
           <div className="grid gap-2">
-            {providers.map((p) => (
+            {buttons.map((p) => (
               <Button key={p.id} variant="outline" asChild>
                 <a href={`/api/v1/ee/sso/${p.id}/start?return_to=${returnTo}`}>Sign in with {p.name}</a>
               </Button>
             ))}
           </div>
         )}
-        {providers && !passwordForm && (
+        {buttons && !passwordForm && (
           <button
             type="button"
             className="justify-self-center text-sm text-muted-foreground underline-offset-4 hover:underline"
@@ -97,6 +100,7 @@ export function LoginPage() {
         )}
         {passwordForm && (
           <form onSubmit={submit} className="grid gap-4">
+            {directory && <p className="text-sm text-muted-foreground">Use your {directory.name} account.</p>}
             <div className="grid gap-2">
               <Label htmlFor="username">Username</Label>
               <Input
