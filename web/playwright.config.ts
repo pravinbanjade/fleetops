@@ -6,7 +6,8 @@ import { defineConfig, devices } from "@playwright/test";
 // directory, so first-run setup is always open.
 const port = Number(process.env.FLEETOPS_E2E_PORT ?? 9123);
 const bin = process.env.FLEETOPS_BIN ?? "../target/release/fleetops";
-const data = "e2e-data";
+// Separate data directories let the Community and Enterprise suites run at once.
+const data = process.env.FLEETOPS_E2E_DATA ?? "e2e-data";
 
 export default defineConfig({
   testDir: "e2e",

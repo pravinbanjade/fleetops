@@ -7,7 +7,7 @@ web/dist/
 .playwright-mcp/
 .claude/
 .impeccable/
-web/e2e-data/
+web/e2e-data*/
 web/test-results/
 web/playwright-report/
 ee/web/node_modules
