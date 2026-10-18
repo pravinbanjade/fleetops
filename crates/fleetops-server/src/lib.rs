@@ -59,16 +59,17 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         )
         .await?;
         tokio::spawn(ee.background);
-        fleetops_api::app_with(
-            state
-                .with_entitlements(ee.entitlements)
-                .with_extra_grants(ee.grants)
-                .with_custom_roles(ee.roles)
-                .with_external_auth(ee.external_auth)
-                .with_backup_hooks(ee.backup_hooks),
-            static_files::router(),
-            ee.routes,
-        )
+        let state = state
+            .with_entitlements(ee.entitlements)
+            .with_extra_grants(ee.grants)
+            .with_custom_roles(ee.roles)
+            .with_external_auth(ee.external_auth)
+            .with_backup_hooks(ee.backup_hooks);
+        tokio::spawn(fleetops_ee::backup::schedule::run(
+            state.clone(),
+            ee.backup_runner,
+        ));
+        fleetops_api::app_with(state, static_files::router(), ee.routes)
     };
     #[cfg(not(feature = "enterprise"))]
     let app = fleetops_api::app(state, static_files::router());

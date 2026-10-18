@@ -128,7 +128,8 @@ pub async fn ee_app_full(
         .with_entitlements(parts.entitlements)
         .with_extra_grants(parts.grants)
         .with_custom_roles(parts.roles)
-        .with_external_auth(parts.external_auth);
+        .with_external_auth(parts.external_auth)
+        .with_backup_hooks(parts.backup_hooks);
     Ee {
         router: fleetops_api::app_with(state.clone(), Router::new(), parts.routes),
         store,
