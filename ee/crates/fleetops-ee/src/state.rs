@@ -146,7 +146,7 @@ impl LicenseState {
                 max_users: l.payload.max_users,
                 features: {
                     let mut f = l.features.clone();
-                    for always in [Feature::Teams, Feature::Rbac, Feature::Sso] {
+                    for always in [Feature::Teams, Feature::Rbac, Feature::Sso, Feature::Backup] {
                         if !f.contains(&always) {
                             f.push(always);
                         }
@@ -177,8 +177,10 @@ impl Entitlements for LicenseState {
     /// licenses issued before it get it too (teams spec, "Licensing").
     fn has(&self, feature: Feature) -> bool {
         self.active(|l| {
-            matches!(feature, Feature::Teams | Feature::Rbac | Feature::Sso)
-                || l.features.contains(&feature)
+            matches!(
+                feature,
+                Feature::Teams | Feature::Rbac | Feature::Sso | Feature::Backup
+            ) || l.features.contains(&feature)
         })
         .unwrap_or(false)
     }
@@ -307,5 +309,20 @@ mod tests {
         let none = LicenseState::new(vec![key.verifying_key()], None);
         none.load(&store().await).await.unwrap();
         assert!(!none.has(Feature::Teams), "no license");
+    }
+
+    #[tokio::test]
+    async fn backup_feature_always_on() {
+        let key = key();
+        let st = LicenseState::new(vec![key.verifying_key()], None);
+        let l = crate::license::verify(&lic(&key, now_unix() + 1000, "l"), &[key.verifying_key()])
+            .unwrap();
+        assert_eq!(l.features, vec![Feature::AuditExport]);
+        st.set(Loaded::Ok(l), None);
+        assert!(st.has(Feature::Backup));
+        assert!(st
+            .info(now_unix(), 0, 0)
+            .features
+            .contains(&Feature::Backup));
     }
 }

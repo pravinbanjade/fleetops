@@ -2,6 +2,7 @@
 //! Enterprise API and its tables. Built into the server only with the
 //! `enterprise` feature.
 
+pub mod backup;
 pub mod db;
 pub mod export;
 pub mod keys;
@@ -44,6 +45,8 @@ pub struct EeParts {
     pub roles: Arc<dyn CustomRoles>,
     /// Single sign-on: login-page providers and the password-login gate.
     pub external_auth: Arc<dyn ExternalAuth>,
+    /// Enterprise sealed columns and migrations, for backups.
+    pub backup_hooks: Arc<dyn fleetops_api::backup::BackupHooks>,
     /// Logs license status changes; spawn it.
     pub background: BoxFuture<'static, ()>,
 }
@@ -126,6 +129,7 @@ pub async fn init_with_keys(
             state.clone(),
         )),
         external_auth: Arc::new(sso::hook::EeSso::new(store.clone())),
+        backup_hooks: Arc::new(backup::hooks::EeBackupHooks),
         background: Box::pin(watch(state)),
     })
 }

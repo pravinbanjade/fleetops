@@ -64,7 +64,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                 .with_entitlements(ee.entitlements)
                 .with_extra_grants(ee.grants)
                 .with_custom_roles(ee.roles)
-                .with_external_auth(ee.external_auth),
+                .with_external_auth(ee.external_auth)
+                .with_backup_hooks(ee.backup_hooks),
             static_files::router(),
             ee.routes,
         )

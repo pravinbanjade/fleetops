@@ -7896,7 +7896,8 @@
           "audit_export",
           "teams",
           "rbac",
-          "sso"
+          "sso",
+          "backup"
         ]
       },
       "GrantView": {

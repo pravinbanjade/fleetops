@@ -18,6 +18,15 @@ pub async fn migrate(pool: &SqlitePool) -> Result<()> {
         .map_err(|e| Error::Internal(format!("enterprise migration failed: {e}")))
 }
 
+/// The newest Enterprise migration this build knows.
+pub fn migration_max() -> i64 {
+    sqlx::migrate!("./migrations")
+        .iter()
+        .map(|m| m.version)
+        .max()
+        .unwrap_or(0)
+}
+
 pub async fn get(pool: &SqlitePool) -> Result<Option<String>> {
     sqlx::query_scalar("SELECT raw FROM ee_license WHERE id = 1")
         .fetch_optional(pool)

@@ -25,6 +25,8 @@ pub enum Feature {
     Rbac,
     /// Single sign-on (`/ee/sso`). Every active license has it.
     Sso,
+    /// Scheduled backups (`/ee/backup`). Every active license has it.
+    Backup,
 }
 
 impl Feature {
@@ -33,6 +35,7 @@ impl Feature {
         Feature::Teams,
         Feature::Rbac,
         Feature::Sso,
+        Feature::Backup,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -41,6 +44,7 @@ impl Feature {
             Feature::Teams => "teams",
             Feature::Rbac => "rbac",
             Feature::Sso => "sso",
+            Feature::Backup => "backup",
         }
     }
 
