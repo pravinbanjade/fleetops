@@ -52,7 +52,7 @@ export function SetupPage() {
   const choice = (
     <div role="group" aria-label="Get started" className="grid grid-cols-2 gap-1 rounded-lg border p-1 text-sm">
       {[
-        [false, "Create administrator"],
+        [false, "Start fresh"],
         [true, "Restore from backup"],
       ].map(([value, label]) => (
         <button

@@ -1,4 +1,4 @@
-import { waitFor } from "@testing-library/react";
+import { waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { StagedBackup } from "@/api/gen/types.gen";
@@ -55,9 +55,10 @@ describe("backup page", () => {
     const { screen } = renderApp("/admin/backup");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Download backup" }));
-    await user.type(screen.getByLabelText("Passphrase"), "correct horse battery");
-    await user.type(screen.getByLabelText("Passphrase again"), "correct horse batterz");
-    await user.click(screen.getByRole("button", { name: "Download" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    await user.type(dialog.getByLabelText("Passphrase"), "correct horse battery");
+    await user.type(dialog.getByLabelText("Passphrase again"), "correct horse batterz");
+    await user.click(dialog.getByRole("button", { name: "Download" }));
     expect(await screen.findByText("The passphrases do not match.")).toBeInTheDocument();
     expect(calls.some((c) => c.path === "/api/v1/backup")).toBe(false);
   });

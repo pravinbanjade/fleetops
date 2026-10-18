@@ -10,7 +10,7 @@ fleetops/
 │  ├─ fleetops-kube/     kube-rs implementation of KubeOps: lists, watches, apply, Helm, metrics
 │  ├─ fleetops-tunnel/   yamux over a WebSocket, the agent control protocol, the live-session registry
 │  ├─ fleetops-agent/    bin `fleetops-agent`: dial-out, key storage, byte pipe to the host's Docker socket
-│  └─ fleetops-store/    sqlx + SQLite: migrations and repositories (users, sessions, environments, settings, audit)
+│  └─ fleetops-store/    sqlx + SQLite: migrations and repositories (users, sessions, environments, settings, audit), backup files and restores
 ├─ web/                  React 19 + TypeScript + Vite
 │  └─ src/api/gen/       client generated from the OpenAPI document
 └─ ee/                   Enterprise edition (source-available): fleetops-ee crate, license tool, UI
