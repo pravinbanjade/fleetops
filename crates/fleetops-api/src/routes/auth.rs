@@ -144,7 +144,7 @@ pub async fn login(
         Some(v) => Some(v),
         None => s
             .external_auth
-            .directory_login(&body.username, &body.password)
+            .directory_login(&s, &body.username, &body.password)
             .await?
             .map(|(user, hours)| (user, hours.map_or(SESSION_ABSOLUTE_SECS, |h| h * 3600))),
     };

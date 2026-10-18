@@ -7,6 +7,7 @@ pub mod authz;
 pub mod compose;
 pub mod envs;
 pub mod error;
+pub mod external;
 pub mod extract;
 mod headers;
 pub mod openapi;

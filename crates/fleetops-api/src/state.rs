@@ -85,7 +85,7 @@ pub struct AppState {
     /// Custom-role grants made to users; none in Community.
     pub custom_roles: Arc<dyn fleetops_core::access::CustomRoles>,
     /// Single sign-on; local passwords only in Community.
-    pub external_auth: Arc<dyn fleetops_core::external::ExternalAuth>,
+    pub external_auth: Arc<dyn crate::external::ExternalAuth>,
 }
 
 impl AppState {
@@ -105,7 +105,7 @@ impl AppState {
             entitlements: Arc::new(fleetops_core::edition::Community),
             extra_grants: Arc::new(fleetops_core::access::NoExtraGrants),
             custom_roles: Arc::new(fleetops_core::access::NoCustomRoles),
-            external_auth: Arc::new(fleetops_core::external::NoExternalAuth),
+            external_auth: Arc::new(crate::external::NoExternalAuth),
         }
     }
 
@@ -125,7 +125,7 @@ impl AppState {
         self
     }
 
-    pub fn with_external_auth(mut self, a: Arc<dyn fleetops_core::external::ExternalAuth>) -> Self {
+    pub fn with_external_auth(mut self, a: Arc<dyn crate::external::ExternalAuth>) -> Self {
         self.external_auth = a;
         self
     }

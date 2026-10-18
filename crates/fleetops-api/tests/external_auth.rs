@@ -3,10 +3,8 @@ mod common;
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use common::*;
-use fleetops_core::{
-    external::{ExternalAuth, LoginProvider},
-    Result, Role, User,
-};
+use fleetops_api::{external::ExternalAuth, AppState};
+use fleetops_core::{external::LoginProvider, Result, Role, User};
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 
@@ -32,7 +30,12 @@ impl ExternalAuth for Stub {
     async fn password_allowed(&self, user: &User) -> Result<bool> {
         Ok(!self.managed.contains_key(&user.id))
     }
-    async fn directory_login(&self, _: &str, _: &str) -> Result<Option<(User, Option<i64>)>> {
+    async fn directory_login(
+        &self,
+        _: &AppState,
+        _: &str,
+        _: &str,
+    ) -> Result<Option<(User, Option<i64>)>> {
         assert!(!self.no_directory, "directory login attempted");
         Ok(self.directory.clone())
     }

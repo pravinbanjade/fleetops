@@ -14,11 +14,10 @@ pub mod teams;
 
 use axum::Extension;
 use ed25519_dalek::VerifyingKey;
-use fleetops_api::AppState;
+use fleetops_api::{external::ExternalAuth, AppState};
 use fleetops_core::{
     access::{CustomRoles, ExtraGrants},
     edition::Entitlements,
-    external::ExternalAuth,
     now_unix, Result,
 };
 use fleetops_store::Store;

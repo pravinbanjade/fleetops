@@ -85,7 +85,7 @@ pub async fn app_with_extra_and(
 }
 
 /// An app whose single sign-on hook is `x` instead of Community's.
-pub async fn app_with_external(x: Arc<dyn fleetops_core::external::ExternalAuth>) -> TestApp {
+pub async fn app_with_external(x: Arc<dyn fleetops_api::external::ExternalAuth>) -> TestApp {
     let store = Store::in_memory().await.unwrap();
     let fake = FakeDocker::new();
     let state = AppState::new(

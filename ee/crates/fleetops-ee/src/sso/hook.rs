@@ -2,10 +2,8 @@
 
 use super::{db, password_login, PasswordLogin};
 use async_trait::async_trait;
-use fleetops_core::{
-    external::{ExternalAuth, LoginProvider},
-    Result, Role, User,
-};
+use fleetops_api::{external::ExternalAuth, AppState};
+use fleetops_core::{external::LoginProvider, Result, Role, User};
 use fleetops_store::Store;
 use std::collections::HashMap;
 
@@ -55,7 +53,12 @@ impl ExternalAuth for EeSso {
         })
     }
 
-    async fn directory_login(&self, _: &str, _: &str) -> Result<Option<(User, Option<i64>)>> {
+    async fn directory_login(
+        &self,
+        _: &AppState,
+        _: &str,
+        _: &str,
+    ) -> Result<Option<(User, Option<i64>)>> {
         Ok(None)
     }
 
