@@ -116,6 +116,14 @@ async fn view(s: &AppState, c: Connection) -> ApiResult<ConnectionView> {
     })
 }
 
+/// The server and account an LDAP bind password is sent to.
+fn ldap_target(s: &ConnectionSettings) -> Option<(&str, Option<&str>)> {
+    match s {
+        ConnectionSettings::Ldap { url, bind_dn, .. } => Some((url, bind_dn.as_deref())),
+        _ => None,
+    }
+}
+
 /// Enabling needs what a sign-in needs: for a redirect, a public URL and
 /// the client secret; for LDAP, the bind password when there is a bind DN.
 fn check_enable(
@@ -281,6 +289,27 @@ pub async fn update(
         c.require_mapped_group = r;
     }
     let mut secrets = db::secrets(&s.store, id).await?;
+    let new_password = body
+        .secrets
+        .as_ref()
+        .is_some_and(|n| n.bind_password.is_some());
+    // The saved bind password belongs to one server and account: it is never
+    // sent anywhere else without the admin typing it again.
+    if ldap_target(&c.settings) != ldap_target(&old.settings) && !new_password {
+        secrets.bind_password = None;
+        if matches!(
+            &c.settings,
+            ConnectionSettings::Ldap {
+                bind_dn: Some(_),
+                ..
+            }
+        ) {
+            return Err(Error::Invalid(
+                "enter the bind_password again when the server URL or bind DN changes".into(),
+            )
+            .into());
+        }
+    }
     if let Some(new) = body.secrets {
         validate_secrets(&new)?;
         secrets = secrets.merged(new);

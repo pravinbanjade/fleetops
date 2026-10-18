@@ -143,6 +143,57 @@ async fn second_ldap_connection_conflicts() {
 }
 
 #[tokio::test]
+async fn ldap_new_server_or_bind_dn_needs_the_password_again() {
+    let (ee, admin) = licensed().await;
+    let id = create(&ee, &admin, ldap("Directory")).await.json()["id"]
+        .as_i64()
+        .unwrap();
+    let path = format!("/api/v1/ee/sso/connections/{id}");
+    let mut moved = ldap("Directory")["settings"].clone();
+    moved["url"] = json!("ldap://elsewhere.example:389");
+    let r = ee
+        .send(
+            "PATCH",
+            &path,
+            body(json!({"settings": moved})),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+    assert!(r.text.contains("bind_password"), "{}", r.text);
+    let mut rebound = ldap("Directory")["settings"].clone();
+    rebound["bind_dn"] = json!("cn=other,dc=acme,dc=io");
+    let r = ee
+        .send(
+            "PATCH",
+            &path,
+            body(json!({"settings": rebound})),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+    let r = ee
+        .send(
+            "PATCH",
+            &path,
+            body(json!({"settings": moved, "secrets": {"bind_password": "new-pw"}})),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    // Unchanged server and bind DN keep the saved password.
+    let r = ee
+        .send(
+            "PATCH",
+            &path,
+            body(json!({"settings": moved, "name": "Dir"})),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+}
+
+#[tokio::test]
 async fn ldap_enable_needs_bind_password_when_bind_dn_set() {
     let k = key();
     // No public URL: LDAP doesn't need one.

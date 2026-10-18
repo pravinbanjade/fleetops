@@ -167,6 +167,36 @@ async fn service_bind(ldap: &mut Ldap, c: &Cfg<'_>, bind_password: Option<&str>)
     Ok(())
 }
 
+/// The stable id of a directory entry: `objectGUID`, else `entryUUID`,
+/// else the DN.
+fn subject(e: &SearchEntry) -> String {
+    // ldap3 files a value under `attrs` when its bytes happen to be valid
+    // UTF-8, so a GUID can be in either map.
+    let find = |name: &str| {
+        e.bin_attrs
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .and_then(|(_, v)| v.first().cloned())
+            .or_else(|| {
+                e.attrs
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                    .and_then(|(_, v)| v.first())
+                    .map(|v| v.as_bytes().to_vec())
+            })
+    };
+    if let Some(guid) = find("objectGUID").and_then(|b| guid_string(&b)) {
+        return guid;
+    }
+    if let Some(uuid) = find("entryUUID").and_then(|b| String::from_utf8(b).ok()) {
+        return uuid.to_ascii_lowercase();
+    }
+    // A DN can be reused for a different person later; prefer a directory
+    // whose entries carry a UUID the service account can read.
+    tracing::warn!(dn = %e.dn, "LDAP entry has no objectGUID or entryUUID; identifying it by DN");
+    e.dn.to_ascii_lowercase()
+}
+
 /// The single entry `username` names, with its groups.
 async fn find(ldap: &mut Ldap, c: &Cfg<'_>, username: &str) -> Result<Option<Entry>> {
     let filter = fill(c.user_filter, username, "");
@@ -204,15 +234,7 @@ async fn find(ldap: &mut Ldap, c: &Cfg<'_>, username: &str) -> Result<Option<Ent
             .find(|(k, _)| k.eq_ignore_ascii_case(name))
             .and_then(|(_, v)| v.first().cloned())
     };
-    let guid = e
-        .bin_attrs
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("objectGUID"))
-        .and_then(|(_, v)| v.first())
-        .and_then(|b| guid_string(b));
-    let subject = guid
-        .or_else(|| first("entryUUID").map(|u| u.to_ascii_lowercase()))
-        .unwrap_or_else(|| e.dn.to_ascii_lowercase());
+    let subject = subject(&e);
     let found_name = first(c.username_attr).unwrap_or_else(|| username.to_string());
     let groups = match c.group_base_dn {
         Some(base) => {
@@ -323,6 +345,49 @@ mod tests {
             fill("(member={user_dn})", "", "cn=x\\,y"),
             "(member=cn=x\\5c,y)"
         );
+    }
+
+    fn entry(attrs: &[(&str, &str)], bin: &[(&str, Vec<u8>)]) -> SearchEntry {
+        SearchEntry {
+            dn: "CN=Jane,OU=Staff,DC=acme,DC=io".into(),
+            attrs: attrs
+                .iter()
+                .map(|(k, v)| (k.to_string(), vec![v.to_string()]))
+                .collect(),
+            bin_attrs: bin
+                .iter()
+                .map(|(k, v)| (k.to_string(), vec![v.clone()]))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn subject_reads_a_guid_that_is_valid_utf8() {
+        // ldap3 keeps a value in `attrs` whenever its bytes are valid UTF-8.
+        let ascii = entry(&[("objectGUID", "ABCDEFGHIJKLMNOP")], &[]);
+        assert_eq!(subject(&ascii), "44434241-4645-4847-494a-4b4c4d4e4f50");
+        let binary = entry(&[], &[("objectGUID", vec![0xff; 16])]);
+        assert_eq!(subject(&binary), "ffffffff-ffff-ffff-ffff-ffffffffffff");
+        let uuid = entry(
+            &[("entryUUID", "0A1B2C3D-0000-1111-2222-333344445555")],
+            &[],
+        );
+        assert_eq!(subject(&uuid), "0a1b2c3d-0000-1111-2222-333344445555");
+        assert_eq!(subject(&entry(&[], &[])), "cn=jane,ou=staff,dc=acme,dc=io");
+    }
+
+    #[tokio::test]
+    async fn empty_password_never_reaches_the_directory() {
+        let s = ConnectionSettings::parse(serde_json::json!({
+            "kind": "ldap", "preset": "openldap", "url": "ldap://127.0.0.1:1",
+            "user_base_dn": "dc=acme,dc=io"
+        }))
+        .unwrap()
+        .validated()
+        .unwrap();
+        // Nothing listens on port 1: reaching the server would be an error.
+        assert_eq!(authenticate(&s, None, "alice", "").await.unwrap(), None);
+        assert!(authenticate(&s, None, "alice", "pw").await.is_err());
     }
 
     #[test]
