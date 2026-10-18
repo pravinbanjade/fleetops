@@ -1,8 +1,9 @@
 # Single sign-on (Enterprise)
 
 FleetOps Enterprise lets people sign in with the account they already have
-at Microsoft Entra ID, Google Workspace, GitHub or any OpenID Connect
-provider (Okta, Keycloak, Authentik, Auth0, …). FleetOps creates their
+at Microsoft Entra ID, Google Workspace, GitHub, any OpenID Connect
+provider (Okta, Keycloak, Authentik, Auth0, …), or an LDAP directory
+(Active Directory, OpenLDAP). FleetOps creates their
 account the first time they sign in. Their groups at the provider decide
 which teams they are in, and whether they are a FleetOps admin.
 
@@ -11,7 +12,8 @@ which teams they are in, and whether they are a FleetOps admin.
 1. Set `FLEETOPS_PUBLIC_URL` (or `--public-url`) to the address people use
    to reach FleetOps, for example `https://fleet.example.com`. The provider
    sends people back to `<public URL>/api/v1/ee/sso/<id>/callback`. A
-   connection can't be enabled until this is set.
+   redirect connection can't be enabled until this is set. LDAP doesn't
+   need it.
 2. Keep a **local admin** account. It always signs in with its password, so
    it is the way in when the provider is down or misconfigured.
 3. Create the teams people should land in (**Admin → Teams**) and give
@@ -100,6 +102,55 @@ URL**. FleetOps reads `<issuer>/.well-known/openid-configuration`. Set the
 default) and configure the provider to include it. Some providers need an
 extra scope for that claim; add it under **Scopes**.
 
+### LDAP and Active Directory
+
+People sign in on the normal username and password form with their
+directory account; there is no button. One LDAP connection is supported.
+
+Pick the **Directory**; it fills in the filters:
+
+| Directory | User filter | Groups |
+|---|---|---|
+| Active Directory | `(&(objectClass=user)(sAMAccountName={username}))` | nested, with `(member:1.2.840.113556.1.4.1941:={user_dn})` |
+| OpenLDAP | `(&(objectClass=inetOrgPerson)(uid={username}))` | direct `groupOfNames` members and `posixGroup` `memberUid`s |
+| Custom | your own, with `{username}` | your own, with `{user_dn}` and/or `{username}` |
+
+Values put into a filter are escaped, so `*` or `)` in a username match
+nothing special.
+
+- **Server URL:** `ldap://dc.example.com` or `ldaps://dc.example.com:636`.
+  With `ldap://`, turn on **StartTLS** unless the network is trusted.
+- **CA certificate:** paste the PEM of the CA that signed the server's
+  certificate when it isn't publicly trusted. **Skip TLS verification**
+  exists for testing only: passwords can then be read on the network.
+- **Bind DN** and **Bind password:** a read-only service account that can
+  search users and groups. Leave the bind DN empty to search anonymously.
+- **User base DN:** where users are searched (the whole subtree).
+- **Email attribute:** `mail` by default.
+- **Group base DN:** where groups are searched. Empty reads no groups.
+
+At sign-in FleetOps binds as the service account, looks the user up (the
+filter must match exactly one entry), reads their groups, then binds as the
+user with the password they typed. An empty password is always refused.
+Groups map by their **DN**, for example
+`CN=FleetOps Ops,OU=Groups,DC=example,DC=com` (case doesn't matter).
+
+A local account always signs in first: when a local `alice` exists and
+her password matches, she is the local account. A directory `alice` whose
+password doesn't match the local one becomes a separate account
+`alice-2`.
+
+If the directory can't be reached, sign-in fails like a wrong password and
+the failure is written to the audit log. Local accounts keep working.
+
+**Test** binds as the service account. Type a username to see the entry
+it finds and the groups it would map; Test never asks for a password.
+
+**Checking Active Directory by hand:** with the Active Directory preset,
+run **Test** with a username that is in a nested group. The groups listed
+should include the outer group. Then sign in as that person and check
+**Admin → Users** shows *Signed in with …* and the mapped teams.
+
 ## Mappings
 
 A mapping gives everyone in a group one of these:
@@ -107,7 +158,7 @@ A mapping gives everyone in a group one of these:
 - **Team** *name*: they join that team, and get its environment access.
 - **FleetOps admin**: they get the admin role.
 
-Group values match case-insensitively. A connection's provider (OIDC
+Group values match case-insensitively. For LDAP they are group DNs. A connection's provider (OIDC
 issuer, Microsoft tenant, GitHub Enterprise URL) can't change once people
 have signed in through it; add a new connection instead. Sign-ins re-check groups:
 
@@ -145,7 +196,7 @@ A new user's username comes from the first of these that exists:
 
 1. the provider's preferred username;
 2. the part of their email before `@`;
-3. their GitHub login.
+3. their GitHub login or LDAP username.
 
 Characters FleetOps doesn't allow become `_`. When the name is taken, a
 suffix is added: `jane-2`, then `jane-3`. A local account and a

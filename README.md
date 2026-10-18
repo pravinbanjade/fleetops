@@ -132,7 +132,8 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 | Teams with shared environment access | | ✓ |
 | Custom roles (fine-grained RBAC) | | ✓ |
 | Single sign-on: Microsoft, Google, GitHub, any OIDC provider | | ✓ |
-| SSO with LDAP, API tokens, backup | | planned |
+| LDAP sign-in: Active Directory, OpenLDAP | | ✓ |
+| API tokens, backup | | planned |
 
 The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license may cap the number of users: past the cap no new users can be created, and existing users keep working.
 
@@ -206,7 +207,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 **Next:**
 - **Stacks and GitOps:** Compose authoring, a diff before deploy, rollback, and git-backed stacks synced by webhook or polling.
 - **Port-forward:** reach a pod's port through FleetOps.
-- **Enterprise:** LDAP sign-in, API tokens, backup and restore, SIEM forwarding and long audit retention.
+- **Enterprise:** API tokens, backup and restore, SIEM forwarding and long audit retention.
 
 ## Documentation
 
