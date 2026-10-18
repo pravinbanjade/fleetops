@@ -11,6 +11,8 @@ export interface SlotProps {
   "user.access": { userId: number };
   /** Under an environment's direct grants in its Access dialog. */
   "env.access": { env: string };
+  /** Below the Backup page's download and restore sections. */
+  "admin.backup": object;
 }
 
 export type SlotName = keyof SlotProps;

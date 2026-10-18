@@ -7,6 +7,7 @@ import {
   Copy,
   Cpu,
   Database,
+  DatabaseBackup,
   FileCog,
   FileStack,
   FolderTree,
@@ -47,6 +48,7 @@ export const ADMIN_NAV = [
   { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/envs", label: "Environments", icon: Server },
   { to: "/admin/audit", label: "Audit log", icon: ScrollText },
+  { to: "/admin/backup", label: "Backup", icon: DatabaseBackup },
 ] as const;
 
 /** A Kubernetes page in the sidebar. `kind` items link to that kind's list. */

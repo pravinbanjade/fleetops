@@ -441,6 +441,87 @@
         ]
       }
     },
+    "/api/v1/auth/setup/backup": {
+      "post": {
+        "tags": [
+          "backup"
+        ],
+        "summary": "First run: upload a backup instead of creating the admin",
+        "operationId": "stageSetupBackup",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Ready to restore",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedBackup"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/auth/setup/backup/{id}/restore": {
+      "post": {
+        "tags": [
+          "backup"
+        ],
+        "summary": "First run: restore a staged backup; the server restarts",
+        "operationId": "restoreSetupBackup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Restoring"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/api/v1/auth/status": {
       "get": {
         "tags": [
@@ -472,6 +553,195 @@
         },
         "security": [
           {}
+        ]
+      }
+    },
+    "/api/v1/backup": {
+      "post": {
+        "tags": [
+          "backup"
+        ],
+        "summary": "Download a passphrase-locked backup of this server",
+        "operationId": "downloadBackup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The backup file",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/backup/stage": {
+      "post": {
+        "tags": [
+          "backup"
+        ],
+        "summary": "Upload a backup and see what it holds (up to 512 MiB)",
+        "operationId": "stageBackup",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Ready to restore",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedBackup"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/backup/stage/{id}": {
+      "delete": {
+        "tags": [
+          "backup"
+        ],
+        "summary": "Forget a staged backup",
+        "operationId": "discardBackup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Discarded"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/backup/stage/{id}/restore": {
+      "post": {
+        "tags": [
+          "backup"
+        ],
+        "summary": "Replace all data with a staged backup; the server restarts",
+        "operationId": "restoreBackup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmRestore"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Restoring; everyone is signed out"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
         ]
       }
     },
@@ -6318,6 +6588,82 @@
           }
         }
       },
+      "BackupBody": {
+        "type": "object",
+        "required": [
+          "passphrase"
+        ],
+        "properties": {
+          "passphrase": {
+            "type": "string",
+            "description": "At least 12 characters; needed to restore the file."
+          }
+        }
+      },
+      "BackupForm": {
+        "type": "object",
+        "description": "Multipart body of a backup upload.",
+        "required": [
+          "file",
+          "passphrase"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "The backup file."
+          },
+          "passphrase": {
+            "type": "string",
+            "description": "The passphrase it was made with."
+          }
+        }
+      },
+      "BackupSummary": {
+        "type": "object",
+        "description": "What an admin is shown before restoring: the manifest without secrets.",
+        "required": [
+          "fleetops_version",
+          "created_at",
+          "edition",
+          "counts",
+          "has_enterprise_data"
+        ],
+        "properties": {
+          "counts": {
+            "type": "object",
+            "description": "Rows per table.",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "edition": {
+            "type": "string",
+            "description": "`community` or `enterprise`."
+          },
+          "fleetops_version": {
+            "type": "string"
+          },
+          "has_enterprise_data": {
+            "type": "boolean",
+            "description": "The backup holds Enterprise tables."
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "BuildForm": {
         "type": "object",
         "description": "Multipart body of `POST /envs/{env}/images/build`: send `context` or\n`dockerfile`, not both.",
@@ -6658,6 +7004,18 @@
           "status": {
             "type": "string",
             "description": "running | partial | stopped"
+          }
+        }
+      },
+      "ConfirmRestore": {
+        "type": "object",
+        "required": [
+          "confirm"
+        ],
+        "properties": {
+          "confirm": {
+            "type": "string",
+            "description": "Must be `RESTORE`."
           }
         }
       },
@@ -9138,6 +9496,22 @@
           }
         }
       },
+      "StagedBackup": {
+        "type": "object",
+        "required": [
+          "id",
+          "summary"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Pass to the restore call."
+          },
+          "summary": {
+            "$ref": "#/components/schemas/BackupSummary"
+          }
+        }
+      },
       "StatsSample": {
         "type": "object",
         "description": "One stats sample for a container, with CPU already turned into a\npercentage of one core times the number of cores (as `docker stats`).",
@@ -9651,6 +10025,10 @@
     {
       "name": "audit",
       "description": "Audit log (admin only)"
+    },
+    {
+      "name": "backup",
+      "description": "Backup and restore (admin only, and the first-run restore)"
     },
     {
       "name": "environments",
