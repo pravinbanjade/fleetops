@@ -8,6 +8,7 @@ pub mod keys;
 pub mod license;
 pub mod roles;
 pub mod routes;
+pub mod sso;
 pub mod state;
 pub mod teams;
 
@@ -17,6 +18,7 @@ use fleetops_api::AppState;
 use fleetops_core::{
     access::{CustomRoles, ExtraGrants},
     edition::Entitlements,
+    external::ExternalAuth,
     now_unix, Result,
 };
 use fleetops_store::Store;
@@ -38,6 +40,8 @@ pub struct EeParts {
     pub grants: Arc<dyn ExtraGrants>,
     /// Custom roles granted straight to users, through the core access routes.
     pub roles: Arc<dyn CustomRoles>,
+    /// Single sign-on: login-page providers and the password-login gate.
+    pub external_auth: Arc<dyn ExternalAuth>,
     /// Logs license status changes; spawn it.
     pub background: BoxFuture<'static, ()>,
 }
@@ -74,6 +78,9 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
             roles::routes::update,
             roles::routes::delete
         ))
+        .routes(routes!(sso::routes::list, sso::routes::create))
+        .routes(routes!(sso::routes::get, sso::routes::update))
+        .routes(routes!(sso::routes::get_settings, sso::routes::put_settings))
 }
 
 pub async fn init(store: &Store, config: EeConfig) -> Result<EeParts> {
@@ -97,6 +104,7 @@ pub async fn init_with_keys(
             store.pool().clone(),
             state.clone(),
         )),
+        external_auth: Arc::new(sso::hook::EeSso::new(store.clone())),
         background: Box::pin(watch(state)),
     })
 }

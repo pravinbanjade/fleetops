@@ -23,16 +23,19 @@ pub enum Feature {
     Teams,
     /// Custom roles (`/ee/roles`). Every active license has it.
     Rbac,
+    /// Single sign-on (`/ee/sso`). Every active license has it.
+    Sso,
 }
 
 impl Feature {
-    pub const ALL: &'static [Feature] = &[Feature::AuditExport, Feature::Teams, Feature::Rbac];
+    pub const ALL: &'static [Feature] = &[Feature::AuditExport, Feature::Teams, Feature::Rbac, Feature::Sso];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Feature::AuditExport => "audit_export",
             Feature::Teams => "teams",
             Feature::Rbac => "rbac",
+            Feature::Sso => "sso",
         }
     }
 

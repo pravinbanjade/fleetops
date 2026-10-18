@@ -93,6 +93,14 @@ pub fn license_for_nodes(
 }
 
 pub async fn ee_app(key: &SigningKey, file: Option<PathBuf>) -> Ee {
+    ee_app_with(key, file, ApiConfig::default()).await
+}
+
+/// The URL tests give `FLEETOPS_PUBLIC_URL`.
+pub const PUBLIC_URL: &str = "https://fleet.test";
+
+/// [`ee_app`] with `config`.
+pub async fn ee_app_with(key: &SigningKey, file: Option<PathBuf>, config: ApiConfig) -> Ee {
     let store = Store::in_memory().await.unwrap();
     let parts = fleetops_ee::init_with_keys(
         &store,
@@ -101,10 +109,11 @@ pub async fn ee_app(key: &SigningKey, file: Option<PathBuf>) -> Ee {
     )
     .await
     .unwrap();
-    let state = AppState::new(store.clone(), ApiConfig::default(), Arc::new(NoEnvs))
+    let state = AppState::new(store.clone(), config, Arc::new(NoEnvs))
         .with_entitlements(parts.entitlements)
         .with_extra_grants(parts.grants)
-        .with_custom_roles(parts.roles);
+        .with_custom_roles(parts.roles)
+        .with_external_auth(parts.external_auth);
     Ee {
         router: fleetops_api::app_with(state.clone(), Router::new(), parts.routes),
         store,
@@ -147,7 +156,7 @@ impl Ee {
         }
     }
 
-    fn session(r: &Resp) -> Session {
+    pub fn session(r: &Resp) -> Session {
         let cookie = r.headers["set-cookie"]
             .to_str()
             .unwrap()

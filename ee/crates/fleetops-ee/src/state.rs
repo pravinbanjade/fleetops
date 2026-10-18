@@ -146,7 +146,7 @@ impl LicenseState {
                 max_users: l.payload.max_users,
                 features: {
                     let mut f = l.features.clone();
-                    for always in [Feature::Teams, Feature::Rbac] {
+                    for always in [Feature::Teams, Feature::Rbac, Feature::Sso] {
                         if !f.contains(&always) {
                             f.push(always);
                         }
@@ -177,7 +177,7 @@ impl Entitlements for LicenseState {
     /// licenses issued before it get it too (teams spec, "Licensing").
     fn has(&self, feature: Feature) -> bool {
         self.active(|l| {
-            matches!(feature, Feature::Teams | Feature::Rbac) || l.features.contains(&feature)
+            matches!(feature, Feature::Teams | Feature::Rbac | Feature::Sso) || l.features.contains(&feature)
         })
         .unwrap_or(false)
     }

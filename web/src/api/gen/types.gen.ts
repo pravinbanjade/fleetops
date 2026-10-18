@@ -581,7 +581,7 @@ export type ExecOptions = {
 /**
  * An Enterprise feature a license can grant.
  */
-export type Feature = 'audit_export' | 'teams' | 'rbac';
+export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso';
 
 /**
  * One grant: where it applies and what it allows.

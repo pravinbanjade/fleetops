@@ -7540,7 +7540,8 @@
         "enum": [
           "audit_export",
           "teams",
-          "rbac"
+          "rbac",
+          "sso"
         ]
       },
       "GrantView": {

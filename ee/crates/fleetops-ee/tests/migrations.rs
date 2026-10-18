@@ -19,3 +19,23 @@ async fn community_store_opens_a_database_enterprise_used() {
         Some("x.y")
     );
 }
+
+#[tokio::test]
+async fn sso_tables_exist_and_members_carry_a_source() {
+    let store = Store::in_memory().await.unwrap();
+    fleetops_ee::db::migrate(store.pool()).await.unwrap();
+    for table in ["ee_sso_connections", "ee_sso_identities", "ee_sso_mappings", "ee_sso_states"] {
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = ?")
+            .bind(table)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+        assert_eq!(n, 1, "{table}");
+    }
+    let cols: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM pragma_table_info('ee_team_members')")
+            .fetch_all(store.pool())
+            .await
+            .unwrap();
+    assert!(cols.contains(&"source_connection_id".to_string()), "{cols:?}");
+}

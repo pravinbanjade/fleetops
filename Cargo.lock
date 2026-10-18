@@ -1143,6 +1143,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "url",
  "utoipa",
  "utoipa-axum",
 ]
