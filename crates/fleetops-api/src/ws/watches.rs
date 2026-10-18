@@ -472,7 +472,14 @@ mod tests {
                 row: row(&format!("p{i:04}")),
             }));
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Wait for the upstream task to fold every event, so `a` has lagged.
+        let shared = w.map.lock().unwrap().values().next().unwrap().clone();
+        for _ in 0..400 {
+            if shared.state.lock().unwrap().rows.len() == FEED_BUFFER + 10 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
         match a.next().await {
             Some(Ok(WatchEvent::Snapshot { rows })) => assert_eq!(rows.len(), FEED_BUFFER + 10),
             other => panic!("{other:?}"),
