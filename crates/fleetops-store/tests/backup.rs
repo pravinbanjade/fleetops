@@ -49,3 +49,252 @@ fn key_round_trips_base64() {
 fn migration_max_is_latest() {
     assert!(community_migration_max() >= 6);
 }
+
+// ---- archives (Task 3) ----
+
+use fleetops_store::backup::{format, open_backup, BackupMeta, KdfParams};
+use fleetops_store::{NewAudit, NewSession};
+use std::{fs::File, path::Path};
+
+const PW: &str = "correct horse battery";
+
+pub async fn populated(key: &SecretKey) -> Store {
+    let store = Store::in_memory().await.unwrap().with_secret_key(key);
+    let u = store.create_first_admin("admin", "hash", 1).await.unwrap();
+    store
+        .create_environment_with_credential(
+            "k",
+            "kube-config",
+            "https://k:6443",
+            "kubeconfig",
+            KUBECONFIG,
+            &json!({}),
+            1,
+        )
+        .await
+        .unwrap();
+    for i in 0..3 {
+        store
+            .insert_audit(&NewAudit {
+                ts: i,
+                user_id: Some(u.id),
+                environment_id: None,
+                action: "test",
+                target_type: None,
+                target_id: None,
+                result: "success",
+                detail: None,
+            })
+            .await
+            .unwrap();
+    }
+    store
+        .create_session(&NewSession {
+            user_id: u.id,
+            token_hash: "t",
+            csrf_token: "c",
+            now: 1,
+            expires_at: i64::MAX,
+            user_agent: None,
+            ip: None,
+        })
+        .await
+        .unwrap();
+    store
+}
+
+pub fn meta() -> BackupMeta {
+    BackupMeta {
+        now: 1_700_000_000,
+        edition: "community".into(),
+        source: None,
+        sealed: community_sealed(),
+    }
+}
+
+pub async fn backup_file(store: &Store, dir: &Path) -> std::path::PathBuf {
+    let out = dir.join("b.fob");
+    store
+        .write_backup(meta(), PW, KdfParams::TEST, &dir.join("scratch"), &out)
+        .await
+        .unwrap();
+    out
+}
+
+#[tokio::test]
+async fn backup_round_trip_keeps_data_drops_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = populated(&SecretKey::random()).await;
+    let file = backup_file(&store, dir.path()).await;
+    let opened = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o")).unwrap();
+    let c = &opened.manifest.counts;
+    assert_eq!(c["users"], 1);
+    assert_eq!(c["audit_log"], 3);
+    assert!(!c.contains_key("sessions"));
+    let restored = Store::open(&opened.db).await.unwrap();
+    assert_eq!(restored.count_users().await.unwrap(), 1);
+    let sessions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+        .fetch_one(restored.pool())
+        .await
+        .unwrap();
+    assert_eq!(sessions, 0);
+    // The scratch directory is left empty.
+    assert_eq!(
+        std::fs::read_dir(dir.path().join("scratch"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn manifest_carries_key_and_sealed() {
+    let dir = tempfile::tempdir().unwrap();
+    let key = SecretKey::random();
+    let store = populated(&key).await;
+    let file = backup_file(&store, dir.path()).await;
+    let m = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o"))
+        .unwrap()
+        .manifest;
+    assert_eq!(m.secret_key, key.to_base64());
+    assert_eq!(m.sealed, community_sealed());
+    assert!(m.community_migration >= 6);
+    assert_eq!(m.enterprise_migration, None);
+    assert!(!m.summary().has_enterprise_data);
+}
+
+#[tokio::test]
+async fn ee_tables_come_along() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = populated(&SecretKey::random()).await;
+    for sql in [
+        "CREATE TABLE ee_sso_states (state TEXT)",
+        "INSERT INTO ee_sso_states VALUES ('s')",
+        "CREATE TABLE ee_foo (id INTEGER)",
+        "INSERT INTO ee_foo VALUES (1), (2)",
+    ] {
+        sqlx::query(sql).execute(store.pool()).await.unwrap();
+    }
+    let file = backup_file(&store, dir.path()).await;
+    let c = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o"))
+        .unwrap()
+        .manifest
+        .counts;
+    assert_eq!(c["ee_foo"], 2);
+    assert!(!c.contains_key("ee_sso_states"));
+}
+
+/// Seals a hand-built tar.gz the way a backup is sealed.
+fn sealed_tar(dir: &Path, build: impl FnOnce(&mut tar::Builder<Vec<u8>>)) -> std::path::PathBuf {
+    let mut b = tar::Builder::new(Vec::new());
+    build(&mut b);
+    let raw = b.into_inner().unwrap();
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    std::io::Write::write_all(&mut gz, &raw).unwrap();
+    let tgz = gz.finish().unwrap();
+    let out = dir.join(format!("x{}.fob", rand_suffix()));
+    format::encrypt(
+        tgz.as_slice(),
+        File::create(&out).unwrap(),
+        PW,
+        KdfParams::TEST,
+    )
+    .unwrap();
+    out
+}
+
+fn rand_suffix() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static N: AtomicU64 = AtomicU64::new(0);
+    N.fetch_add(1, Ordering::Relaxed)
+}
+
+fn file_entry(b: &mut tar::Builder<Vec<u8>>, name: &str, data: &[u8]) {
+    let mut h = tar::Header::new_gnu();
+    h.set_size(data.len() as u64);
+    h.set_mode(0o600);
+    // Bypasses the builder's own path checks, as a hostile file would.
+    let raw = &mut h.as_old_mut().name;
+    raw[..name.len()].copy_from_slice(name.as_bytes());
+    h.set_cksum();
+    b.append(&h, data).unwrap();
+}
+
+fn manifest_json() -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "format": 1, "fleetops_version": "0.2.0", "created_at": 1, "edition": "community",
+        "source": null, "community_migration": 6, "enterprise_migration": null,
+        "counts": {}, "secret_key": SecretKey::random().to_base64(), "sealed": []
+    }))
+    .unwrap()
+}
+
+#[test]
+fn rejects_unexpected_tar_entries() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = manifest_json();
+    let cases: Vec<(&str, Box<dyn FnOnce(&mut tar::Builder<Vec<u8>>)>)> = vec![
+        ("traversal", Box::new(|b| file_entry(b, "../x", b"x"))),
+        (
+            "absolute",
+            Box::new(|b| file_entry(b, "/tmp/fleetops-x", b"x")),
+        ),
+        ("symlink", {
+            let m = m.clone();
+            Box::new(move |b| {
+                file_entry(b, "manifest.json", &m);
+                let mut h = tar::Header::new_gnu();
+                h.set_entry_type(tar::EntryType::Symlink);
+                h.set_size(0);
+                b.append_link(&mut h, "fleetops.db", "/etc/passwd").unwrap();
+            })
+        }),
+        ("manifest twice", {
+            let m = m.clone();
+            Box::new(move |b| {
+                file_entry(b, "manifest.json", &m);
+                file_entry(b, "manifest.json", &m);
+            })
+        }),
+        ("extra file", {
+            let m = m.clone();
+            Box::new(move |b| {
+                file_entry(b, "manifest.json", &m);
+                file_entry(b, "fleetops.db", b"db");
+                file_entry(b, "extra", b"x");
+            })
+        }),
+        ("db before manifest", {
+            let m = m.clone();
+            Box::new(move |b| {
+                file_entry(b, "fleetops.db", b"db");
+                file_entry(b, "manifest.json", &m);
+            })
+        }),
+        (
+            "no db",
+            Box::new(move |b| file_entry(b, "manifest.json", &m)),
+        ),
+    ];
+    for (name, build) in cases {
+        let file = sealed_tar(dir.path(), build);
+        let out = dir.path().join(format!("o-{}", rand_suffix()));
+        let e = open_backup(File::open(&file).unwrap(), PW, &out).unwrap_err();
+        assert!(e.to_string().contains("damaged backup"), "{name}: {e}");
+        for entry in std::fs::read_dir(&out).unwrap() {
+            let p = entry.unwrap().path();
+            assert!(p.starts_with(&out), "{name}: {p:?}");
+        }
+    }
+    assert!(!dir.path().parent().unwrap().join("x").exists());
+    assert!(!Path::new("/tmp/fleetops-x").exists());
+}
+
+#[test]
+fn rejects_oversized_manifest() {
+    let dir = tempfile::tempdir().unwrap();
+    let big = vec![b' '; 2 * 1024 * 1024];
+    let file = sealed_tar(dir.path(), |b| file_entry(b, "manifest.json", &big));
+    let e = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o")).unwrap_err();
+    assert!(e.to_string().contains("damaged backup"), "{e}");
+}

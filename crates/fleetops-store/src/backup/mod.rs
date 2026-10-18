@@ -1,7 +1,11 @@
 //! Backup and restore (backup spec): one passphrase-sealed file holding a
 //! snapshot of the database and what is needed to open its secrets.
 
+pub mod archive;
 pub mod format;
+
+pub use archive::{open_backup, BackupMeta, BackupSummary, Manifest, Opened, EXCLUDED_TABLES};
+pub use format::{check_passphrase, KdfParams};
 
 use serde::{Deserialize, Serialize};
 
