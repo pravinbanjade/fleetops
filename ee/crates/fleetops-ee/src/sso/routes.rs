@@ -285,3 +285,136 @@ pub async fn put_settings(
     .await;
     Ok(Json(body))
 }
+
+#[derive(Serialize, ToSchema)]
+pub struct DeletedConnection {
+    /// SSO users the connection leaves behind; they can no longer sign in
+    /// and an admin may delete them.
+    pub users_left: i64,
+}
+
+#[utoipa::path(delete, path = "/ee/sso/connections/{id}", operation_id = "deleteSsoConnection", tag = "enterprise",
+    summary = "Delete a connection: its group sync is undone and its users' sessions end",
+    params(("id" = i64, Path, description = "Connection id")),
+    responses((status = 200, description = "Deleted", body = DeletedConnection)))]
+pub async fn delete(
+    State(s): State<AppState>,
+    AdminUser(admin): AdminUser,
+    ApiPath(id): ApiPath<i64>,
+) -> ApiResult<Json<DeletedConnection>> {
+    let c = db::get(s.store.pool(), id).await?;
+    let users = db::connection_users(s.store.pool(), id).await?;
+    // Before the delete: the cascade would turn sync rows into manual ones.
+    super::provision::detach_connection(&s, id).await?;
+    db::delete(s.store.pool(), id).await?;
+    audit(&s, admin.user.id, "sso.connection.delete", &c, json!({"users_left": users.len()})).await;
+    Ok(Json(DeletedConnection {
+        users_left: users.len() as i64,
+    }))
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct MappingView {
+    pub id: i64,
+    pub group: String,
+    /// Null when the group grants admin.
+    pub team_id: Option<i64>,
+    pub team_name: Option<String>,
+    pub admin: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct NewMapping {
+    /// The group as the provider names it: a name, an id, an email or a DN.
+    pub group: String,
+    #[serde(default)]
+    pub team_id: Option<i64>,
+    /// Make members FleetOps admins instead of joining a team.
+    #[serde(default)]
+    pub admin: bool,
+}
+
+fn mapping_view(m: db::Mapping) -> MappingView {
+    MappingView {
+        id: m.id,
+        group: m.group_value,
+        team_id: m.team_id,
+        team_name: m.team_name,
+        admin: m.is_admin,
+    }
+}
+
+#[utoipa::path(get, path = "/ee/sso/connections/{id}/mappings", operation_id = "listSsoMappings", tag = "enterprise",
+    summary = "A connection's group mappings", params(("id" = i64, Path, description = "Connection id")),
+    responses((status = 200, description = "Mappings", body = Vec<MappingView>)))]
+pub async fn list_mappings(
+    State(s): State<AppState>,
+    _a: AdminUser,
+    ApiPath(id): ApiPath<i64>,
+) -> ApiResult<Json<Vec<MappingView>>> {
+    db::get(s.store.pool(), id).await?;
+    Ok(Json(
+        db::mappings(s.store.pool(), id)
+            .await?
+            .into_iter()
+            .map(mapping_view)
+            .collect(),
+    ))
+}
+
+#[utoipa::path(post, path = "/ee/sso/connections/{id}/mappings", operation_id = "createSsoMapping", tag = "enterprise",
+    summary = "Map a group to a team or to admin (needs the sso feature); applies at each member's next sign-in",
+    params(("id" = i64, Path, description = "Connection id")), request_body = NewMapping,
+    responses((status = 201, description = "Created", body = MappingView)))]
+pub async fn create_mapping(
+    State(s): State<AppState>,
+    AdminUser(admin): AdminUser,
+    ApiPath(id): ApiPath<i64>,
+    ApiJson(body): ApiJson<NewMapping>,
+) -> ApiResult<(StatusCode, Json<MappingView>)> {
+    require_feature(&s, Feature::Sso)?;
+    let c = db::get(s.store.pool(), id).await?;
+    let group = body.group.trim();
+    if group.is_empty() || group.len() > 512 {
+        return Err(Error::Invalid("group must be 1-512 characters".into()).into());
+    }
+    match (body.team_id, body.admin) {
+        (Some(_), true) | (None, false) => {
+            return Err(Error::Invalid("map the group to exactly one of a team or admin".into()).into())
+        }
+        (Some(t), false) => {
+            crate::teams::db::get(s.store.pool(), t).await?;
+        }
+        (None, true) => {}
+    }
+    let mid = db::add_mapping(s.store.pool(), id, group, body.team_id, now_unix()).await?;
+    let m = db::mappings(s.store.pool(), id)
+        .await?
+        .into_iter()
+        .find(|m| m.id == mid)
+        .ok_or_else(|| Error::Internal("mapping vanished".into()))?;
+    audit(&s, admin.user.id, "sso.mapping.create", &c,
+        json!({"group": m.group_value, "team": m.team_name, "admin": m.is_admin})).await;
+    Ok((StatusCode::CREATED, Json(mapping_view(m))))
+}
+
+#[utoipa::path(delete, path = "/ee/sso/connections/{id}/mappings/{mapping_id}", operation_id = "deleteSsoMapping",
+    tag = "enterprise", summary = "Remove a mapping; members lose what it gave them now",
+    params(("id" = i64, Path, description = "Connection id"), ("mapping_id" = i64, Path, description = "Mapping id")),
+    responses((status = 204, description = "Gone")))]
+pub async fn delete_mapping(
+    State(s): State<AppState>,
+    AdminUser(admin): AdminUser,
+    ApiPath((id, mapping_id)): ApiPath<(i64, i64)>,
+) -> ApiResult<StatusCode> {
+    let c = db::get(s.store.pool(), id).await?;
+    let m = db::mappings(s.store.pool(), id).await?.into_iter().find(|m| m.id == mapping_id);
+    if db::delete_mapping(s.store.pool(), id, mapping_id).await? {
+        super::provision::resync_connection(&s, id).await?;
+        if let Some(m) = m {
+            audit(&s, admin.user.id, "sso.mapping.delete", &c,
+                json!({"group": m.group_value, "team": m.team_name, "admin": m.is_admin})).await;
+        }
+    }
+    Ok(StatusCode::NO_CONTENT)
+}

@@ -34,8 +34,18 @@ pub struct TeamDetail {
     pub name: String,
     pub description: Option<String>,
     pub members: Vec<User>,
+    /// Members that single sign-on group sync added; they leave the team
+    /// through the identity provider, not by hand.
+    pub synced: Vec<SyncedMember>,
     /// The team's environment access, by environment name.
     pub access: Vec<AccessEntry>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SyncedMember {
+    pub user_id: i64,
+    /// The SSO connection whose group mapping added the member.
+    pub connection: String,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -156,6 +166,11 @@ async fn detail(s: &AppState, team: TeamRecord) -> ApiResult<Json<TeamDetail>> {
     let p = s.store.pool();
     Ok(Json(TeamDetail {
         members: db::members(p, team.id).await?,
+        synced: db::synced_members(p, team.id)
+            .await?
+            .into_iter()
+            .map(|(user_id, connection)| SyncedMember { user_id, connection })
+            .collect(),
         access: db::bindings(p, team.id).await?.iter().map(entry).collect(),
         id: team.id,
         name: team.name,
@@ -306,6 +321,16 @@ pub async fn remove_member(
 ) -> ApiResult<StatusCode> {
     let team = db::get(s.store.pool(), id).await?;
     let user = s.store.get_user(user_id).await?;
+    if db::synced_members(s.store.pool(), id)
+        .await?
+        .iter()
+        .any(|(u, _)| *u == user_id)
+    {
+        return Err(fleetops_core::Error::Conflict(
+            "managed by single sign-on: remove the group mapping or the user's group instead".into(),
+        )
+        .into());
+    }
     if db::remove_member(s.store.pool(), id, user_id).await? {
         audit(
             &s,

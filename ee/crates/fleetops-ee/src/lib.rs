@@ -79,7 +79,9 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
             roles::routes::delete
         ))
         .routes(routes!(sso::routes::list, sso::routes::create))
-        .routes(routes!(sso::routes::get, sso::routes::update))
+        .routes(routes!(sso::routes::get, sso::routes::update, sso::routes::delete))
+        .routes(routes!(sso::routes::list_mappings, sso::routes::create_mapping))
+        .routes(routes!(sso::routes::delete_mapping))
         .routes(routes!(sso::routes::get_settings, sso::routes::put_settings))
 }
 

@@ -234,3 +234,201 @@ async fn sso_user_password_login_looks_like_a_wrong_password() {
         assert_eq!(r.text, wrong.text);
     }
 }
+
+// ---- mappings and connection lifecycle (Task 4) ----------------------------
+
+use fleetops_ee::sso::provision::{self, Claims};
+
+async fn team(ee: &Ee, admin: &Session, name: &str) -> i64 {
+    ee.send("POST", "/api/v1/ee/teams", body(json!({"name": name})), Some(admin))
+        .await
+        .json()["id"]
+        .as_i64()
+        .unwrap()
+}
+
+async fn enabled(ee: &Ee, admin: &Session) -> i64 {
+    let mut v = oidc("Acme");
+    v["enabled"] = json!(true);
+    create(ee, admin, v).await.json()["id"].as_i64().unwrap()
+}
+
+async fn map(ee: &Ee, admin: &Session, conn: i64, v: Value) -> Resp {
+    ee.send(
+        "POST",
+        &format!("/api/v1/ee/sso/connections/{conn}/mappings"),
+        body(v),
+        Some(admin),
+    )
+    .await
+}
+
+async fn jane(ee: &Ee, conn: i64, groups: &[&str]) -> fleetops_core::User {
+    let c = fleetops_ee::sso::db::get(ee.store.pool(), conn).await.unwrap();
+    provision::login(
+        &ee.state,
+        &c,
+        Claims {
+            subject: "jane-sub".into(),
+            email: Some("jane@acme.io".into()),
+            groups: groups.iter().map(|g| g.to_string()).collect(),
+            ..Claims::default()
+        },
+    )
+    .await
+    .unwrap()
+    .unwrap()
+}
+
+async fn team_members(ee: &Ee, team: i64) -> Vec<i64> {
+    sqlx::query_scalar("SELECT user_id FROM ee_team_members WHERE team_id = ?")
+        .bind(team)
+        .fetch_all(ee.store.pool())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn mapping_needs_exactly_one_target() {
+    let (ee, admin) = licensed().await;
+    let conn = enabled(&ee, &admin).await;
+    let ops = team(&ee, &admin, "Ops").await;
+    for v in [json!({"group": "ops"}), json!({"group": "ops", "team_id": ops, "admin": true})] {
+        assert_eq!(map(&ee, &admin, conn, v).await.status, StatusCode::BAD_REQUEST);
+    }
+    let r = map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops})).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    assert_eq!(r.json()["team_name"], "Ops");
+    let r = map(&ee, &admin, conn, json!({"group": "admins", "admin": true})).await;
+    assert_eq!(r.json()["admin"], true);
+}
+
+#[tokio::test]
+async fn deleting_mapping_removes_sync_membership_now() {
+    let (ee, admin) = licensed().await;
+    let conn = enabled(&ee, &admin).await;
+    let ops = team(&ee, &admin, "Ops").await;
+    let mid = map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops})).await.json()["id"]
+        .as_i64()
+        .unwrap();
+    let u = jane(&ee, conn, &["ops"]).await;
+    assert_eq!(team_members(&ee, ops).await, vec![u.id]);
+    let r = ee
+        .send(
+            "DELETE",
+            &format!("/api/v1/ee/sso/connections/{conn}/mappings/{mid}"),
+            None,
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert!(team_members(&ee, ops).await.is_empty());
+}
+
+#[tokio::test]
+async fn disabling_connection_ends_sessions_and_removes_sync_rows() {
+    let (ee, admin) = licensed().await;
+    let conn = enabled(&ee, &admin).await;
+    let ops = team(&ee, &admin, "Ops").await;
+    map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops})).await;
+    let u = jane(&ee, conn, &["ops"]).await;
+    ee.store
+        .create_session(&fleetops_store::NewSession {
+            user_id: u.id,
+            token_hash: "h",
+            csrf_token: "c",
+            now: now_unix(),
+            expires_at: now_unix() + DAY,
+            user_agent: None,
+            ip: None,
+        })
+        .await
+        .unwrap();
+    let r = ee
+        .send(
+            "PATCH",
+            &format!("/api/v1/ee/sso/connections/{conn}"),
+            body(json!({"enabled": false})),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert!(team_members(&ee, ops).await.is_empty());
+    assert!(ee.store.list_sessions(u.id).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn deleting_connection_keeps_users_and_reports_count() {
+    let (ee, admin) = licensed().await;
+    let conn = enabled(&ee, &admin).await;
+    let u = jane(&ee, conn, &[]).await;
+    let r = ee
+        .send("DELETE", &format!("/api/v1/ee/sso/connections/{conn}"), None, Some(&admin))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["users_left"], 1);
+    assert_eq!(ee.store.get_user(u.id).await.unwrap().username, "jane");
+    let pw = ee
+        .send("POST", "/api/v1/auth/login", body(json!({"username": "jane", "password": "!sso"})), None)
+        .await;
+    assert_eq!(pw.status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn unlicensed_add_mapping_refused_delete_allowed() {
+    let (ee, admin) = licensed().await;
+    let conn = enabled(&ee, &admin).await;
+    let ops = team(&ee, &admin, "Ops").await;
+    let mid = map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops})).await.json()["id"]
+        .as_i64()
+        .unwrap();
+    ee.send("DELETE", "/api/v1/ee/license", None, Some(&admin)).await;
+    let r = map(&ee, &admin, conn, json!({"group": "dev", "team_id": ops})).await;
+    assert_eq!(r.json()["code"], "license_required");
+    let r = ee
+        .send(
+            "DELETE",
+            &format!("/api/v1/ee/sso/connections/{conn}/mappings/{mid}"),
+            None,
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn local_admin_logs_in_while_connection_issuer_unreachable() {
+    let (ee, admin) = licensed().await;
+    let mut v = oidc("Dead");
+    v["settings"]["issuer"] = json!("http://127.0.0.1:1");
+    v["enabled"] = json!(true);
+    assert_eq!(create(&ee, &admin, v).await.status, StatusCode::CREATED);
+    ee.send(
+        "PUT",
+        "/api/v1/ee/sso/settings",
+        body(json!({"password_login": "local_admins"})),
+        Some(&admin),
+    )
+    .await;
+    ee.login("admin").await;
+}
+
+#[tokio::test]
+async fn team_member_list_marks_sync_rows() {
+    let (ee, admin) = licensed().await;
+    let conn = enabled(&ee, &admin).await;
+    let ops = team(&ee, &admin, "Ops").await;
+    map(&ee, &admin, conn, json!({"group": "ops", "team_id": ops})).await;
+    let u = jane(&ee, conn, &["ops"]).await;
+    let r = ee.send("GET", &format!("/api/v1/ee/teams/{ops}"), None, Some(&admin)).await;
+    assert_eq!(r.json()["synced"], json!([{"user_id": u.id, "connection": "Acme"}]));
+    let rm = ee
+        .send(
+            "DELETE",
+            &format!("/api/v1/ee/teams/{ops}/members/{}", u.id),
+            None,
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(rm.status, StatusCode::CONFLICT, "{}", rm.text);
+}

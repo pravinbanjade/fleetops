@@ -228,6 +228,19 @@ pub async fn add_member(pool: &SqlitePool, team_id: i64, user_id: i64, now: i64)
     Ok(r.rows_affected() > 0)
 }
 
+/// Members added by single sign-on group sync, with the connection name.
+pub async fn synced_members(pool: &SqlitePool, team_id: i64) -> Result<Vec<(i64, String)>> {
+    sqlx::query_as(
+        "SELECT m.user_id, c.name FROM ee_team_members m
+         JOIN ee_sso_connections c ON c.id = m.source_connection_id
+         WHERE m.team_id = ? ORDER BY m.user_id",
+    )
+    .bind(team_id)
+    .fetch_all(pool)
+    .await
+    .map_err(db_err)
+}
+
 /// Whether the user was a member.
 pub async fn remove_member(pool: &SqlitePool, team_id: i64, user_id: i64) -> Result<bool> {
     let r = sqlx::query("DELETE FROM ee_team_members WHERE team_id = ? AND user_id = ?")
