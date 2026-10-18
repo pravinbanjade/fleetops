@@ -4,18 +4,21 @@
 
 use super::{
     archive::{connect, tables},
-    Manifest,
+    format::damaged,
+    Manifest, SealedColumn,
 };
 use crate::{
     db_err,
     secrets::{SecretBox, SecretKey},
 };
 use fleetops_core::{Error, Result};
-use sqlx::{sqlite::SqliteConnectOptions, ConnectOptions, Connection};
+use sqlx::{sqlite::SqliteConnectOptions, ConnectOptions, Connection, SqliteConnection};
 use std::path::{Path, PathBuf};
 
 pub const PENDING_DIR: &str = "restore-pending";
 pub const STAGING_DIR: &str = "restore-staging";
+/// Scratch space for backups being made, uploaded or fetched.
+pub const TMP_DIR: &str = "backup-tmp";
 pub const PRE_RESTORE_DIR: &str = "pre-restore";
 pub const PRE_RESTORE_KEEP: usize = 3;
 const DB: &str = "fleetops.db";
@@ -46,6 +49,40 @@ pub fn check_versions(m: &Manifest, v: &ServerVersions) -> Result<()> {
     Ok(())
 }
 
+/// A plain SQL identifier that names an existing column. The names come
+/// from the backup's manifest, which whoever made the file controls.
+fn ident(s: &str) -> bool {
+    let mut c = s.chars();
+    c.next()
+        .is_some_and(|f| f.is_ascii_alphabetic() || f == '_')
+        && c.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
+/// The rows of a sealed column, after checking its names are plain and real.
+pub(crate) async fn sealed_rows(
+    c: &mut SqliteConnection,
+    col: &SealedColumn,
+) -> Result<Vec<(i64, String)>> {
+    let (t, cname, id) = (&col.table, &col.column, &col.id_column);
+    if ![t, cname, id].iter().all(|n| ident(n)) {
+        return Err(damaged());
+    }
+    let cols: Vec<String> = sqlx::query_scalar("SELECT name FROM pragma_table_info(?)")
+        .bind(t)
+        .fetch_all(&mut *c)
+        .await
+        .map_err(db_err)?;
+    if !cols.contains(cname) || !cols.contains(id) {
+        return Err(damaged());
+    }
+    sqlx::query_as(&format!(
+        "SELECT \"{id}\", \"{cname}\" FROM \"{t}\" WHERE \"{cname}\" IS NOT NULL"
+    ))
+    .fetch_all(&mut *c)
+    .await
+    .map_err(db_err)
+}
+
 /// Opens every sealed value the manifest lists with the backup's key and
 /// seals it again with `target`. All or nothing.
 pub async fn reseal(db: &Path, m: &Manifest, target: &SecretKey) -> Result<u64> {
@@ -59,13 +96,8 @@ pub async fn reseal(db: &Path, m: &Manifest, target: &SecretKey) -> Result<u64> 
     let mut tx = c.begin().await.map_err(db_err)?;
     let mut n = 0;
     for col in m.sealed.iter().filter(|s| present.contains(&s.table)) {
+        let rows = sealed_rows(&mut tx, col).await?;
         let (t, cname, id) = (&col.table, &col.column, &col.id_column);
-        let rows: Vec<(i64, String)> = sqlx::query_as(&format!(
-            "SELECT \"{id}\", \"{cname}\" FROM \"{t}\" WHERE \"{cname}\" IS NOT NULL"
-        ))
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(db_err)?;
         for (row, sealed) in rows {
             let aad = col.aad_for(row);
             let plain = from.open(&aad, &sealed).map_err(|_| bad())?;
@@ -177,9 +209,12 @@ pub enum Pending {
 /// Run at startup, before the store opens. Swaps a pending restore in,
 /// keeping the current data in `<data>/pre-restore/<ts>/`.
 pub async fn apply_pending(data: &Path) -> Result<Pending> {
-    let staging = data.join(STAGING_DIR);
-    if staging.exists() {
-        std::fs::remove_dir_all(&staging).map_err(io)?;
+    // Left behind by a request that was cut off, or a run the restart ended.
+    for d in [STAGING_DIR, TMP_DIR] {
+        let p = data.join(d);
+        if p.exists() {
+            std::fs::remove_dir_all(&p).map_err(io)?;
+        }
     }
     let pending_dir = data.join(PENDING_DIR);
     let pending = pending_dir.join(DB);

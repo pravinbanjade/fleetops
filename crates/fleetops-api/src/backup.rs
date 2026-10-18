@@ -15,7 +15,10 @@ use sqlx::SqlitePool;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 use tokio::sync::Mutex;
@@ -65,7 +68,11 @@ impl Restart for NoRestart {
 pub const STAGE_TTL: Duration = Duration::from_secs(15 * 60);
 /// Largest backup upload.
 pub const BACKUP_UPLOAD_MAX: usize = 512 * 1024 * 1024;
-pub const TMP_DIR: &str = "backup-tmp";
+pub use fleetops_store::backup::restore::TMP_DIR;
+/// An unpacked database may be at most this many times its upload, or
+/// [`MIN_DB_LIMIT`]: a small file that inflates to gigabytes is refused.
+pub const DB_RATIO: u64 = 16;
+pub const MIN_DB_LIMIT: u64 = 64 * 1024 * 1024;
 
 #[derive(Serialize, ToSchema)]
 pub struct StagedBackup {
@@ -82,10 +89,21 @@ struct Entry {
     expires: Instant,
 }
 
-#[derive(Default)]
 pub struct StagedBackups {
     entries: Mutex<HashMap<String, Entry>>,
     applying: AtomicBool,
+    /// First-run uploads are unauthenticated: one at a time.
+    setup_slot: Arc<tokio::sync::Semaphore>,
+}
+
+impl Default for StagedBackups {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::default(),
+            applying: AtomicBool::default(),
+            setup_slot: Arc::new(tokio::sync::Semaphore::new(1)),
+        }
+    }
 }
 
 pub fn data_dir(s: &AppState) -> Result<&Path> {
@@ -116,6 +134,13 @@ pub fn sealed_columns(s: &AppState) -> Vec<SealedColumn> {
 }
 
 impl StagedBackups {
+    /// Held while a first-run upload is read and opened.
+    pub fn setup_permit(&self) -> Result<tokio::sync::OwnedSemaphorePermit> {
+        self.setup_slot.clone().try_acquire_owned().map_err(|_| {
+            Error::Conflict("another backup is being opened; try again when it finishes".into())
+        })
+    }
+
     /// Decrypts `file` into `<data>/restore-staging/<id>/` and prepares it:
     /// version check, re-seal with this server's key, migrations.
     pub async fn stage(
@@ -131,7 +156,17 @@ impl StagedBackups {
         match prepare(s, file, passphrase, &dir).await {
             Ok((manifest, db)) => {
                 let summary = manifest.summary();
-                self.entries.lock().await.insert(
+                let mut map = self.entries.lock().await;
+                if setup {
+                    // A new first-run upload replaces the last one.
+                    map.retain(|_, e| {
+                        if e.setup {
+                            let _ = std::fs::remove_dir_all(&e.dir);
+                        }
+                        !e.setup
+                    });
+                }
+                map.insert(
                     id.clone(),
                     Entry {
                         dir,
@@ -221,7 +256,12 @@ impl StagedBackups {
                 })
                 .await?;
             store.pool().close().await;
-            backup::mark_pending(&e.db, data_dir(s)?).await
+            let data = data_dir(s)?;
+            let marked = backup::mark_pending(&e.db, data).await;
+            if marked.is_err() {
+                let _ = std::fs::remove_dir_all(data.join(backup::restore::PENDING_DIR));
+            }
+            marked
         }
         .await;
         let _ = std::fs::remove_dir_all(&e.dir);
@@ -249,7 +289,9 @@ async fn prepare(
     );
     let opened = tokio::task::spawn_blocking(move || {
         let f = std::fs::File::open(&file).map_err(|e| Error::Internal(format!("backup: {e}")))?;
-        backup::open_backup(std::io::BufReader::new(f), &pw, &out)
+        let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+        let max_db = len.saturating_mul(DB_RATIO).max(MIN_DB_LIMIT);
+        backup::open_backup_limited(std::io::BufReader::new(f), &pw, &out, max_db)
     })
     .await
     .map_err(|e| Error::Internal(format!("backup: {e}")))??;

@@ -99,52 +99,88 @@ fn read_full(r: &mut impl Read, buf: &mut [u8]) -> Result<usize> {
     Ok(n)
 }
 
+/// Seals what is written to it, so a backup is encrypted as it is made and
+/// never touches disk in the clear. Call [`Encryptor::finish`] at the end.
+pub struct Encryptor<W: Write> {
+    out: W,
+    header: Vec<u8>,
+    enc: Option<EncryptorBE32<Aes256Gcm>>,
+    buf: Vec<u8>,
+}
+
+impl<W: Write> Encryptor<W> {
+    pub fn new(mut out: W, passphrase: &str, params: KdfParams) -> Result<Self> {
+        let mut salt = [0u8; SALT_LEN];
+        let mut prefix = [0u8; NONCE_PREFIX_LEN];
+        rand::thread_rng().fill_bytes(&mut salt);
+        rand::thread_rng().fill_bytes(&mut prefix);
+        let mut header = Vec::with_capacity(HEADER_LEN);
+        header.extend_from_slice(MAGIC);
+        header.push(VERSION_BYTE);
+        for v in [params.m_kib, params.t, params.p] {
+            header.extend_from_slice(&v.to_le_bytes());
+        }
+        header.extend_from_slice(&salt);
+        header.extend_from_slice(&prefix);
+        out.write_all(&header).map_err(io)?;
+        let cipher = derive(passphrase, &salt, params)?;
+        Ok(Self {
+            out,
+            header,
+            enc: Some(EncryptorBE32::from_aead(cipher, prefix.as_slice().into())),
+            buf: Vec::with_capacity(CHUNK),
+        })
+    }
+
+    /// Seals the last chunk and flushes; returns the inner writer.
+    pub fn finish(mut self) -> Result<W> {
+        let enc = self.enc.take().expect("finish once");
+        let ct = enc
+            .encrypt_last(Payload {
+                msg: &self.buf,
+                aad: &self.header,
+            })
+            .map_err(|_| wrong())?;
+        self.out.write_all(&ct).map_err(io)?;
+        self.out.flush().map_err(io)?;
+        Ok(self.out)
+    }
+}
+
+impl<W: Write> Write for Encryptor<W> {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        // A full chunk is sealed only once more data follows, so the last
+        // chunk can always be marked last.
+        if self.buf.len() == CHUNK {
+            let enc = self.enc.as_mut().expect("not finished");
+            let ct = enc
+                .encrypt_next(Payload {
+                    msg: &self.buf,
+                    aad: &self.header,
+                })
+                .map_err(|_| std::io::Error::other("encryption failed"))?;
+            self.out.write_all(&ct)?;
+            self.buf.clear();
+        }
+        let n = data.len().min(CHUNK - self.buf.len());
+        self.buf.extend_from_slice(&data[..n]);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 pub fn encrypt(
     mut plain: impl Read,
-    mut out: impl Write,
+    out: impl Write,
     passphrase: &str,
     params: KdfParams,
 ) -> Result<()> {
-    let mut salt = [0u8; SALT_LEN];
-    let mut prefix = [0u8; NONCE_PREFIX_LEN];
-    rand::thread_rng().fill_bytes(&mut salt);
-    rand::thread_rng().fill_bytes(&mut prefix);
-    let mut header = Vec::with_capacity(HEADER_LEN);
-    header.extend_from_slice(MAGIC);
-    header.push(VERSION_BYTE);
-    for v in [params.m_kib, params.t, params.p] {
-        header.extend_from_slice(&v.to_le_bytes());
-    }
-    header.extend_from_slice(&salt);
-    header.extend_from_slice(&prefix);
-    out.write_all(&header).map_err(io)?;
-
-    let cipher = derive(passphrase, &salt, params)?;
-    let mut enc = EncryptorBE32::from_aead(cipher, prefix.as_slice().into());
-    let mut cur = vec![0u8; CHUNK];
-    let mut n = read_full(&mut plain, &mut cur)?;
-    let mut next = vec![0u8; CHUNK];
-    loop {
-        let m = if n == CHUNK {
-            read_full(&mut plain, &mut next)?
-        } else {
-            0
-        };
-        let payload = Payload {
-            msg: &cur[..n],
-            aad: &header,
-        };
-        if m == 0 {
-            let ct = enc.encrypt_last(payload).map_err(|_| wrong())?;
-            out.write_all(&ct).map_err(io)?;
-            break;
-        }
-        let ct = enc.encrypt_next(payload).map_err(|_| wrong())?;
-        out.write_all(&ct).map_err(io)?;
-        std::mem::swap(&mut cur, &mut next);
-        n = m;
-    }
-    out.flush().map_err(io)
+    let mut w = Encryptor::new(out, passphrase, params)?;
+    std::io::copy(&mut plain, &mut w).map_err(io)?;
+    w.finish().map(|_| ())
 }
 
 pub fn decrypt(mut input: impl Read, mut out: impl Write, passphrase: &str) -> Result<()> {

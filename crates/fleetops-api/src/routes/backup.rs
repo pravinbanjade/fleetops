@@ -49,6 +49,16 @@ fn edition(s: &AppState) -> String {
         .unwrap_or_else(|| "community".into())
 }
 
+/// Runs `f` as its own task, so a request that is cut off can't stop it
+/// halfway and leave files or state behind.
+async fn detached<T: Send + 'static>(
+    f: impl std::future::Future<Output = Result<T>> + Send + 'static,
+) -> Result<T> {
+    tokio::spawn(f)
+        .await
+        .map_err(|e| Error::Internal(format!("backup: {e}")))?
+}
+
 /// Writes a backup of this server to a fresh file under `<data>/backup-tmp/`.
 /// Public for the Enterprise scheduler.
 pub async fn write_to_tmp(s: &AppState, passphrase: &str, now: i64) -> Result<PathBuf> {
@@ -87,7 +97,10 @@ pub async fn download(
 ) -> ApiResult<Response> {
     backup::check_passphrase(&body.passphrase)?;
     let now = now_unix();
-    let path = write_to_tmp(&s, &body.passphrase, now).await?;
+    let path = {
+        let (s, pw) = (s.clone(), body.passphrase.clone());
+        detached(async move { write_to_tmp(&s, &pw, now).await }).await?
+    };
     let file = tokio::fs::File::open(&path)
         .await
         .map_err(|e| Error::Internal(format!("backup: {e}")))?;
@@ -171,14 +184,23 @@ async fn read_upload(
 }
 
 async fn stage_upload(
-    s: &AppState,
+    s: AppState,
     form: axum::extract::Multipart,
     setup: bool,
 ) -> Result<StagedBackup> {
-    let (path, passphrase) = read_upload(s, form).await?;
-    let r = s.staged.stage(s, &path, &passphrase, setup).await;
-    let _ = std::fs::remove_file(&path);
-    r
+    let permit = if setup {
+        Some(s.staged.setup_permit()?)
+    } else {
+        None
+    };
+    detached(async move {
+        let _permit = permit;
+        let (path, passphrase) = read_upload(&s, form).await?;
+        let r = s.staged.stage(&s, &path, &passphrase, setup).await;
+        let _ = std::fs::remove_file(&path);
+        r
+    })
+    .await
 }
 
 #[utoipa::path(
@@ -195,7 +217,7 @@ pub async fn stage(
     _admin: AdminUser,
     ApiMultipart(form): ApiMultipart,
 ) -> ApiResult<Json<StagedBackup>> {
-    Ok(Json(stage_upload(&s, form, false).await?))
+    Ok(Json(stage_upload(s, form, false).await?))
 }
 
 #[utoipa::path(
@@ -217,9 +239,8 @@ pub async fn restore(
     if body.confirm != "RESTORE" {
         return Err(Error::Invalid("type RESTORE to confirm".into()).into());
     }
-    s.staged
-        .apply(&s, &id, false, Some(&cu.user.username))
-        .await?;
+    let by = cu.user.username.clone();
+    detached(async move { s.staged.apply(&s, &id, false, Some(&by)).await }).await?;
     Ok(StatusCode::ACCEPTED)
 }
 
@@ -256,7 +277,7 @@ pub async fn setup_stage(
     ApiMultipart(form): ApiMultipart,
 ) -> ApiResult<Json<StagedBackup>> {
     setup_gate(&s).await?;
-    Ok(Json(stage_upload(&s, form, true).await?))
+    Ok(Json(stage_upload(s, form, true).await?))
 }
 
 #[utoipa::path(
@@ -274,6 +295,6 @@ pub async fn setup_restore(
     ApiPath(id): ApiPath<String>,
 ) -> ApiResult<StatusCode> {
     setup_gate(&s).await?;
-    s.staged.apply(&s, &id, true, None).await?;
+    detached(async move { s.staged.apply(&s, &id, true, None).await }).await?;
     Ok(StatusCode::ACCEPTED)
 }

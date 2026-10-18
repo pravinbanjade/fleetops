@@ -191,9 +191,12 @@ impl fleetops_api::backup::Restart for ReExec {
                 let err = std::process::Command::new(exe)
                     .args(std::env::args_os().skip(1))
                     .exec();
-                tracing::error!(error = %err, "restart failed; exiting so a supervisor restarts FleetOps");
+                tracing::error!(error = %err, "restart failed");
             }
         }
-        std::process::exit(0);
+        // Non-zero, so `restart: on-failure` supervisors start it again; the
+        // pending restore is applied on that start.
+        tracing::error!("exiting; start FleetOps again to finish the restore");
+        std::process::exit(1);
     }
 }

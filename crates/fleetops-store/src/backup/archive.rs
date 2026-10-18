@@ -154,11 +154,21 @@ async fn prepare_snapshot(path: &Path) -> Result<(BTreeMap<String, i64>, i64, Op
     Ok((counts, ce.unwrap_or(0), ee))
 }
 
-fn pack(manifest: &Manifest, db: &Path, tgz: &Path) -> Result<()> {
-    let gz = flate2::write::GzEncoder::new(
-        BufWriter::new(File::create(tgz).map_err(io)?),
-        flate2::Compression::default(),
-    );
+/// Tars, compresses and seals in one stream: nothing reaches disk in the
+/// clear, the manifest's key included.
+fn pack(
+    manifest: &Manifest,
+    db: &Path,
+    out: &Path,
+    passphrase: &str,
+    params: KdfParams,
+) -> Result<()> {
+    let enc = format::Encryptor::new(
+        BufWriter::new(File::create(out).map_err(io)?),
+        passphrase,
+        params,
+    )?;
+    let gz = flate2::write::GzEncoder::new(enc, flate2::Compression::default());
     let mut tar = tar::Builder::new(gz);
     let json = serde_json::to_vec(manifest).map_err(|e| Error::Internal(e.to_string()))?;
     let mut h = tar::Header::new_gnu();
@@ -173,8 +183,32 @@ fn pack(manifest: &Manifest, db: &Path, tgz: &Path) -> Result<()> {
     h.set_mode(0o600);
     h.set_cksum();
     tar.append_data(&mut h, DB, &mut f).map_err(io)?;
-    tar.into_inner().map_err(io)?.finish().map_err(io)?;
-    Ok(())
+    let enc = tar.into_inner().map_err(io)?.finish().map_err(io)?;
+    let mut w = enc.finish()?;
+    std::io::Write::flush(&mut w).map_err(io)
+}
+
+/// Every sealed value opens with `key`; a backup of one that doesn't could
+/// never be restored.
+async fn verify_sealed(
+    path: &Path,
+    sealed: &[SealedColumn],
+    key: &crate::secrets::SecretKey,
+) -> Result<()> {
+    let b = crate::secrets::SecretBox::new(key);
+    let mut c = connect(path).await?;
+    let present = tables(&mut c).await?;
+    for col in sealed.iter().filter(|s| present.contains(&s.table)) {
+        for (id, v) in super::restore::sealed_rows(&mut c, col).await? {
+            if b.open(&col.aad_for(id), &v).is_err() {
+                return Err(Error::Invalid(format!(
+                    "a stored secret can't be decrypted ({} row {id}); enter it again before backing up",
+                    col.table
+                )));
+            }
+        }
+    }
+    c.close().await.map_err(db_err)
 }
 
 impl Store {
@@ -191,12 +225,13 @@ impl Store {
         format::check_passphrase(passphrase)?;
         std::fs::create_dir_all(scratch).map_err(io)?;
         let snap = scratch.join(rand_name("snap", "db"));
-        let tgz = scratch.join(rand_name("pack", "tgz"));
         let result = self
-            .write_backup_inner(meta, passphrase, params, &snap, &tgz, out)
+            .write_backup_inner(meta, passphrase, params, &snap, out)
             .await;
         let _ = std::fs::remove_file(&snap);
-        let _ = std::fs::remove_file(&tgz);
+        if result.is_err() {
+            let _ = std::fs::remove_file(out);
+        }
         result
     }
 
@@ -206,7 +241,6 @@ impl Store {
         passphrase: &str,
         params: KdfParams,
         snap: &Path,
-        tgz: &Path,
         out: &Path,
     ) -> Result<Manifest> {
         sqlx::query("VACUUM INTO ?")
@@ -215,6 +249,7 @@ impl Store {
             .await
             .map_err(db_err)?;
         let (counts, ce, ee) = prepare_snapshot(snap).await?;
+        verify_sealed(snap, &meta.sealed, &self.key).await?;
         let manifest = Manifest {
             format: FORMAT,
             fleetops_version: env!("CARGO_PKG_VERSION").into(),
@@ -227,27 +262,31 @@ impl Store {
             secret_key: self.key.to_base64(),
             sealed: meta.sealed,
         };
-        let (m, snap, tgz, out, pw) = (
+        let (m, snap, out, pw) = (
             manifest.clone(),
             snap.to_path_buf(),
-            tgz.to_path_buf(),
             out.to_path_buf(),
             passphrase.to_string(),
         );
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            pack(&m, &snap, &tgz)?;
-            let input = BufReader::new(File::open(&tgz).map_err(io)?);
-            let output = BufWriter::new(File::create(&out).map_err(io)?);
-            format::encrypt(input, output, &pw, params)
-        })
-        .await
-        .map_err(|e| Error::Internal(format!("backup: {e}")))??;
+        tokio::task::spawn_blocking(move || pack(&m, &snap, &out, &pw, params))
+            .await
+            .map_err(|e| Error::Internal(format!("backup: {e}")))??;
         Ok(manifest)
     }
 }
 
 /// Decrypts and unpacks a backup into `dir` (created; it must be empty).
 pub fn open_backup(input: impl Read, passphrase: &str, dir: &Path) -> Result<Opened> {
+    open_backup_limited(input, passphrase, dir, MAX_TOTAL)
+}
+
+/// [`open_backup`], refusing a database larger than `max_db` bytes.
+pub fn open_backup_limited(
+    input: impl Read,
+    passphrase: &str,
+    dir: &Path,
+    max_db: u64,
+) -> Result<Opened> {
     std::fs::create_dir_all(dir).map_err(io)?;
     if std::fs::read_dir(dir).map_err(io)?.next().is_some() {
         return Err(Error::Internal(
@@ -261,18 +300,17 @@ pub fn open_backup(input: impl Read, passphrase: &str, dir: &Path) -> Result<Ope
             BufWriter::new(File::create(&tgz).map_err(io)?),
             passphrase,
         )?;
-        unpack(&tgz, dir)
+        unpack(&tgz, dir, max_db.min(MAX_TOTAL))
     })();
     let _ = std::fs::remove_file(&tgz);
     result
 }
 
-fn unpack(tgz: &Path, dir: &Path) -> Result<Opened> {
+fn unpack(tgz: &Path, dir: &Path, max_db: u64) -> Result<Opened> {
     let gz = flate2::read::GzDecoder::new(BufReader::new(File::open(tgz).map_err(io)?));
     let mut archive = tar::Archive::new(gz);
     let mut manifest: Option<Manifest> = None;
     let mut db: Option<PathBuf> = None;
-    let mut total = 0u64;
     for entry in archive.entries().map_err(|_| damaged())? {
         let entry = entry.map_err(|_| damaged())?;
         if !entry.header().entry_type().is_file() {
@@ -290,7 +328,6 @@ fn unpack(tgz: &Path, dir: &Path) -> Result<Opened> {
                 if buf.len() as u64 > MAX_MANIFEST {
                     return Err(damaged());
                 }
-                total += buf.len() as u64;
                 let m: Manifest = serde_json::from_slice(&buf).map_err(|_| damaged())?;
                 if m.format != FORMAT {
                     return Err(Error::Invalid(
@@ -302,7 +339,7 @@ fn unpack(tgz: &Path, dir: &Path) -> Result<Opened> {
             (DB, true, false) => {
                 let out = dir.join(DB);
                 let mut f = BufWriter::new(File::create(&out).map_err(io)?);
-                let limit = MAX_TOTAL - total;
+                let limit = max_db;
                 let n = std::io::copy(&mut entry.take(limit + 1), &mut f).map_err(|_| damaged())?;
                 if n > limit {
                     return Err(damaged());

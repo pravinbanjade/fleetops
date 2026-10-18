@@ -207,6 +207,14 @@ pub struct S3Sink {
 }
 
 const SIGN_FOR: Duration = Duration::from_secs(3600);
+/// How long a request may sit without receiving data before it fails.
+const READ_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// A request error without its URL: a presigned URL is a working credential
+/// for an hour, and errors end up in the run history and the audit log.
+fn s3_err(e: reqwest::Error) -> Error {
+    Error::Invalid(format!("S3: {}", e.without_url()))
+}
 
 impl S3Sink {
     #[allow(clippy::too_many_arguments)]
@@ -236,6 +244,7 @@ impl S3Sink {
         let prefix = prefix.trim_matches('/');
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
+            .read_timeout(READ_TIMEOUT)
             .build()
             .map_err(|e| Error::Internal(format!("S3 client: {e}")))?;
         Ok(Self {
@@ -250,12 +259,24 @@ impl S3Sink {
         })
     }
 
+    /// How long a request may sit without receiving data.
+    pub fn with_read_timeout(mut self, t: Duration) -> Self {
+        if let Ok(c) = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .read_timeout(t)
+            .build()
+        {
+            self.http = c;
+        }
+        self
+    }
+
     fn key(&self, name: &str) -> String {
         format!("{}{name}", self.prefix)
     }
 
     async fn check(res: reqwest::Result<reqwest::Response>) -> Result<reqwest::Response> {
-        let res = res.map_err(|e| Error::Invalid(format!("S3: {e}")))?;
+        let res = res.map_err(s3_err)?;
         if res.status().is_success() {
             return Ok(res);
         }
@@ -322,7 +343,7 @@ impl Sink for S3Sink {
                 .await?
                 .text()
                 .await
-                .map_err(|e| Error::Invalid(format!("S3: {e}")))?;
+                .map_err(s3_err)?;
             let page = rusty_s3::actions::ListObjectsV2::parse_response(&text)
                 .map_err(|e| Error::Invalid(format!("S3: unreadable listing: {e}")))?;
             for c in page.contents {
@@ -361,7 +382,7 @@ impl Sink for S3Sink {
             .map_err(|e| io("saving the backup", e))?;
         let mut stream = res.bytes_stream();
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| Error::Invalid(format!("S3: {e}")))?;
+            let chunk = chunk.map_err(s3_err)?;
             f.write_all(&chunk)
                 .await
                 .map_err(|e| io("saving the backup", e))?;

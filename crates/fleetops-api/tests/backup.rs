@@ -396,3 +396,100 @@ async fn ee_sealed_columns_from_hooks_are_resealed() {
         .unwrap();
     assert_eq!(b.app.store.secrets().open(b"x:5", &v).unwrap(), b"hunter2");
 }
+
+// ---- final-review fixes ----
+
+/// A multipart upload whose body is fed by hand, to cut it off or hold it open.
+fn streamed_upload(
+    uri: &str,
+) -> (
+    Request<Body>,
+    tokio::sync::mpsc::Sender<Result<bytes::Bytes, std::io::Error>>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::channel(4);
+    let stream =
+        futures_util::stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|v| (v, rx)) });
+    let mut r = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header(
+            "content-type",
+            "multipart/form-data; boundary=fleetopsboundary7",
+        )
+        .body(Body::from_stream(stream))
+        .unwrap();
+    r.extensions_mut()
+        .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 40000))));
+    (r, tx)
+}
+
+const PART_HEAD: &str = "--fleetopsboundary7\r\nContent-Disposition: form-data; name=\"file\"; filename=\"b.fob\"\r\nContent-Type: application/octet-stream\r\n\r\n";
+
+#[tokio::test]
+async fn cut_off_upload_leaves_nothing() {
+    let b = app_with_data(None, Default::default()).await;
+    let (r, tx) = streamed_upload("/api/v1/auth/setup/backup");
+    let router = b.app.router.clone();
+    let res = tokio::spawn(async move { router.oneshot(r).await.unwrap() });
+    tx.send(Ok(bytes::Bytes::from(PART_HEAD))).await.unwrap();
+    tx.send(Ok(bytes::Bytes::from(vec![7u8; 100_000])))
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    // The connection closes: the handler's future is dropped mid-upload.
+    res.abort();
+    let _ = res.await;
+    drop(tx);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let tmp = b.data.path().join("backup-tmp");
+    let left = std::fs::read_dir(&tmp).map(|d| d.count()).unwrap_or(0);
+    assert_eq!(left, 0, "upload left behind in {tmp:?}");
+}
+
+#[tokio::test]
+async fn setup_stages_one_upload_at_a_time() {
+    let (_src, _admin, file) = source_backup().await;
+    let b = app_with_data(None, Default::default()).await;
+    let (r, tx) = streamed_upload("/api/v1/auth/setup/backup");
+    let router = b.app.router.clone();
+    let held = tokio::spawn(async move { router.oneshot(r).await.unwrap() });
+    tx.send(Ok(bytes::Bytes::from(PART_HEAD))).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let r = b
+        .app
+        .send(upload("/api/v1/auth/setup/backup", &file, PW, None))
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{:?}", r.json);
+    drop(tx);
+    let _ = held.await;
+}
+
+#[tokio::test]
+async fn setup_upload_replaces_the_previous_one() {
+    let (_src, _admin, file) = source_backup().await;
+    let b = app_with_data(None, Default::default()).await;
+    let first = b
+        .app
+        .send(upload("/api/v1/auth/setup/backup", &file, PW, None))
+        .await;
+    let first = first.json["id"].as_str().unwrap().to_string();
+    let second = b
+        .app
+        .send(upload("/api/v1/auth/setup/backup", &file, PW, None))
+        .await;
+    assert_eq!(second.status, StatusCode::OK);
+    let r = b
+        .app
+        .send(req(
+            "POST",
+            &format!("/api/v1/auth/setup/backup/{first}/restore"),
+            None,
+            None,
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let staged = std::fs::read_dir(b.data.path().join("restore-staging"))
+        .unwrap()
+        .count();
+    assert_eq!(staged, 1, "the replaced upload's files are removed");
+}

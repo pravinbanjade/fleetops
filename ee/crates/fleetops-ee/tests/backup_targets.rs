@@ -152,3 +152,47 @@ async fn local_put_list_get_delete() {
     sink.delete(&name).await.unwrap();
     assert!(sink.list().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn s3_errors_hide_presigned_urls() {
+    // Nothing listens on port 1: the request fails before any response.
+    let s3 = S3Sink::new(
+        Some("http://127.0.0.1:1"),
+        "us-east-1",
+        "b",
+        "",
+        true,
+        "AKIAEXAMPLE",
+        "SK",
+    )
+    .unwrap();
+    let e = s3.test().await.unwrap_err().to_string();
+    assert!(e.starts_with("invalid input: S3: "), "{e}");
+    for leak in [
+        "X-Amz-Signature",
+        "X-Amz-Credential",
+        "AKIAEXAMPLE",
+        "127.0.0.1:1/",
+    ] {
+        assert!(!e.contains(leak), "{leak} in {e}");
+    }
+}
+
+#[tokio::test]
+async fn s3_stalled_endpoint_times_out() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(5)))
+        .mount(&server)
+        .await;
+    let s3 = S3Sink::new(Some(&server.uri()), "us-east-1", "b", "", true, "AK", "SK")
+        .unwrap()
+        .with_read_timeout(std::time::Duration::from_millis(500));
+    let t = std::time::Instant::now();
+    assert!(s3.list().await.is_err());
+    assert!(
+        t.elapsed() < std::time::Duration::from_secs(3),
+        "{:?}",
+        t.elapsed()
+    );
+}

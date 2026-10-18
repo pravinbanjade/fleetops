@@ -454,3 +454,91 @@ async fn apply_pending_keeps_live_db_when_pending_is_bad() {
     let s = Store::open(&data.join("fleetops.db")).await.unwrap();
     assert_eq!(s.list_users().await.unwrap()[0].username, "old");
 }
+
+// ---- final-review fixes ----
+
+#[tokio::test]
+async fn reseal_rejects_hostile_identifiers() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut o = opened_from(&SecretKey::random(), dir.path()).await;
+    let target = dir.path().join("pwned.db");
+    let evil = format!(
+        "env_id\", 1 FROM env_credentials WHERE 0; COMMIT; VACUUM INTO '{}'; BEGIN; SELECT \"env_id",
+        target.display()
+    );
+    for (t, c, id) in [
+        ("env_credentials", "ciphertext", evil.as_str()),
+        ("env_credentials", evil.as_str(), "env_id"),
+        ("env_credentials", "nope", "env_id"),
+    ] {
+        o.manifest.sealed = vec![fleetops_store::backup::SealedColumn::new(t, c, id, "{id}")];
+        let e = reseal(&o.db, &o.manifest, &SecretKey::random())
+            .await
+            .unwrap_err();
+        assert!(e.to_string().contains("damaged backup"), "{e}");
+        assert!(!target.exists(), "the injected statement ran");
+    }
+}
+
+#[tokio::test]
+async fn backup_refuses_unreadable_secrets() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = populated(&SecretKey::random(), dir.path()).await;
+    sqlx::query("UPDATE env_credentials SET ciphertext = 'v1:AAAA'")
+        .execute(store.pool())
+        .await
+        .unwrap();
+    let e = store
+        .write_backup(
+            meta(),
+            PW,
+            KdfParams::TEST,
+            &dir.path().join("scratch"),
+            &dir.path().join("b.fob"),
+        )
+        .await
+        .unwrap_err();
+    assert!(e.to_string().contains("can't be decrypted"), "{e}");
+    assert!(!dir.path().join("b.fob").exists());
+}
+
+#[tokio::test]
+async fn apply_pending_sweeps_backup_tmp() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("backup-tmp")).unwrap();
+    std::fs::write(dir.path().join("backup-tmp/abandoned.upload"), "x").unwrap();
+    apply_pending(dir.path()).await.unwrap();
+    assert!(!dir.path().join("backup-tmp").exists());
+}
+
+#[tokio::test]
+async fn open_backup_bounds_the_database_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = populated(&SecretKey::random(), dir.path()).await;
+    let file = backup_file(&store, dir.path()).await;
+    let e = fleetops_store::backup::open_backup_limited(
+        File::open(&file).unwrap(),
+        PW,
+        &dir.path().join("o"),
+        1024,
+    )
+    .unwrap_err();
+    assert!(e.to_string().contains("damaged backup"), "{e}");
+}
+
+#[test]
+fn streaming_encryptor_matches_decrypt() {
+    use std::io::Write;
+    for len in [0usize, 1, 64 * 1024, 64 * 1024 + 1, 300_000] {
+        let plain: Vec<u8> = (0..len).map(|i| (i % 253) as u8).collect();
+        let mut out = Vec::new();
+        let mut w = format::Encryptor::new(&mut out, PW, KdfParams::TEST).unwrap();
+        for chunk in plain.chunks(7_000) {
+            w.write_all(chunk).unwrap();
+        }
+        w.finish().unwrap();
+        let mut back = Vec::new();
+        format::decrypt(out.as_slice(), &mut back, PW).unwrap();
+        assert_eq!(back, plain, "len {len}");
+    }
+}
