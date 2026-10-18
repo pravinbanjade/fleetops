@@ -298,3 +298,153 @@ fn rejects_oversized_manifest() {
     let e = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o")).unwrap_err();
     assert!(e.to_string().contains("damaged backup"), "{e}");
 }
+
+// ---- restore (Task 4) ----
+
+use fleetops_core::env::Credential;
+use fleetops_store::backup::{
+    apply_pending, check_versions, mark_pending, reseal, Manifest, Pending, ServerVersions,
+};
+
+async fn opened_from(key: &SecretKey, dir: &Path) -> fleetops_store::backup::Opened {
+    let store = populated(key).await;
+    let file = backup_file(&store, dir).await;
+    open_backup(File::open(&file).unwrap(), PW, &dir.join("o")).unwrap()
+}
+
+#[tokio::test]
+async fn restore_reseals_with_target_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ka, kb) = (SecretKey::random(), SecretKey::random());
+    let o = opened_from(&ka, dir.path()).await;
+    assert_eq!(reseal(&o.db, &o.manifest, &kb).await.unwrap(), 1);
+    let s = Store::open(&o.db).await.unwrap().with_secret_key(&kb);
+    let env = s.list_environments().await.unwrap()[0].id;
+    assert_eq!(
+        s.env_credential(env).await.unwrap(),
+        Some(Credential::Kubeconfig(KUBECONFIG.into()))
+    );
+    assert!(!dir.path().join("secret.key").exists());
+}
+
+#[tokio::test]
+async fn reseal_fails_whole_on_bad_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let o = opened_from(&SecretKey::random(), dir.path()).await;
+    {
+        let s = Store::open(&o.db).await.unwrap();
+        sqlx::query("UPDATE env_credentials SET ciphertext = 'v1:AAAA'")
+            .execute(s.pool())
+            .await
+            .unwrap();
+    }
+    let e = reseal(&o.db, &o.manifest, &SecretKey::random())
+        .await
+        .unwrap_err();
+    assert!(e.to_string().contains("could not be opened"), "{e}");
+}
+
+fn versions(ce: i64, ee: Option<i64>) -> ServerVersions {
+    ServerVersions {
+        community_max: ce,
+        enterprise_max: ee,
+        version: "0.2.0".into(),
+    }
+}
+
+fn manifest(ce: i64, ee: Option<i64>) -> Manifest {
+    serde_json::from_value(json!({
+        "format": 1, "fleetops_version": "9.9.9", "created_at": 1, "edition": "community",
+        "source": null, "community_migration": ce, "enterprise_migration": ee,
+        "counts": {}, "secret_key": "", "sealed": []
+    }))
+    .unwrap()
+}
+
+#[test]
+fn newer_backup_refused() {
+    let e = check_versions(&manifest(99, None), &versions(6, None)).unwrap_err();
+    assert_eq!(
+        e.to_string(),
+        "invalid input: this backup is from FleetOps 9.9.9; upgrade to at least 9.9.9 to restore it"
+    );
+    assert!(check_versions(&manifest(6, Some(1_000_009)), &versions(6, Some(1_000_004))).is_err());
+}
+
+#[test]
+fn older_backup_accepted() {
+    assert!(check_versions(&manifest(3, Some(1_000_001)), &versions(6, Some(1_000_004))).is_ok());
+}
+
+#[test]
+fn enterprise_unknown_on_community_is_accepted() {
+    assert!(check_versions(&manifest(6, Some(1_000_099)), &versions(6, None)).is_ok());
+}
+
+async fn live_db(data: &Path, marker: &str) {
+    let s = Store::open(&data.join("fleetops.db")).await.unwrap();
+    s.create_first_admin(marker, "h", 1).await.unwrap();
+    s.pool().close().await;
+}
+
+#[tokio::test]
+async fn apply_pending_swaps_and_keeps_safety_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    live_db(&data, "old").await;
+    std::fs::write(data.join("secret.key"), "k").unwrap();
+    let o = opened_from(&SecretKey::random(), dir.path()).await;
+    mark_pending(&o.db, &data).await.unwrap();
+    let Pending::Applied(safety) = apply_pending(&data).await.unwrap() else {
+        panic!("not applied")
+    };
+    assert!(safety.join("fleetops.db").exists());
+    assert!(safety.join("secret.key").exists());
+    assert!(!data.join("restore-pending").exists());
+    let s = Store::open(&data.join("fleetops.db")).await.unwrap();
+    assert_eq!(s.list_users().await.unwrap()[0].username, "admin");
+    assert_eq!(apply_pending(&data).await.unwrap(), Pending::None);
+}
+
+#[tokio::test]
+async fn apply_pending_prunes_to_three() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    live_db(&data, "old").await;
+    let o = opened_from(&SecretKey::random(), dir.path()).await;
+    for _ in 0..4 {
+        let copy = dir.path().join("copy.db");
+        std::fs::copy(&o.db, &copy).unwrap();
+        mark_pending(&copy, &data).await.unwrap();
+        assert!(matches!(
+            apply_pending(&data).await.unwrap(),
+            Pending::Applied(_)
+        ));
+    }
+    assert_eq!(
+        std::fs::read_dir(data.join("pre-restore")).unwrap().count(),
+        3
+    );
+}
+
+#[tokio::test]
+async fn apply_pending_keeps_live_db_when_pending_is_bad() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    std::fs::create_dir_all(data.join("restore-pending")).unwrap();
+    live_db(&data, "old").await;
+    std::fs::write(data.join("restore-pending/fleetops.db"), vec![9u8; 5000]).unwrap();
+    let Pending::Rejected(moved) = apply_pending(&data).await.unwrap() else {
+        panic!("not rejected")
+    };
+    assert!(moved
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .starts_with("restore-failed-"));
+    let s = Store::open(&data.join("fleetops.db")).await.unwrap();
+    assert_eq!(s.list_users().await.unwrap()[0].username, "old");
+}

@@ -3,9 +3,11 @@
 
 pub mod archive;
 pub mod format;
+pub mod restore;
 
 pub use archive::{open_backup, BackupMeta, BackupSummary, Manifest, Opened, EXCLUDED_TABLES};
 pub use format::{check_passphrase, KdfParams};
+pub use restore::{apply_pending, check_versions, mark_pending, reseal, Pending, ServerVersions};
 
 use serde::{Deserialize, Serialize};
 
