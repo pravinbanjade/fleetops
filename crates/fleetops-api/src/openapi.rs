@@ -70,6 +70,7 @@ pub const API_BASE: &str = "/api/v1";
         (name = "auth", description = "Setup, login and sessions"),
         (name = "users", description = "User accounts (admin only)"),
         (name = "audit", description = "Audit log (admin only)"),
+        (name = "backup", description = "Backup and restore (admin only, and the first-run restore)"),
         (name = "environments", description = "Managed Docker endpoints"),
         (name = "containers"),
         (name = "images"),
@@ -217,6 +218,17 @@ pub struct EnvNameParam {
     env: String,
     /// Volume name.
     name: String,
+}
+
+/// Multipart body of a backup upload.
+#[derive(ToSchema)]
+#[allow(dead_code)]
+pub struct BackupForm {
+    /// The backup file.
+    #[schema(value_type = String, format = Binary)]
+    file: Vec<u8>,
+    /// The passphrase it was made with.
+    passphrase: String,
 }
 
 /// Multipart body of `POST /envs/{env}/images/build`: send `context` or

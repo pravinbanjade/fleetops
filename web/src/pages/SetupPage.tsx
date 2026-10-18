@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/errors";
 import { AuthLayout, FormError } from "./AuthLayout";
+import { BackupUpload } from "./admin/BackupUpload";
 
 const route = getRouteApi("/setup");
 
@@ -20,6 +21,7 @@ export function SetupPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [mismatch, setMismatch] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const m = useMutation({
     mutationFn: async () => (await setup({ body: { username, password } })).data,
     onSuccess: (session) => {
@@ -47,8 +49,37 @@ export function SetupPage() {
     if (password === confirm) m.mutate();
   };
 
+  const choice = (
+    <div role="group" aria-label="Get started" className="grid grid-cols-2 gap-1 rounded-lg border p-1 text-sm">
+      {[
+        [false, "Start fresh"],
+        [true, "Restore from backup"],
+      ].map(([value, label]) => (
+        <button
+          key={String(label)}
+          type="button"
+          aria-pressed={restoring === value}
+          className="rounded-md px-2 py-1.5 aria-pressed:bg-muted aria-pressed:font-medium"
+          onClick={() => setRestoring(value as boolean)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (restoring) {
+    return (
+      <AuthLayout title="Welcome to FleetOps" description="Restore this server from a backup file.">
+        {choice}
+        <BackupUpload mode="setup" />
+      </AuthLayout>
+    );
+  }
+
   return (
     <AuthLayout title="Welcome to FleetOps" description="Create the administrator account.">
+      {choice}
       <form onSubmit={submit} className="grid gap-4">
         <div className="grid gap-2">
           <Label htmlFor="username">Username</Label>

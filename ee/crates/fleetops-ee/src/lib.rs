@@ -2,6 +2,7 @@
 //! Enterprise API and its tables. Built into the server only with the
 //! `enterprise` feature.
 
+pub mod backup;
 pub mod db;
 pub mod export;
 pub mod keys;
@@ -44,6 +45,11 @@ pub struct EeParts {
     pub roles: Arc<dyn CustomRoles>,
     /// Single sign-on: login-page providers and the password-login gate.
     pub external_auth: Arc<dyn ExternalAuth>,
+    /// Enterprise sealed columns and migrations, for backups.
+    pub backup_hooks: Arc<dyn fleetops_api::backup::BackupHooks>,
+    /// Runs scheduled and manual backups one at a time; give it to
+    /// [`backup::schedule::run`] with the finished app state.
+    pub backup_runner: Arc<backup::run::Runner>,
     /// Logs license status changes; spawn it.
     pub background: BoxFuture<'static, ()>,
 }
@@ -98,6 +104,22 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
             sso::routes::get_settings,
             sso::routes::put_settings
         ))
+        .routes(routes!(
+            backup::routes::get_schedule,
+            backup::routes::put_schedule
+        ))
+        .routes(routes!(backup::routes::put_passphrase))
+        .routes(routes!(backup::routes::list_targets))
+        .routes(routes!(
+            backup::routes::put_target,
+            backup::routes::delete_target
+        ))
+        .routes(routes!(backup::routes::test_target))
+        .routes(routes!(backup::routes::run_now))
+        .routes(routes!(backup::routes::list_runs))
+        .routes(routes!(backup::routes::status))
+        .routes(routes!(backup::routes::recent))
+        .routes(routes!(backup::routes::restore_recent))
 }
 
 pub async fn init(store: &Store, config: EeConfig) -> Result<EeParts> {
@@ -112,11 +134,13 @@ pub async fn init_with_keys(
     db::migrate(store.pool()).await?;
     roles::db::reconcile_direct_grants(store.pool()).await?;
     let state = Arc::new(LicenseState::new(keys, config.license_file));
+    let runner = Arc::new(backup::run::Runner::default());
     state.load(store).await?;
     Ok(EeParts {
         entitlements: state.clone(),
         routes: api_routes()
             .layer(Extension(state.clone()))
+            .layer(Extension(runner.clone()))
             .layer(Extension(Arc::new(sso::flow::Runtime::new(
                 config.sso_endpoints,
             )))),
@@ -126,6 +150,8 @@ pub async fn init_with_keys(
             state.clone(),
         )),
         external_auth: Arc::new(sso::hook::EeSso::new(store.clone())),
+        backup_hooks: Arc::new(backup::hooks::EeBackupHooks),
+        backup_runner: runner,
         background: Box::pin(watch(state)),
     })
 }

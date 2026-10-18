@@ -22,7 +22,9 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 subtle.workspace = true
+sqlx.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 utoipa.workspace = true
 utoipa-axum.workspace = true
@@ -30,6 +32,8 @@ uuid.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+futures-util.workspace = true
+tempfile.workspace = true
 http-body-util.workspace = true
 jsonschema.workspace = true
 tokio-tungstenite.workspace = true

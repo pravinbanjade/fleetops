@@ -148,6 +148,50 @@ export type AuthStatus = {
     setup_required: boolean;
 };
 
+export type BackupBody = {
+    /**
+     * At least 12 characters; needed to restore the file.
+     */
+    passphrase: string;
+};
+
+/**
+ * Multipart body of a backup upload.
+ */
+export type BackupForm = {
+    /**
+     * The backup file.
+     */
+    file: Blob | File;
+    /**
+     * The passphrase it was made with.
+     */
+    passphrase: string;
+};
+
+/**
+ * What an admin is shown before restoring: the manifest without secrets.
+ */
+export type BackupSummary = {
+    /**
+     * Rows per table.
+     */
+    counts: {
+        [key: string]: number;
+    };
+    created_at: number;
+    /**
+     * `community` or `enterprise`.
+     */
+    edition: string;
+    fleetops_version: string;
+    /**
+     * The backup holds Enterprise tables.
+     */
+    has_enterprise_data: boolean;
+    source?: string | null;
+};
+
 /**
  * Multipart body of `POST /envs/{env}/images/build`: send `context` or
  * `dockerfile`, not both.
@@ -280,6 +324,13 @@ export type ComposeProject = {
      * running | partial | stopped
      */
     status: string;
+};
+
+export type ConfirmRestore = {
+    /**
+     * Must be `RESTORE`.
+     */
+    confirm: string;
 };
 
 /**
@@ -581,7 +632,7 @@ export type ExecOptions = {
 /**
  * An Enterprise feature a license can grant.
  */
-export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso';
+export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso' | 'backup';
 
 /**
  * One grant: where it applies and what it allows.
@@ -1193,6 +1244,14 @@ export type ShowBody = {
     chart: ChartRef;
 };
 
+export type StagedBackup = {
+    /**
+     * Pass to the restore call.
+     */
+    id: string;
+    summary: BackupSummary;
+};
+
 /**
  * One stats sample for a container, with CPU already turned into a
  * percentage of one core times the number of cores (as `docker stats`).
@@ -1620,6 +1679,56 @@ export type SetupResponses = {
 
 export type SetupResponse = SetupResponses[keyof SetupResponses];
 
+export type StageSetupBackupData = {
+    body: BackupForm;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/setup/backup';
+};
+
+export type StageSetupBackupErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type StageSetupBackupError = StageSetupBackupErrors[keyof StageSetupBackupErrors];
+
+export type StageSetupBackupResponses = {
+    /**
+     * Ready to restore
+     */
+    200: StagedBackup;
+};
+
+export type StageSetupBackupResponse = StageSetupBackupResponses[keyof StageSetupBackupResponses];
+
+export type RestoreSetupBackupData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/setup/backup/{id}/restore';
+};
+
+export type RestoreSetupBackupErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RestoreSetupBackupError = RestoreSetupBackupErrors[keyof RestoreSetupBackupErrors];
+
+export type RestoreSetupBackupResponses = {
+    /**
+     * Restoring
+     */
+    202: unknown;
+};
+
 export type GetAuthStatusData = {
     body?: never;
     path?: never;
@@ -1644,6 +1753,108 @@ export type GetAuthStatusResponses = {
 };
 
 export type GetAuthStatusResponse = GetAuthStatusResponses[keyof GetAuthStatusResponses];
+
+export type DownloadBackupData = {
+    body: BackupBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/backup';
+};
+
+export type DownloadBackupErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DownloadBackupError = DownloadBackupErrors[keyof DownloadBackupErrors];
+
+export type DownloadBackupResponses = {
+    /**
+     * The backup file
+     */
+    200: Array<number>;
+};
+
+export type DownloadBackupResponse = DownloadBackupResponses[keyof DownloadBackupResponses];
+
+export type StageBackupData = {
+    body: BackupForm;
+    path?: never;
+    query?: never;
+    url: '/api/v1/backup/stage';
+};
+
+export type StageBackupErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type StageBackupError = StageBackupErrors[keyof StageBackupErrors];
+
+export type StageBackupResponses = {
+    /**
+     * Ready to restore
+     */
+    200: StagedBackup;
+};
+
+export type StageBackupResponse = StageBackupResponses[keyof StageBackupResponses];
+
+export type DiscardBackupData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/backup/stage/{id}';
+};
+
+export type DiscardBackupErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DiscardBackupError = DiscardBackupErrors[keyof DiscardBackupErrors];
+
+export type DiscardBackupResponses = {
+    /**
+     * Discarded
+     */
+    204: void;
+};
+
+export type DiscardBackupResponse = DiscardBackupResponses[keyof DiscardBackupResponses];
+
+export type RestoreBackupData = {
+    body: ConfirmRestore;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/backup/stage/{id}/restore';
+};
+
+export type RestoreBackupErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RestoreBackupError = RestoreBackupErrors[keyof RestoreBackupErrors];
+
+export type RestoreBackupResponses = {
+    /**
+     * Restoring; everyone is signed out
+     */
+    202: unknown;
+};
 
 export type GetEditionData = {
     body?: never;

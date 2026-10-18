@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CordonKubeData, CordonKubeErrors, CordonKubeResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteGenericKubeData, DeleteGenericKubeErrors, DeleteGenericKubeResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableGenericKubeData, EditableGenericKubeErrors, EditableGenericKubeResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, GenericKubeEventsData, GenericKubeEventsErrors, GenericKubeEventsResponses, GetAuthProvidersData, GetAuthProvidersErrors, GetAuthProvidersResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEditionData, GetEditionErrors, GetEditionResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetGenericKubeData, GetGenericKubeErrors, GetGenericKubeResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetTaskData, GetTaskErrors, GetTaskResponses, HelmCapabilitiesData, HelmCapabilitiesErrors, HelmCapabilitiesResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, InstallHelmChartData, InstallHelmChartErrors, InstallHelmChartResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeDiscoveryData, KubeDiscoveryErrors, KubeDiscoveryResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListGenericKubeData, ListGenericKubeErrors, ListGenericKubeResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceGenericKubeData, ReplaceGenericKubeErrors, ReplaceGenericKubeResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, ResumeKubeData, ResumeKubeErrors, ResumeKubeResponses, RevealSecretData, RevealSecretErrors, RevealSecretResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, ShowHelmChartData, ShowHelmChartErrors, ShowHelmChartResponses, SuspendKubeData, SuspendKubeErrors, SuspendKubeResponses, TagImageData, TagImageErrors, TagImageResponses, TriggerKubeData, TriggerKubeErrors, TriggerKubeResponses, UncordonKubeData, UncordonKubeErrors, UncordonKubeResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses, UpgradeHelmReleaseData, UpgradeHelmReleaseErrors, UpgradeHelmReleaseResponses, WorkloadPodsData, WorkloadPodsErrors, WorkloadPodsResponses } from './types.gen';
+import type { AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CordonKubeData, CordonKubeErrors, CordonKubeResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteGenericKubeData, DeleteGenericKubeErrors, DeleteGenericKubeResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DiscardBackupData, DiscardBackupErrors, DiscardBackupResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadBackupData, DownloadBackupErrors, DownloadBackupResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableGenericKubeData, EditableGenericKubeErrors, EditableGenericKubeResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, GenericKubeEventsData, GenericKubeEventsErrors, GenericKubeEventsResponses, GetAuthProvidersData, GetAuthProvidersErrors, GetAuthProvidersResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEditionData, GetEditionErrors, GetEditionResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetGenericKubeData, GetGenericKubeErrors, GetGenericKubeResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetTaskData, GetTaskErrors, GetTaskResponses, HelmCapabilitiesData, HelmCapabilitiesErrors, HelmCapabilitiesResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, InstallHelmChartData, InstallHelmChartErrors, InstallHelmChartResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeDiscoveryData, KubeDiscoveryErrors, KubeDiscoveryResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListGenericKubeData, ListGenericKubeErrors, ListGenericKubeResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceGenericKubeData, ReplaceGenericKubeErrors, ReplaceGenericKubeResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, RestoreBackupData, RestoreBackupErrors, RestoreBackupResponses, RestoreSetupBackupData, RestoreSetupBackupErrors, RestoreSetupBackupResponses, ResumeKubeData, ResumeKubeErrors, ResumeKubeResponses, RevealSecretData, RevealSecretErrors, RevealSecretResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, ShowHelmChartData, ShowHelmChartErrors, ShowHelmChartResponses, StageBackupData, StageBackupErrors, StageBackupResponses, StageSetupBackupData, StageSetupBackupErrors, StageSetupBackupResponses, SuspendKubeData, SuspendKubeErrors, SuspendKubeResponses, TagImageData, TagImageErrors, TagImageResponses, TriggerKubeData, TriggerKubeErrors, TriggerKubeResponses, UncordonKubeData, UncordonKubeErrors, UncordonKubeResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses, UpgradeHelmReleaseData, UpgradeHelmReleaseErrors, UpgradeHelmReleaseResponses, WorkloadPodsData, WorkloadPodsErrors, WorkloadPodsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -143,9 +143,92 @@ export const setup = <ThrowOnError extends boolean = true>(options: Options<Setu
 });
 
 /**
+ * First run: upload a backup instead of creating the admin
+ */
+export const stageSetupBackup = <ThrowOnError extends boolean = true>(options: Options<StageSetupBackupData, ThrowOnError>): RequestResult<StageSetupBackupResponses, StageSetupBackupErrors, ThrowOnError> => (options.client ?? client).post<StageSetupBackupResponses, StageSetupBackupErrors, ThrowOnError>({
+    ...formDataBodySerializer,
+    url: '/api/v1/auth/setup/backup',
+    ...options,
+    headers: {
+        'Content-Type': null,
+        ...options.headers
+    }
+});
+
+/**
+ * First run: restore a staged backup; the server restarts
+ */
+export const restoreSetupBackup = <ThrowOnError extends boolean = true>(options: Options<RestoreSetupBackupData, ThrowOnError>): RequestResult<RestoreSetupBackupResponses, RestoreSetupBackupErrors, ThrowOnError> => (options.client ?? client).post<RestoreSetupBackupResponses, RestoreSetupBackupErrors, ThrowOnError>({ url: '/api/v1/auth/setup/backup/{id}/restore', ...options });
+
+/**
  * Whether first-run setup is still needed
  */
 export const getAuthStatus = <ThrowOnError extends boolean = true>(options?: Options<GetAuthStatusData, ThrowOnError>): RequestResult<GetAuthStatusResponses, GetAuthStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetAuthStatusResponses, GetAuthStatusErrors, ThrowOnError>({ url: '/api/v1/auth/status', ...options });
+
+/**
+ * Download a passphrase-locked backup of this server
+ */
+export const downloadBackup = <ThrowOnError extends boolean = true>(options: Options<DownloadBackupData, ThrowOnError>): RequestResult<DownloadBackupResponses, DownloadBackupErrors, ThrowOnError> => (options.client ?? client).post<DownloadBackupResponses, DownloadBackupErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/backup',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Upload a backup and see what it holds (up to 512 MiB)
+ */
+export const stageBackup = <ThrowOnError extends boolean = true>(options: Options<StageBackupData, ThrowOnError>): RequestResult<StageBackupResponses, StageBackupErrors, ThrowOnError> => (options.client ?? client).post<StageBackupResponses, StageBackupErrors, ThrowOnError>({
+    ...formDataBodySerializer,
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/backup/stage',
+    ...options,
+    headers: {
+        'Content-Type': null,
+        ...options.headers
+    }
+});
+
+/**
+ * Forget a staged backup
+ */
+export const discardBackup = <ThrowOnError extends boolean = true>(options: Options<DiscardBackupData, ThrowOnError>): RequestResult<DiscardBackupResponses, DiscardBackupErrors, ThrowOnError> => (options.client ?? client).delete<DiscardBackupResponses, DiscardBackupErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/backup/stage/{id}',
+    ...options
+});
+
+/**
+ * Replace all data with a staged backup; the server restarts
+ */
+export const restoreBackup = <ThrowOnError extends boolean = true>(options: Options<RestoreBackupData, ThrowOnError>): RequestResult<RestoreBackupResponses, RestoreBackupErrors, ThrowOnError> => (options.client ?? client).post<RestoreBackupResponses, RestoreBackupErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/backup/stage/{id}/restore',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * This server's edition and the Enterprise features in effect

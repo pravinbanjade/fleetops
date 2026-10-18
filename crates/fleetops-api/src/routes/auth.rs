@@ -61,6 +61,20 @@ pub async fn status(State(s): State<AppState>) -> ApiResult<Json<AuthStatus>> {
     }))
 }
 
+/// First-run setup (creating the admin, or restoring a backup) is open:
+/// no user yet, and within the setup window.
+pub(crate) async fn setup_gate(s: &AppState) -> fleetops_core::Result<()> {
+    if s.store.count_users().await? > 0 {
+        return Err(Error::Conflict("setup already completed".into()));
+    }
+    if !s.setup.is_open(Instant::now()) {
+        return Err(Error::Forbidden(
+            "setup window expired; restart fleetops to create the admin account".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[utoipa::path(
     post,
     path = "/auth/setup",
@@ -76,15 +90,7 @@ pub async fn setup(
     meta: ClientMeta,
     ApiJson(body): ApiJson<Credentials>,
 ) -> ApiResult<Response> {
-    if s.store.count_users().await? > 0 {
-        return Err(Error::Conflict("setup already completed".into()).into());
-    }
-    if !s.setup.is_open(Instant::now()) {
-        return Err(Error::Forbidden(
-            "setup window expired; restart fleetops to create the admin account".into(),
-        )
-        .into());
-    }
+    setup_gate(&s).await?;
     validate_username(&body.username)?;
     validate_password(&body.password)?;
     let hash = password::hash_password(body.password).await?;

@@ -4,6 +4,7 @@
 mod access;
 mod agents;
 mod audit;
+pub mod backup;
 mod credentials;
 mod environments;
 pub mod secrets;
@@ -28,6 +29,8 @@ pub struct Store {
     pool: SqlitePool,
     /// Seals credentials; a random per-process key until `with_secret_key`.
     secrets: std::sync::Arc<secrets::SecretBox>,
+    /// The key behind `secrets`, which a backup carries.
+    key: std::sync::Arc<secrets::SecretKey>,
 }
 
 impl Store {
@@ -73,9 +76,11 @@ impl Store {
             .run(&pool)
             .await
             .map_err(|e| Error::Internal(format!("migration failed: {e}")))?;
+        let key = secrets::SecretKey::random();
         Ok(Self {
             pool,
-            secrets: std::sync::Arc::new(secrets::SecretBox::new(&secrets::SecretKey::random())),
+            secrets: std::sync::Arc::new(secrets::SecretBox::new(&key)),
+            key: std::sync::Arc::new(key),
         })
     }
 
@@ -93,7 +98,13 @@ impl Store {
     /// per-process key every store starts with.
     pub fn with_secret_key(mut self, key: &secrets::SecretKey) -> Self {
         self.secrets = std::sync::Arc::new(secrets::SecretBox::new(key));
+        self.key = std::sync::Arc::new(key.clone());
         self
+    }
+
+    /// The key that seals this store's secrets.
+    pub fn secret_key(&self) -> &secrets::SecretKey {
+        &self.key
     }
 }
 

@@ -287,6 +287,12 @@ const auditRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/admin/AuditPage"), "AuditPage"),
 });
 
+const backupRoute = createRoute({
+  getParentRoute: () => adminRoute,
+  path: "backup",
+  component: lazyRouteComponent(() => import("@/pages/admin/BackupPage"), "BackupPage"),
+});
+
 const accountRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/account",
@@ -319,7 +325,7 @@ const routeTree = rootRoute.addChildren([
     genericListRoute,
     genericObjectRoute,
       ]),
-      adminRoute.addChildren([usersRoute, envsAdminRoute, auditRoute, ...(ee.adminRoutes(adminRoute) as [])]),
+      adminRoute.addChildren([usersRoute, envsAdminRoute, auditRoute, backupRoute, ...(ee.adminRoutes(adminRoute) as [])]),
       accountRoute,
     ]),
   ]),

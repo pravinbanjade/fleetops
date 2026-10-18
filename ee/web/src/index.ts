@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { KeyRound, LogIn, ShieldCheck, UsersRound } from "lucide-react";
 import type { EeModule } from "@/ee-contract";
 import { AuditExport } from "./AuditExport";
-import { LicenseBanner } from "./LicenseBanner";
+import { BackupSchedule } from "./BackupSchedule";
+import { EeBanners } from "./BackupBanner";
 import { rolesQuery } from "./roles";
 import { EnvTeamAccess, UserTeamAccess } from "./UserTeamAccess";
 
@@ -40,10 +41,11 @@ export const ee: EeModule = {
     { to: "/admin/license", label: "License", icon: KeyRound },
   ],
   slots: {
-    "shell.banner": { component: LicenseBanner },
+    "shell.banner": { component: EeBanners },
     "audit.toolbar": { component: AuditExport, feature: "audit_export" },
     "user.access": { component: UserTeamAccess },
     "env.access": { component: EnvTeamAccess },
+    "admin.backup": { component: BackupSchedule },
   },
   // Only admin pages offer roles, so only admins ask for them.
   useRoleOptions: () => useQuery(rolesQuery).data ?? [],

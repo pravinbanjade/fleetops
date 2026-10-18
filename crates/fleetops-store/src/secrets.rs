@@ -14,6 +14,7 @@ use std::{io::Write, path::Path};
 const PREFIX: &str = "v1:";
 const NONCE_LEN: usize = 12;
 
+#[derive(Clone)]
 pub struct SecretKey(pub(crate) [u8; 32]);
 
 impl std::fmt::Debug for SecretKey {
@@ -27,6 +28,11 @@ impl SecretKey {
         let mut k = [0u8; 32];
         rand::thread_rng().fill_bytes(&mut k);
         Self(k)
+    }
+
+    /// The key as `FLEETOPS_SECRET_KEY` takes it; backups carry it this way.
+    pub fn to_base64(&self) -> String {
+        STANDARD.encode(self.0)
     }
 
     pub fn from_base64(text: &str) -> Result<Self> {
@@ -51,7 +57,7 @@ impl SecretKey {
                     opts.mode(0o600);
                 }
                 let mut f = opts.open(path).map_err(io)?;
-                writeln!(f, "{}", STANDARD.encode(key.0)).map_err(io)?;
+                writeln!(f, "{}", key.to_base64()).map_err(io)?;
                 f.sync_all().map_err(io)?;
                 Ok((key, true))
             }

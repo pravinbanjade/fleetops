@@ -119,6 +119,12 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 - Dark, light and system themes.
 - Values that look like secrets are masked until clicked.
 
+## Moving or recovering a server
+
+One file holds everything FleetOps keeps: users, environments and their credentials, grants, teams, roles, single sign-on, the license, settings and the audit log. In **Admin → Backup**, choose **Download backup** and set a passphrase; FleetOps can't recover a lost one. To move or recover, start the new server and, on its first screen, choose **Restore from backup** within 10 minutes of starting it. You can also restore over a running server from **Admin → Backup**: everything there is replaced, everyone is signed out, and the previous data is kept in `<data>/pre-restore/`. The new server keeps its own secret key: secrets are re-encrypted with it. Environment variables and command-line settings are not part of the backup. Agents enrolled after the backup was made need enrolling again.
+
+With an Enterprise license, FleetOps also backs up daily to S3-compatible storage (AWS S3, MinIO, Cloudflare R2 and others) and/or a local directory such as a mounted volume, keeping the last N backups or N days of them, and **Admin → Backup** lists the five most recent with a **Restore** button each.
+
 ## Editions
 
 | | Community | Enterprise |
@@ -128,12 +134,14 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 | Docker, Kubernetes, Helm, agents | ✓ | ✓ |
 | Roles and namespace scoping | ✓ | ✓ |
 | Audit log (90-day retention) | ✓ | ✓ |
+| Backup and restore | ✓ | ✓ |
 | Audit export (CSV, NDJSON) | | ✓ |
 | Teams with shared environment access | | ✓ |
 | Custom roles (fine-grained RBAC) | | ✓ |
 | Single sign-on: Microsoft, Google, GitHub, any OIDC provider | | ✓ |
 | LDAP sign-in: Active Directory, OpenLDAP | | ✓ |
-| API tokens, backup | | planned |
+| Scheduled backups (S3, local directory) | | ✓ |
+| API tokens | | planned |
 
 The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license may cap the number of users: past the cap no new users can be created, and existing users keep working.
 
@@ -146,6 +154,8 @@ Single sign-on comes with any Enterprise license as well. In **Admin → Single 
 Without a license, teams and custom roles are read-only and keep granting access; removing members, permissions, grants or whole roles always works. Without a license, people who already signed in through a provider keep doing so and their groups keep syncing, but nobody new is let in. Running the Community image on the same data ignores teams and custom-role grants, so access through them stops until you switch back; single sign-on users cannot log in there at all, while local accounts work as usual.
 
 Known limits of custom roles: Helm and Compose actions are checked against the Helm and Stacks rows only, not against what a chart or stack creates; Shell reaches whatever the container or pod can read; and *Create* on "everything else" includes Kubernetes RBAC objects, so it can bind a service account to cluster-admin inside the cluster (FleetOps access itself is not widened).
+
+Scheduled backups come with any Enterprise license (see [Moving or recovering a server](#moving-or-recovering-a-server)). Without a license they pause, with a banner for admins, and resume once one is installed; turning them off and removing targets always works.
 
 Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and production use needs a subscription. `make build` builds Community with no Enterprise code compiled in; `make build-ee` builds Enterprise.
 
@@ -202,7 +212,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 
 ## Roadmap
 
-**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · Enterprise audit export, teams, custom roles and single sign-on (OIDC).
+**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · backup and restore · Enterprise audit export, teams, custom roles, single sign-on (OIDC, LDAP) and scheduled backups.
 
 **Next:**
 - **Stacks and GitOps:** Compose authoring, a diff before deploy, rollback, and git-backed stacks synced by webhook or polling.

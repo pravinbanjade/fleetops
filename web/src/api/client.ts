@@ -93,3 +93,31 @@ export async function apiFetch<T>(
   }
   return body as T;
 }
+
+/**
+ * A raw call for bodies the JSON helpers can't carry (form uploads, file
+ * downloads): sends the CSRF token on mutating requests and throws
+ * `ApiError` on failure; the caller reads the body.
+ */
+export async function apiRequest(path: string, init: { method?: string; body?: BodyInit; json?: unknown } = {}): Promise<Response> {
+  const method = init.method ?? "GET";
+  const headers = new Headers();
+  let body = init.body;
+  if (init.json !== undefined) {
+    headers.set("content-type", "application/json");
+    body = JSON.stringify(init.json);
+  }
+  if (method !== "GET" && csrfToken) headers.set("x-csrf-token", csrfToken);
+  const res = await fetch(new Request(new URL(path, window.location.origin), { method, headers, body, credentials: "same-origin" }));
+  if (!res.ok) {
+    let err: unknown;
+    try {
+      err = await res.json();
+    } catch {
+      err = undefined;
+    }
+    if (res.status === 401 && !PROBES.includes(new URL(res.url || path, window.location.origin).pathname)) reportUnauthorized();
+    throw new ApiError(res.status, err as Partial<ErrorBody> | undefined);
+  }
+  return res;
+}

@@ -84,6 +84,57 @@ pub async fn app_with_extra_and(
     }
 }
 
+/// Counts restarts instead of restarting.
+#[derive(Default)]
+pub struct RecordRestart(pub std::sync::atomic::AtomicUsize);
+
+impl fleetops_api::backup::Restart for RecordRestart {
+    fn restart(&self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+pub struct BackupApp {
+    pub app: TestApp,
+    pub data: tempfile::TempDir,
+    pub restarts: Arc<RecordRestart>,
+}
+
+/// An app with a data directory, for backups; `hooks` stand in for Enterprise.
+pub async fn app_with_data(
+    hooks: Option<Arc<dyn fleetops_api::backup::BackupHooks>>,
+    config: ApiConfig,
+) -> BackupApp {
+    let data = tempfile::tempdir().unwrap();
+    // File-backed, as in production: a backup snapshot needs it.
+    let store = Store::open(&data.path().join("fleetops.db")).await.unwrap();
+    let fake = FakeDocker::new();
+    let restarts = Arc::new(RecordRestart::default());
+    let mut state = AppState::new(
+        store.clone(),
+        ApiConfig {
+            data_dir: Some(data.path().to_path_buf()),
+            ..config
+        },
+        Arc::new(FakeFactory(fake.clone())),
+    )
+    .with_restart(restarts.clone());
+    if let Some(h) = hooks {
+        state = state.with_backup_hooks(h);
+    }
+    let router = fleetops_api::app(state.clone(), Router::new());
+    BackupApp {
+        app: TestApp {
+            router,
+            store,
+            state,
+            fake,
+        },
+        data,
+        restarts,
+    }
+}
+
 /// An app whose single sign-on hook is `x` instead of Community's.
 pub async fn app_with_external(x: Arc<dyn fleetops_api::external::ExternalAuth>) -> TestApp {
     let store = Store::in_memory().await.unwrap();

@@ -19,7 +19,7 @@ fleetops-tunnel = { path = "crates/fleetops-tunnel" }
 fleetops-kube = { path = "crates/fleetops-kube" }
 fleetops-ee = { path = "ee/crates/fleetops-ee" }
 
-aes-gcm = "0.10"
+aes-gcm = { version = "0.10", features = ["stream"] }
 anyhow = "1"
 argon2 = { version = "0.5", features = ["std"] }
 async-trait = "0.1"
@@ -46,7 +46,8 @@ jsonschema = { version = "0.58", default-features = false }
 mime_guess = "2"
 rand = "0.8"
 rcgen = "0.13"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+rusty-s3 = "0.10"
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde = { version = "1", features = ["derive"] }
