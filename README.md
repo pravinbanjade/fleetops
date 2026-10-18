@@ -131,7 +131,8 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 | Audit export (CSV, NDJSON) | | ✓ |
 | Teams with shared environment access | | ✓ |
 | Custom roles (fine-grained RBAC) | | ✓ |
-| SSO (OIDC, LDAP), API tokens, backup | | planned |
+| Single sign-on: Microsoft, Google, GitHub, any OIDC provider | | ✓ |
+| SSO with LDAP, API tokens, backup | | planned |
 
 The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license may cap the number of users: past the cap no new users can be created, and existing users keep working.
 
@@ -139,7 +140,9 @@ Teams come with any Enterprise license: add a user to a team in **Admin → Team
 
 Custom roles come with any Enterprise license too. In **Admin → Roles** an admin builds a role as a grid: a row per kind of resource (containers, images, volumes, networks, stacks; workloads, pods, ConfigMaps, Secrets, networking, storage, Helm releases, everything else) and a column per action (View, Create, Operate, Delete, Shell, Reveal). For example, a "Deployer" can start and restart containers but not delete them or prune volumes. A custom role is given to users and teams on an environment exactly like Viewer and Operator, namespaces included. **Reveal** covers secret material: container env vars and files, Helm values and notes, and the real values of a Kubernetes Secret, which no built-in role shows; every time Secret values are shown it is written to the audit log.
 
-Without a license, teams and custom roles are read-only and keep granting access; removing members, permissions, grants or whole roles always works. Running the Community image on the same data ignores teams and custom-role grants, so access through them stops until you switch back.
+Single sign-on comes with any Enterprise license as well. In **Admin → Single sign-on** an admin connects Microsoft Entra ID, Google Workspace, GitHub or any OpenID Connect provider, and maps the provider's groups to teams or to the admin role. People then use the **Sign in with …** button on the login page: FleetOps creates their account on first sign-in, and every sign-in brings their teams and role in line with their groups. Local admins always keep their passwords, as the way in if the provider is down; an admin can limit password login to them. Set `FLEETOPS_PUBLIC_URL` so the provider can send people back. Setup for each provider: [docs/sso.md](docs/sso.md).
+
+Without a license, teams and custom roles are read-only and keep granting access; removing members, permissions, grants or whole roles always works. Without a license, people who already signed in through a provider keep doing so and their groups keep syncing, but nobody new is let in. Running the Community image on the same data ignores teams and custom-role grants, so access through them stops until you switch back; single sign-on users cannot log in there at all, while local accounts work as usual.
 
 Known limits of custom roles: Helm and Compose actions are checked against the Helm and Stacks rows only, not against what a chart or stack creates; Shell reaches whatever the container or pod can read; and *Create* on "everything else" includes Kubernetes RBAC objects, so it can bind a service account to cluster-admin inside the cluster (FleetOps access itself is not widened).
 
@@ -173,6 +176,7 @@ Configuration comes from CLI flags or environment variables. There is no config 
 | `--helm-binary` | `FLEETOPS_HELM` | unset (off) | The helm that renders charts for install and upgrade: `helm` on PATH or an absolute path |
 | `--helm-insecure-repos` | `FLEETOPS_HELM_INSECURE_REPOS` | off | Allow `http://` chart repositories |
 | `--license-file` | `FLEETOPS_LICENSE_FILE` | unset | Enterprise only: license file; one uploaded in Admin → License takes precedence |
+| `--public-url` | `FLEETOPS_PUBLIC_URL` | unset | Where browsers reach FleetOps, for example `https://fleet.example.com`. Single sign-on needs it to build its callback URL |
 | `--kube-exec-plugins` | `FLEETOPS_KUBE_EXEC_PLUGINS` | unset (off) | Exec plugins kubeconfig users may run: `default` (aws, aws-iam-authenticator, gke-gcloud-auth-plugin, kubelogin) and extra bare names, comma-separated |
 | `--secret-key` | `FLEETOPS_SECRET_KEY` | unset (`<data>/secret.key`) | 32 bytes, base64: seals stored kubeconfigs. Back it up with the database |
 | `--log-level` | `FLEETOPS_LOG` | `info` | `tracing` filter, for example `fleetops_api=debug,info` |
@@ -197,16 +201,17 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 
 ## Roadmap
 
-**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · Enterprise audit export, teams and custom roles.
+**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · Enterprise audit export, teams, custom roles and single sign-on (OIDC).
 
 **Next:**
 - **Stacks and GitOps:** Compose authoring, a diff before deploy, rollback, and git-backed stacks synced by webhook or polling.
 - **Port-forward:** reach a pod's port through FleetOps.
-- **Enterprise:** SSO (OIDC, LDAP), API tokens, backup and restore, SIEM forwarding and long audit retention.
+- **Enterprise:** LDAP sign-in, API tokens, backup and restore, SIEM forwarding and long audit retention.
 
 ## Documentation
 
 - [Kubernetes and Helm](docs/kubernetes.md)
+- [Single sign-on](docs/sso.md): connecting Microsoft, Google, GitHub and OpenID Connect providers
 - [Development](docs/development.md): toolchain, make targets, tests and CI
 - [Architecture](docs/architecture.md): crates, request pipeline, agent tunnel, REST API and websocket protocol
 
