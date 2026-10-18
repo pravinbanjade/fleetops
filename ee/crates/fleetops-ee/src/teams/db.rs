@@ -211,11 +211,13 @@ pub async fn members(pool: &SqlitePool, team_id: i64) -> Result<Vec<User>> {
         .collect()
 }
 
-/// Whether the user was added (false: already a member).
+/// Whether the user was added (false: already a member). A membership that
+/// single sign-on added becomes a manual one, which sync never removes.
 pub async fn add_member(pool: &SqlitePool, team_id: i64, user_id: i64, now: i64) -> Result<bool> {
     let r = sqlx::query(
         "INSERT INTO ee_team_members (team_id, user_id, created_at) VALUES (?, ?, ?)
-         ON CONFLICT DO NOTHING",
+         ON CONFLICT DO UPDATE SET source_connection_id = NULL
+             WHERE source_connection_id IS NOT NULL",
     )
     .bind(team_id)
     .bind(user_id)
