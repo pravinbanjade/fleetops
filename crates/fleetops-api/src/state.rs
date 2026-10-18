@@ -42,6 +42,9 @@ pub struct ApiConfig {
     /// Where browsers reach this server (`FLEETOPS_PUBLIC_URL`), without a
     /// trailing slash; sign-in redirects need it.
     pub public_url: Option<String>,
+    /// The data directory (`FLEETOPS_DATA`); backups and restores are
+    /// prepared in it. `None` turns them off.
+    pub data_dir: Option<std::path::PathBuf>,
 }
 
 impl Default for ApiConfig {
@@ -58,6 +61,7 @@ impl Default for ApiConfig {
             kube_exec: Default::default(),
             helm: None,
             public_url: None,
+            data_dir: None,
         }
     }
 }
@@ -86,6 +90,12 @@ pub struct AppState {
     pub custom_roles: Arc<dyn fleetops_core::access::CustomRoles>,
     /// Single sign-on; local passwords only in Community.
     pub external_auth: Arc<dyn crate::external::ExternalAuth>,
+    /// Enterprise sealed columns and migrations for backups; none in Community.
+    pub backup_hooks: Arc<dyn crate::backup::BackupHooks>,
+    /// Starts the server again after a restore is left pending.
+    pub restart: Arc<dyn crate::backup::Restart>,
+    /// Uploaded backups waiting for their restore.
+    pub staged: Arc<crate::backup::StagedBackups>,
 }
 
 impl AppState {
@@ -106,6 +116,9 @@ impl AppState {
             extra_grants: Arc::new(fleetops_core::access::NoExtraGrants),
             custom_roles: Arc::new(fleetops_core::access::NoCustomRoles),
             external_auth: Arc::new(crate::external::NoExternalAuth),
+            backup_hooks: Arc::new(crate::backup::NoBackupHooks),
+            restart: Arc::new(crate::backup::NoRestart),
+            staged: Arc::default(),
         }
     }
 
@@ -127,6 +140,16 @@ impl AppState {
 
     pub fn with_external_auth(mut self, a: Arc<dyn crate::external::ExternalAuth>) -> Self {
         self.external_auth = a;
+        self
+    }
+
+    pub fn with_backup_hooks(mut self, h: Arc<dyn crate::backup::BackupHooks>) -> Self {
+        self.backup_hooks = h;
+        self
+    }
+
+    pub fn with_restart(mut self, r: Arc<dyn crate::backup::Restart>) -> Self {
+        self.restart = r;
         self
     }
 

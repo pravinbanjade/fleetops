@@ -60,3 +60,53 @@ pub fn community_migration_max() -> i64 {
         .max()
         .unwrap_or(0)
 }
+
+/// `fleetops-backup-<UTC yyyymmdd-hhmmss>.fob`.
+pub fn backup_name(now: i64) -> String {
+    let t = jiff::Timestamp::from_second(now).unwrap_or(jiff::Timestamp::UNIX_EPOCH);
+    format!("fleetops-backup-{}.fob", t.strftime("%Y%m%d-%H%M%S"))
+}
+
+/// The time in a name [`backup_name`] made; `None` for any other name.
+pub fn parse_name(name: &str) -> Option<i64> {
+    let stamp = name
+        .strip_prefix("fleetops-backup-")?
+        .strip_suffix(".fob")?;
+    let b = stamp.as_bytes();
+    if b.len() != 15
+        || b[8] != b'-'
+        || !b
+            .iter()
+            .enumerate()
+            .all(|(i, c)| i == 8 || c.is_ascii_digit())
+    {
+        return None;
+    }
+    let dt = jiff::civil::DateTime::strptime("%Y%m%d-%H%M%S", stamp).ok()?;
+    Some(
+        dt.to_zoned(jiff::tz::TimeZone::UTC)
+            .ok()?
+            .timestamp()
+            .as_second(),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn name_round_trip() {
+        let n = backup_name(1_700_000_000);
+        assert_eq!(n, "fleetops-backup-20231114-221320.fob");
+        assert_eq!(parse_name(&n), Some(1_700_000_000));
+        for bad in [
+            "fleetops-backup-2023.fob",
+            "my.fob",
+            "fleetops-backup-20231114-221320.fob.part",
+            "fleetops-backup-2023111a-221320.fob",
+        ] {
+            assert_eq!(parse_name(bad), None, "{bad}");
+        }
+    }
+}

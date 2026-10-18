@@ -39,9 +39,11 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                     }),
                 }) as Arc<dyn fleetops_kube::helm::render::ChartRenderer>
             }),
+            data_dir: Some(config.data.clone()),
             ..ApiConfig::default()
         },
-    );
+    )
+    .with_restart(Arc::new(ReExec));
     state.envs.load(&store).await?;
     if let Some(env) = bootstrap_local(&store, &state.envs, &config.docker_host).await? {
         tracing::info!(url = %env.url, "registered local Docker environment");
@@ -99,13 +101,23 @@ pub fn build_state(store: Store, config: ApiConfig) -> AppState {
 /// from <data>/secret.key (created on first start).
 pub async fn open_store(config: &Config) -> anyhow::Result<Store> {
     std::fs::create_dir_all(&config.data)?;
+    match fleetops_store::backup::apply_pending(&config.data).await? {
+        fleetops_store::backup::Pending::None => {}
+        fleetops_store::backup::Pending::Applied(dir) => {
+            tracing::info!(previous = %dir.display(), "restored from backup; previous data kept")
+        }
+        fleetops_store::backup::Pending::Rejected(dir) => tracing::error!(
+            moved_to = %dir.display(),
+            "the pending restore was damaged; kept the current data"
+        ),
+    }
     let key = match &config.secret_key {
         Some(text) => fleetops_store::secrets::SecretKey::from_base64(text)?,
         None => {
             let path = config.data.join("secret.key");
             let (key, created) = fleetops_store::secrets::SecretKey::load_or_create(&path)?;
             if created {
-                tracing::info!(path = %path.display(), "created the secret key; back it up with the database");
+                tracing::info!(path = %path.display(), "created the secret key; back it up from Admin → Backup");
             }
             key
         }
@@ -161,4 +173,25 @@ async fn shutdown_on_signal(handle: axum_server::Handle) {
     }
     tracing::info!("shutting down");
     handle.graceful_shutdown(Some(Duration::from_secs(10)));
+}
+
+/// Restarts by replacing this process with a fresh copy of itself, same
+/// arguments and environment, so a pending restore is swapped in.
+pub struct ReExec;
+
+impl fleetops_api::backup::Restart for ReExec {
+    fn restart(&self) {
+        tracing::info!("restarting to finish the restore");
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            if let Ok(exe) = std::env::current_exe() {
+                let err = std::process::Command::new(exe)
+                    .args(std::env::args_os().skip(1))
+                    .exec();
+                tracing::error!(error = %err, "restart failed; exiting so a supervisor restarts FleetOps");
+            }
+        }
+        std::process::exit(0);
+    }
 }

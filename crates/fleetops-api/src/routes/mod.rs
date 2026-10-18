@@ -1,6 +1,7 @@
 pub mod access;
 pub mod audit_log;
 pub mod auth;
+pub mod backup;
 pub mod docker;
 pub mod edition;
 pub mod envs;
@@ -28,6 +29,17 @@ pub fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::openapi::serve))
         .routes(routes!(auth::status))
         .routes(routes!(auth::setup))
+        .routes(
+            routes!(backup::setup_stage)
+                .layer(DefaultBodyLimit::max(crate::backup::BACKUP_UPLOAD_MAX)),
+        )
+        .routes(routes!(backup::setup_restore))
+        .routes(routes!(backup::download))
+        .routes(
+            routes!(backup::stage).layer(DefaultBodyLimit::max(crate::backup::BACKUP_UPLOAD_MAX)),
+        )
+        .routes(routes!(backup::restore))
+        .routes(routes!(backup::discard))
         .routes(routes!(auth::login))
         .routes(routes!(auth::providers))
         .routes(routes!(auth::logout))
