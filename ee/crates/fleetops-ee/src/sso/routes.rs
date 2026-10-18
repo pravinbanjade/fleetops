@@ -236,6 +236,15 @@ pub async fn update(
         if settings.kind() != old.settings.kind() {
             return Err(Error::Invalid("a connection's kind cannot change".into()).into());
         }
+        if settings.identity_source() != old.settings.identity_source()
+            && !db::connection_users(s.store.pool(), id).await?.is_empty()
+        {
+            return Err(Error::Conflict(
+                "users have signed in through this provider; add a new connection for a different one"
+                    .into(),
+            )
+            .into());
+        }
         c.settings = settings;
     }
     if let Some(h) = body.session_hours {

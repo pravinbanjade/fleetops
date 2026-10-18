@@ -95,6 +95,17 @@ impl ConnectionSettings {
         }
     }
 
+    /// Where the provider's user ids come from: they only identify a user
+    /// within it, so it can't change once users signed in.
+    pub fn identity_source(&self) -> Option<&str> {
+        match self {
+            Self::Microsoft { tenant, .. } => Some(tenant),
+            Self::Oidc { issuer, .. } => Some(issuer),
+            Self::Github { base_url, .. } => base_url.as_deref(),
+            Self::Google { .. } => None,
+        }
+    }
+
     /// Parses settings an admin sent, with a clear message for LDAP.
     pub fn parse(v: serde_json::Value) -> Result<Self> {
         if v.get("kind").and_then(|k| k.as_str()) == Some("ldap") {
@@ -141,6 +152,11 @@ impl ConnectionSettings {
                     .map(|d| d.trim().to_ascii_lowercase())
                     .filter(|d| !d.is_empty())
                     .collect::<Vec<_>>();
+                if hosted_domains.is_empty() {
+                    return Err(Error::Invalid(
+                        "list at least one Workspace domain that may sign in".into(),
+                    ));
+                }
                 if let Some(d) = hosted_domains.iter().find(|d| !is_domain(d)) {
                     return Err(Error::Invalid(format!("'{d}' is not a domain")));
                 }

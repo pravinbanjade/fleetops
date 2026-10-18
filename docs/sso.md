@@ -57,7 +57,8 @@ FleetOps asks Microsoft Graph instead. That needs the delegated
    credentials → OAuth client ID**, choose *Web application* and add the
    FleetOps callback URL as an authorized redirect URI.
 2. In FleetOps, enter the client ID and secret. Under **Allowed domains**,
-   list your Workspace domains. Leaving it empty lets any Google account in.
+   list your Workspace domains (at least one). Only verified accounts in
+   those domains can sign in.
 
 Google doesn't put groups in its sign-in token. To map groups, give
 FleetOps a service account that reads them:
@@ -106,7 +107,9 @@ A mapping gives everyone in a group one of these:
 - **Team** *name*: they join that team, and get its environment access.
 - **FleetOps admin**: they get the admin role.
 
-Group values match case-insensitively. Sign-ins re-check groups:
+Group values match case-insensitively. A connection's provider (OIDC
+issuer, Microsoft tenant, GitHub Enterprise URL) can't change once people
+have signed in through it; add a new connection instead. Sign-ins re-check groups:
 
 - Someone who joins a mapped group joins its team at their next sign-in.
 - Someone who leaves the group leaves the team at their next sign-in.
@@ -132,7 +135,9 @@ the team when the person leaves the group.
 
 - **Everyone** (the default): local accounts keep their passwords.
 - **Local admins only**: other local accounts can no longer sign in with a
-  password. This setting can't be turned on until a local admin exists.
+  password. This setting can't be turned on until a local admin exists. If
+  no local admin is left later, FleetOps ignores the limit, so nobody is
+  locked out.
 
 ## Usernames
 

@@ -40,7 +40,18 @@ impl ExternalAuth for EeSso {
         }
         Ok(match password_login(&self.store).await? {
             PasswordLogin::Everyone => true,
-            PasswordLogin::LocalAdmins => user.role == Role::Admin,
+            PasswordLogin::LocalAdmins if user.role == Role::Admin => true,
+            // Nobody may be locked out: with no local admin left to sign in,
+            // the limit is not applied.
+            PasswordLogin::LocalAdmins => {
+                let fallback = !db::local_admin_exists(self.store.pool()).await?;
+                if fallback {
+                    tracing::warn!(
+                        "password login is limited to local admins, but none can sign in; allowing everyone"
+                    );
+                }
+                fallback
+            }
         })
     }
 

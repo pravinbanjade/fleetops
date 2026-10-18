@@ -306,8 +306,8 @@ export function ConnectionDialog({ conn, onClose, onDone }: { conn?: SsoConnecti
       {secretField("client_secret", "Client secret")}
       {settings.kind === "google" && (
         <>
-          <Field id="sso-domains" label="Allowed domains" hint="Comma-separated. Empty allows any Google account.">
-            <Input id="sso-domains" value={domains} onChange={(e) => setDomains(e.target.value)} />
+          <Field id="sso-domains" label="Allowed domains" hint="Comma-separated Workspace domains whose accounts may sign in.">
+            <Input id="sso-domains" required value={domains} onChange={(e) => setDomains(e.target.value)} />
           </Field>
           <Field id="sso-admin-email" label="Workspace admin email" hint="To read groups: the service account acts as this admin.">
             <Input id="sso-admin-email" value={settings.admin_email ?? ""} onChange={(e) => set({ admin_email: e.target.value || null })} />

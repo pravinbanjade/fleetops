@@ -499,3 +499,87 @@ async fn team_member_list_marks_sync_rows() {
         .await;
     assert_eq!(rm.status, StatusCode::CONFLICT, "{}", rm.text);
 }
+
+// ---- final review fixes -------------------------------------------------------
+
+#[tokio::test]
+async fn local_admins_mode_falls_back_when_no_local_admin_can_log_in() {
+    let (ee, admin) = licensed().await;
+    ee.user(&admin, "bob").await;
+    let r = ee
+        .send(
+            "PUT",
+            "/api/v1/ee/sso/settings",
+            body(json!({"password_login": "local_admins"})),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    // The only local admin becomes unusable for password login (e.g. left
+    // behind by a deleted connection); nobody may be locked out.
+    sqlx::query("UPDATE users SET password_hash = '!sso' WHERE username = 'admin'")
+        .execute(ee.store.pool())
+        .await
+        .unwrap();
+    ee.login("bob").await;
+}
+
+#[tokio::test]
+async fn orphaned_sso_admin_is_not_a_local_admin() {
+    let (ee, admin) = licensed().await;
+    sqlx::query("UPDATE users SET password_hash = '!sso' WHERE username = 'admin'")
+        .execute(ee.store.pool())
+        .await
+        .unwrap();
+    let r = ee
+        .send(
+            "PUT",
+            "/api/v1/ee/sso/settings",
+            body(json!({"password_login": "local_admins"})),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+}
+
+#[tokio::test]
+async fn google_needs_an_allowed_domain() {
+    let (ee, admin) = licensed().await;
+    let r = create(
+        &ee,
+        &admin,
+        json!({"name": "G", "settings": {"kind": "google", "client_id": "x", "hosted_domains": []}}),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+}
+
+#[tokio::test]
+async fn issuer_cannot_change_while_users_exist() {
+    let (ee, admin) = licensed().await;
+    let conn = enabled(&ee, &admin).await;
+    jane(&ee, conn, &[]).await;
+    let mut settings = oidc("x")["settings"].clone();
+    settings["issuer"] = json!("https://other-idp.example");
+    let r = ee
+        .send(
+            "PATCH",
+            &format!("/api/v1/ee/sso/connections/{conn}"),
+            body(json!({"settings": settings})),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    // Other settings still change.
+    let mut same = oidc("x")["settings"].clone();
+    same["groups_claim"] = json!("roles");
+    let r = ee
+        .send(
+            "PATCH",
+            &format!("/api/v1/ee/sso/connections/{conn}"),
+            body(json!({"settings": same})),
+            Some(&admin),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+}

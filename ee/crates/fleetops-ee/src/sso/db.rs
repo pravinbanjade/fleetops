@@ -234,10 +234,11 @@ pub async fn is_managed(pool: &SqlitePool, user_id: i64) -> Result<bool> {
     Ok(n > 0)
 }
 
-/// Whether an admin exists that signs in with a local password.
+/// Whether an admin exists that signs in with a local password: not an SSO
+/// user, and not one a deleted connection left without a password.
 pub async fn local_admin_exists(pool: &SqlitePool) -> Result<bool> {
     let n: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM users u WHERE u.role = 'admin'
+        "SELECT COUNT(*) FROM users u WHERE u.role = 'admin' AND u.password_hash <> '!sso'
          AND NOT EXISTS (SELECT 1 FROM ee_sso_identities i WHERE i.user_id = u.id)",
     )
     .fetch_one(pool)
