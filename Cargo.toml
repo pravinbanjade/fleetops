@@ -68,7 +68,7 @@ tower-service = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 utoipa = "5.5"
-utoipa-axum = "0.2"
+utoipa-axum = "0.3"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 webpki-roots = "0.26"
