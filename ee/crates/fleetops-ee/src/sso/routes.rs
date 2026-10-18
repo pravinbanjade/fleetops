@@ -86,6 +86,8 @@ pub struct SsoSettings {
     pub password_login: PasswordLogin,
 }
 
+/// Where an identity provider sends the browser back; none without a
+/// public URL.
 pub(crate) fn callback_url(s: &AppState, id: i64) -> Option<String> {
     s.config
         .public_url
@@ -97,7 +99,11 @@ async fn view(s: &AppState, c: Connection) -> ApiResult<ConnectionView> {
     let secrets = db::secrets(&s.store, c.id).await?;
     let users = db::user_counts(s.store.pool()).await?;
     Ok(ConnectionView {
-        callback_url: callback_url(s, c.id),
+        callback_url: c
+            .settings
+            .is_redirect()
+            .then(|| callback_url(s, c.id))
+            .flatten(),
         user_count: users.get(&c.id).copied().unwrap_or(0),
         kind: c.settings.kind().into(),
         secrets_set: secrets.names(),
@@ -110,8 +116,21 @@ async fn view(s: &AppState, c: Connection) -> ApiResult<ConnectionView> {
     })
 }
 
-/// Enabling needs what a sign-in redirect needs.
-fn check_enable(s: &AppState, secrets: &Secrets) -> Result<(), Error> {
+/// Enabling needs what a sign-in needs: for a redirect, a public URL and
+/// the client secret; for LDAP, the bind password when there is a bind DN.
+fn check_enable(
+    s: &AppState,
+    settings: &ConnectionSettings,
+    secrets: &Secrets,
+) -> Result<(), Error> {
+    if let ConnectionSettings::Ldap { bind_dn, .. } = settings {
+        if bind_dn.is_some() && secrets.bind_password.is_none() {
+            return Err(Error::Invalid(
+                "save the bind_password before enabling".into(),
+            ));
+        }
+        return Ok(());
+    }
     if s.config.public_url.is_none() {
         return Err(Error::Invalid(
             "set FLEETOPS_PUBLIC_URL to enable sign-in redirects".into(),
@@ -174,7 +193,15 @@ pub async fn create(
     let session_hours =
         validate_session_hours(body.session_hours.unwrap_or(SESSION_HOURS_DEFAULT))?;
     if body.enabled {
-        check_enable(&s, &body.secrets)?;
+        check_enable(&s, &settings, &body.secrets)?;
+    }
+    if !settings.is_redirect()
+        && db::list(s.store.pool())
+            .await?
+            .iter()
+            .any(|c| !c.settings.is_redirect())
+    {
+        return Err(Error::Conflict("only one LDAP connection is supported".into()).into());
     }
     let c = db::create(
         &s.store,
@@ -262,7 +289,7 @@ pub async fn update(
         c.enabled = e;
     }
     if c.enabled {
-        check_enable(&s, &secrets)?;
+        check_enable(&s, &c.settings, &secrets)?;
     }
     let c = db::update(&s.store, &c, &secrets, now_unix()).await?;
     rt.oidc.forget();

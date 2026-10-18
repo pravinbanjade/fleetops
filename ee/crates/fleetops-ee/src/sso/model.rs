@@ -40,6 +40,66 @@ pub enum ConnectionSettings {
         #[serde(default = "default_groups_claim")]
         groups_claim: String,
     },
+    /// An LDAP directory, signed into on the password form.
+    Ldap {
+        preset: LdapPreset,
+        /// `ldap://` or `ldaps://`.
+        url: String,
+        #[serde(default)]
+        starttls: bool,
+        #[serde(default)]
+        skip_tls_verify: bool,
+        /// PEM certificates to trust instead of the system's.
+        #[serde(default)]
+        ca_cert: Option<String>,
+        /// The service account; none searches anonymously.
+        #[serde(default)]
+        bind_dn: Option<String>,
+        user_base_dn: String,
+        /// Empty takes the preset's.
+        #[serde(default)]
+        user_filter: String,
+        #[serde(default)]
+        username_attr: String,
+        #[serde(default = "default_email_attr")]
+        email_attr: String,
+        /// Where groups are searched; none reads no groups.
+        #[serde(default)]
+        group_base_dn: Option<String>,
+        #[serde(default)]
+        group_filter: String,
+    },
+}
+
+/// Which directory an LDAP connection talks to; sets the default filters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LdapPreset {
+    ActiveDirectory,
+    Openldap,
+    Custom,
+}
+
+/// The preset's user filter, username attribute and group filter; empty
+/// for `Custom`.
+pub fn ldap_preset_defaults(p: LdapPreset) -> (&'static str, &'static str, &'static str) {
+    match p {
+        LdapPreset::ActiveDirectory => (
+            "(&(objectClass=user)(sAMAccountName={username}))",
+            "sAMAccountName",
+            "(member:1.2.840.113556.1.4.1941:={user_dn})",
+        ),
+        LdapPreset::Openldap => (
+            "(&(objectClass=inetOrgPerson)(uid={username}))",
+            "uid",
+            "(|(&(objectClass=groupOfNames)(member={user_dn}))(&(objectClass=posixGroup)(memberUid={username})))",
+        ),
+        LdapPreset::Custom => ("", "", ""),
+    }
+}
+
+fn default_email_attr() -> String {
+    "mail".into()
 }
 
 fn default_scopes() -> Vec<String> {
@@ -58,6 +118,9 @@ pub struct Secrets {
     /// Google: the service account's JSON key, to read groups.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_account_json: Option<String>,
+    /// LDAP: the service account's password.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bind_password: Option<String>,
 }
 
 impl Secrets {
@@ -68,6 +131,9 @@ impl Secrets {
         }
         if new.service_account_json.is_some() {
             self.service_account_json = new.service_account_json;
+        }
+        if new.bind_password.is_some() {
+            self.bind_password = new.bind_password;
         }
         self
     }
@@ -81,6 +147,9 @@ impl Secrets {
         if self.service_account_json.is_some() {
             v.push("service_account_json".into());
         }
+        if self.bind_password.is_some() {
+            v.push("bind_password".into());
+        }
         v
     }
 }
@@ -92,7 +161,13 @@ impl ConnectionSettings {
             Self::Google { .. } => "google",
             Self::Github { .. } => "github",
             Self::Oidc { .. } => "oidc",
+            Self::Ldap { .. } => "ldap",
         }
+    }
+
+    /// Whether sign-in goes through a browser redirect (everything but LDAP).
+    pub fn is_redirect(&self) -> bool {
+        !matches!(self, Self::Ldap { .. })
     }
 
     /// Where the provider's user ids come from: they only identify a user
@@ -102,15 +177,14 @@ impl ConnectionSettings {
             Self::Microsoft { tenant, .. } => Some(tenant),
             Self::Oidc { issuer, .. } => Some(issuer),
             Self::Github { base_url, .. } => base_url.as_deref(),
-            Self::Google { .. } => None,
+            // LDAP subjects are directory UUIDs; the URL may change (failover,
+            // a new certificate name).
+            Self::Google { .. } | Self::Ldap { .. } => None,
         }
     }
 
-    /// Parses settings an admin sent, with a clear message for LDAP.
+    /// Parses settings an admin sent.
     pub fn parse(v: serde_json::Value) -> Result<Self> {
-        if v.get("kind").and_then(|k| k.as_str()) == Some("ldap") {
-            return Err(Error::Invalid("ldap arrives in a later release".into()));
-        }
         serde_json::from_value(v).map_err(|e| Error::Invalid(format!("settings: {e}")))
     }
 
@@ -230,8 +304,115 @@ impl ConnectionSettings {
                     groups_claim,
                 }
             }
+            Self::Ldap {
+                preset,
+                url,
+                starttls,
+                skip_tls_verify,
+                ca_cert,
+                bind_dn,
+                user_base_dn,
+                user_filter,
+                username_attr,
+                email_attr,
+                group_base_dn,
+                group_filter,
+            } => {
+                let opt =
+                    |v: Option<String>| v.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+                let (d_user, d_attr, d_group) = ldap_preset_defaults(preset);
+                let or = |v: String, d: &str| {
+                    let v = v.trim().to_string();
+                    if v.is_empty() {
+                        d.to_string()
+                    } else {
+                        v
+                    }
+                };
+                let url = url.trim().to_string();
+                let parsed =
+                    url::Url::parse(&url).map_err(|_| Error::Invalid("url is not a URL".into()))?;
+                match parsed.scheme() {
+                    "ldap" => {}
+                    "ldaps" if starttls => {
+                        return Err(Error::Invalid(
+                            "StartTLS needs ldap://; ldaps:// is already encrypted".into(),
+                        ))
+                    }
+                    "ldaps" => {}
+                    _ => {
+                        return Err(Error::Invalid(
+                            "url must start with ldap:// or ldaps://".into(),
+                        ))
+                    }
+                }
+                if parsed.host_str().unwrap_or("").is_empty() {
+                    return Err(Error::Invalid("url has no host".into()));
+                }
+                let ca_cert = opt(ca_cert);
+                if let Some(pem) = &ca_cert {
+                    if ldap_ca_certs(pem).is_empty() {
+                        return Err(Error::Invalid(
+                            "ca_cert must hold PEM certificates (-----BEGIN CERTIFICATE-----)"
+                                .into(),
+                        ));
+                    }
+                }
+                let user_base_dn = user_base_dn.trim().to_string();
+                if user_base_dn.is_empty() {
+                    return Err(Error::Invalid("user_base_dn must not be empty".into()));
+                }
+                let user_filter = or(user_filter, d_user);
+                if user_filter.is_empty() {
+                    return Err(Error::Invalid("user_filter must not be empty".into()));
+                }
+                if !user_filter.contains("{username}") {
+                    return Err(Error::Invalid("user_filter must contain {username}".into()));
+                }
+                let username_attr = or(username_attr, d_attr);
+                if username_attr.is_empty() {
+                    return Err(Error::Invalid("username_attr must not be empty".into()));
+                }
+                let email_attr = or(email_attr, "mail");
+                let group_base_dn = opt(group_base_dn);
+                let group_filter = or(group_filter, d_group);
+                if group_base_dn.is_some() {
+                    if group_filter.is_empty() {
+                        return Err(Error::Invalid(
+                            "group_filter must not be empty when group_base_dn is set".into(),
+                        ));
+                    }
+                    if !group_filter.contains("{user_dn}") && !group_filter.contains("{username}") {
+                        return Err(Error::Invalid(
+                            "group_filter must contain {user_dn} or {username}".into(),
+                        ));
+                    }
+                }
+                Self::Ldap {
+                    preset,
+                    url,
+                    starttls,
+                    skip_tls_verify,
+                    ca_cert,
+                    bind_dn: opt(bind_dn),
+                    user_base_dn,
+                    user_filter,
+                    username_attr,
+                    email_attr,
+                    group_base_dn,
+                    group_filter,
+                }
+            }
         })
     }
+}
+
+/// The certificates in a PEM bundle; empty when there are none.
+pub fn ldap_ca_certs(pem: &str) -> Vec<rustls::pki_types::CertificateDer<'static>> {
+    use rustls::pki_types::pem::PemObject;
+    rustls::pki_types::CertificateDer::pem_slice_iter(pem.as_bytes())
+        .filter_map(|c| c.ok())
+        .collect()
 }
 
 /// Checks a secret set before it is sealed.
@@ -335,11 +516,138 @@ mod tests {
         assert!(domain.validated().is_ok());
     }
 
-    #[test]
-    fn ldap_is_refused_with_a_clear_message() {
-        let e = ConnectionSettings::parse(json!({"kind": "ldap"})).unwrap_err();
-        assert!(e.to_string().contains("later release"), "{e}");
+    fn ldap(preset: &str) -> serde_json::Value {
+        json!({"kind": "ldap", "preset": preset, "url": "ldap://dc.acme.io",
+               "user_base_dn": "dc=acme,dc=io"})
     }
+
+    fn ldap_err(v: serde_json::Value) -> String {
+        ConnectionSettings::parse(v)
+            .and_then(|s| s.validated())
+            .unwrap_err()
+            .to_string()
+    }
+
+    #[test]
+    fn ldap_fills_preset_defaults() {
+        let open = ConnectionSettings::parse(ldap("openldap"))
+            .unwrap()
+            .validated()
+            .unwrap();
+        match open {
+            ConnectionSettings::Ldap {
+                user_filter,
+                username_attr,
+                group_filter,
+                email_attr,
+                ..
+            } => {
+                assert_eq!(
+                    user_filter,
+                    "(&(objectClass=inetOrgPerson)(uid={username}))"
+                );
+                assert_eq!(username_attr, "uid");
+                assert_eq!(group_filter, "(|(&(objectClass=groupOfNames)(member={user_dn}))(&(objectClass=posixGroup)(memberUid={username})))");
+                assert_eq!(email_attr, "mail");
+            }
+            _ => unreachable!(),
+        }
+        let ad = ConnectionSettings::parse(ldap("active_directory"))
+            .unwrap()
+            .validated()
+            .unwrap();
+        match ad {
+            ConnectionSettings::Ldap {
+                user_filter,
+                username_attr,
+                group_filter,
+                ..
+            } => {
+                assert_eq!(
+                    user_filter,
+                    "(&(objectClass=user)(sAMAccountName={username}))"
+                );
+                assert_eq!(username_attr, "sAMAccountName");
+                assert_eq!(group_filter, "(member:1.2.840.113556.1.4.1941:={user_dn})");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn ldap_custom_needs_filters() {
+        assert!(ldap_err(ldap("custom")).contains("user_filter"));
+        let mut v = ldap("custom");
+        v["user_filter"] = json!("(uid={username})");
+        v["username_attr"] = json!("uid");
+        v["group_base_dn"] = json!("ou=groups,dc=acme,dc=io");
+        assert!(ldap_err(v).contains("group_filter"));
+    }
+
+    #[test]
+    fn ldap_user_filter_needs_placeholder() {
+        let mut v = ldap("openldap");
+        v["user_filter"] = json!("(uid=bob)");
+        assert!(ldap_err(v).contains("{username}"));
+        let mut v = ldap("openldap");
+        v["group_base_dn"] = json!("ou=groups,dc=acme,dc=io");
+        v["group_filter"] = json!("(cn=ops)");
+        assert!(ldap_err(v).contains("{user_dn}"));
+    }
+
+    #[test]
+    fn ldap_url_scheme() {
+        let mut v = ldap("openldap");
+        v["url"] = json!("http://dc.acme.io");
+        assert!(ldap_err(v).contains("ldap://"));
+        let mut v = ldap("openldap");
+        v["url"] = json!("ldaps://dc.acme.io");
+        assert!(ConnectionSettings::parse(v.clone())
+            .unwrap()
+            .validated()
+            .is_ok());
+        v["starttls"] = json!(true);
+        assert!(ldap_err(v).contains("StartTLS"));
+    }
+
+    #[test]
+    fn ldap_ca_cert_must_be_pem() {
+        let mut v = ldap("openldap");
+        v["ca_cert"] = json!("nope");
+        assert!(ldap_err(v).contains("PEM"));
+        let mut v = ldap("openldap");
+        v["ca_cert"] = json!(TEST_CA);
+        assert!(ConnectionSettings::parse(v).unwrap().validated().is_ok());
+    }
+
+    #[test]
+    fn ldap_base_dn_required() {
+        let mut v = ldap("openldap");
+        v["user_base_dn"] = json!("  ");
+        assert!(ldap_err(v).contains("user_base_dn"));
+    }
+
+    #[test]
+    fn bind_password_is_a_secret() {
+        let s = Secrets::default().merged(Secrets {
+            bind_password: Some("pw".into()),
+            ..Secrets::default()
+        });
+        assert_eq!(s.bind_password.as_deref(), Some("pw"));
+        assert_eq!(s.names(), vec!["bind_password"]);
+    }
+
+    /// A self-signed certificate, only parsed.
+    const TEST_CA: &str = "-----BEGIN CERTIFICATE-----
+MIIBWDCB/qADAgECAhQQ5RP7JKWn7NDA7XTD/6N7tGfSmDAKBggqhkjOPQQDAjAS
+MRAwDgYDVQQDDAd0ZXN0LWNhMB4XDTI2MTAxODA4MjYyNFoXDTM2MTAxNTA4MjYy
+NFowEjEQMA4GA1UEAwwHdGVzdC1jYTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IA
+BJEdBYb3O2SIY1Q1nuU5rISO54FOFdzgVwVwwX846elmrTyXx8ZjpW1PGvtkNe9a
+GeQp3f600LmnLEujI23Tab6jMjAwMB0GA1UdDgQWBBT8HPMDhUd1Ta8bvIw6hGSy
+7qHZ8zAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0kAMEYCIQD/YEyMB+eb
+PlAblh0xJAueigN3uh1WTbSzJK377rmpagIhAJ2k+605oWL6MYNSvID6uUJRLVKg
+Z2xKO39S+JUEk2hA
+-----END CERTIFICATE-----";
 
     #[test]
     fn oidc_needs_https_except_on_loopback() {

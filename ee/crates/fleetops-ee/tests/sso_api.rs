@@ -121,17 +121,74 @@ async fn rejects_common_tenant() {
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
 }
 
+fn ldap(name: &str) -> Value {
+    json!({
+        "name": name,
+        "settings": {"kind": "ldap", "preset": "openldap", "url": "ldap://127.0.0.1:1",
+                     "bind_dn": "cn=admin,dc=acme,dc=io", "user_base_dn": "dc=acme,dc=io"},
+        "secrets": {"bind_password": "bind-pw"}
+    })
+}
+
 #[tokio::test]
-async fn ldap_kind_refused_for_now() {
+async fn second_ldap_connection_conflicts() {
     let (ee, admin) = licensed().await;
-    let r = create(
-        &ee,
+    let r = create(&ee, &admin, ldap("Directory")).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    assert!(!r.text.contains("bind-pw"), "{}", r.text);
+    assert_eq!(r.json()["secrets_set"], json!(["bind_password"]));
+    assert_eq!(r.json()["callback_url"], Value::Null);
+    let r = create(&ee, &admin, ldap("Another")).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+}
+
+#[tokio::test]
+async fn ldap_enable_needs_bind_password_when_bind_dn_set() {
+    let k = key();
+    // No public URL: LDAP doesn't need one.
+    let ee = ee_app(&k, None).await;
+    let admin = ee.admin().await;
+    ee.install(
         &admin,
-        json!({"name": "AD", "settings": {"kind": "ldap"}}),
+        &license(&k, now_unix() + 30 * DAY, None, &["audit_export"]),
     )
     .await;
-    assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    assert!(r.text.contains("later release"), "{}", r.text);
+    let mut v = ldap("Directory");
+    v["enabled"] = json!(true);
+    v["secrets"] = json!({});
+    let r = create(&ee, &admin, v.clone()).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+    assert!(r.text.contains("bind_password"), "{}", r.text);
+    v["secrets"] = json!({"bind_password": "bind-pw"});
+    let r = create(&ee, &admin, v).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+}
+
+#[tokio::test]
+async fn ldap_is_not_a_login_button_but_is_listed() {
+    let (ee, admin) = licensed().await;
+    let mut v = ldap("Corp directory");
+    v["enabled"] = json!(true);
+    create(&ee, &admin, v).await;
+    let r = ee.send("GET", "/api/v1/auth/providers", None, None).await;
+    assert_eq!(r.json()[0]["kind"], "ldap", "{}", r.text);
+    assert_eq!(r.json()[0]["name"], "Corp directory");
+}
+
+#[tokio::test]
+async fn start_refuses_ldap() {
+    let (ee, admin) = licensed().await;
+    let mut v = ldap("Directory");
+    v["enabled"] = json!(true);
+    let id = create(&ee, &admin, v).await.json()["id"].as_i64().unwrap();
+    let r = ee
+        .send("GET", &format!("/api/v1/ee/sso/{id}/start"), None, None)
+        .await;
+    assert_eq!(r.status, StatusCode::FOUND);
+    assert_eq!(
+        r.headers["location"].to_str().unwrap(),
+        "/login?sso_error=invalid"
+    );
 }
 
 #[tokio::test]

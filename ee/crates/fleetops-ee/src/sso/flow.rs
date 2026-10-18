@@ -166,6 +166,9 @@ async fn authorize_endpoint(rt: &Runtime, c: &Connection) -> Result<(String, Str
                 .authorization_endpoint,
             "openid profile email".into(),
         ),
+        ConnectionSettings::Ldap { .. } => {
+            return Err(Error::Invalid("LDAP signs in on the password form".into()))
+        }
     })
 }
 
@@ -177,7 +180,7 @@ pub fn issuer(rt: &Runtime, c: &Connection) -> String {
             format!("{}/{tenant}/v2.0", rt.endpoints.microsoft_login)
         }
         ConnectionSettings::Google { .. } => rt.endpoints.google_issuer.clone(),
-        ConnectionSettings::Github { .. } => String::new(),
+        ConnectionSettings::Github { .. } | ConnectionSettings::Ldap { .. } => String::new(),
     }
 }
 
@@ -187,6 +190,7 @@ fn client_id(c: &Connection) -> &str {
         | ConnectionSettings::Google { client_id, .. }
         | ConnectionSettings::Github { client_id, .. }
         | ConnectionSettings::Oidc { client_id, .. } => client_id,
+        ConnectionSettings::Ldap { .. } => "",
     }
 }
 
@@ -227,6 +231,9 @@ async fn start_inner(
     let c = db::get(s.store.pool(), id).await.map_err(invalid)?;
     if !c.enabled {
         return Err((Refusal::Disabled, "connection disabled".into()));
+    }
+    if !c.settings.is_redirect() {
+        return Err((Refusal::Invalid, "not a sign-in redirect connection".into()));
     }
     let callback = callback_url(s, id).ok_or((Refusal::Invalid, "no public URL".into()))?;
     let (auth, scopes) = authorize_endpoint(rt, &c).await.map_err(invalid)?;
@@ -388,6 +395,9 @@ async fn identify(
     verifier: &str,
 ) -> std::result::Result<Claims, (Refusal, String)> {
     let invalid = |e: Error| (Refusal::Invalid, e.to_string());
+    if !c.settings.is_redirect() {
+        return Err((Refusal::Invalid, "not a sign-in redirect connection".into()));
+    }
     let secrets = db::secrets(&s.store, c.id).await.map_err(invalid)?;
     let secret = secrets
         .client_secret
@@ -432,7 +442,7 @@ async fn identify(
         ConnectionSettings::Google { .. } => {
             super::google::identify(s, rt, c, &claims, &secrets).await
         }
-        ConnectionSettings::Github { .. } => unreachable!(),
+        ConnectionSettings::Github { .. } | ConnectionSettings::Ldap { .. } => unreachable!(),
     }
 }
 
