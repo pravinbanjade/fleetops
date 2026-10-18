@@ -41,6 +41,16 @@ jobs:
           web: "false"
       - run: make test-ee
 
+  ldap:
+    name: LDAP (OpenLDAP)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          web: "false"
+      - run: make test-ldap
+
   web:
     name: Web (typecheck, lint, test, API client drift)
     runs-on: ubuntu-latest

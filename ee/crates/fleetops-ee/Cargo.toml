@@ -10,6 +10,8 @@ publish = false
 # Trust the committed test key. Unit tests and the EE e2e suite only;
 # release builds never enable it.
 test-license-key = []
+# The OpenLDAP suite (make test-ldap).
+ldap-it = []
 
 [dependencies]
 fleetops-core.workspace = true
@@ -45,3 +47,7 @@ rand.workspace = true
 tempfile.workspace = true
 tower.workspace = true
 wiremock.workspace = true
+
+[[test]]
+name = "ldap_it"
+required-features = ["ldap-it"]

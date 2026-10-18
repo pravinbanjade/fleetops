@@ -1,0 +1,68 @@
+dn: ou=people,dc=fleetops,dc=test
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=more,ou=people,dc=fleetops,dc=test
+objectClass: organizationalUnit
+ou: more
+
+dn: ou=groups,dc=fleetops,dc=test
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=alice,ou=people,dc=fleetops,dc=test
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice
+sn: Liddell
+mail: alice@fleetops.test
+userPassword: alice-pw
+
+dn: uid=bob,ou=people,dc=fleetops,dc=test
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob
+sn: Builder
+userPassword: bob-pw
+
+dn: uid=carol,ou=people,dc=fleetops,dc=test
+objectClass: inetOrgPerson
+uid: carol
+cn: Carol
+sn: Danvers
+userPassword: carol-pw
+
+dn: uid=dup,ou=people,dc=fleetops,dc=test
+objectClass: inetOrgPerson
+uid: dup
+cn: Dup
+sn: One
+userPassword: dup-pw
+
+dn: uid=dup,ou=more,ou=people,dc=fleetops,dc=test
+objectClass: inetOrgPerson
+uid: dup
+cn: Dup
+sn: Two
+userPassword: dup-pw
+
+dn: cn=ops,ou=groups,dc=fleetops,dc=test
+objectClass: groupOfNames
+cn: ops
+member: uid=alice,ou=people,dc=fleetops,dc=test
+
+dn: cn=admins,ou=groups,dc=fleetops,dc=test
+objectClass: groupOfNames
+cn: admins
+member: uid=bob,ou=people,dc=fleetops,dc=test
+
+dn: cn=outer,ou=groups,dc=fleetops,dc=test
+objectClass: groupOfNames
+cn: outer
+member: cn=ops,ou=groups,dc=fleetops,dc=test
+
+dn: cn=devs,ou=groups,dc=fleetops,dc=test
+objectClass: posixGroup
+cn: devs
+gidNumber: 5000
+memberUid: carol
