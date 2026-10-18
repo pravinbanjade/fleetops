@@ -4,3 +4,4 @@
 
 pub mod db;
 pub mod hooks;
+pub mod targets;

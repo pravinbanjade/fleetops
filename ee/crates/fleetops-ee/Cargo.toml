@@ -12,6 +12,8 @@ publish = false
 test-license-key = []
 # The OpenLDAP suite (make test-ldap).
 ldap-it = []
+# The MinIO suite (make test-s3).
+s3-it = []
 
 [dependencies]
 fleetops-core.workspace = true
@@ -30,12 +32,14 @@ ldap3.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
+rusty-s3.workspace = true
 sha2.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 url.workspace = true
 utoipa.workspace = true
@@ -51,3 +55,7 @@ wiremock.workspace = true
 [[test]]
 name = "ldap_it"
 required-features = ["ldap-it"]
+
+[[test]]
+name = "s3_it"
+required-features = ["s3-it"]

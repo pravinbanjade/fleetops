@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap test-ee test-web-ee web-ee build-ee e2e-ee check-editions image-ee
+.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap minio-up test-s3 test-ee test-web-ee web-ee build-ee e2e-ee check-editions image-ee
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -134,6 +134,13 @@ ldap-up:
 
 test-ldap: ldap-up
 	FLEETOPS_LDAP_IT=ldap://127.0.0.1:3389 cargo test -p fleetops-ee --features ldap-it --test ldap_it
+
+# The MinIO container the S3 backup tests write to (127.0.0.1:9100).
+minio-up:
+	scripts/minio-up.sh
+
+test-s3: minio-up
+	FLEETOPS_S3_IT=http://127.0.0.1:9100 cargo test -p fleetops-ee --features s3-it --test s3_it
 
 # The Enterprise crates, and the server built with them.
 test-ee:
