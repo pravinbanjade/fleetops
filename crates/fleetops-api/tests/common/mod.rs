@@ -84,6 +84,25 @@ pub async fn app_with_extra_and(
     }
 }
 
+/// An app whose single sign-on hook is `x` instead of Community's.
+pub async fn app_with_external(x: Arc<dyn fleetops_core::external::ExternalAuth>) -> TestApp {
+    let store = Store::in_memory().await.unwrap();
+    let fake = FakeDocker::new();
+    let state = AppState::new(
+        store.clone(),
+        ApiConfig::default(),
+        Arc::new(FakeFactory(fake.clone())),
+    )
+    .with_external_auth(x);
+    let router = fleetops_api::app(state.clone(), Router::new());
+    TestApp {
+        router,
+        store,
+        state,
+        fake,
+    }
+}
+
 /// An app whose entitlements are `e` instead of Community.
 pub async fn app_entitled(e: Arc<dyn fleetops_core::edition::Entitlements>) -> TestApp {
     let store = Store::in_memory().await.unwrap();

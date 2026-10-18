@@ -42,6 +42,10 @@ pub struct User {
     pub role: Role,
     pub created_at: i64,
     pub updated_at: i64,
+    /// The single sign-on connection that manages this user (Enterprise);
+    /// filled by the users routes only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sso: Option<String>,
 }
 
 pub fn validate_username(name: &str) -> Result<()> {

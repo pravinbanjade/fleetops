@@ -279,6 +279,43 @@
         ]
       }
     },
+    "/api/v1/auth/providers": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Single sign-on providers for the login page",
+        "operationId": "getAuthProviders",
+        "responses": {
+          "200": {
+            "description": "Enabled providers; empty in Community",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/LoginProvider"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/api/v1/auth/sessions": {
       "get": {
         "tags": [
@@ -5708,6 +5745,9 @@
               }
             }
           },
+          "409": {
+            "description": "The user is managed by single sign-on"
+          },
           "default": {
             "description": "Error: `{code, message, request_id}`",
             "content": {
@@ -8421,6 +8461,27 @@
           "meta"
         ]
       },
+      "LoginProvider": {
+        "type": "object",
+        "description": "A \"Sign in with …\" button on the login page.",
+        "required": [
+          "id",
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "NameBody": {
         "type": "object",
         "required": [
@@ -9360,6 +9421,13 @@
           },
           "role": {
             "$ref": "#/components/schemas/Role"
+          },
+          "sso": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The single sign-on connection that manages this user (Enterprise);\nfilled by the users routes only."
           },
           "updated_at": {
             "type": "integer",

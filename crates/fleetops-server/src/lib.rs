@@ -20,6 +20,10 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         store.clone(),
         ApiConfig {
             hsts: config.hsts,
+            public_url: config
+                .public_url
+                .as_deref()
+                .map(|u| u.trim_end_matches('/').to_string()),
             kube_exec,
             helm: config.helm_binary.clone().map(|binary| {
                 Arc::new(fleetops_kube::helm::render::HelmCli {

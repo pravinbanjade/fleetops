@@ -31,7 +31,12 @@ pub struct UpdateUser {
     responses((status = 200, description = "All users", body = Vec<User>))
 )]
 pub async fn list(State(s): State<AppState>, _admin: AdminUser) -> ApiResult<Json<Vec<User>>> {
-    Ok(Json(s.store.list_users().await?))
+    let managed = s.external_auth.managed_users().await?;
+    let mut users = s.store.list_users().await?;
+    for u in &mut users {
+        u.sso = managed.get(&u.id).cloned();
+    }
+    Ok(Json(users))
 }
 
 #[utoipa::path(
@@ -86,7 +91,10 @@ pub async fn create(
     summary = "Change a user's role or password",
     params(("id" = i64, Path, description = "User id")),
     request_body = UpdateUser,
-    responses((status = 200, description = "Updated", body = User))
+    responses(
+        (status = 200, description = "Updated", body = User),
+        (status = 409, description = "The user is managed by single sign-on")
+    )
 )]
 pub async fn update(
     State(s): State<AppState>,
@@ -101,6 +109,9 @@ pub async fn update(
         validate_password(pw)?;
     }
     s.store.get_user(id).await?;
+    if s.external_auth.managed_users().await?.contains_key(&id) {
+        return Err(Error::Conflict("managed by single sign-on".into()).into());
+    }
     let now = now_unix();
     if let Some(role) = body.role {
         s.store.set_user_role(id, role, now).await?;

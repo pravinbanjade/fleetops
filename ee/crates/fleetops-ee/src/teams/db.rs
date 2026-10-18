@@ -205,6 +205,7 @@ pub async fn members(pool: &SqlitePool, team_id: i64) -> Result<Vec<User>> {
                 role: role.parse::<Role>()?,
                 created_at,
                 updated_at,
+                sso: None,
             })
         })
         .collect()

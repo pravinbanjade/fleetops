@@ -29,6 +29,7 @@ pub fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(auth::status))
         .routes(routes!(auth::setup))
         .routes(routes!(auth::login))
+        .routes(routes!(auth::providers))
         .routes(routes!(auth::logout))
         .routes(routes!(auth::me))
         .routes(routes!(auth::list_sessions))

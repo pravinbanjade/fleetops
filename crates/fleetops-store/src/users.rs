@@ -22,6 +22,7 @@ impl UserRow {
             role,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            sso: None,
         };
         Ok((user, self.password_hash))
     }

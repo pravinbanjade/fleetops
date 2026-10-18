@@ -5,6 +5,7 @@ pub mod docker;
 pub mod edition;
 pub mod env;
 pub mod error;
+pub mod external;
 pub mod helm;
 pub mod kube;
 pub mod perm;

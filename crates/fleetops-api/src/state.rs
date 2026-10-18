@@ -39,6 +39,9 @@ pub struct ApiConfig {
     pub kube_exec: fleetops_kube::exec_auth::ExecPolicy,
     /// Renders charts for install and upgrade (spec 3j §2); `None` turns them off.
     pub helm: Option<std::sync::Arc<dyn fleetops_kube::helm::render::ChartRenderer>>,
+    /// Where browsers reach this server (`FLEETOPS_PUBLIC_URL`), without a
+    /// trailing slash; sign-in redirects need it.
+    pub public_url: Option<String>,
 }
 
 impl Default for ApiConfig {
@@ -54,6 +57,7 @@ impl Default for ApiConfig {
             kube_watch_grace: Duration::from_secs(30),
             kube_exec: Default::default(),
             helm: None,
+            public_url: None,
         }
     }
 }
@@ -80,6 +84,8 @@ pub struct AppState {
     pub extra_grants: Arc<dyn fleetops_core::access::ExtraGrants>,
     /// Custom-role grants made to users; none in Community.
     pub custom_roles: Arc<dyn fleetops_core::access::CustomRoles>,
+    /// Single sign-on; local passwords only in Community.
+    pub external_auth: Arc<dyn fleetops_core::external::ExternalAuth>,
 }
 
 impl AppState {
@@ -99,6 +105,7 @@ impl AppState {
             entitlements: Arc::new(fleetops_core::edition::Community),
             extra_grants: Arc::new(fleetops_core::access::NoExtraGrants),
             custom_roles: Arc::new(fleetops_core::access::NoCustomRoles),
+            external_auth: Arc::new(fleetops_core::external::NoExternalAuth),
         }
     }
 
@@ -115,6 +122,11 @@ impl AppState {
 
     pub fn with_custom_roles(mut self, r: Arc<dyn fleetops_core::access::CustomRoles>) -> Self {
         self.custom_roles = r;
+        self
+    }
+
+    pub fn with_external_auth(mut self, a: Arc<dyn fleetops_core::external::ExternalAuth>) -> Self {
+        self.external_auth = a;
         self
     }
 

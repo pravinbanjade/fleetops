@@ -16,6 +16,7 @@ use axum::{
     Json,
 };
 use fleetops_core::{
+    external::LoginProvider,
     now_unix, user::PASSWORD_MAX, user::USERNAME_MAX, validate_password, validate_username, Error,
     User,
 };
@@ -101,7 +102,7 @@ pub async fn setup(
         "success",
     )
     .await;
-    start_session(&s, user, &meta, StatusCode::CREATED).await
+    start_session(&s, user, &meta, StatusCode::CREATED, SESSION_ABSOLUTE_SECS).await
 }
 
 #[utoipa::path(
@@ -127,16 +128,28 @@ pub async fn login(
     let key = limiter_key(&body.username, &meta.ip);
     s.limiter.try_acquire(&key, Instant::now())?;
 
+    // A local account whose password matches always wins, so a directory
+    // user can never shadow the break-glass admin (SSO spec, LDAP login).
     let verified = match s.store.find_credentials(&body.username).await? {
-        Some((user, hash)) => password::verify_password(body.password, hash)
-            .await
-            .then_some(user),
-        None => {
-            password::burn_verify(body.password).await;
+        Some((user, hash)) if s.external_auth.password_allowed(&user).await? => {
+            password::verify_password(body.password.clone(), hash)
+                .await
+                .then_some((user, SESSION_ABSOLUTE_SECS))
+        }
+        _ => {
+            password::burn_verify(body.password.clone()).await;
             None
         }
     };
-    let Some(user) = verified else {
+    let verified = match verified {
+        Some(v) => Some(v),
+        None => s
+            .external_auth
+            .directory_login(&body.username, &body.password)
+            .await?
+            .map(|(user, hours)| (user, hours.map_or(SESSION_ABSOLUTE_SECS, |h| h * 3600))),
+    };
+    let Some((user, lifetime)) = verified else {
         audit(&s, None, "auth.login", "user", &body.username, "failure").await;
         return Err(Error::Unauthorized("invalid username or password".into()).into());
     };
@@ -150,7 +163,20 @@ pub async fn login(
         "success",
     )
     .await;
-    start_session(&s, user, &meta, StatusCode::OK).await
+    start_session(&s, user, &meta, StatusCode::OK, lifetime).await
+}
+
+#[utoipa::path(
+    get,
+    path = "/auth/providers",
+    operation_id = "getAuthProviders",
+    tag = "auth",
+    summary = "Single sign-on providers for the login page",
+    security(()),
+    responses((status = 200, description = "Enabled providers; empty in Community", body = Vec<LoginProvider>))
+)]
+pub async fn providers(State(s): State<AppState>) -> ApiResult<Json<Vec<LoginProvider>>> {
+    Ok(Json(s.external_auth.providers().await?))
 }
 
 #[utoipa::path(
@@ -187,11 +213,14 @@ pub async fn me(cu: CurrentUser) -> Json<SessionInfo> {
     })
 }
 
-async fn start_session(
+/// Starts a session for `user` that ends `absolute_secs` from now at the
+/// latest, and sets its cookie.
+pub async fn start_session(
     s: &AppState,
     user: User,
     meta: &ClientMeta,
     status: StatusCode,
+    absolute_secs: i64,
 ) -> ApiResult<Response> {
     let session_token = token::generate_token();
     let csrf_token = token::generate_token();
@@ -202,7 +231,7 @@ async fn start_session(
             token_hash: &token::hash_token(&session_token),
             csrf_token: &csrf_token,
             now,
-            expires_at: now + SESSION_ABSOLUTE_SECS,
+            expires_at: now + absolute_secs,
             user_agent: meta.user_agent.as_deref(),
             ip: Some(&meta.ip),
         })
@@ -210,7 +239,7 @@ async fn start_session(
     let mut res = (status, Json(SessionInfo { user, csrf_token })).into_response();
     res.headers_mut().insert(
         SET_COOKIE,
-        session_cookie(&session_token, SESSION_ABSOLUTE_SECS, meta.tls),
+        session_cookie(&session_token, absolute_secs, meta.tls),
     );
     Ok(res)
 }

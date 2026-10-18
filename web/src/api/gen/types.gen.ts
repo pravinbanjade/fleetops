@@ -972,6 +972,15 @@ export type LogOptions = {
 
 export type LogStream = 'stdout' | 'stderr' | 'meta';
 
+/**
+ * A "Sign in with …" button on the login page.
+ */
+export type LoginProvider = {
+    id: number;
+    kind: string;
+    name: string;
+};
+
 export type NameBody = {
     name: string;
 };
@@ -1281,6 +1290,11 @@ export type User = {
     created_at: number;
     id: number;
     role: Role;
+    /**
+     * The single sign-on connection that manages this user (Enterprise);
+     * filled by the users routes only.
+     */
+    sso?: string | null;
     updated_at: number;
     username: string;
 };
@@ -1500,6 +1514,31 @@ export type ChangePasswordResponses = {
 };
 
 export type ChangePasswordResponse = ChangePasswordResponses[keyof ChangePasswordResponses];
+
+export type GetAuthProvidersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/auth/providers';
+};
+
+export type GetAuthProvidersErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetAuthProvidersError = GetAuthProvidersErrors[keyof GetAuthProvidersErrors];
+
+export type GetAuthProvidersResponses = {
+    /**
+     * Enabled providers; empty in Community
+     */
+    200: Array<LoginProvider>;
+};
+
+export type GetAuthProvidersResponse = GetAuthProvidersResponses[keyof GetAuthProvidersResponses];
 
 export type ListSessionsData = {
     body?: never;
@@ -4488,6 +4527,10 @@ export type UpdateUserData = {
 };
 
 export type UpdateUserErrors = {
+    /**
+     * The user is managed by single sign-on
+     */
+    409: unknown;
     /**
      * Error: `{code, message, request_id}`
      */

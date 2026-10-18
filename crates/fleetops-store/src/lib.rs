@@ -84,6 +84,11 @@ impl Store {
         &self.pool
     }
 
+    /// The box that seals stored secrets.
+    pub fn secrets(&self) -> &secrets::SecretBox {
+        &self.secrets
+    }
+
     /// Seals and opens credentials with `key` instead of the random
     /// per-process key every store starts with.
     pub fn with_secret_key(mut self, key: &secrets::SecretKey) -> Self {

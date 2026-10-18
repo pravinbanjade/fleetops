@@ -54,6 +54,10 @@ pub struct Config {
     #[cfg(feature = "enterprise")]
     #[arg(long, env = "FLEETOPS_LICENSE_FILE")]
     pub license_file: Option<PathBuf>,
+    /// Where browsers reach this server, e.g. `https://fleet.example.com`;
+    /// single sign-on redirects need it.
+    #[arg(long, env = "FLEETOPS_PUBLIC_URL")]
+    pub public_url: Option<String>,
     /// Print the OpenAPI document to stdout and exit without starting.
     #[arg(long)]
     pub openapi: bool,
