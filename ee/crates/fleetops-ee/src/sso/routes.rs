@@ -190,6 +190,7 @@ pub async fn get(
     responses((status = 200, description = "The connection", body = ConnectionView)))]
 pub async fn update(
     State(s): State<AppState>,
+    axum::Extension(rt): super::flow::Rt,
     AdminUser(admin): AdminUser,
     ApiPath(id): ApiPath<i64>,
     ApiJson(body): ApiJson<UpdateConnectionBody>,
@@ -227,6 +228,7 @@ pub async fn update(
         check_enable(&s, &secrets)?;
     }
     let c = db::update(&s.store, &c, &secrets, now_unix()).await?;
+    rt.oidc.forget();
     if old.enabled != c.enabled {
         let action = if c.enabled { "sso.connection.enable" } else { "sso.connection.disable" };
         audit(&s, admin.user.id, action, &c, json!({})).await;
@@ -417,4 +419,68 @@ pub async fn delete_mapping(
         }
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize, ToSchema, Default)]
+pub struct TestBody {
+    /// Google: also list this user's groups through the service account.
+    #[serde(default)]
+    pub email: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TestResult {
+    pub ok: bool,
+    pub detail: String,
+    /// The groups found for `email`, when asked.
+    pub groups: Option<Vec<String>>,
+}
+
+#[utoipa::path(post, path = "/ee/sso/connections/{id}/test", operation_id = "testSsoConnection", tag = "enterprise",
+    summary = "Check that FleetOps can reach the identity provider",
+    params(("id" = i64, Path, description = "Connection id")), request_body = TestBody,
+    responses((status = 200, description = "What the check found", body = TestResult)))]
+pub async fn test(
+    State(s): State<AppState>,
+    axum::Extension(rt): super::flow::Rt,
+    _a: AdminUser,
+    ApiPath(id): ApiPath<i64>,
+    ApiJson(body): ApiJson<TestBody>,
+) -> ApiResult<Json<TestResult>> {
+    let c = db::get(s.store.pool(), id).await?;
+    rt.oidc.forget();
+    let outcome: Result<(String, Option<Vec<String>>), Error> = async {
+        match &c.settings {
+            ConnectionSettings::Github { .. } => {
+                let api = super::github::api_base(&rt, &c);
+                let _: serde_json::Value = rt.oidc.get_json(&format!("{api}/meta"), None).await?;
+                Ok((format!("reached {api}"), None))
+            }
+            ConnectionSettings::Google { admin_email, .. } => {
+                let issuer = super::flow::issuer(&rt, &c);
+                rt.oidc.discover(&issuer).await?;
+                match (body.email.as_deref(), db::secrets(&s.store, id).await?.service_account_json, admin_email) {
+                    (Some(email), Some(key), Some(admin)) => {
+                        let g = super::google::groups(&rt, &key, admin, email).await?;
+                        Ok((format!("found {} groups for {email}", g.len()), Some(g)))
+                    }
+                    (Some(_), _, _) => Err(Error::Invalid(
+                        "save a service account key and admin email to read groups".into(),
+                    )),
+                    _ => Ok(("discovery and keys reachable".into(), None)),
+                }
+            }
+            _ => {
+                let issuer = super::flow::issuer(&rt, &c);
+                let d = rt.oidc.discover(&issuer).await?;
+                let _: serde_json::Value = rt.oidc.get_json(&d.jwks_uri, None).await?;
+                Ok((format!("discovered {}", d.issuer), None))
+            }
+        }
+    }
+    .await;
+    Ok(Json(match outcome {
+        Ok((detail, groups)) => TestResult { ok: true, detail, groups },
+        Err(e) => TestResult { ok: false, detail: e.to_string(), groups: None },
+    }))
 }
