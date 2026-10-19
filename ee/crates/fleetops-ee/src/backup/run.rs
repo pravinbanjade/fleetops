@@ -108,14 +108,22 @@ pub async fn run_once(s: &AppState, trigger: Trigger, by: Option<i64>) {
     let name = backup_name(started_at);
     let size = std::fs::metadata(&file).map(|m| m.len() as i64).ok();
     for t in &targets {
-        let r = send(s, t, &name, &file, started_at).await;
-        let err = r.err().map(|e| e.to_string());
+        // A failed clean-up still leaves a good backup, so it's a note on
+        // a successful run rather than a failure.
+        let (result, err) = match send(s, t, &name, &file, started_at).await {
+            Ok(None) => ("success", None),
+            Ok(Some(e)) => (
+                "success",
+                Some(format!("uploaded, but removing old backups failed: {e}")),
+            ),
+            Err(e) => ("failure", Some(e.to_string())),
+        };
         record(
             s,
             by,
             NewRun {
                 target: Some(t),
-                result: if err.is_none() { "success" } else { "failure" },
+                result,
                 file_name: Some(&name),
                 size,
                 error: err.as_deref(),
@@ -128,22 +136,27 @@ pub async fn run_once(s: &AppState, trigger: Trigger, by: Option<i64>) {
     let _ = std::fs::remove_file(&file);
 }
 
+/// Uploads the backup, then applies retention. `Ok(Some(_))` means the
+/// upload worked but retention didn't.
 async fn send(
     s: &AppState,
     t: &Target,
     name: &str,
     file: &std::path::Path,
     now: i64,
-) -> Result<()> {
+) -> Result<Option<Error>> {
     let secrets = db::target_secrets(&s.store, t.id).await?;
     let sink = sink(t, secrets, data_dir(s)?)?;
     sink.put(name, file).await?;
-    let keep = db::get_schedule(s.store.pool()).await?.retention;
-    let files = sink.list().await?;
-    for old in to_delete(&files, keep, now) {
-        if old != name {
-            sink.delete(&old).await?;
+    let retention = async {
+        let keep = db::get_schedule(s.store.pool()).await?.retention;
+        let files = sink.list().await?;
+        for old in to_delete(&files, keep, now) {
+            if old != name {
+                sink.delete(&old).await?;
+            }
         }
-    }
-    Ok(())
+        Ok(())
+    };
+    Ok(retention.await.err())
 }

@@ -455,6 +455,32 @@ async fn apply_pending_keeps_live_db_when_pending_is_bad() {
     assert_eq!(s.list_users().await.unwrap()[0].username, "old");
 }
 
+#[tokio::test]
+async fn apply_pending_prunes_rejected_to_three() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    live_db(&data, "old").await;
+    for _ in 0..5 {
+        std::fs::create_dir_all(data.join("restore-pending")).unwrap();
+        std::fs::write(data.join("restore-pending/fleetops.db"), vec![9u8; 5000]).unwrap();
+        assert!(matches!(
+            apply_pending(&data).await.unwrap(),
+            Pending::Rejected(_)
+        ));
+    }
+    let failed = std::fs::read_dir(&data)
+        .unwrap()
+        .filter(|e| {
+            let n = e.as_ref().unwrap().file_name();
+            n.to_string_lossy().starts_with("restore-failed-")
+        })
+        .count();
+    assert_eq!(failed, 3);
+    let s = Store::open(&data.join("fleetops.db")).await.unwrap();
+    assert_eq!(s.list_users().await.unwrap()[0].username, "old");
+}
+
 // ---- final-review fixes ----
 
 #[tokio::test]
