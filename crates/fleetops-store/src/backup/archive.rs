@@ -9,7 +9,9 @@ use crate::{db_err, Store};
 use fleetops_core::{Error, Result};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use sqlx::{sqlite::SqliteConnectOptions, ConnectOptions, Connection, SqliteConnection};
+use sqlx::{
+    sqlite::SqliteConnectOptions, AssertSqlSafe, ConnectOptions, Connection, SqliteConnection,
+};
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -117,7 +119,7 @@ async fn prepare_snapshot(path: &Path) -> Result<(BTreeMap<String, i64>, i64, Op
     let names = tables(&mut c).await?;
     for t in EXCLUDED_TABLES {
         if names.iter().any(|n| n == t) {
-            sqlx::query(&format!("DELETE FROM \"{t}\""))
+            sqlx::query(AssertSqlSafe(format!("DELETE FROM \"{t}\"")))
                 .execute(&mut c)
                 .await
                 .map_err(db_err)?;
@@ -132,7 +134,7 @@ async fn prepare_snapshot(path: &Path) -> Result<(BTreeMap<String, i64>, i64, Op
         .iter()
         .filter(|n| !EXCLUDED_TABLES.contains(&n.as_str()))
     {
-        let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM \"{t}\""))
+        let n: i64 = sqlx::query_scalar(AssertSqlSafe(format!("SELECT COUNT(*) FROM \"{t}\"")))
             .fetch_one(&mut c)
             .await
             .map_err(db_err)?;

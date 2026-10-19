@@ -1,6 +1,7 @@
 use crate::{db_err, Store};
 use fleetops_core::{Error, Result};
 use serde::Serialize;
+use sqlx::AssertSqlSafe;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow, ToSchema)]
@@ -28,16 +29,18 @@ impl Store {
     }
 
     pub async fn list_environments(&self) -> Result<Vec<EnvironmentRecord>> {
-        sqlx::query_as(&format!("SELECT {COLS} FROM environments ORDER BY id"))
-            .fetch_all(&self.pool)
-            .await
-            .map_err(db_err)
+        sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT {COLS} FROM environments ORDER BY id"
+        )))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)
     }
 
     pub async fn get_environment(&self, id: i64) -> Result<EnvironmentRecord> {
-        sqlx::query_as::<_, EnvironmentRecord>(&format!(
+        sqlx::query_as::<_, EnvironmentRecord>(AssertSqlSafe(format!(
             "SELECT {COLS} FROM environments WHERE id = ?"
-        ))
+        )))
         .bind(id)
         .fetch_optional(&self.pool)
         .await
@@ -52,9 +55,9 @@ impl Store {
         url: &str,
         now: i64,
     ) -> Result<EnvironmentRecord> {
-        sqlx::query_as::<_, EnvironmentRecord>(&format!(
+        sqlx::query_as::<_, EnvironmentRecord>(AssertSqlSafe(format!(
             "UPDATE environments SET name = ?, url = ?, updated_at = ? WHERE id = ? RETURNING {COLS}"
-        ))
+        )))
         .bind(name)
         .bind(url)
         .bind(now)
@@ -90,10 +93,10 @@ pub(crate) async fn insert_environment(
     url: &str,
     now: i64,
 ) -> Result<EnvironmentRecord> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(AssertSqlSafe(format!(
         "INSERT INTO environments (name, kind, url, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?) RETURNING {COLS}"
-    ))
+    )))
     .bind(name)
     .bind(kind)
     .bind(url)

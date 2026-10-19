@@ -12,7 +12,9 @@ use crate::{
     secrets::{SecretBox, SecretKey},
 };
 use fleetops_core::{Error, Result};
-use sqlx::{sqlite::SqliteConnectOptions, ConnectOptions, Connection, SqliteConnection};
+use sqlx::{
+    sqlite::SqliteConnectOptions, AssertSqlSafe, ConnectOptions, Connection, SqliteConnection,
+};
 use std::path::{Path, PathBuf};
 
 pub const PENDING_DIR: &str = "restore-pending";
@@ -78,9 +80,9 @@ pub(crate) async fn sealed_rows(
     if !cols.contains(cname) || !cols.contains(id) {
         return Err(damaged());
     }
-    sqlx::query_as(&format!(
+    sqlx::query_as(AssertSqlSafe(format!(
         "SELECT \"{id}\", \"{cname}\" FROM \"{t}\" WHERE \"{cname}\" IS NOT NULL"
-    ))
+    )))
     .fetch_all(&mut *c)
     .await
     .map_err(db_err)
@@ -104,9 +106,9 @@ pub async fn reseal(db: &Path, m: &Manifest, target: &SecretKey) -> Result<u64> 
         for (row, sealed) in rows {
             let aad = col.aad_for(row);
             let plain = from.open(&aad, &sealed).map_err(|_| bad())?;
-            sqlx::query(&format!(
+            sqlx::query(AssertSqlSafe(format!(
                 "UPDATE \"{t}\" SET \"{cname}\" = ? WHERE \"{id}\" = ?"
-            ))
+            )))
             .bind(to.seal(&aad, &plain))
             .bind(row)
             .execute(&mut *tx)

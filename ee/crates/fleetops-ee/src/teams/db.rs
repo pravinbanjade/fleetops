@@ -2,7 +2,7 @@
 
 use fleetops_core::access::{CustomRef, EnvRole, Grant};
 use fleetops_core::{Error, Result, Role, User};
-use sqlx::SqlitePool;
+use sqlx::{AssertSqlSafe, SqlitePool};
 use std::collections::BTreeSet;
 
 fn db_err(e: sqlx::Error) -> Error {
@@ -109,10 +109,10 @@ pub async fn create(
     description: Option<&str>,
     now: i64,
 ) -> Result<TeamRecord> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(AssertSqlSafe(format!(
         "INSERT INTO ee_teams (name, description, created_at, updated_at)
          VALUES (?, ?, ?, ?) RETURNING {TEAM_COLS}"
-    ))
+    )))
     .bind(name)
     .bind(description)
     .bind(now)
@@ -147,12 +147,14 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<(TeamRecord, i64, i64)>> {
 }
 
 pub async fn get(pool: &SqlitePool, id: i64) -> Result<TeamRecord> {
-    sqlx::query_as(&format!("SELECT {TEAM_COLS} FROM ee_teams WHERE id = ?"))
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(db_err)?
-        .ok_or_else(|| Error::NotFound(format!("team {id}")))
+    sqlx::query_as(AssertSqlSafe(format!(
+        "SELECT {TEAM_COLS} FROM ee_teams WHERE id = ?"
+    )))
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(db_err)?
+    .ok_or_else(|| Error::NotFound(format!("team {id}")))
 }
 
 pub async fn update(
@@ -162,10 +164,10 @@ pub async fn update(
     description: Option<&str>,
     now: i64,
 ) -> Result<TeamRecord> {
-    sqlx::query_as(&format!(
+    sqlx::query_as(AssertSqlSafe(format!(
         "UPDATE ee_teams SET name = ?, description = ?, updated_at = ?
          WHERE id = ? RETURNING {TEAM_COLS}"
-    ))
+    )))
     .bind(name)
     .bind(description)
     .bind(now)
@@ -254,9 +256,9 @@ pub async fn remove_member(pool: &SqlitePool, team_id: i64, user_id: i64) -> Res
 
 /// The team's grants, by environment name.
 pub async fn bindings(pool: &SqlitePool, team_id: i64) -> Result<Vec<TeamBinding>> {
-    sqlx::query_as::<_, BindingRow>(&format!(
+    sqlx::query_as::<_, BindingRow>(AssertSqlSafe(format!(
         "{BINDING_SELECT} WHERE b.team_id = ? ORDER BY e.name"
-    ))
+    )))
     .bind(team_id)
     .fetch_all(pool)
     .await
@@ -267,9 +269,9 @@ pub async fn bindings(pool: &SqlitePool, team_id: i64) -> Result<Vec<TeamBinding
 }
 
 pub async fn binding(pool: &SqlitePool, team_id: i64, env_id: i64) -> Result<Option<TeamBinding>> {
-    sqlx::query_as::<_, BindingRow>(&format!(
+    sqlx::query_as::<_, BindingRow>(AssertSqlSafe(format!(
         "{BINDING_SELECT} WHERE b.team_id = ? AND b.environment_id = ?"
-    ))
+    )))
     .bind(team_id)
     .bind(env_id)
     .fetch_optional(pool)
@@ -361,9 +363,9 @@ pub async fn set_custom_binding(
 pub async fn delete_binding(pool: &SqlitePool, team_id: i64, env_id: i64) -> Result<bool> {
     let mut n = 0;
     for table in ["ee_team_bindings", "ee_team_role_bindings"] {
-        n += sqlx::query(&format!(
+        n += sqlx::query(AssertSqlSafe(format!(
             "DELETE FROM {table} WHERE team_id = ? AND environment_id = ?"
-        ))
+        )))
         .bind(team_id)
         .bind(env_id)
         .execute(pool)
@@ -376,15 +378,16 @@ pub async fn delete_binding(pool: &SqlitePool, team_id: i64, env_id: i64) -> Res
 
 /// Every team with a grant on `env_id`, by name, with the grant.
 pub async fn env_teams(pool: &SqlitePool, env_id: i64) -> Result<Vec<(TeamRecord, TeamBinding)>> {
-    let bindings: Vec<TeamBinding> =
-        sqlx::query_as::<_, BindingRow>(&format!("{BINDING_SELECT} WHERE b.environment_id = ?"))
-            .bind(env_id)
-            .fetch_all(pool)
-            .await
-            .map_err(db_err)?
-            .into_iter()
-            .map(BindingRow::into_binding)
-            .collect::<Result<_>>()?;
+    let bindings: Vec<TeamBinding> = sqlx::query_as::<_, BindingRow>(AssertSqlSafe(format!(
+        "{BINDING_SELECT} WHERE b.environment_id = ?"
+    )))
+    .bind(env_id)
+    .fetch_all(pool)
+    .await
+    .map_err(db_err)?
+    .into_iter()
+    .map(BindingRow::into_binding)
+    .collect::<Result<_>>()?;
     let mut out = Vec::new();
     for b in bindings {
         out.push((get(pool, b.team_id).await?, b));

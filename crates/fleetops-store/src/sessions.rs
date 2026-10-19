@@ -1,5 +1,6 @@
 use crate::{db_err, Store};
 use fleetops_core::Result;
+use sqlx::AssertSqlSafe;
 
 pub struct NewSession<'a> {
     pub user_id: i64,
@@ -51,11 +52,13 @@ impl Store {
     }
 
     pub async fn find_session(&self, token_hash: &str) -> Result<Option<SessionRecord>> {
-        sqlx::query_as(&format!("SELECT {COLS} FROM sessions WHERE token_hash = ?"))
-            .bind(token_hash)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(db_err)
+        sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT {COLS} FROM sessions WHERE token_hash = ?"
+        )))
+        .bind(token_hash)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_err)
     }
 
     pub async fn touch_session(&self, id: i64, now: i64) -> Result<()> {
@@ -69,9 +72,9 @@ impl Store {
     }
 
     pub async fn list_sessions(&self, user_id: i64) -> Result<Vec<SessionRecord>> {
-        sqlx::query_as(&format!(
+        sqlx::query_as(AssertSqlSafe(format!(
             "SELECT {COLS} FROM sessions WHERE user_id = ? ORDER BY last_seen_at DESC, id DESC"
-        ))
+        )))
         .bind(user_id)
         .fetch_all(&self.pool)
         .await

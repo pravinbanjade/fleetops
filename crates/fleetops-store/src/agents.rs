@@ -4,6 +4,7 @@
 use crate::{db_err, EnvironmentRecord, Store};
 use fleetops_core::{Error, Result};
 use serde::Serialize;
+use sqlx::AssertSqlSafe;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow, ToSchema)]
@@ -190,9 +191,9 @@ impl Store {
     }
 
     pub async fn get_agent(&self, env_id: i64) -> Result<Option<AgentRecord>> {
-        sqlx::query_as(&format!(
+        sqlx::query_as(AssertSqlSafe(format!(
             "SELECT {AGENT_COLS} FROM agent_credentials WHERE environment_id = ?"
-        ))
+        )))
         .bind(env_id)
         .fetch_optional(&self.pool)
         .await
@@ -200,9 +201,9 @@ impl Store {
     }
 
     pub async fn list_agents(&self) -> Result<Vec<AgentRecord>> {
-        sqlx::query_as(&format!(
+        sqlx::query_as(AssertSqlSafe(format!(
             "SELECT {AGENT_COLS} FROM agent_credentials ORDER BY environment_id"
-        ))
+        )))
         .fetch_all(&self.pool)
         .await
         .map_err(db_err)

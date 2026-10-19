@@ -3,7 +3,7 @@
 use super::model::{ConnectionSettings, Secrets};
 use fleetops_core::{Error, Result};
 use fleetops_store::Store;
-use sqlx::SqlitePool;
+use sqlx::{AssertSqlSafe, SqlitePool};
 
 pub(crate) fn db_err(e: sqlx::Error) -> Error {
     Error::Internal(format!("database: {e}"))
@@ -113,9 +113,9 @@ fn seal(store: &Store, id: i64, s: &Secrets) -> Result<String> {
 }
 
 pub async fn list(pool: &SqlitePool) -> Result<Vec<Connection>> {
-    sqlx::query_as::<_, ConnectionRow>(&format!(
+    sqlx::query_as::<_, ConnectionRow>(AssertSqlSafe(format!(
         "SELECT {COLS} FROM ee_sso_connections ORDER BY name"
-    ))
+    )))
     .fetch_all(pool)
     .await
     .map_err(db_err)?
@@ -125,9 +125,9 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Connection>> {
 }
 
 pub async fn get(pool: &SqlitePool, id: i64) -> Result<Connection> {
-    sqlx::query_as::<_, ConnectionRow>(&format!(
+    sqlx::query_as::<_, ConnectionRow>(AssertSqlSafe(format!(
         "SELECT {COLS} FROM ee_sso_connections WHERE id = ?"
-    ))
+    )))
     .bind(id)
     .fetch_optional(pool)
     .await

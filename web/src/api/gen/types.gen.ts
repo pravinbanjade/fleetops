@@ -96,7 +96,7 @@ export type ApplyError = {
  * What happened to one document of an apply or edit.
  */
 export type ApplyResult = {
-    action?: null | ApplyAction;
+    action?: ApplyAction | null;
     /**
      * The object as written (or as it would be, for a dry run).
      */
@@ -106,7 +106,7 @@ export type ApplyResult = {
      * The live object before the write, cleaned and masked; `None` when created.
      */
     before?: string | null;
-    error?: null | ApplyError;
+    error?: ApplyError | null;
     /**
      * Position among the submitted non-empty documents, from 0.
      */
@@ -401,7 +401,7 @@ export type CreateBody = ContainerSpec & {
 };
 
 export type CreateEnv = {
-    access?: null | KubeAccess;
+    access?: KubeAccess | null;
     /**
      * kube-config: the context to use; default the current one.
      */
@@ -440,7 +440,7 @@ export type Created = {
  * A newly created environment; an agent one carries its enrollment once.
  */
 export type CreatedEnv = EnvironmentRecord & {
-    enrollment?: null | Enrollment;
+    enrollment?: Enrollment | null;
 };
 
 export type CreatedNetwork = {
@@ -584,9 +584,9 @@ export type EnvVersion = (EngineVersion & {
  * An environment as listed: agent environments carry their agent's state.
  */
 export type EnvView = EnvironmentRecord & {
-    access?: null | CallerAccess;
-    agent?: null | AgentView;
-    kube?: null | KubeconfigSummary;
+    access?: CallerAccess | null;
+    agent?: AgentView | null;
+    kube?: KubeconfigSummary | null;
 };
 
 export type EnvironmentRecord = {
@@ -678,7 +678,7 @@ export type HelmObjectChange = {
      */
     before?: string | null;
     change: HelmChange;
-    error?: null | ApplyError;
+    error?: ApplyError | null;
     kind: string;
     name: string;
     namespace?: string | null;
@@ -689,7 +689,7 @@ export type HelmObjectChange = {
  */
 export type HelmPlan = {
     changes: Array<HelmObjectChange>;
-    chart?: null | ChartMeta;
+    chart?: ChartMeta | null;
     /**
      * The latest revision this was computed against; a commit sends it
      * back as `expected_current`.
@@ -892,7 +892,7 @@ export type KubeObject = {
  */
 export type KubeRef = {
     kind: string;
-    link?: null | KubeKind;
+    link?: KubeKind | null;
     name: string;
 };
 
@@ -1117,7 +1117,7 @@ export type RecreateResult = {
  * One revision in full, masked.
  */
 export type ReleaseDetail = {
-    chart_source?: null | ChartRef;
+    chart_source?: ChartRef | null;
     description: string;
     /**
      * Values and notes were left out: the caller's role lacks Reveal on
@@ -1198,7 +1198,7 @@ export type ServerMsg = {
     message?: string | null;
     reason: string;
     sub: number;
-    task?: null | TaskInfo;
+    task?: TaskInfo | null;
     type: 'end';
 } | {
     code: string;
@@ -1236,7 +1236,7 @@ export type SetAccess = {
      * Kubernetes only; omit for the whole environment.
      */
     namespaces?: Array<string> | null;
-    role?: null | EnvRole;
+    role?: EnvRole | null;
     role_id?: number | null;
 };
 
@@ -1332,7 +1332,7 @@ export type UpdateEnv = {
 
 export type UpdateUser = {
     password?: string | null;
-    role?: null | Role;
+    role?: Role | null;
 };
 
 export type UpgradeBody = {

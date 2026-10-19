@@ -3,7 +3,7 @@
 use fleetops_core::access::{CustomRef, Grant};
 use fleetops_core::perm::PermSet;
 use fleetops_core::{Error, Result};
-use sqlx::SqlitePool;
+use sqlx::{AssertSqlSafe, SqlitePool};
 use std::collections::BTreeSet;
 
 fn db_err(e: sqlx::Error) -> Error {
@@ -78,10 +78,10 @@ pub async fn create(
     perms: PermSet,
     now: i64,
 ) -> Result<RoleRecord> {
-    sqlx::query_as::<_, RoleRow>(&format!(
+    sqlx::query_as::<_, RoleRow>(AssertSqlSafe(format!(
         "INSERT INTO ee_roles (name, description, permissions, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?) RETURNING {COLS}"
-    ))
+    )))
     .bind(name)
     .bind(description)
     .bind(encode_perms(perms))
@@ -94,13 +94,15 @@ pub async fn create(
 }
 
 pub async fn get(pool: &SqlitePool, id: i64) -> Result<RoleRecord> {
-    sqlx::query_as::<_, RoleRow>(&format!("SELECT {COLS} FROM ee_roles WHERE id = ?"))
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .map_err(db_err)?
-        .ok_or_else(|| Error::NotFound(format!("role {id}")))?
-        .into_record()
+    sqlx::query_as::<_, RoleRow>(AssertSqlSafe(format!(
+        "SELECT {COLS} FROM ee_roles WHERE id = ?"
+    )))
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .map_err(db_err)?
+    .ok_or_else(|| Error::NotFound(format!("role {id}")))?
+    .into_record()
 }
 
 /// Every role, by name, with how many users and teams hold it.
@@ -139,10 +141,10 @@ pub async fn update(
     let name = name.unwrap_or(&old.name);
     let description = description.unwrap_or(old.description.as_deref());
     let perms = perms.unwrap_or(old.perms);
-    sqlx::query_as::<_, RoleRow>(&format!(
+    sqlx::query_as::<_, RoleRow>(AssertSqlSafe(format!(
         "UPDATE ee_roles SET name = ?, description = ?, permissions = ?, updated_at = ?
          WHERE id = ? RETURNING {COLS}"
-    ))
+    )))
     .bind(name)
     .bind(description)
     .bind(encode_perms(perms))
@@ -159,12 +161,14 @@ pub async fn delete(pool: &SqlitePool, id: i64) -> Result<u64> {
     get(pool, id).await?;
     let mut n = 0;
     for table in ["ee_user_role_bindings", "ee_team_role_bindings"] {
-        n += sqlx::query(&format!("DELETE FROM {table} WHERE role_id = ?"))
-            .bind(id)
-            .execute(pool)
-            .await
-            .map_err(db_err)?
-            .rows_affected();
+        n += sqlx::query(AssertSqlSafe(format!(
+            "DELETE FROM {table} WHERE role_id = ?"
+        )))
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(db_err)?
+        .rows_affected();
     }
     sqlx::query("DELETE FROM ee_roles WHERE id = ?")
         .bind(id)
@@ -214,9 +218,9 @@ fn direct_grant(r: &DirectRow) -> Result<Grant> {
 
 /// The custom grant straight to `user_id` on `env_id`, if any.
 pub async fn direct(pool: &SqlitePool, user_id: i64, env_id: i64) -> Result<Option<Grant>> {
-    let row: Option<DirectRow> = sqlx::query_as(&format!(
+    let row: Option<DirectRow> = sqlx::query_as(AssertSqlSafe(format!(
         "{DIRECT} WHERE b.user_id = ? AND b.environment_id = ?"
-    ))
+    )))
     .bind(user_id)
     .bind(env_id)
     .fetch_optional(pool)
@@ -227,21 +231,24 @@ pub async fn direct(pool: &SqlitePool, user_id: i64, env_id: i64) -> Result<Opti
 
 /// `(environment id, grant)` for each custom grant straight to `user_id`.
 pub async fn user_direct(pool: &SqlitePool, user_id: i64) -> Result<Vec<(i64, Grant)>> {
-    let rows: Vec<DirectRow> = sqlx::query_as(&format!("{DIRECT} WHERE b.user_id = ?"))
-        .bind(user_id)
-        .fetch_all(pool)
-        .await
-        .map_err(db_err)?;
+    let rows: Vec<DirectRow> =
+        sqlx::query_as(AssertSqlSafe(format!("{DIRECT} WHERE b.user_id = ?")))
+            .bind(user_id)
+            .fetch_all(pool)
+            .await
+            .map_err(db_err)?;
     rows.iter().map(|r| Ok((r.1, direct_grant(r)?))).collect()
 }
 
 /// `(user id, grant)` for each custom grant straight to a user on `env_id`.
 pub async fn env_direct(pool: &SqlitePool, env_id: i64) -> Result<Vec<(i64, Grant)>> {
-    let rows: Vec<DirectRow> = sqlx::query_as(&format!("{DIRECT} WHERE b.environment_id = ?"))
-        .bind(env_id)
-        .fetch_all(pool)
-        .await
-        .map_err(db_err)?;
+    let rows: Vec<DirectRow> = sqlx::query_as(AssertSqlSafe(format!(
+        "{DIRECT} WHERE b.environment_id = ?"
+    )))
+    .bind(env_id)
+    .fetch_all(pool)
+    .await
+    .map_err(db_err)?;
     rows.iter().map(|r| Ok((r.0, direct_grant(r)?))).collect()
 }
 
