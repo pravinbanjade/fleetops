@@ -15,7 +15,7 @@ It is an open-source alternative to Portainer: roles, Kubernetes namespace scopi
 ## Why FleetOps
 
 - **Live by default.** Lists and detail pages update from Docker events and Kubernetes watches. There is no polling and no refresh button, and when live updates stop the page says so instead of showing stale data as current.
-- **Small and fast.** One static binary of about 17 MB, or a distroless image. CI checks that idle memory stays under 50 MiB on a host with 50 containers.
+- **Small and fast.** One static binary of about 34 MB, or a distroless image. CI checks that idle memory stays under 50 MiB on a host with 50 containers.
 - **Built for incidents.** A virtualized log viewer that handles 200k lines with search and ANSI colour, and a terminal that never silently starts a new shell. Every exec and every change is audited.
 - **Access control included.** Per-environment viewer and operator roles, namespace scoping on clusters, and an audit log are free and Apache-2.0.
 - **No telemetry.** FleetOps never phones home.
@@ -143,7 +143,7 @@ With an Enterprise license, FleetOps also backs up daily to S3-compatible storag
 | Scheduled backups (S3, local directory) | | ✓ |
 | API tokens | | planned |
 
-The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license may cap the number of users: past the cap no new users can be created, and existing users keep working.
+The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license covers a number of nodes: each Docker or Podman host is one, and a Kubernetes cluster counts its nodes. At the limit, new environments are refused; a cluster that grows past it only warns admins. Users are never limited.
 
 Teams come with any Enterprise license: add a user to a team in **Admin → Teams** and they get its environment access, alongside their own. Each grant a user holds, direct or through a team, is checked on its own, so Operator on one namespace plus Viewer on the whole cluster is Operator on that namespace and Viewer everywhere else.
 
@@ -217,7 +217,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 **Next:**
 - **Stacks and GitOps:** Compose authoring, a diff before deploy, rollback, and git-backed stacks synced by webhook or polling.
 - **Port-forward:** reach a pod's port through FleetOps.
-- **Enterprise:** API tokens, backup and restore, SIEM forwarding and long audit retention.
+- **Enterprise:** API tokens, SIEM forwarding and long audit retention.
 
 ## Documentation
 
