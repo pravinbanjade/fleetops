@@ -6444,11 +6444,11 @@
           "action": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ApplyAction",
                 "description": "`None` when the document failed."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -6472,10 +6472,10 @@
           "error": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ApplyError"
               },
               {
-                "$ref": "#/components/schemas/ApplyError"
+                "type": "null"
               }
             ]
           },
@@ -7248,11 +7248,11 @@
           "access": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/KubeAccess",
                 "description": "kube-agent: what the agent's ClusterRole allows; default `standard`."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -7334,10 +7334,10 @@
               "enrollment": {
                 "oneOf": [
                   {
-                    "type": "null"
+                    "$ref": "#/components/schemas/Enrollment"
                   },
                   {
-                    "$ref": "#/components/schemas/Enrollment"
+                    "type": "null"
                   }
                 ]
               }
@@ -7754,32 +7754,32 @@
               "access": {
                 "oneOf": [
                   {
-                    "type": "null"
-                  },
-                  {
                     "$ref": "#/components/schemas/CallerAccess",
                     "description": "The caller's access here (admins: everything on the whole environment)."
+                  },
+                  {
+                    "type": "null"
                   }
                 ]
               },
               "agent": {
                 "oneOf": [
                   {
-                    "type": "null"
+                    "$ref": "#/components/schemas/AgentView"
                   },
                   {
-                    "$ref": "#/components/schemas/AgentView"
+                    "type": "null"
                   }
                 ]
               },
               "kube": {
                 "oneOf": [
                   {
-                    "type": "null"
-                  },
-                  {
                     "$ref": "#/components/schemas/KubeconfigSummary",
                     "description": "What may be shown of a stored kubeconfig (kube-config environments)."
+                  },
+                  {
+                    "type": "null"
                   }
                 ]
               }
@@ -7992,10 +7992,10 @@
           "error": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ApplyError"
               },
               {
-                "$ref": "#/components/schemas/ApplyError"
+                "type": "null"
               }
             ]
           },
@@ -8031,10 +8031,10 @@
           "chart": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/ChartMeta"
               },
               {
-                "$ref": "#/components/schemas/ChartMeta"
+                "type": "null"
               }
             ]
           },
@@ -8532,10 +8532,10 @@
           "link": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/KubeKind"
               },
               {
-                "$ref": "#/components/schemas/KubeKind"
+                "type": "null"
               }
             ]
           },
@@ -9096,11 +9096,11 @@
           "chart_source": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ChartRef",
                 "description": "Where FleetOps last installed or upgraded the chart from (spec 3j §5)."
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -9308,10 +9308,10 @@
               "task": {
                 "oneOf": [
                   {
-                    "type": "null"
+                    "$ref": "#/components/schemas/TaskInfo"
                   },
                   {
-                    "$ref": "#/components/schemas/TaskInfo"
+                    "type": "null"
                   }
                 ]
               },
@@ -9470,10 +9470,10 @@
           "role": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/EnvRole"
               },
               {
-                "$ref": "#/components/schemas/EnvRole"
+                "type": "null"
               }
             ]
           },
@@ -9741,10 +9741,10 @@
           "role": {
             "oneOf": [
               {
-                "type": "null"
+                "$ref": "#/components/schemas/Role"
               },
               {
-                "$ref": "#/components/schemas/Role"
+                "type": "null"
               }
             ]
           }

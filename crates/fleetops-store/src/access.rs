@@ -1,6 +1,7 @@
 use crate::{db_err, Store};
 use fleetops_core::access::{EnvRole, Grant};
 use fleetops_core::{Error, Result};
+use sqlx::AssertSqlSafe;
 use std::collections::{BTreeSet, HashMap};
 
 /// One user's grant on one environment, with the names a page shows.
@@ -128,9 +129,9 @@ impl Store {
         .execute(&self.pool)
         .await
         .map_err(db_err)?;
-        sqlx::query_as::<_, Row>(&format!(
+        sqlx::query_as::<_, Row>(AssertSqlSafe(format!(
             "{SELECT} WHERE b.user_id = ? AND b.environment_id = ?"
-        ))
+        )))
         .bind(user_id)
         .bind(env_id)
         .fetch_one(&self.pool)
@@ -150,20 +151,22 @@ impl Store {
     }
 
     pub async fn user_bindings(&self, user_id: i64) -> Result<Vec<BindingRecord>> {
-        sqlx::query_as::<_, Row>(&format!("{SELECT} WHERE b.user_id = ? ORDER BY e.id"))
-            .bind(user_id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(db_err)?
-            .into_iter()
-            .map(Row::into_record)
-            .collect()
+        sqlx::query_as::<_, Row>(AssertSqlSafe(format!(
+            "{SELECT} WHERE b.user_id = ? ORDER BY e.id"
+        )))
+        .bind(user_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?
+        .into_iter()
+        .map(Row::into_record)
+        .collect()
     }
 
     pub async fn env_bindings(&self, env_id: i64) -> Result<Vec<BindingRecord>> {
-        sqlx::query_as::<_, Row>(&format!(
+        sqlx::query_as::<_, Row>(AssertSqlSafe(format!(
             "{SELECT} WHERE b.environment_id = ? ORDER BY u.username COLLATE NOCASE"
-        ))
+        )))
         .bind(env_id)
         .fetch_all(&self.pool)
         .await

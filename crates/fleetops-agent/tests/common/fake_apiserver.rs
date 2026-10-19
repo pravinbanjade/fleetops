@@ -134,7 +134,7 @@ pub async fn start() -> FakeApi {
         rcgen::generate_simple_self_signed(vec!["127.0.0.1".into(), "localhost".into()]).unwrap();
     std::fs::write(dir.path().join("ca.crt"), cert.cert.pem()).unwrap();
     std::fs::write(dir.path().join("token"), "good-token").unwrap();
-    let key = rustls::pki_types::PrivateKeyDer::Pkcs8(cert.key_pair.serialize_der().into());
+    let key = rustls::pki_types::PrivateKeyDer::Pkcs8(cert.signing_key.serialize_der().into());
     let tls = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(vec![cert.cert.der().clone()], key)

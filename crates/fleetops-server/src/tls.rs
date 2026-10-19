@@ -41,7 +41,7 @@ pub fn generate_self_signed(cert: &Path, key: &Path) -> anyhow::Result<()> {
     let generated =
         rcgen::generate_simple_self_signed(vec!["localhost".to_string(), "fleetops".to_string()])?;
     fs::write(cert, generated.cert.pem())?;
-    write_private(key, generated.key_pair.serialize_pem().as_bytes())?;
+    write_private(key, generated.signing_key.serialize_pem().as_bytes())?;
     Ok(())
 }
 

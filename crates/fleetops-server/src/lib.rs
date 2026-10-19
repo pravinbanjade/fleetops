@@ -156,7 +156,7 @@ async fn serve(config: &Config, app: Router) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn shutdown_on_signal(handle: axum_server::Handle) {
+async fn shutdown_on_signal(handle: axum_server::Handle<SocketAddr>) {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };

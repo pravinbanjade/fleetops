@@ -70,10 +70,10 @@ async fn hooks_list_every_sealed_ee_column() {
     assert_eq!(cols.len(), 3);
     let boxed: &SecretBox = store.secrets();
     for col in cols {
-        let rows: Vec<(i64, String)> = sqlx::query_as(&format!(
+        let rows: Vec<(i64, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT {}, {} FROM {} WHERE {} IS NOT NULL",
             col.id_column, col.column, col.table, col.column
-        ))
+        )))
         .fetch_all(store.pool())
         .await
         .unwrap();

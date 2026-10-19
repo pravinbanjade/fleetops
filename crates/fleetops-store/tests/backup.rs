@@ -24,10 +24,10 @@ async fn sealed_aad_matches_credentials() {
         .await
         .unwrap();
     let col = &community_sealed()[0];
-    let sealed: String = sqlx::query_scalar(&format!(
+    let sealed: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT {} FROM {} WHERE {} = ?",
         col.column, col.table, col.id_column
-    ))
+    )))
     .bind(rec.id)
     .fetch_one(store.pool())
     .await

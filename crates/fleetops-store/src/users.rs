@@ -1,5 +1,6 @@
 use crate::{db_err, Store};
 use fleetops_core::{Error, Result, Role, User};
+use sqlx::AssertSqlSafe;
 
 const COLS: &str = "id, username, password_hash, role, created_at, updated_at";
 
@@ -41,10 +42,10 @@ impl Store {
         now: i64,
     ) -> Result<User> {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
-        let row = sqlx::query_as::<_, UserRow>(&format!(
+        let row = sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!(
             "INSERT INTO users (username, password_hash, role, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?) RETURNING {COLS}"
-        ))
+        )))
         .bind(username)
         .bind(password_hash)
         .bind(role.as_str())
@@ -66,11 +67,11 @@ impl Store {
         now: i64,
     ) -> Result<User> {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
-        let row = sqlx::query_as::<_, UserRow>(&format!(
+        let row = sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!(
             "INSERT INTO users (username, password_hash, role, created_at, updated_at)
              SELECT ?, ?, 'admin', ?, ? WHERE NOT EXISTS (SELECT 1 FROM users)
              RETURNING {COLS}"
-        ))
+        )))
         .bind(username)
         .bind(password_hash)
         .bind(now)
@@ -93,33 +94,38 @@ impl Store {
     }
 
     pub async fn find_credentials(&self, username: &str) -> Result<Option<(User, String)>> {
-        let row =
-            sqlx::query_as::<_, UserRow>(&format!("SELECT {COLS} FROM users WHERE username = ?"))
-                .bind(username)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(db_err)?;
+        let row = sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!(
+            "SELECT {COLS} FROM users WHERE username = ?"
+        )))
+        .bind(username)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_err)?;
         row.map(UserRow::into_parts).transpose()
     }
 
     pub async fn get_user(&self, id: i64) -> Result<User> {
-        let row = sqlx::query_as::<_, UserRow>(&format!("SELECT {COLS} FROM users WHERE id = ?"))
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(db_err)?;
+        let row = sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!(
+            "SELECT {COLS} FROM users WHERE id = ?"
+        )))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_err)?;
         row.ok_or_else(|| Error::NotFound(format!("user {id}")))?
             .into_user()
     }
 
     pub async fn list_users(&self) -> Result<Vec<User>> {
-        sqlx::query_as::<_, UserRow>(&format!("SELECT {COLS} FROM users ORDER BY id"))
-            .fetch_all(&self.pool)
-            .await
-            .map_err(db_err)?
-            .into_iter()
-            .map(UserRow::into_user)
-            .collect()
+        sqlx::query_as::<_, UserRow>(AssertSqlSafe(format!(
+            "SELECT {COLS} FROM users ORDER BY id"
+        )))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db_err)?
+        .into_iter()
+        .map(UserRow::into_user)
+        .collect()
     }
 
     /// The last-admin guard is part of the UPDATE statement itself, so it is
