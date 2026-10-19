@@ -41,6 +41,16 @@ fn io(what: &str, e: std::io::Error) -> Error {
     Error::Invalid(format!("{what}: {e}"))
 }
 
+/// The largest backup fetched for a restore, the same as an upload.
+const GET_MAX: u64 = fleetops_api::backup::BACKUP_UPLOAD_MAX as u64;
+
+fn too_large() -> Error {
+    Error::Invalid(format!(
+        "this backup is larger than {} MiB, the most FleetOps restores",
+        GET_MAX / (1024 * 1024)
+    ))
+}
+
 fn check_name(name: &str) -> Result<()> {
     if name == TEST_NAME || parse_name(name).is_some() {
         Ok(())
@@ -174,7 +184,15 @@ impl Sink for LocalSink {
 
     async fn get(&self, name: &str, to: &Path) -> Result<()> {
         check_name(name)?;
-        tokio::fs::copy(self.0.join(name), to)
+        let from = self.0.join(name);
+        let len = tokio::fs::metadata(&from)
+            .await
+            .map_err(|e| io("reading the backup", e))?
+            .len();
+        if len > GET_MAX {
+            return Err(too_large());
+        }
+        tokio::fs::copy(from, to)
             .await
             .map(|_| ())
             .map_err(|e| io("reading the backup", e))
@@ -377,12 +395,20 @@ impl Sink for S3Sink {
             .get_object(Some(&self.creds), &key)
             .sign(SIGN_FOR);
         let res = Self::check(self.http.get(url).send().await).await?;
+        if res.content_length().is_some_and(|n| n > GET_MAX) {
+            return Err(too_large());
+        }
         let mut f = tokio::fs::File::create(to)
             .await
             .map_err(|e| io("saving the backup", e))?;
         let mut stream = res.bytes_stream();
+        let mut got = 0u64;
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(s3_err)?;
+            got += chunk.len() as u64;
+            if got > GET_MAX {
+                return Err(too_large());
+            }
             f.write_all(&chunk)
                 .await
                 .map_err(|e| io("saving the backup", e))?;

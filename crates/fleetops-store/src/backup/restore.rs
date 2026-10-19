@@ -21,6 +21,9 @@ pub const STAGING_DIR: &str = "restore-staging";
 pub const TMP_DIR: &str = "backup-tmp";
 pub const PRE_RESTORE_DIR: &str = "pre-restore";
 pub const PRE_RESTORE_KEEP: usize = 3;
+/// Rejected pending databases kept for a look; older ones are removed.
+pub const RESTORE_FAILED_KEEP: usize = 3;
+const RESTORE_FAILED: &str = "restore-failed-";
 const DB: &str = "fleetops.db";
 
 pub struct ServerVersions {
@@ -174,11 +177,12 @@ fn fresh_dir(parent: &Path, base: &str) -> PathBuf {
     p
 }
 
-fn prune(dir: &Path, keep: usize) -> Result<()> {
+/// Keeps the newest `keep` directories in `dir` whose names start with `prefix`.
+fn prune(dir: &Path, prefix: &str, keep: usize) -> Result<()> {
     let mut entries: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(dir)
         .map_err(io)?
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
+        .filter(|e| e.file_name().to_string_lossy().starts_with(prefix) && e.path().is_dir())
         .map(|e| {
             let t = e
                 .metadata()
@@ -226,8 +230,9 @@ pub async fn apply_pending(data: &Path) -> Result<Pending> {
     }
     let ts = now_secs();
     if !healthy(&pending).await {
-        let failed = fresh_dir(data, &format!("restore-failed-{ts}"));
+        let failed = fresh_dir(data, &format!("{RESTORE_FAILED}{ts}"));
         std::fs::rename(&pending_dir, &failed).map_err(io)?;
+        prune(data, RESTORE_FAILED, RESTORE_FAILED_KEEP)?;
         return Ok(Pending::Rejected(failed));
     }
     let root = data.join(PRE_RESTORE_DIR);
@@ -246,6 +251,6 @@ pub async fn apply_pending(data: &Path) -> Result<Pending> {
     }
     std::fs::rename(&pending, data.join(DB)).map_err(io)?;
     std::fs::remove_dir_all(&pending_dir).map_err(io)?;
-    prune(&root, PRE_RESTORE_KEEP)?;
+    prune(&root, "", PRE_RESTORE_KEEP)?;
     Ok(Pending::Applied(safety))
 }

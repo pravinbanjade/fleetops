@@ -278,6 +278,29 @@ async fn restore_from_recent_with_stored_passphrase() {
 }
 
 #[tokio::test]
+async fn restore_from_recent_refuses_oversized_file() {
+    let f = fx(true).await;
+    f.configure().await;
+    let name = backup_name(now_unix() - DAY);
+    // Sparse, so it takes no real space.
+    std::fs::File::create(f.out.path().join(&name))
+        .unwrap()
+        .set_len(513 * 1024 * 1024)
+        .unwrap();
+    let r = f
+        .call(
+            "POST",
+            "/api/v1/ee/backup/recent/restore",
+            Some(json!({"target_kind": "local", "name": name})),
+        )
+        .await;
+    assert_eq!(r.status, 400, "{}", r.text);
+    assert!(r.text.contains("larger than 512 MiB"), "{}", r.text);
+    let tmp = f.data.path().join("backup-tmp");
+    assert_eq!(std::fs::read_dir(tmp).unwrap().count(), 0);
+}
+
+#[tokio::test]
 async fn restore_from_recent_after_passphrase_change_asks() {
     let f = fx(true).await;
     let name = one_backup(&f).await;
