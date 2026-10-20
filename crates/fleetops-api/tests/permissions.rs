@@ -837,13 +837,16 @@ async fn any_grant_reads_a_node_and_its_namespaces() {
 
 /// The verdict before custom roles, independent of the new code: a Viewer
 /// could make every GET and nothing else; an Operator could make every request.
+/// Read-only POSTs added since (stack validate and plan) ask for a `.view`
+/// permission, so a Viewer may make those too.
 #[tokio::test]
 async fn builtin_roles_reach_what_they_reached_before() {
     let r = Rig::new().await;
     for role in [EnvRole::Viewer, EnvRole::Operator] {
         r.give(vec![Grant::full(role)]);
         for c in cases() {
-            let before = role == EnvRole::Operator || c.method == "GET";
+            let before =
+                role == EnvRole::Operator || c.method == "GET" || c.need.ends_with(".view");
             let resp = r.send(&c).await;
             assert_eq!(
                 resp.status != 403,

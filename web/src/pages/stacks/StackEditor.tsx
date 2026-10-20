@@ -125,7 +125,12 @@ export function StackEditor({
               onChange={(e) => setRow(i, { value: e.target.value })}
             />
             {canEdit && (
-              <Button variant="outline" size="sm" onClick={() => setRows((old) => old.filter((_, n) => n !== i))}>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label={`Remove variable ${i + 1}`}
+                onClick={() => setRows((old) => old.filter((_, n) => n !== i))}
+              >
                 Remove
               </Button>
             )}

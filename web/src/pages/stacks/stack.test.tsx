@@ -67,7 +67,7 @@ describe("stack page", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Review deploy" }));
     const dialog = await screen.findByRole("dialog", { name: "Deploy shop" });
     expect(await within(dialog).findByText("image: nginx:1.26 → nginx:1.27")).toBeInTheDocument();
-    expect(within(dialog).getByLabelText("Compose file changes")).toHaveTextContent("+   image: nginx:1.27");
+    expect(within(dialog).getByLabelText("Compose file changes")).toHaveTextContent("- image: nginx:1.26+ image: nginx:1.27");
     expect(calls.some((c) => c.method === "PUT" && c.path.endsWith("/shop/draft"))).toBe(true);
     expect(within(dialog).getByRole("button", { name: "Deploy" })).toBeEnabled();
   });
