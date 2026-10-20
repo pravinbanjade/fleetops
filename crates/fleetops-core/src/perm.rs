@@ -95,7 +95,7 @@ impl Row {
             Row::Containers => &[View, Create, Operate, Delete, Shell, Reveal],
             Row::Images | Row::Volumes => &[View, Create, Delete],
             Row::Networks => &[View, Create, Operate, Delete],
-            Row::Stacks => &[View, Operate, Delete],
+            Row::Stacks => &[View, Create, Operate, Delete, Reveal],
             Row::Pods => &[View, Create, Operate, Delete, Shell],
             Row::Secrets | Row::Helm => &[View, Create, Operate, Delete, Reveal],
             Row::Workloads | Row::ConfigMaps | Row::Networking | Row::Storage | Row::K8sOther => {
@@ -271,7 +271,10 @@ impl EnvRole {
                 .filter(|p| p.verb == Verb::View)
                 .collect::<PermSet>()
                 .with(Permission::new(Row::Containers, Verb::Reveal))
-                .with(Permission::new(Row::Helm, Verb::Reveal)),
+                .with(Permission::new(Row::Helm, Verb::Reveal))
+                // Stack variables reach container env, which a Viewer may
+                // already reveal.
+                .with(Permission::new(Row::Stacks, Verb::Reveal)),
             EnvRole::Operator => all.iter().filter(|p| *p != secrets_reveal).collect(),
         }
     }
@@ -319,13 +322,45 @@ mod tests {
 
     #[test]
     fn valid_cells_match_the_grid() {
-        assert_eq!(PermSet::all_valid().iter().count(), 54);
-        for bad in ["images.operate", "stacks.create", "pods.reveal"] {
+        assert_eq!(PermSet::all_valid().iter().count(), 56);
+        for bad in ["images.operate", "stacks.shell", "pods.reveal"] {
             assert!(bad.parse::<Permission>().is_err(), "{bad}");
         }
         for good in ["pods.shell", "secrets.reveal"] {
             assert!(good.parse::<Permission>().is_ok(), "{good}");
         }
+    }
+
+    #[test]
+    fn stacks_verbs() {
+        use Verb::*;
+        assert_eq!(
+            Row::Stacks.verbs(),
+            &[View, Create, Operate, Delete, Reveal]
+        );
+    }
+
+    #[test]
+    fn viewer_has_stacks_view_and_reveal() {
+        let v = EnvRole::Viewer.perms();
+        assert!(v.contains(p("stacks.view")) && v.contains(p("stacks.reveal")));
+        assert!(!v.contains(p("stacks.create")) && !v.contains(p("stacks.operate")));
+    }
+
+    #[test]
+    fn operator_has_all_stack_verbs() {
+        let o = EnvRole::Operator.perms();
+        for s in ["view", "create", "operate", "delete", "reveal"] {
+            assert!(o.contains(p(&format!("stacks.{s}"))), "{s}");
+        }
+    }
+
+    #[test]
+    fn bit_layout_unchanged() {
+        // Stored role sets are bitmasks; adding verbs to a row must not move
+        // existing cells.
+        assert_eq!(p("containers.view").bit(), 1);
+        assert_eq!(p("stacks.view").bit(), 1 << (4 * Verb::ALL.len()));
     }
 
     #[test]

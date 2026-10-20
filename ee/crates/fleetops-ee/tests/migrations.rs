@@ -47,3 +47,63 @@ async fn sso_tables_exist_and_members_carry_a_source() {
         "{cols:?}"
     );
 }
+
+#[tokio::test]
+async fn stack_verb_migration() {
+    let store = Store::in_memory().await.unwrap();
+    fleetops_ee::db::migrate(store.pool()).await.unwrap();
+    for (name, perms) in [
+        ("ops", r#"["stacks.view","stacks.operate"]"#),
+        ("peek", r#"["containers.view","containers.reveal"]"#),
+        ("none", r#"["images.view"]"#),
+        (
+            "both",
+            r#"["stacks.operate","stacks.create","containers.reveal","stacks.reveal"]"#,
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO ee_roles (name, permissions, created_at, updated_at) VALUES (?, ?, 1, 1)",
+        )
+        .bind(name)
+        .bind(perms)
+        .execute(store.pool())
+        .await
+        .unwrap();
+    }
+    // Re-run the migration's statements over roles that predate it.
+    sqlx::raw_sql(include_str!("../migrations/1000005_stack_verbs.sql"))
+        .execute(store.pool())
+        .await
+        .unwrap();
+    let get = |name: &'static str| {
+        let pool = store.pool().clone();
+        async move {
+            let s: String = sqlx::query_scalar("SELECT permissions FROM ee_roles WHERE name = ?")
+                .bind(name)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            let mut v: Vec<String> = serde_json::from_str(&s).unwrap();
+            v.sort();
+            v
+        }
+    };
+    assert_eq!(
+        get("ops").await,
+        ["stacks.create", "stacks.operate", "stacks.view"]
+    );
+    assert_eq!(
+        get("peek").await,
+        ["containers.reveal", "containers.view", "stacks.reveal"]
+    );
+    assert_eq!(get("none").await, ["images.view"]);
+    assert_eq!(
+        get("both").await,
+        [
+            "containers.reveal",
+            "stacks.create",
+            "stacks.operate",
+            "stacks.reveal"
+        ]
+    );
+}
