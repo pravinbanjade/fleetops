@@ -312,6 +312,19 @@ impl Store {
         Ok(())
     }
 
+    /// Notes an error on a revision that stays `deploying` (its restore
+    /// could not run yet).
+    pub async fn note_revision_error(&self, stack_id: i64, number: i64, error: &str) -> Result<()> {
+        sqlx::query("UPDATE stack_revisions SET error = ? WHERE stack_id = ? AND number = ?")
+            .bind(error)
+            .bind(stack_id)
+            .bind(number)
+            .execute(&self.pool)
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
     /// Every revision still `deploying`, with its stack.
     pub async fn deploying_revisions(&self) -> Result<Vec<(StackRecord, RevisionRecord)>> {
         let revs: Vec<RevisionRecord> = sqlx::query_as(AssertSqlSafe(format!(

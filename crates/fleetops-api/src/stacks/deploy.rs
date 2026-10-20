@@ -3,7 +3,7 @@
 //! aside, and only removed once every service is up. Any failure before
 //! that is undone by [`super::restore`].
 
-use super::restore::{old_suffix, restore};
+use super::restore::old_suffix;
 use super::{is_old, service_of, stack_containers};
 use crate::AppState;
 use fleetops_core::compose::docker::{
@@ -108,7 +108,8 @@ pub async fn execute(
     }
 
     let all = ops.list_containers().await?;
-    let mut current: BTreeMap<String, Vec<(String, String, bool, u32)>> = BTreeMap::new();
+    // (id, name, state, replica number) per service.
+    let mut current: BTreeMap<String, Vec<(String, String, String, u32)>> = BTreeMap::new();
     for c in stack_containers(&all, &project.name).filter(|c| !is_old(c)) {
         if let Some(svc) = service_of(c) {
             let number = c
@@ -119,7 +120,7 @@ pub async fn execute(
             current.entry(svc.to_string()).or_default().push((
                 c.id.clone(),
                 c.name.clone(),
-                c.state == "running",
+                c.state.clone(),
                 number,
             ));
         }
@@ -135,8 +136,12 @@ pub async fn execute(
         .map(|(s, cs)| (s.clone(), cs.iter().map(|c| c.0.clone()).collect()))
         .collect();
 
-    let set_aside = |id: String, name: String, was_running: bool| async move {
-        if was_running {
+    // A restarting or paused container still holds its ports, so anything
+    // not already stopped is stopped; those that were up are restarted by a
+    // restore.
+    let set_aside = |id: String, name: String, state: String| async move {
+        let was_running = matches!(state.as_str(), "running" | "restarting" | "paused");
+        if !matches!(state.as_str(), "exited" | "created" | "dead") {
             ops.container_action(&id, ContainerAction::Stop).await?;
         }
         ops.rename_container(&id, &format!("{name}{}", old_suffix(revision, was_running)))
@@ -159,21 +164,25 @@ pub async fn execute(
         let existing = current.remove(&sname).unwrap_or_default();
         let mut keep: Vec<String> = Vec::new();
         let mut to_create: Vec<u32> = Vec::new();
+        // Anonymous volumes of the replicas being replaced, by replica number,
+        // so their data carries over as `compose up` does.
+        let mut carried: BTreeMap<u32, Vec<(String, String)>> = BTreeMap::new();
         match action {
             ServiceAction::Create | ServiceAction::Recreate => {
-                for (id, name, was_running, _) in existing {
+                for (id, name, state, n) in existing {
+                    carried.insert(n.max(1), anonymous_volumes(ops, project, &id).await?);
                     say(progress, "service", format!("setting aside {name}"));
-                    set_aside(id, name, was_running).await?;
+                    set_aside(id, name, state).await?;
                 }
                 to_create = (1..=svc.replicas).collect();
             }
             ServiceAction::Scale => {
-                for (id, name, was_running, n) in existing {
+                for (id, name, state, n) in existing {
                     if n >= 1 && n <= svc.replicas {
                         keep.push(id);
                     } else {
                         say(progress, "service", format!("setting aside {name}"));
-                        set_aside(id, name, was_running).await?;
+                        set_aside(id, name, state).await?;
                     }
                 }
                 let have: Vec<u32> = current_numbers(ops, project, &sname).await?;
@@ -185,9 +194,11 @@ pub async fn execute(
         for n in to_create {
             let name = container_name(project, svc, n);
             say(progress, "service", format!("creating {name}"));
-            let id = ops
-                .create_container_raw(&name, &container_body(project, svc, n, revision))
-                .await?;
+            let mut body = container_body(project, svc, n, revision);
+            if let Some(vols) = carried.get(&n) {
+                carry_volumes(&mut body, vols);
+            }
+            let id = ops.create_container_raw(&name, &body).await?;
             ops.container_action(&id, ContainerAction::Start)
                 .await
                 .map_err(|e| Error::Upstream {
@@ -218,14 +229,49 @@ pub async fn execute(
         .iter()
         .filter(|s| s.action == ServiceAction::Remove)
     {
-        for (id, name, was_running, _) in current.remove(&s.name).unwrap_or_default() {
+        for (id, name, state, _) in current.remove(&s.name).unwrap_or_default() {
             say(progress, "service", format!("setting aside {name}"));
-            set_aside(id, name, was_running).await?;
+            set_aside(id, name, state).await?;
         }
     }
 
     commit(ops, &project.name, plan, revision, progress).await;
     Ok(())
+}
+
+/// `(target, volume name)` of each anonymous volume mounted in container
+/// `id`: a volume mount that is not one of the project's named volumes.
+async fn anonymous_volumes(
+    ops: &dyn DockerOps,
+    project: &Project,
+    id: &str,
+) -> Result<Vec<(String, String)>> {
+    let named: Vec<&str> = project.volumes.values().map(|v| v.name.as_str()).collect();
+    let inspect = ops.inspect_container(id).await?;
+    Ok(inspect["Mounts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|m| m["Type"] == "volume")
+        .filter_map(|m| Some((m["Destination"].as_str()?, m["Name"].as_str()?)))
+        .filter(|(_, name)| !named.contains(name))
+        .map(|(d, n)| (d.to_string(), n.to_string()))
+        .collect())
+}
+
+/// Points the body's anonymous volume mounts (and image-declared volumes,
+/// which have no mount) at the volumes the old container used.
+fn carry_volumes(body: &mut Value, vols: &[(String, String)]) {
+    let mounts = body["HostConfig"]["Mounts"]
+        .as_array_mut()
+        .expect("container_body always sets Mounts");
+    for (target, name) in vols {
+        match mounts.iter_mut().find(|m| m["Target"] == target.as_str()) {
+            Some(m) if m["Type"] == "volume" && m["Source"] == "" => m["Source"] = json!(name),
+            Some(_) => {}
+            None => mounts.push(json!({"Type": "volume", "Source": name, "Target": target})),
+        }
+    }
 }
 
 /// Numbers of the service's live (not set-aside) replicas.
@@ -405,22 +451,14 @@ pub fn deploy_stream(
                     "restore",
                     format!("deploy failed: {e}; restoring the stack"),
                 );
-                let mut msg = e.to_string();
-                match restore(ops.as_ref(), &stack.name, revision.number).await {
-                    Ok(r) => say(
-                        &send,
-                        "restore",
-                        format!("restored {} container(s)", r.restored.len()),
-                    ),
-                    Err(re) => msg.push_str(&format!("; restore: {re}")),
-                }
-                if let Err(e) = state
-                    .store
-                    .finish_revision(stack.id, revision.number, Some(&msg))
-                    .await
-                {
-                    tracing::warn!(error = %e, stack = %stack.name, "recording a deploy failed");
-                }
+                let (msg, _) = super::restore_and_settle(
+                    &state,
+                    ops.as_ref(),
+                    &stack,
+                    revision.number,
+                    &e.to_string(),
+                )
+                .await;
                 let _ = tx.send(json!({"error": msg}));
             }
         }

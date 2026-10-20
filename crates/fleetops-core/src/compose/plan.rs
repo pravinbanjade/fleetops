@@ -197,6 +197,35 @@ pub fn plan(new: &Project, deployed: Option<(&Project, i64)>, live: &Live) -> Pl
             replicas_after: svc.replicas,
         });
     }
+    // A container sharing another's network (`network_mode: service:x`)
+    // loses it when x is replaced, so it is recreated with x.
+    loop {
+        let replaced: BTreeSet<String> = services
+            .iter()
+            .filter(|s| matches!(s.action, ServiceAction::Create | ServiceAction::Recreate))
+            .map(|s| s.name.clone())
+            .collect();
+        let mut changed = false;
+        for sp in services.iter_mut() {
+            let target = new.services[&sp.name]
+                .network_mode
+                .as_deref()
+                .and_then(|m| m.strip_prefix("service:"));
+            if let Some(t) = target.filter(|t| replaced.contains(*t)) {
+                if matches!(sp.action, ServiceAction::Unchanged | ServiceAction::Scale) {
+                    sp.action = ServiceAction::Recreate;
+                    sp.reasons = vec![format!(
+                        "{t} is recreated, and this service shares its network"
+                    )];
+                    needs_containers.insert(sp.name.clone());
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
     let live_services: BTreeSet<String> = containers
         .iter()
         .filter_map(|c| {

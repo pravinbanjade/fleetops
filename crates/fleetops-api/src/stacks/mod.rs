@@ -7,7 +7,7 @@ pub mod recover;
 pub mod restore;
 
 pub use deploy::{deploy_stream, execute, Timing};
-pub use recover::{recover_all, recover_stack, run_recovery};
+pub use recover::{recover_all, recover_stack, restore_and_settle, run_recovery};
 pub use restore::{restore, RestoreReport};
 
 use fleetops_core::compose::docker::{LABEL_PROJECT, LABEL_SERVICE};
@@ -34,4 +34,29 @@ pub(crate) fn service_of(c: &ContainerSummary) -> Option<&str> {
 
 pub(crate) fn is_old(c: &ContainerSummary) -> bool {
     c.name.contains(OLD_MARKER)
+}
+
+/// Holds a stack's deploy lock until dropped, so a deploy, a recovery, a
+/// removal and an action never run on one stack at once.
+pub struct StackLock {
+    set: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<i64>>>,
+    id: i64,
+}
+
+impl Drop for StackLock {
+    fn drop(&mut self) {
+        self.set.lock().unwrap().remove(&self.id);
+    }
+}
+
+/// Takes `stack`'s lock, or `None` while something else holds it.
+pub fn try_lock(s: &crate::AppState, stack: i64) -> Option<StackLock> {
+    s.stack_locks
+        .lock()
+        .unwrap()
+        .insert(stack)
+        .then(|| StackLock {
+            set: s.stack_locks.clone(),
+            id: stack,
+        })
 }

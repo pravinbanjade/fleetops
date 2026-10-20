@@ -96,3 +96,53 @@ async fn unreachable_env_skipped_then_recovered() {
     assert_eq!(app.store.revision(st, 3).await.unwrap().status, "failed");
     assert_eq!(app.fake.container("shop-web-1").unwrap().id, "old1");
 }
+
+#[tokio::test]
+async fn restore_failure_keeps_deploying_until_it_works() {
+    let app = app().await;
+    app.with_local().await;
+    let st = interrupted(&app).await;
+    // The environment answers but its Docker calls fail (a tunnel mid-drop).
+    app.fake.ops_down.store(true, Ordering::SeqCst);
+    recover_all(&app.state).await;
+    let r = app.store.revision(st, 3).await.unwrap();
+    assert_eq!(r.status, "deploying");
+    assert!(
+        r.error.as_deref().unwrap_or("").contains("tunnel closed"),
+        "{r:?}"
+    );
+    app.fake.ops_down.store(false, Ordering::SeqCst);
+    recover_all(&app.state).await;
+    let r = app.store.revision(st, 3).await.unwrap();
+    assert_eq!(
+        (r.status.as_str(), r.error.as_deref()),
+        ("failed", Some("interrupted"))
+    );
+    assert_eq!(app.fake.container("shop-web-1").unwrap().id, "old1");
+    assert!(app.state.stack_locks.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn deploy_failure_with_dead_tunnel_stays_deploying() {
+    let app = app().await;
+    app.with_local().await;
+    let st_id = interrupted(&app).await;
+    let env = app.store.list_environments().await.unwrap()[0].id;
+    let stack = app.store.stack_by_name(env, "shop").await.unwrap();
+    assert_eq!(stack.id, st_id);
+    app.fake.ops_down.store(true, Ordering::SeqCst);
+    let (msg, restored) = fleetops_api::stacks::restore_and_settle(
+        &app.state,
+        app.fake.as_ref(),
+        &stack,
+        3,
+        "start shop-web-1: boom",
+    )
+    .await;
+    assert!(!restored);
+    assert!(msg.starts_with("start shop-web-1: boom; restore:"), "{msg}");
+    assert_eq!(
+        app.store.revision(st_id, 3).await.unwrap().status,
+        "deploying"
+    );
+}

@@ -262,3 +262,77 @@ async fn restore_is_idempotent() {
     let second = restore(f.as_ref(), "shop", 2).await.unwrap();
     assert!(second.removed.is_empty() && second.restored.is_empty());
 }
+
+#[tokio::test]
+async fn restarting_container_is_stopped_before_set_aside() {
+    let f = FakeDocker::new();
+    let v1 = project("services:\n  web: {image: 'x:1', ports: ['8080:80']}\n");
+    let v2 = project("services:\n  web: {image: 'x:2', ports: ['8080:80']}\n");
+    deploy(&f, &v1, None, 1).await.unwrap();
+    f.state.lock().unwrap().containers[0].state = "restarting".into();
+    *f.fail_on.lock().unwrap() = Some("start new2".into());
+    assert!(deploy(&f, &v2, Some(&v1), 2).await.is_err());
+    let calls = f.calls();
+    assert!(
+        pos(&calls, "stop new1") < pos(&calls, "rename new1 shop-web-1-fleetops-old-2-run"),
+        "{calls:?}"
+    );
+    *f.fail_on.lock().unwrap() = None;
+    restore(f.as_ref(), "shop", 2).await.unwrap();
+    assert_eq!(f.container("shop-web-1").unwrap().state, "running");
+}
+
+#[tokio::test]
+async fn restore_starts_network_mode_targets_first() {
+    let f = FakeDocker::new();
+    let yaml = |tag: &str| {
+        format!("services:\n  b: {{image: 'x:{tag}'}}\n  a: {{image: 'x:{tag}', network_mode: 'service:b'}}\n")
+    };
+    let (v1, v2) = (project(&yaml("1")), project(&yaml("2")));
+    deploy(&f, &v1, None, 1).await.unwrap();
+    let (b, a) = (
+        f.container("shop-b-1").unwrap().id,
+        f.container("shop-a-1").unwrap().id,
+    );
+    *f.fail_on.lock().unwrap() = Some("start new4".into());
+    assert!(deploy(&f, &v2, Some(&v1), 2).await.is_err());
+    *f.fail_on.lock().unwrap() = None;
+    let before = f.calls().len();
+    restore(f.as_ref(), "shop", 2).await.unwrap();
+    let calls = f.calls()[before..].to_vec();
+    assert!(
+        pos(&calls, &format!("start {b}")) < pos(&calls, &format!("start {a}")),
+        "{calls:?}"
+    );
+    let last_rename = calls.iter().rposition(|c| c.starts_with("rename")).unwrap();
+    assert!(
+        last_rename < pos(&calls, "start"),
+        "every name is back before a start: {calls:?}"
+    );
+}
+
+#[tokio::test]
+async fn anonymous_volumes_carried_over() {
+    let f = FakeDocker::new();
+    let v1 = project("services:\n  db: {image: postgres, volumes: ['/var/lib/postgresql/data']}\n");
+    let v2 = project(
+        "services:\n  db: {image: postgres, volumes: ['/var/lib/postgresql/data'], environment: {A: '1'}}\n",
+    );
+    deploy(&f, &v1, None, 1).await.unwrap();
+    f.state.lock().unwrap().inspect_extra.insert(
+        "new1".into(),
+        json!({"Mounts": [
+            {"Type": "volume", "Name": "anon1", "Destination": "/var/lib/postgresql/data"},
+            {"Type": "volume", "Name": "anon2", "Destination": "/image/declared"}
+        ]}),
+    );
+    deploy(&f, &v2, Some(&v1), 2).await.unwrap();
+    let st = f.state.lock().unwrap();
+    let (_, body) = st.created_bodies.last().unwrap();
+    let mounts = body["HostConfig"]["Mounts"].as_array().unwrap();
+    assert!(mounts.contains(&json!({"Type": "volume", "Source": "anon1", "Target": "/var/lib/postgresql/data", "ReadOnly": false})), "{mounts:?}");
+    assert!(
+        mounts.contains(&json!({"Type": "volume", "Source": "anon2", "Target": "/image/declared"})),
+        "{mounts:?}"
+    );
+}

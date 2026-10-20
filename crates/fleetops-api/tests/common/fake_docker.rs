@@ -27,6 +27,8 @@ pub struct FakeState {
     pub created_bodies: Vec<(String, Value)>,
     /// Overrides merged into `inspect_container`'s `State`, by id or name.
     pub inspect_state: BTreeMap<String, Value>,
+    /// Top-level fields merged into `inspect_container`, by id or name.
+    pub inspect_extra: BTreeMap<String, Value>,
     next_id: usize,
 }
 
@@ -40,6 +42,9 @@ pub struct FakeDocker {
     /// A call whose recorded string starts with this fails with
     /// `Upstream 500 "injected"` (pulls: `pull <image>`).
     pub fail_on: Mutex<Option<String>>,
+    /// While set, container calls fail as if the daemon (or the agent
+    /// tunnel) went away, though the environment still reports up.
+    pub ops_down: AtomicBool,
     pub release_pulls: Arc<Notify>,
     /// Notified to say reachability changed (Environment::wait_change).
     pub changed: Notify,
@@ -107,8 +112,16 @@ impl FakeDocker {
         self.state.lock().unwrap().calls.push(s);
     }
 
+    fn down(&self) -> Result<()> {
+        if self.ops_down.load(Ordering::SeqCst) {
+            return Err(Error::EnvUnavailable("tunnel closed".into()));
+        }
+        Ok(())
+    }
+
     /// Records `s`, failing it when it matches `fail_on`.
     fn check(&self, s: String) -> Result<()> {
+        self.down()?;
         let fail = self
             .fail_on
             .lock()
@@ -147,6 +160,7 @@ impl SystemOps for FakeDocker {
 #[async_trait]
 impl ContainerOps for FakeDocker {
     async fn list_containers(&self) -> Result<Vec<ContainerSummary>> {
+        self.down()?;
         Ok(self.state.lock().unwrap().containers.clone())
     }
     async fn inspect_container(&self, id: &str) -> Result<Value> {
@@ -170,9 +184,22 @@ impl ContainerOps for FakeDocker {
                 }
             }
         }
-        Ok(
-            json!({"Id": c.id, "Name": format!("/{}", c.name), "State": state, "Config": {"Env": env, "Labels": c.labels}}),
-        )
+        let host = st
+            .created_bodies
+            .iter()
+            .rev()
+            .find(|(n, _)| *n == c.name)
+            .map(|(_, b)| b["HostConfig"].clone())
+            .unwrap_or_else(|| json!({}));
+        let mut out = json!({"Id": c.id, "Name": format!("/{}", c.name), "State": state, "Config": {"Env": env, "Labels": c.labels}, "HostConfig": host, "Mounts": []});
+        for key in [&c.id, &c.name] {
+            if let Some(Value::Object(o)) = st.inspect_extra.get(key) {
+                for (k, v) in o {
+                    out[k] = v.clone();
+                }
+            }
+        }
+        Ok(out)
     }
     async fn container_spec(&self, id: &str) -> Result<ContainerSpec> {
         let c = self
@@ -270,7 +297,7 @@ impl ContainerOps for FakeDocker {
         Ok(())
     }
     async fn rename_container(&self, id: &str, new_name: &str) -> Result<()> {
-        self.call(format!("rename {id} {new_name}"));
+        self.check(format!("rename {id} {new_name}"))?;
         let mut st = self.state.lock().unwrap();
         let c = st
             .containers
@@ -281,7 +308,7 @@ impl ContainerOps for FakeDocker {
         Ok(())
     }
     async fn remove_container(&self, id: &str, force: bool, _volumes: bool) -> Result<()> {
-        self.call(format!("remove {id}"));
+        self.check(format!("remove {id}"))?;
         let mut st = self.state.lock().unwrap();
         let idx = st
             .containers

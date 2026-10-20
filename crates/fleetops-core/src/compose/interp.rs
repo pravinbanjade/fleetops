@@ -179,7 +179,12 @@ pub fn parse_variables(lines: &[String]) -> Result<BTreeMap<String, String>, Com
                 format!("invalid variable name '{k}'"),
             ));
         }
-        out.insert(k.to_string(), v.to_string());
+        if out.insert(k.to_string(), v.to_string()).is_some() {
+            return Err(ComposeIssue::new(
+                format!("variables[{i}]"),
+                format!("variable {k} is set twice"),
+            ));
+        }
     }
     Ok(out)
 }
@@ -277,5 +282,7 @@ mod tests {
         assert_eq!(m["K"], "a=b");
         assert_eq!(m["P"], "a$b \"c\" ");
         assert!(parse_variables(&["NOEQ".into()]).is_err());
+        let dup = parse_variables(&["A=1".into(), "A=2".into()]).unwrap_err();
+        assert_eq!(dup.message, "variable A is set twice");
     }
 }

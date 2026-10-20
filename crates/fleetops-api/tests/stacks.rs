@@ -375,3 +375,56 @@ async fn deploy_body_with_compose_rejected() {
         r.json
     );
 }
+
+#[tokio::test]
+async fn remove_and_actions_conflict_while_deploying() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, WEB, &[]).await;
+    app.fake.hold_pulls.store(true, Ordering::SeqCst);
+    let p = plan(&app, &s, json!({"source": "draft"})).await;
+    let token = p.json["plan"]["token"].as_str().unwrap().to_string();
+    let d = deploy(&app, &s, json!({"source": "draft"}), &token).await;
+    assert_eq!(d.status, StatusCode::ACCEPTED);
+    let rm = app
+        .send(req("DELETE", &format!("{BASE}/shop"), None, Some(&s)))
+        .await;
+    assert_eq!(rm.status, StatusCode::CONFLICT, "{:?}", rm.json);
+    let act = app
+        .send(req("POST", &format!("{BASE}/shop/restart"), None, Some(&s)))
+        .await;
+    assert_eq!(act.status, StatusCode::CONFLICT, "{:?}", act.json);
+    let id = d.json["task_id"].as_str().unwrap().to_string();
+    for _ in 0..500 {
+        app.fake.release_pulls.notify_waiters();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        let r = app
+            .send(req("GET", &format!("/api/v1/tasks/{id}"), None, Some(&s)))
+            .await;
+        if r.json["status"] != "running" {
+            return;
+        }
+    }
+    panic!("the held deploy never finished");
+}
+
+#[tokio::test]
+async fn save_rejects_renamed_masked_value() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, WEB, &["TOKEN=hunter2"]).await;
+    let renamed = format!("NEW_TOKEN={}", fleetops_core::kube::MASK);
+    let r = app
+        .send(req(
+            "PUT",
+            &format!("{BASE}/shop/draft"),
+            Some(json!({"compose": WEB, "variables": [renamed]})),
+            Some(&s),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{:?}", r.json);
+    let g = app
+        .send(req("GET", &format!("{BASE}/shop"), None, Some(&s)))
+        .await;
+    assert_eq!(g.json["draft"]["variables"], json!(["TOKEN=hunter2"]));
+}

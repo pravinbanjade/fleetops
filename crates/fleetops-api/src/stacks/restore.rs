@@ -43,6 +43,7 @@ pub async fn restore(ops: &dyn DockerOps, stack: &str, revision: i64) -> Result<
         }
     }
     let mut leftovers = Vec::new();
+    let mut to_start = Vec::new();
     for c in stack_containers(&all, stack).filter(|c| is_old(c)) {
         let (base, running) = if let Some(b) = c.name.strip_suffix(&old_suffix(revision, true)) {
             (b, true)
@@ -57,13 +58,34 @@ pub async fn restore(ops: &dyn DockerOps, stack: &str, revision: i64) -> Result<
             continue;
         }
         if running {
-            if let Err(e) = ops.container_action(&c.id, ContainerAction::Start).await {
-                errors.push(format!("start {base}: {e}"));
-            }
+            to_start.push((c.id.clone(), base.to_string()));
         }
         report.restored.push(base.to_string());
     }
-    for n in ops.list_networks().await.unwrap_or_default() {
+    // Every name is back before anything starts, and a container that joins
+    // another's network (`container:<name>`) starts after it.
+    let mut joins = Vec::new();
+    for (id, base) in to_start {
+        let mode = ops
+            .inspect_container(&id)
+            .await
+            .ok()
+            .and_then(|v| v["HostConfig"]["NetworkMode"].as_str().map(String::from))
+            .unwrap_or_default();
+        if mode.starts_with("container:") {
+            joins.push((id, base));
+            continue;
+        }
+        if let Err(e) = ops.container_action(&id, ContainerAction::Start).await {
+            errors.push(format!("start {base}: {e}"));
+        }
+    }
+    for (id, base) in joins {
+        if let Err(e) = ops.container_action(&id, ContainerAction::Start).await {
+            errors.push(format!("start {base}: {e}"));
+        }
+    }
+    for n in ops.list_networks().await? {
         if n.labels.get(LABEL_PROJECT).map(String::as_str) == Some(stack)
             && n.labels.get(LABEL_REVISION) == Some(&rev)
         {

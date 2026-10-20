@@ -232,3 +232,19 @@ fn cli_project_is_recreated() {
         assert_eq!(reasons(&plan, s), ["not created by FleetOps"]);
     }
 }
+
+#[test]
+fn network_mode_dependents_recreate_with_target() {
+    let yaml = |tag: &str| {
+        format!("services:\n  vpn: {{image: 'v:{tag}'}}\n  app: {{image: a, network_mode: 'service:vpn'}}\n")
+    };
+    let old = project(&yaml("1"));
+    let new = project(&yaml("2"));
+    let plan = plan(&new, Some((&old, 1)), &deployed_live(&old));
+    assert_eq!(action(&plan, "vpn"), ServiceAction::Recreate);
+    assert_eq!(action(&plan, "app"), ServiceAction::Recreate);
+    assert_eq!(
+        reasons(&plan, "app"),
+        ["vpn is recreated, and this service shares its network"]
+    );
+}

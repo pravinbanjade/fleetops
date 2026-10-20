@@ -7,7 +7,7 @@ use crate::{
     auth::extract::CurrentUser,
     authz::Need,
     extract::{ApiJson, ApiPath, ApiQuery},
-    stacks::{deploy_stream, is_old, recover_stack, stack_containers},
+    stacks::{deploy_stream, is_old, recover_stack, stack_containers, try_lock},
     tasks::{NewTask, TaskInfo, TaskStatus},
     ApiResult, AppState,
 };
@@ -15,7 +15,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::compose::docker::LABEL_PROJECT;
 use fleetops_core::compose::plan::{plan, Live, Plan};
 use fleetops_core::compose::{parse, parse_variables, validate_stack_name, ComposeIssue, Project};
-use fleetops_core::docker::{mask_env, unmask_env, ContainerAction};
+use fleetops_core::docker::{mask_env, ContainerAction};
 use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::{Draft, NewAudit, RevisionRecord, StackRecord};
@@ -153,6 +153,27 @@ fn check_size(compose: &str, variables: &[String]) -> Result<()> {
         return Err(Error::Invalid(
             "the variables are larger than 64 KiB".into(),
         ));
+    }
+    Ok(())
+}
+
+/// Puts back the stored value of each `KEY=<mask>` line. A masked value
+/// with no stored value (a renamed key, say) is an error, never dropped.
+fn unmask_variables(lines: &mut [String], stored: &[String]) -> Result<()> {
+    let masked = format!("={}", fleetops_core::kube::MASK);
+    for line in lines.iter_mut() {
+        let Some(key) = line.strip_suffix(&masked) else {
+            continue;
+        };
+        let prefix = format!("{key}=");
+        match stored.iter().find(|s| s.starts_with(&prefix)) {
+            Some(real) => *line = real.clone(),
+            None => {
+                return Err(Error::Invalid(format!(
+                    "the value of {key} is hidden and not stored; enter it again"
+                )))
+            }
+        }
     }
     Ok(())
 }
@@ -465,7 +486,7 @@ pub async fn save_draft(
         .await?
         .map(|d| d.variables)
         .unwrap_or_default();
-    unmask_env(&mut body.variables, &stored);
+    unmask_variables(&mut body.variables, &stored)?;
     let res = s
         .store
         .save_draft(
@@ -759,6 +780,8 @@ pub async fn action(
     let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     recover_stack(&s, c.ops.as_ref(), &stack).await?;
+    let _lock = try_lock(&s, stack.id)
+        .ok_or_else(|| Error::Conflict("a deploy of this stack is running".into()))?;
     let all = c.ops.list_containers().await?;
     let members: Vec<_> = stack_containers(&all, &name)
         .filter(|c| !is_old(c))
@@ -801,9 +824,8 @@ pub async fn remove(
 ) -> ApiResult<StatusCode> {
     let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Delete)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
-    if s.stack_locks.lock().unwrap().contains(&stack.id) {
-        return Err(Error::Conflict("a deploy of this stack is running".into()).into());
-    }
+    let _lock = try_lock(&s, stack.id)
+        .ok_or_else(|| Error::Conflict("a deploy of this stack is running".into()))?;
     let outcome = remove_objects(&c, &name, q.volumes).await;
     let outcome = match outcome {
         Ok(()) => s.store.delete_stack(stack.id).await,

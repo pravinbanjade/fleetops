@@ -2,7 +2,7 @@
 //! deploys"): a revision still `deploying` with no deploy running is
 //! restored and marked failed.
 
-use super::restore;
+use super::{restore, try_lock};
 use crate::AppState;
 use fleetops_core::docker::DockerOps;
 use fleetops_core::Result;
@@ -11,26 +11,51 @@ use std::time::Duration;
 
 pub const INTERRUPTED: &str = "interrupted";
 
-/// Restores `stack` if its latest revision is still `deploying` and no
-/// deploy of it is running here.
-pub async fn recover_stack(s: &AppState, ops: &dyn DockerOps, stack: &StackRecord) -> Result<()> {
-    if s.stack_locks.lock().unwrap().contains(&stack.id) {
-        return Ok(());
+/// Undoes revision `number` and records why it failed (`cause`). When the
+/// environment cannot be reached to undo it, the revision stays
+/// `deploying`, with the error noted, so a later recovery pass retries.
+/// Returns the message to report and whether the stack was restored.
+pub async fn restore_and_settle(
+    s: &AppState,
+    ops: &dyn DockerOps,
+    stack: &StackRecord,
+    number: i64,
+    cause: &str,
+) -> (String, bool) {
+    match restore(ops, &stack.name, number).await {
+        Ok(_) => {
+            if let Err(e) = s.store.finish_revision(stack.id, number, Some(cause)).await {
+                tracing::warn!(error = %e, stack = %stack.name, "recording a deploy failed");
+            }
+            (cause.to_string(), true)
+        }
+        Err(e) => {
+            let msg = format!("{cause}; restore: {e}; retrying when the environment is reachable");
+            if let Err(e) = s.store.note_revision_error(stack.id, number, &msg).await {
+                tracing::warn!(error = %e, stack = %stack.name, "recording a deploy failed");
+            }
+            (msg, false)
+        }
     }
+}
+
+/// Restores `stack` if its latest revision is still `deploying` and nothing
+/// else holds the stack.
+pub async fn recover_stack(s: &AppState, ops: &dyn DockerOps, stack: &StackRecord) -> Result<()> {
+    let Some(_lock) = try_lock(s, stack.id) else {
+        return Ok(());
+    };
     let Some(latest) = s.store.list_revisions(stack.id).await?.into_iter().next() else {
         return Ok(());
     };
     if latest.status != "deploying" {
         return Ok(());
     }
-    let msg = match restore(ops, &stack.name, latest.number).await {
-        Ok(_) => INTERRUPTED.to_string(),
-        Err(e) => format!("{INTERRUPTED}; restore: {e}"),
-    };
-    tracing::info!(stack = %stack.name, revision = latest.number, "recovered an interrupted deploy");
-    s.store
-        .finish_revision(stack.id, latest.number, Some(&msg))
-        .await
+    let (_, restored) = restore_and_settle(s, ops, stack, latest.number, INTERRUPTED).await;
+    if restored {
+        tracing::info!(stack = %stack.name, revision = latest.number, "recovered an interrupted deploy");
+    }
+    Ok(())
 }
 
 /// Recovers every interrupted deploy whose environment is reachable now;
