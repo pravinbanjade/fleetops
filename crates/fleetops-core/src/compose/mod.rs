@@ -2,6 +2,7 @@
 //! validate and normalise a Compose file, then plan it against what is
 //! running. Pure; the deploy runner in `fleetops-api` does the I/O.
 
+pub mod docker;
 pub mod interp;
 pub mod model;
 pub mod parse;

@@ -367,6 +367,7 @@ pub fn network_summary(n: bollard::models::Network) -> NetworkSummary {
         attachable: n.attachable.unwrap_or(false),
         subnet: ipam.as_ref().and_then(|c| c.subnet.clone()),
         gateway: ipam.and_then(|c| c.gateway),
+        labels: n.labels.unwrap_or_default().into_iter().collect(),
     }
 }
 #[cfg(test)]

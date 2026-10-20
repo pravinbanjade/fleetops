@@ -367,6 +367,7 @@ impl NetworkOps for FakeDocker {
             attachable: spec.attachable,
             subnet: spec.subnet.clone(),
             gateway: spec.gateway.clone(),
+            labels: spec.labels.clone(),
         });
         Ok(id)
     }

@@ -273,6 +273,8 @@ pub struct NetworkSummary {
     pub attachable: bool,
     pub subnet: Option<String>,
     pub gateway: Option<String>,
+    #[serde(default)]
+    pub labels: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -285,6 +287,7 @@ pub struct NetworkSpec {
     pub internal: bool,
     pub attachable: bool,
     pub labels: BTreeMap<String, String>,
+    pub driver_opts: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

@@ -218,6 +218,7 @@ impl NetworkOps for LocalDocker {
             attachable: Some(spec.attachable),
             ipam,
             labels: Some(spec.labels.clone().into_iter().collect()),
+            options: Some(spec.driver_opts.clone().into_iter().collect()),
             ..Default::default()
         };
         Ok(self.client.create_network(req).await.map_err(map_err)?.id)
