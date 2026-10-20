@@ -23,6 +23,10 @@ pub struct FakeState {
     pub env: BTreeMap<String, Vec<String>>,
     /// Every spec a container was created from, oldest first.
     pub created_specs: Vec<ContainerSpec>,
+    /// Every raw create body, by container name, oldest first.
+    pub created_bodies: Vec<(String, Value)>,
+    /// Overrides merged into `inspect_container`'s `State`, by id or name.
+    pub inspect_state: BTreeMap<String, Value>,
     next_id: usize,
 }
 
@@ -33,6 +37,9 @@ pub struct FakeDocker {
     pub reachable: AtomicBool,
     pub streams: Mutex<FakeStreams>,
     pub hold_pulls: AtomicBool,
+    /// A call whose recorded string starts with this fails with
+    /// `Upstream 500 "injected"` (pulls: `pull <image>`).
+    pub fail_on: Mutex<Option<String>>,
     pub release_pulls: Arc<Notify>,
     /// Notified to say reachability changed (Environment::wait_change).
     pub changed: Notify,
@@ -99,6 +106,24 @@ impl FakeDocker {
     fn call(&self, s: String) {
         self.state.lock().unwrap().calls.push(s);
     }
+
+    /// Records `s`, failing it when it matches `fail_on`.
+    fn check(&self, s: String) -> Result<()> {
+        let fail = self
+            .fail_on
+            .lock()
+            .unwrap()
+            .as_deref()
+            .is_some_and(|f| s.starts_with(f));
+        self.call(s);
+        if fail {
+            return Err(Error::Upstream {
+                status: 500,
+                message: "injected".into(),
+            });
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -136,8 +161,17 @@ impl ContainerOps for FakeDocker {
             .get(&c.id)
             .cloned()
             .unwrap_or_default();
+        let mut state = json!({"Running": c.state == "running", "ExitCode": 0, "Health": {"Status": "healthy"}});
+        let st = self.state.lock().unwrap();
+        for key in [&c.id, &c.name] {
+            if let Some(Value::Object(o)) = st.inspect_state.get(key) {
+                for (k, v) in o {
+                    state[k] = v.clone();
+                }
+            }
+        }
         Ok(
-            json!({"Id": c.id, "Name": format!("/{}", c.name), "State": {"Running": c.state == "running"}, "Config": {"Env": env}}),
+            json!({"Id": c.id, "Name": format!("/{}", c.name), "State": state, "Config": {"Env": env, "Labels": c.labels}}),
         )
     }
     async fn container_spec(&self, id: &str) -> Result<ContainerSpec> {
@@ -180,8 +214,45 @@ impl ContainerOps for FakeDocker {
         st.containers.push(c);
         Ok(id)
     }
+    async fn create_container_raw(&self, name: &str, body: &Value) -> Result<String> {
+        self.check(format!("create_raw:{name}"))?;
+        let mut st = self.state.lock().unwrap();
+        if st.containers.iter().any(|c| c.name == name) {
+            return Err(Error::Upstream {
+                status: 409,
+                message: format!("Conflict. The container name \"/{name}\" is already in use"),
+            });
+        }
+        st.next_id += 1;
+        let id = format!("new{}", st.next_id);
+        st.created_bodies.push((name.to_string(), body.clone()));
+        let labels: BTreeMap<String, String> = body["Labels"]
+            .as_object()
+            .map(|o| {
+                o.iter()
+                    .map(|(k, v)| (k.clone(), v.as_str().unwrap_or_default().to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let env: Vec<String> = body["Env"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        st.env.insert(id.clone(), env);
+        let mut c = summary(&id, name, "created", None);
+        c.image = body["Image"].as_str().unwrap_or_default().to_string();
+        c.compose_project = labels.get(COMPOSE_PROJECT_LABEL).cloned();
+        c.compose_service = labels.get(COMPOSE_SERVICE_LABEL).cloned();
+        c.labels = labels;
+        st.containers.push(c);
+        Ok(id)
+    }
     async fn container_action(&self, id: &str, action: ContainerAction) -> Result<()> {
-        self.call(format!("{} {id}", action.as_str()));
+        self.check(format!("{} {id}", action.as_str()))?;
         let mut st = self.state.lock().unwrap();
         let c = st
             .containers
@@ -316,6 +387,7 @@ impl VolumeOps for FakeDocker {
         Ok(json!({"Name": v.name}))
     }
     async fn create_volume(&self, spec: &VolumeSpec) -> Result<VolumeSummary> {
+        self.check(format!("create_volume {}", spec.name))?;
         let v = VolumeSummary {
             name: spec.name.clone(),
             driver: spec.driver.clone().unwrap_or_else(|| "local".into()),
@@ -356,6 +428,7 @@ impl NetworkOps for FakeDocker {
         Ok(json!({"Id": n.id, "Name": n.name}))
     }
     async fn create_network(&self, spec: &NetworkSpec) -> Result<String> {
+        self.check(format!("create_network {}", spec.name))?;
         let mut st = self.state.lock().unwrap();
         let id = format!("n{}", st.networks.len() + 1);
         st.networks.push(NetworkSummary {
@@ -686,7 +759,7 @@ impl StreamOps for FakeDocker {
         self.streams().pulls.push(reference.clone());
         let hold = self.hold_pulls.load(Ordering::SeqCst);
         let release = self.release_pulls.clone();
-        let missing = image == "missing";
+        let missing = image == "missing" || self.check(format!("pull {reference}")).is_err();
         Box::pin(
             stream::iter([Ok(json!({"status": format!("Pulling from {image}")}))]).chain(
                 stream::once(async move {

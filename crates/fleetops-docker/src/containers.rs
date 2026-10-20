@@ -78,6 +78,18 @@ impl ContainerOps for LocalDocker {
         Ok(res.id)
     }
 
+    async fn create_container_raw(&self, name: &str, body: &Value) -> Result<String> {
+        let body = serde_json::from_value(body.clone())
+            .map_err(|e| Error::Invalid(format!("invalid container configuration: {e}")))?;
+        let opts = CreateContainerOptionsBuilder::new().name(name).build();
+        let res = self
+            .client
+            .create_container(Some(opts), body)
+            .await
+            .map_err(map_err)?;
+        Ok(res.id)
+    }
+
     async fn container_action(&self, id: &str, action: ContainerAction) -> Result<()> {
         let c = &self.client;
         match action {

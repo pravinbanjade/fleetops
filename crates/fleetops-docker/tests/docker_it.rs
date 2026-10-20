@@ -698,3 +698,19 @@ mod streams {
         );
     }
 }
+
+#[tokio::test]
+async fn create_raw_round_trip() {
+    let d = docker().await;
+    let name = unique("raw");
+    let body = serde_json::json!({
+        "Image": "busybox",
+        "Cmd": ["sleep", "30"],
+        "Labels": {"io.fleetops.test": "raw"},
+    });
+    let id = d.create_container_raw(&name, &body).await.unwrap();
+    let inspect = d.inspect_container(&id).await.unwrap();
+    assert_eq!(inspect["Config"]["Labels"]["io.fleetops.test"], "raw");
+    assert_eq!(inspect["Name"], format!("/{name}"));
+    d.remove_container(&id, true, false).await.unwrap();
+}

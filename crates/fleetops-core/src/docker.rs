@@ -338,6 +338,9 @@ pub trait ContainerOps: Send + Sync {
     async fn container_spec(&self, id: &str) -> Result<ContainerSpec>;
     /// Creates (does not start) a container; returns its id.
     async fn create_container(&self, spec: &ContainerSpec) -> Result<String>;
+    /// Creates `name` from a Docker API `ContainerCreate` body, as built by
+    /// the stacks deploy.
+    async fn create_container_raw(&self, name: &str, body: &Value) -> Result<String>;
     async fn container_action(&self, id: &str, action: ContainerAction) -> Result<()>;
     async fn rename_container(&self, id: &str, new_name: &str) -> Result<()>;
     async fn remove_container(&self, id: &str, force: bool, volumes: bool) -> Result<()>;

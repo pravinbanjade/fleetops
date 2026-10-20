@@ -63,6 +63,9 @@ impl ContainerOps for Fake {
         self.record(format!("create {}", spec.name.as_deref().unwrap_or("")))?;
         Ok("new".into())
     }
+    async fn create_container_raw(&self, _name: &str, _body: &Value) -> Result<String> {
+        unimplemented!()
+    }
     async fn container_action(&self, id: &str, action: ContainerAction) -> Result<()> {
         self.record(format!("{} {id}", action.as_str()))
     }
