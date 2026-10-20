@@ -20,6 +20,9 @@ import {
   listContainerFiles,
   listAudit,
   listComposeProjects,
+  getStack,
+  listStackRevisions,
+  listStacks,
   listContainers,
   listEnvs,
   listImages,
@@ -80,6 +83,9 @@ export const keys = {
   networks: (env: string) => ["env", env, "networks"] as const,
   network: (env: string, id: string) => ["env", env, "networks", id] as const,
   composeProjects: (env: string) => ["env", env, "compose-projects"] as const,
+  stacks: (env: string) => ["env", env, "stacks"] as const,
+  stack: (env: string, name: string) => ["env", env, "stacks", name] as const,
+  stackRevisions: (env: string, name: string) => ["env", env, "stacks", name, "revisions"] as const,
   /** A filtered list (`filter`) is cached apart from the whole one. */
   kube: (env: string, kind: string, ns?: string, filter?: KubeFilter) =>
     (filter ? ["env", env, "k8s", kind, ns ?? "*", filter] : ["env", env, "k8s", kind, ns ?? "*"]) as readonly string[],
@@ -344,6 +350,22 @@ export const composeProjectsQuery = (env: string) =>
   queryOptions({
     queryKey: keys.composeProjects(env),
     queryFn: async () => (await listComposeProjects(path(env))).data,
+  });
+
+export const stacksQuery = (env: string) =>
+  queryOptions({ queryKey: keys.stacks(env), queryFn: async () => (await listStacks(path(env))).data });
+
+export const stackQuery = (env: string, name: string) =>
+  queryOptions({
+    queryKey: keys.stack(env, name),
+    queryFn: async () => (await getStack({ path: { env, stack: name } })).data,
+    retry: retryUnlessGone,
+  });
+
+export const stackRevisionsQuery = (env: string, name: string) =>
+  queryOptions({
+    queryKey: keys.stackRevisions(env, name),
+    queryFn: async () => (await listStackRevisions({ path: { env, stack: name } })).data,
   });
 
 /** How far back the dashboard's event feed starts, in seconds. */

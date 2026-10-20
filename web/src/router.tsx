@@ -252,10 +252,25 @@ const networkRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/networks/NetworkPage"), "NetworkPage"),
 });
 
+/** The old Compose page; its projects are listed under Stacks now. */
 const composeRoute = createRoute({
   getParentRoute: () => envRoute,
   path: "compose",
-  component: lazyRouteComponent(() => import("@/pages/compose/ComposePage"), "ComposePage"),
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/envs/$env/stacks", params: { env: params.env } });
+  },
+});
+
+const stacksRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "stacks",
+  component: lazyRouteComponent(() => import("@/pages/stacks/StacksPage"), "StacksPage"),
+});
+
+const stackRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "stacks/$stack",
+  component: lazyRouteComponent(() => import("@/pages/stacks/StackPage"), "StackPage"),
 });
 
 /** Administration: admins only; anyone else is sent to the start page. */
@@ -318,6 +333,8 @@ const routeTree = rootRoute.addChildren([
         networksRoute,
         networkRoute,
         composeRoute,
+        stacksRoute,
+        stackRoute,
         helmReleasesRoute,
         helmReleaseRoute,
         kubeListRoute,

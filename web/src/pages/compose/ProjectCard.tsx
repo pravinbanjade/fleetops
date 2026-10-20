@@ -1,18 +1,16 @@
 import { ArrowDownToLine, Play, RotateCw, Square } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { composeProjectsQuery, containersQuery, keys } from "@/api/queries";
+import { containersQuery, keys } from "@/api/queries";
 import { composeAction } from "@/api/gen/sdk.gen";
 import type { ComposeActionName, ComposeProject } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Page } from "@/components/Page";
 import { ContainerState, StateBadge } from "@/components/StateBadge";
 import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { errorMessage } from "@/lib/errors";
 
 const DONE: Record<ComposeActionName, string> = {
   start: "Started",
@@ -21,38 +19,10 @@ const DONE: Record<ComposeActionName, string> = {
   down: "Removed",
 };
 
-/** Compose projects, from the containers' `com.docker.compose.project` labels. */
-export function ComposePage() {
-  const { env } = useParams({ from: "/authed/shell/envs/$env/compose" });
-  const projects = useQuery(composeProjectsQuery(env));
-  return (
-    <Page title="Compose projects">
-      <p className="text-sm text-muted-foreground">
-        Projects are read from the labels Docker Compose puts on containers. Editing and deploying stacks comes in a
-        later release.
-      </p>
-      {projects.error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {errorMessage(projects.error)}
-        </p>
-      ) : !projects.data ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : projects.data.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No compose projects in this environment.</p>
-      ) : (
-        <div className="grid gap-4">
-          {projects.data.map((p) => (
-            <ProjectCard key={p.name} env={env} project={p} />
-          ))}
-        </div>
-      )}
-    </Page>
-  );
-}
-
 const ICON = { start: Play, stop: Square, restart: RotateCw } as const;
 
-function ProjectCard({ env, project }: { env: string; project: ComposeProject }) {
+/** A Compose project FleetOps does not manage, with its containers and actions. */
+export function ProjectCard({ env, project }: { env: string; project: ComposeProject }) {
   const qc = useQueryClient();
   const containers = useQuery(containersQuery(env));
   const [downing, setDowning] = useState(false);

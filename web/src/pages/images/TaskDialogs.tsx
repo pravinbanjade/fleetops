@@ -151,7 +151,7 @@ export function BuildDialog({ env, onClose }: { env: string; onClose: () => void
   );
 }
 
-function TaskView({ task, onClose, children }: { task: TrackedTask; onClose: () => void; children: ReactNode }) {
+export function TaskView({ task, onClose, children }: { task: TrackedTask; onClose: () => void; children: ReactNode }) {
   return (
     <div className="grid gap-4">
       {children}

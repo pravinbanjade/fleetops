@@ -40,7 +40,7 @@ export const NAV = [
   { to: "/envs/$env/images", label: "Images", icon: Layers, key: "i" },
   { to: "/envs/$env/volumes", label: "Volumes", icon: HardDrive, key: "v" },
   { to: "/envs/$env/networks", label: "Networks", icon: Waypoints, key: "n" },
-  { to: "/envs/$env/compose", label: "Compose", icon: FileStack, key: "p" },
+  { to: "/envs/$env/stacks", label: "Stacks", icon: FileStack, key: "p" },
 ] as const;
 
 /** Administration pages, shown to admins. */

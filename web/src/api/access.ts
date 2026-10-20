@@ -24,7 +24,13 @@ export interface EnvAccess {
 
 /** What a built-in role allows, for a response without `grants` (the server's fixed sets). */
 function builtin(role: EnvRole, permission: string): boolean {
-  if (role === "viewer") return permission.endsWith(".view") || permission === "containers.reveal" || permission === "helm.reveal";
+  if (role === "viewer")
+    return (
+      permission.endsWith(".view") ||
+      permission === "containers.reveal" ||
+      permission === "helm.reveal" ||
+      permission === "stacks.reveal"
+    );
   return permission !== "secrets.reveal";
 }
 

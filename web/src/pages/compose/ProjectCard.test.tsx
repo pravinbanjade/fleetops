@@ -7,8 +7,9 @@ import { container } from "@/test/docker";
 
 const routes = {
   ...loggedIn,
+  "GET /api/v1/envs/local/stacks": { json: [] },
   "GET /api/v1/envs/local/compose-projects": {
-    json: [{ name: "shop", status: "partial", containers: 2, running: 1, services: ["web", "db"] }],
+    json: [{ name: "shop", status: "partial", containers: 2, running: 1, services: ["web", "db"], managed: false }],
   },
   "GET /api/v1/envs/local/containers": {
     json: [
@@ -22,7 +23,7 @@ const routes = {
 describe("compose projects", () => {
   it("shows each project's status and containers", async () => {
     mockFetch(routes);
-    const { screen } = renderApp("/envs/local/compose");
+    const { screen } = renderApp("/envs/local/stacks");
     const card = await screen.findByRole("region", { name: "shop" });
     expect(within(card).getByText("partial")).toBeInTheDocument();
     expect(within(card).getByText("1 of 2 running")).toBeInTheDocument();
@@ -39,7 +40,7 @@ describe("compose projects", () => {
         json: { affected: 1, errors: ["shop-db-1: port is already allocated"] },
       },
     });
-    const { screen } = renderApp("/envs/local/compose");
+    const { screen } = renderApp("/envs/local/stacks");
     const card = await screen.findByRole("region", { name: "shop" });
     await userEvent.click(within(card).getByRole("button", { name: "Start" }));
     expect(
@@ -53,7 +54,7 @@ describe("compose projects", () => {
       ...routes,
       "POST /api/v1/envs/local/compose-projects/shop/down": { json: { affected: 2, errors: [] } },
     });
-    const { screen } = renderApp("/envs/local/compose");
+    const { screen } = renderApp("/envs/local/stacks");
     const card = await screen.findByRole("region", { name: "shop" });
     await userEvent.click(within(card).getByRole("button", { name: "Down" }));
     const dialog = await screen.findByRole("dialog", { name: "Take shop down?" });
@@ -68,15 +69,21 @@ describe("compose projects", () => {
       "POST /api/v1/envs/local/compose-projects/shop/stop": () =>
         json(502, { code: "upstream", message: "Cannot connect to the Docker daemon" }),
     });
-    const { screen } = renderApp("/envs/local/compose");
+    const { screen } = renderApp("/envs/local/stacks");
     const card = await screen.findByRole("region", { name: "shop" });
     await userEvent.click(within(card).getByRole("button", { name: "Stop" }));
     expect(await screen.findByText("Cannot connect to the Docker daemon")).toBeInTheDocument();
   });
 
-  it("says when there are none", async () => {
-    mockFetch({ ...routes, "GET /api/v1/envs/local/compose-projects": { json: [] } });
-    const { screen } = renderApp("/envs/local/compose");
-    expect(await screen.findByText("No compose projects in this environment.")).toBeInTheDocument();
+  it("hides the section when every project is a stack", async () => {
+    mockFetch({
+      ...routes,
+      "GET /api/v1/envs/local/compose-projects": {
+        json: [{ name: "shop", status: "running", containers: 1, running: 1, services: ["web"], managed: true }],
+      },
+    });
+    const { screen } = renderApp("/envs/local/stacks");
+    expect(await screen.findByText("No stacks in this environment yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Other Compose projects" })).not.toBeInTheDocument();
   });
 });
