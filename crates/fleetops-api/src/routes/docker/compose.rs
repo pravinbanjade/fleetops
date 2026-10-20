@@ -29,7 +29,18 @@ pub async fn list(
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ComposeProject>>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
-    Ok(Json(group_projects(&c.ops.list_containers().await?)))
+    let stacks: std::collections::BTreeSet<String> = s
+        .store
+        .list_stacks(c.env.id())
+        .await?
+        .into_iter()
+        .map(|st| st.name)
+        .collect();
+    let mut projects = group_projects(&c.ops.list_containers().await?);
+    for p in &mut projects {
+        p.managed = stacks.contains(&p.name);
+    }
+    Ok(Json(projects))
 }
 
 /// start | stop | restart | down (down removes the project's containers).

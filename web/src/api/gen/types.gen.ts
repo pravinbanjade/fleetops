@@ -304,6 +304,14 @@ export type ClientMsg = {
  */
 export type ComposeActionName = 'start' | 'stop' | 'restart' | 'down';
 
+/**
+ * One problem in a Compose file, at its YAML path (`services.web.ports[1]`).
+ */
+export type ComposeIssue = {
+    message: string;
+    path: string;
+};
+
 export type ComposeOutcome = {
     /**
      * Containers the action succeeded on.
@@ -317,6 +325,10 @@ export type ComposeOutcome = {
 
 export type ComposeProject = {
     containers: number;
+    /**
+     * A FleetOps stack of this name exists in the environment.
+     */
+    managed: boolean;
     name: string;
     running: number;
     services: Array<string>;
@@ -426,6 +438,15 @@ export type CreateEnv = {
     url?: string | null;
 };
 
+export type CreateStackBody = {
+    compose: string;
+    name: string;
+    /**
+     * `KEY=value` lines.
+     */
+    variables?: Array<string>;
+};
+
 export type CreateUser = {
     password: string;
     role: Role;
@@ -450,6 +471,29 @@ export type CreatedNetwork = {
 export type Credentials = {
     password: string;
     username: string;
+};
+
+export type DeployBody = {
+    from: DeploySource;
+    /**
+     * The `token` of the plan that was reviewed.
+     */
+    plan_token: string;
+};
+
+/**
+ * What a plan or deploy is made from.
+ */
+export type DeploySource = {
+    source: 'draft';
+} | {
+    revision: number;
+    source: 'revision';
+};
+
+export type DeployStarted = {
+    revision: number;
+    task_id: string;
 };
 
 export type DirEntry = {
@@ -502,6 +546,17 @@ export type DockerEvent = {
      * Unix seconds.
      */
     time: number;
+};
+
+export type Draft = {
+    compose: string;
+    updated_at: number;
+    variables: Array<string>;
+};
+
+export type DraftBody = {
+    compose: string;
+    variables?: Array<string>;
 };
 
 /**
@@ -765,6 +820,11 @@ export type HookStep = {
     kind: string;
     name: string;
     weight: number;
+};
+
+export type ImagePlan = {
+    image: string;
+    pull: boolean;
 };
 
 export type ImageRemoved = {
@@ -1039,6 +1099,9 @@ export type NameBody = {
 export type NetworkSpec = {
     attachable?: boolean;
     driver?: string | null;
+    driver_opts?: {
+        [key: string]: string;
+    };
     gateway?: string | null;
     internal?: boolean;
     labels?: {
@@ -1054,9 +1117,42 @@ export type NetworkSummary = {
     gateway?: string | null;
     id: string;
     internal: boolean;
+    labels?: {
+        [key: string]: string;
+    };
     name: string;
     scope: string;
     subnet?: string | null;
+};
+
+export type Plan = {
+    /**
+     * Problems that stop this plan from being deployed.
+     */
+    blocking: Array<string>;
+    images: Array<ImagePlan>;
+    networks: Array<ResourcePlan>;
+    services: Array<ServicePlan>;
+    token: string;
+    volumes: Array<ResourcePlan>;
+};
+
+export type PlanResponse = {
+    compose_after: string;
+    /**
+     * The deployed revision's Compose file.
+     */
+    compose_before?: string | null;
+    /**
+     * Compose problems; when any, there is no plan.
+     */
+    issues: Array<ComposeIssue>;
+    plan?: Plan | null;
+    /**
+     * Names of variables added, removed or changed (never values).
+     */
+    variables_changed: Array<string>;
+    warnings: Array<ComposeIssue>;
 };
 
 export type PortBinding = {
@@ -1145,6 +1241,44 @@ export type ReplaceBody = {
     yaml: string;
 };
 
+export type ResourceAction = 'create' | 'exists' | 'remove' | 'kept';
+
+export type ResourcePlan = {
+    action: ResourceAction;
+    /**
+     * The Docker name.
+     */
+    name: string;
+};
+
+export type RevisionDetail = {
+    revision: RevisionRecord;
+    /**
+     * Masked without `stacks.reveal`.
+     */
+    variables: Array<string>;
+};
+
+export type RevisionRecord = {
+    compose: string;
+    created_at: number;
+    created_by?: number | null;
+    error?: string | null;
+    git_commit?: string | null;
+    id: number;
+    /**
+     * deploy | rollback
+     */
+    kind: string;
+    number: number;
+    rollback_of?: number | null;
+    stack_id: number;
+    /**
+     * deploying | deployed | failed | superseded
+     */
+    status: string;
+};
+
 export type Role = 'admin' | 'user';
 
 export type RollbackBody = {
@@ -1213,6 +1347,16 @@ export type ServerMsg = {
     type: 'access_changed';
 };
 
+export type ServiceAction = 'create' | 'recreate' | 'scale' | 'unchanged' | 'remove';
+
+export type ServicePlan = {
+    action: ServiceAction;
+    name: string;
+    reasons: Array<string>;
+    replicas_after: number;
+    replicas_before: number;
+};
+
 export type SessionInfo = {
     csrf_token: string;
     user: User;
@@ -1242,6 +1386,48 @@ export type SetAccess = {
 
 export type ShowBody = {
     chart: ChartRef;
+};
+
+export type StackActionName = 'start' | 'stop' | 'restart';
+
+export type StackDetail = {
+    deployed?: RevisionRecord | null;
+    /**
+     * Variable values are masked without `stacks.reveal`.
+     */
+    draft: Draft;
+    stack: StackRecord;
+};
+
+export type StackRecord = {
+    created_at: number;
+    created_by?: number | null;
+    deployed_revision?: number | null;
+    env_id: number;
+    id: number;
+    name: string;
+    /**
+     * inline | git
+     */
+    source: string;
+};
+
+export type StackSummary = {
+    deployed_revision?: number | null;
+    /**
+     * The saved draft differs from the deployed revision.
+     */
+    draft_differs: boolean;
+    /**
+     * The newest revision's status, if any.
+     */
+    last_status?: string | null;
+    name: string;
+    /**
+     * inline | git
+     */
+    source: string;
+    updated_at: number;
 };
 
 export type StagedBackup = {
@@ -1359,6 +1545,17 @@ export type User = {
 };
 
 export type UserKind = 'token' | 'cert' | 'exec';
+
+export type ValidateBody = {
+    compose: string;
+    name: string;
+    variables?: Array<string>;
+};
+
+export type ValidateResponse = {
+    issues: Array<ComposeIssue>;
+    warnings: Array<ComposeIssue>;
+};
 
 export type VolumeSpec = {
     driver?: string | null;
@@ -4342,6 +4539,378 @@ export type DisconnectNetworkResponses = {
 };
 
 export type DisconnectNetworkResponse = DisconnectNetworkResponses[keyof DisconnectNetworkResponses];
+
+export type ListStacksData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks';
+};
+
+export type ListStacksErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListStacksError = ListStacksErrors[keyof ListStacksErrors];
+
+export type ListStacksResponses = {
+    /**
+     * Stacks
+     */
+    200: Array<StackSummary>;
+};
+
+export type ListStacksResponse = ListStacksResponses[keyof ListStacksResponses];
+
+export type CreateStackData = {
+    body: CreateStackBody;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks';
+};
+
+export type CreateStackErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateStackError = CreateStackErrors[keyof CreateStackErrors];
+
+export type CreateStackResponses = {
+    /**
+     * Created
+     */
+    201: StackSummary;
+};
+
+export type CreateStackResponse = CreateStackResponses[keyof CreateStackResponses];
+
+export type ValidateStackData = {
+    body: ValidateBody;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/validate';
+};
+
+export type ValidateStackErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ValidateStackError = ValidateStackErrors[keyof ValidateStackErrors];
+
+export type ValidateStackResponses = {
+    /**
+     * Problems and warnings
+     */
+    200: ValidateResponse;
+};
+
+export type ValidateStackResponse = ValidateStackResponses[keyof ValidateStackResponses];
+
+export type RemoveStackData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: {
+        /**
+         * Also remove the stack's named volumes.
+         */
+        volumes?: boolean;
+    };
+    url: '/api/v1/envs/{env}/stacks/{stack}';
+};
+
+export type RemoveStackErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RemoveStackError = RemoveStackErrors[keyof RemoveStackErrors];
+
+export type RemoveStackResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type RemoveStackResponse = RemoveStackResponses[keyof RemoveStackResponses];
+
+export type GetStackData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}';
+};
+
+export type GetStackErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetStackError = GetStackErrors[keyof GetStackErrors];
+
+export type GetStackResponses = {
+    /**
+     * The stack
+     */
+    200: StackDetail;
+};
+
+export type GetStackResponse = GetStackResponses[keyof GetStackResponses];
+
+export type DeployStackData = {
+    body: DeployBody;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/deploy';
+};
+
+export type DeployStackErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeployStackError = DeployStackErrors[keyof DeployStackErrors];
+
+export type DeployStackResponses = {
+    /**
+     * Started; follow it on the websocket `task` topic
+     */
+    202: DeployStarted;
+};
+
+export type DeployStackResponse = DeployStackResponses[keyof DeployStackResponses];
+
+export type SaveStackDraftData = {
+    body: DraftBody;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/draft';
+};
+
+export type SaveStackDraftErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type SaveStackDraftError = SaveStackDraftErrors[keyof SaveStackDraftErrors];
+
+export type SaveStackDraftResponses = {
+    /**
+     * Saved
+     */
+    204: void;
+};
+
+export type SaveStackDraftResponse = SaveStackDraftResponses[keyof SaveStackDraftResponses];
+
+export type PlanStackData = {
+    body: DeploySource;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/plan';
+};
+
+export type PlanStackErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type PlanStackError = PlanStackErrors[keyof PlanStackErrors];
+
+export type PlanStackResponses = {
+    /**
+     * The plan, or the Compose problems
+     */
+    200: PlanResponse;
+};
+
+export type PlanStackResponse = PlanStackResponses[keyof PlanStackResponses];
+
+export type ListStackRevisionsData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/revisions';
+};
+
+export type ListStackRevisionsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListStackRevisionsError = ListStackRevisionsErrors[keyof ListStackRevisionsErrors];
+
+export type ListStackRevisionsResponses = {
+    /**
+     * Revisions
+     */
+    200: Array<RevisionRecord>;
+};
+
+export type ListStackRevisionsResponse = ListStackRevisionsResponses[keyof ListStackRevisionsResponses];
+
+export type GetStackRevisionData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+        /**
+         * Revision number
+         */
+        n: number;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/revisions/{n}';
+};
+
+export type GetStackRevisionErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetStackRevisionError = GetStackRevisionErrors[keyof GetStackRevisionErrors];
+
+export type GetStackRevisionResponses = {
+    /**
+     * The revision
+     */
+    200: RevisionDetail;
+};
+
+export type GetStackRevisionResponse = GetStackRevisionResponses[keyof GetStackRevisionResponses];
+
+export type StackActionData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+        action: StackActionName;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/{action}';
+};
+
+export type StackActionErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type StackActionError = StackActionErrors[keyof StackActionErrors];
+
+export type StackActionResponses = {
+    /**
+     * Every container was attempted; failures are listed
+     */
+    200: ComposeOutcome;
+};
+
+export type StackActionResponse = StackActionResponses[keyof StackActionResponses];
 
 export type GetEnvStatusData = {
     body?: never;

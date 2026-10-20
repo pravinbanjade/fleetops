@@ -5,6 +5,7 @@ pub mod containers;
 pub mod image_tasks;
 pub mod images;
 pub mod networks;
+pub mod stacks;
 pub mod system;
 pub mod volumes;
 

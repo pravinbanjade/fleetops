@@ -5368,6 +5368,669 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/stacks": {
+      "get": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Stacks on the environment",
+        "operationId": "listStacks",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stacks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StackSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Create a stack with its first draft",
+        "operationId": "createStack",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStackBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StackSummary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/validate": {
+      "post": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Check a Compose file without saving it",
+        "operationId": "validateStack",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Problems and warnings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}": {
+      "get": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "A stack, its draft and its deployed revision",
+        "operationId": "getStack",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stack",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StackDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Remove the stack's containers and networks, and optionally its volumes",
+        "operationId": "removeStack",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "volumes",
+            "in": "query",
+            "description": "Also remove the stack's named volumes.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/deploy": {
+      "post": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Deploy the reviewed plan in the background",
+        "description": "Fails with 409 when the stack or environment changed since the plan was made.",
+        "operationId": "deployStack",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeployBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Started; follow it on the websocket `task` topic",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeployStarted"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/draft": {
+      "put": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Save the stack's draft",
+        "description": "Masked variable values are replaced by the stored ones.",
+        "operationId": "saveStackDraft",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Saved"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/plan": {
+      "post": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "What deploying the draft or an earlier revision would do",
+        "operationId": "planStack",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploySource"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The plan, or the Compose problems",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResponse"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/revisions": {
+      "get": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "The stack's revisions, newest first",
+        "operationId": "listStackRevisions",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RevisionRecord"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/revisions/{n}": {
+      "get": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "One revision with its variables",
+        "operationId": "getStackRevision",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "n",
+            "in": "path",
+            "description": "Revision number",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/{action}": {
+      "post": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Start, stop or restart the stack's containers",
+        "operationId": "stackAction",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/StackActionName"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every container was attempted; failures are listed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComposeOutcome"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/status": {
       "get": {
         "tags": [
@@ -6953,6 +7616,22 @@
           "down"
         ]
       },
+      "ComposeIssue": {
+        "type": "object",
+        "description": "One problem in a Compose file, at its YAML path (`services.web.ports[1]`).",
+        "required": [
+          "path",
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
       "ComposeOutcome": {
         "type": "object",
         "required": [
@@ -6981,12 +7660,17 @@
           "services",
           "containers",
           "running",
-          "status"
+          "status",
+          "managed"
         ],
         "properties": {
           "containers": {
             "type": "integer",
             "minimum": 0
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "A FleetOps stack of this name exists in the environment."
           },
           "name": {
             "type": "string"
@@ -7293,6 +7977,28 @@
           }
         }
       },
+      "CreateStackBody": {
+        "type": "object",
+        "required": [
+          "name",
+          "compose"
+        ],
+        "properties": {
+          "compose": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`KEY=value` lines."
+          }
+        }
+      },
       "CreateUser": {
         "type": "object",
         "required": [
@@ -7368,6 +8074,79 @@
             "type": "string"
           },
           "username": {
+            "type": "string"
+          }
+        }
+      },
+      "DeployBody": {
+        "type": "object",
+        "required": [
+          "from",
+          "plan_token"
+        ],
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/DeploySource"
+          },
+          "plan_token": {
+            "type": "string",
+            "description": "The `token` of the plan that was reviewed."
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeploySource": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The stack's saved draft.",
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "draft"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An earlier revision (a rollback).",
+            "required": [
+              "revision",
+              "source"
+            ],
+            "properties": {
+              "revision": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "What a plan or deploy is made from."
+      },
+      "DeployStarted": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "task_id": {
             "type": "string"
           }
         }
@@ -7497,6 +8276,46 @@
             "type": "integer",
             "format": "int64",
             "description": "Unix seconds."
+          }
+        }
+      },
+      "Draft": {
+        "type": "object",
+        "required": [
+          "compose",
+          "variables",
+          "updated_at"
+        ],
+        "properties": {
+          "compose": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "DraftBody": {
+        "type": "object",
+        "required": [
+          "compose"
+        ],
+        "properties": {
+          "compose": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -8211,6 +9030,21 @@
           }
         }
       },
+      "ImagePlan": {
+        "type": "object",
+        "required": [
+          "image",
+          "pull"
+        ],
+        "properties": {
+          "image": {
+            "type": "string"
+          },
+          "pull": {
+            "type": "boolean"
+          }
+        }
+      },
       "ImageRemoved": {
         "type": "object",
         "required": [
@@ -8864,6 +9698,16 @@
             ],
             "default": null
           },
+          "driver_opts": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
           "gateway": {
             "type": [
               "string",
@@ -8927,6 +9771,15 @@
           "internal": {
             "type": "boolean"
           },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
           "name": {
             "type": "string"
           },
@@ -8938,6 +9791,104 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "Plan": {
+        "type": "object",
+        "required": [
+          "services",
+          "networks",
+          "volumes",
+          "images",
+          "blocking",
+          "token"
+        ],
+        "properties": {
+          "blocking": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Problems that stop this plan from being deployed."
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImagePlan"
+            }
+          },
+          "networks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePlan"
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServicePlan"
+            }
+          },
+          "token": {
+            "type": "string"
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePlan"
+            }
+          }
+        }
+      },
+      "PlanResponse": {
+        "type": "object",
+        "required": [
+          "issues",
+          "warnings",
+          "compose_after",
+          "variables_changed"
+        ],
+        "properties": {
+          "compose_after": {
+            "type": "string"
+          },
+          "compose_before": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The deployed revision's Compose file."
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComposeIssue"
+            },
+            "description": "Compose problems; when any, there is no plan."
+          },
+          "plan": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Plan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "variables_changed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names of variables added, removed or changed (never values)."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComposeIssue"
+            }
           }
         }
       },
@@ -9143,6 +10094,117 @@
           },
           "yaml": {
             "type": "string"
+          }
+        }
+      },
+      "ResourceAction": {
+        "type": "string",
+        "enum": [
+          "create",
+          "exists",
+          "remove",
+          "kept"
+        ]
+      },
+      "ResourcePlan": {
+        "type": "object",
+        "required": [
+          "name",
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ResourceAction"
+          },
+          "name": {
+            "type": "string",
+            "description": "The Docker name."
+          }
+        }
+      },
+      "RevisionDetail": {
+        "type": "object",
+        "required": [
+          "revision",
+          "variables"
+        ],
+        "properties": {
+          "revision": {
+            "$ref": "#/components/schemas/RevisionRecord"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Masked without `stacks.reveal`."
+          }
+        }
+      },
+      "RevisionRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "stack_id",
+          "number",
+          "compose",
+          "status",
+          "kind",
+          "created_at"
+        ],
+        "properties": {
+          "compose": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_by": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "git_commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string",
+            "description": "deploy | rollback"
+          },
+          "number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rollback_of": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "stack_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "status": {
+            "type": "string",
+            "description": "deploying | deployed | failed | superseded"
           }
         }
       },
@@ -9395,6 +10457,50 @@
         ],
         "description": "A text frame from the server, as the builders below write it. Exec\noutput arrives as binary frames of `[u32 sub id, big-endian][bytes]`.\nDocumentation only: `tests/openapi.rs` checks each builder against it."
       },
+      "ServiceAction": {
+        "type": "string",
+        "enum": [
+          "create",
+          "recreate",
+          "scale",
+          "unchanged",
+          "remove"
+        ]
+      },
+      "ServicePlan": {
+        "type": "object",
+        "required": [
+          "name",
+          "action",
+          "reasons",
+          "replicas_before",
+          "replicas_after"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ServiceAction"
+          },
+          "name": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "replicas_after": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "replicas_before": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "SessionInfo": {
         "type": "object",
         "required": [
@@ -9494,6 +10600,125 @@
         "properties": {
           "chart": {
             "$ref": "#/components/schemas/ChartRef"
+          }
+        }
+      },
+      "StackActionName": {
+        "type": "string",
+        "enum": [
+          "start",
+          "stop",
+          "restart"
+        ]
+      },
+      "StackDetail": {
+        "type": "object",
+        "required": [
+          "stack",
+          "draft"
+        ],
+        "properties": {
+          "deployed": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RevisionRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draft": {
+            "$ref": "#/components/schemas/Draft",
+            "description": "Variable values are masked without `stacks.reveal`."
+          },
+          "stack": {
+            "$ref": "#/components/schemas/StackRecord"
+          }
+        }
+      },
+      "StackRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "env_id",
+          "name",
+          "source",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_by": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "deployed_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "env_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "inline | git"
+          }
+        }
+      },
+      "StackSummary": {
+        "type": "object",
+        "required": [
+          "name",
+          "source",
+          "updated_at",
+          "draft_differs"
+        ],
+        "properties": {
+          "deployed_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "draft_differs": {
+            "type": "boolean",
+            "description": "The saved draft differs from the deployed revision."
+          },
+          "last_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The newest revision's status, if any."
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "inline | git"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -9819,6 +11044,48 @@
           "exec"
         ]
       },
+      "ValidateBody": {
+        "type": "object",
+        "required": [
+          "name",
+          "compose"
+        ],
+        "properties": {
+          "compose": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ValidateResponse": {
+        "type": "object",
+        "required": [
+          "issues",
+          "warnings"
+        ],
+        "properties": {
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComposeIssue"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComposeIssue"
+            }
+          }
+        }
+      },
       "VolumeSpec": {
         "type": "object",
         "properties": {
@@ -10050,6 +11317,10 @@
     {
       "name": "compose",
       "description": "Compose projects, grouped by label"
+    },
+    {
+      "name": "stacks",
+      "description": "Compose stacks FleetOps authors, plans and deploys"
     },
     {
       "name": "kubernetes",

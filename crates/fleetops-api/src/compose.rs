@@ -14,6 +14,8 @@ pub struct ComposeProject {
     pub running: usize,
     /// running | partial | stopped
     pub status: &'static str,
+    /// A FleetOps stack of this name exists in the environment.
+    pub managed: bool,
 }
 
 pub fn group_projects(containers: &[ContainerSummary]) -> Vec<ComposeProject> {
@@ -44,6 +46,7 @@ pub fn group_projects(containers: &[ContainerSummary]) -> Vec<ComposeProject> {
                 containers: members.len(),
                 running,
                 status,
+                managed: false,
             }
         })
         .collect()

@@ -357,8 +357,8 @@ async fn wait_for(
     Ok(())
 }
 
-/// Runs a deploy in the background and streams its progress for the task
-/// manager. On failure the stack is restored, the revision is marked
+/// Runs a deploy in the background, once polled, and streams its progress
+/// for the task manager. On failure the stack is restored, the revision is marked
 /// failed, and the last message carries `error` so the task fails. The
 /// stack's deploy lock is released either way.
 pub fn deploy_stream(
@@ -371,7 +371,9 @@ pub fn deploy_stream(
     timing: Timing,
 ) -> BoxStream<Value> {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Value>();
-    tokio::spawn(async move {
+    // The job starts when the task first polls the stream, so a task that
+    // is never started never deploys.
+    let job = async move {
         let send = {
             let tx = tx.clone();
             move |v: Value| {
@@ -423,8 +425,15 @@ pub fn deploy_stream(
             }
         }
         state.stack_locks.lock().unwrap().remove(&stack.id);
+    };
+    let started = futures_util::stream::once(async move {
+        tokio::spawn(job);
+        rx
     });
-    Box::pin(futures_util::stream::unfold(rx, |mut rx| async move {
-        rx.recv().await.map(|v| (Ok(v), rx))
+    Box::pin(started.flat_map(|rx| {
+        futures_util::stream::unfold(
+            rx,
+            |mut rx| async move { rx.recv().await.map(|v| (Ok(v), rx)) },
+        )
     }))
 }

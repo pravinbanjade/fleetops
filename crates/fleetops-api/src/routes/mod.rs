@@ -61,7 +61,8 @@ pub fn api() -> OpenApiRouter<AppState> {
 
 fn env_routes() -> OpenApiRouter<AppState> {
     use docker::{
-        compose, containers as c, image_tasks, images as i, networks as n, system, volumes as v,
+        compose, containers as c, image_tasks, images as i, networks as n, stacks, system,
+        volumes as v,
     };
     OpenApiRouter::new()
         .routes(routes!(envs::list, envs::create))
@@ -102,6 +103,15 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(n::disconnect))
         .routes(routes!(compose::list))
         .routes(routes!(compose::action))
+        .routes(routes!(stacks::list, stacks::create))
+        .routes(routes!(stacks::validate))
+        .routes(routes!(stacks::get, stacks::remove))
+        .routes(routes!(stacks::save_draft))
+        .routes(routes!(stacks::plan_stack))
+        .routes(routes!(stacks::deploy))
+        .routes(routes!(stacks::revisions))
+        .routes(routes!(stacks::revision))
+        .routes(routes!(stacks::action))
         .routes(routes!(kube::apply))
         .routes(routes!(kube::templates))
         .routes(routes!(helm::list))

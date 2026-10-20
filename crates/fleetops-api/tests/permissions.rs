@@ -314,6 +314,62 @@ fn cases() -> Vec<Case> {
             None,
             "stacks.delete",
         ),
+        c("GET", "/api/v1/envs/local/stacks", None, "stacks.view"),
+        c(
+            "POST",
+            "/api/v1/envs/local/stacks",
+            Some(json!({"name": "shop", "compose": "services: {}"})),
+            "stacks.create",
+        ),
+        c(
+            "POST",
+            "/api/v1/envs/local/stacks/validate",
+            Some(json!({"name": "shop", "compose": "services: {}"})),
+            "stacks.view",
+        ),
+        c("GET", "/api/v1/envs/local/stacks/shop", None, "stacks.view"),
+        c(
+            "PUT",
+            "/api/v1/envs/local/stacks/shop/draft",
+            Some(json!({"compose": "services: {}"})),
+            "stacks.create",
+        ),
+        c(
+            "POST",
+            "/api/v1/envs/local/stacks/shop/plan",
+            Some(json!({"source": "draft"})),
+            "stacks.view",
+        ),
+        c(
+            "POST",
+            "/api/v1/envs/local/stacks/shop/deploy",
+            Some(json!({"from": {"source": "draft"}, "plan_token": "x"})),
+            "stacks.operate",
+        ),
+        c(
+            "GET",
+            "/api/v1/envs/local/stacks/shop/revisions",
+            None,
+            "stacks.view",
+        ),
+        c(
+            "GET",
+            "/api/v1/envs/local/stacks/shop/revisions/1",
+            None,
+            "stacks.view",
+        ),
+        c(
+            "POST",
+            "/api/v1/envs/local/stacks/shop/restart",
+            None,
+            "stacks.operate",
+        ),
+        c(
+            "DELETE",
+            "/api/v1/envs/local/stacks/shop",
+            None,
+            "stacks.delete",
+        ),
         c(
             "GET",
             "/api/v1/envs/k/k8s/deployments",
@@ -799,4 +855,34 @@ async fn builtin_roles_reach_what_they_reached_before() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn stack_variables_masked_without_reveal() {
+    let r = Rig::new().await;
+    r.t.store
+        .create_stack(
+            r.envs["local"],
+            "shop",
+            "services: {}",
+            &["TOKEN=hunter2".into()],
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    let get = c("GET", "/api/v1/envs/local/stacks/shop", None, "stacks.view");
+    r.give(vec![custom(PermSet::default().with(p("stacks.view")))]);
+    let masked = r.send(&get).await;
+    assert_eq!(
+        masked.json["draft"]["variables"],
+        json!([format!("TOKEN={}", fleetops_core::kube::MASK)])
+    );
+    r.give(vec![custom(
+        PermSet::default()
+            .with(p("stacks.view"))
+            .with(p("stacks.reveal")),
+    )]);
+    let shown = r.send(&get).await;
+    assert_eq!(shown.json["draft"]["variables"], json!(["TOKEN=hunter2"]));
 }
