@@ -3,11 +3,15 @@
 //! running. Pure; the deploy runner in `fleetops-api` does the I/O.
 
 pub mod interp;
+pub mod model;
+pub mod parse;
 
 use serde::Serialize;
 use utoipa::ToSchema;
 
 pub use interp::{interpolate, parse_variables};
+pub use model::*;
+pub use parse::{parse, validate_stack_name, Parsed};
 
 /// One problem in a Compose file, at its YAML path (`services.web.ports[1]`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]

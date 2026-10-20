@@ -1287,6 +1287,7 @@ dependencies = [
  "async-trait",
  "futures-util",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "thiserror",
  "tokio",
