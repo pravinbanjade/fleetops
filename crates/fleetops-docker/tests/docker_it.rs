@@ -704,7 +704,7 @@ async fn create_raw_round_trip() {
     let d = docker().await;
     let name = unique("raw");
     let body = serde_json::json!({
-        "Image": "busybox",
+        "Image": IMAGE,
         "Cmd": ["sleep", "30"],
         "Labels": {"io.fleetops.test": "raw"},
     });
