@@ -96,6 +96,10 @@ pub struct AppState {
     pub restart: Arc<dyn crate::backup::Restart>,
     /// Uploaded backups waiting for their restore.
     pub staged: Arc<crate::backup::StagedBackups>,
+    /// Stacks with a deploy running, by stack id (one at a time per stack).
+    pub stack_locks: Arc<std::sync::Mutex<std::collections::HashSet<i64>>>,
+    /// Deploy waits; shortened in tests.
+    pub stack_timing: crate::stacks::Timing,
 }
 
 impl AppState {
@@ -119,6 +123,8 @@ impl AppState {
             backup_hooks: Arc::new(crate::backup::NoBackupHooks),
             restart: Arc::new(crate::backup::NoRestart),
             staged: Arc::default(),
+            stack_locks: Arc::default(),
+            stack_timing: Default::default(),
         }
     }
 

@@ -14,6 +14,7 @@ mod headers;
 pub mod openapi;
 mod request_id;
 mod routes;
+pub mod stacks;
 pub mod state;
 pub mod tasks;
 pub mod ws;
