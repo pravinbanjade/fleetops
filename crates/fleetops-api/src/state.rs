@@ -45,6 +45,8 @@ pub struct ApiConfig {
     /// The data directory (`FLEETOPS_DATA`); backups and restores are
     /// prepared in it. `None` turns them off.
     pub data_dir: Option<std::path::PathBuf>,
+    /// Stack deploy waits (stacks spec §4); shortened in tests.
+    pub stack_timing: crate::stacks::Timing,
 }
 
 impl Default for ApiConfig {
@@ -62,6 +64,7 @@ impl Default for ApiConfig {
             helm: None,
             public_url: None,
             data_dir: None,
+            stack_timing: Default::default(),
         }
     }
 }
@@ -98,8 +101,6 @@ pub struct AppState {
     pub staged: Arc<crate::backup::StagedBackups>,
     /// Stacks with a deploy running, by stack id (one at a time per stack).
     pub stack_locks: Arc<std::sync::Mutex<std::collections::HashSet<i64>>>,
-    /// Deploy waits; shortened in tests.
-    pub stack_timing: crate::stacks::Timing,
 }
 
 impl AppState {
@@ -124,7 +125,6 @@ impl AppState {
             restart: Arc::new(crate::backup::NoRestart),
             staged: Arc::default(),
             stack_locks: Arc::default(),
-            stack_timing: Default::default(),
         }
     }
 

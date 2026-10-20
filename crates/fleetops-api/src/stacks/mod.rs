@@ -3,9 +3,11 @@
 //! recovery of deploys a restart cut off.
 
 pub mod deploy;
+pub mod recover;
 pub mod restore;
 
 pub use deploy::{deploy_stream, execute, Timing};
+pub use recover::{recover_all, recover_stack, run_recovery};
 pub use restore::{restore, RestoreReport};
 
 use fleetops_core::compose::docker::{LABEL_PROJECT, LABEL_SERVICE};

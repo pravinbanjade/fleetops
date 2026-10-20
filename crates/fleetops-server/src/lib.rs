@@ -48,6 +48,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     if let Some(env) = bootstrap_local(&store, &state.envs, &config.docker_host).await? {
         tracing::info!(url = %env.url, "registered local Docker environment");
     }
+    tokio::spawn(fleetops_api::stacks::run_recovery(state.clone()));
     #[cfg(feature = "enterprise")]
     let app = {
         let ee = fleetops_ee::init(
