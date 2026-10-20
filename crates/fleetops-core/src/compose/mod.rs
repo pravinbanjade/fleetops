@@ -6,6 +6,7 @@ pub mod docker;
 pub mod interp;
 pub mod model;
 pub mod parse;
+pub mod plan;
 
 use serde::Serialize;
 use utoipa::ToSchema;
