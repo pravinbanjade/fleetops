@@ -98,7 +98,7 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
   - **Create, recreate with changes** (rolls back if the new container fails to start), and **duplicate**.
 - **Images:** pull with layer progress, build from a Dockerfile or tar context with a streamed log, tag, history, inspect, remove and prune.
 - **Volumes and networks:** create, inspect, connect and disconnect, remove and prune.
-- **Compose projects:** containers grouped by project, with start, stop, restart and down.
+- **Stacks:** write a Compose file and its variables in the browser and deploy it to any Docker environment, local or through an agent. Before each deploy you see what changes: services created, recreated (with the fields that changed) or removed, and a diff of the file. A failed or interrupted deploy puts the stack back as it was. Every deploy is a revision you can roll back to. Compose runs natively in FleetOps, so no `docker compose` binary is needed; `build`, `secrets` and `configs` are not supported. Projects deployed outside FleetOps are listed too, with start, stop, restart and down.
 
 **Kubernetes**
 - Browse workloads, services, ingresses, network policies, config, storage, RBAC, events and every custom resource the cluster serves, in one namespace or all.
@@ -164,7 +164,7 @@ Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available:
 Admins manage users, environments and access, and can do everything everywhere. Every other account works only in the environments an admin grants it, from **Users → Access**:
 
 - **Viewer** reads everything the grant covers: lists, details, logs, stats, events and YAML.
-- **Operator** can also change it: start, stop, remove, pull, create, Compose actions, delete, scale, restart, edit and apply YAML, and terminals (a shell counts as a change).
+- **Operator** can also change it: start, stop, remove, pull, create, stack deploys and Compose actions, delete, scale, restart, edit and apply YAML, and terminals (a shell counts as a change).
 
 An environment a user has no role on does not exist for them: it is missing from their list and its URLs answer *not found*.
 
@@ -212,10 +212,10 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 
 ## Roadmap
 
-**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · backup and restore · Enterprise audit export, teams, custom roles, single sign-on (OIDC, LDAP) and scheduled backups.
+**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · backup and restore · Compose stacks with plan, deploy and rollback · Enterprise audit export, teams, custom roles, single sign-on (OIDC, LDAP) and scheduled backups.
 
 **Next:**
-- **Stacks and GitOps:** Compose authoring, a diff before deploy, rollback, and git-backed stacks synced by webhook or polling.
+- **GitOps:** stacks backed by a git repository, synced by webhook or polling.
 - **Port-forward:** reach a pod's port through FleetOps.
 - **Enterprise:** API tokens, SIEM forwarding and long audit retention.
 

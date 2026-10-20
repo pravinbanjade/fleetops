@@ -330,3 +330,141 @@ async fn an_agent_environment_serves_the_same_api_as_local() {
     let (_, status) = live.call("GET", "/api/v1/envs/remote/status", None).await;
     assert_eq!(status["state"], "down", "{status}");
 }
+
+/// The stack's containers as (service, id, state), from the API.
+async fn stack_containers(live: &Live, stack: &str) -> Vec<(String, String, String)> {
+    let (_, list) = live
+        .call("GET", "/api/v1/envs/local/containers", None)
+        .await;
+    let mut out: Vec<(String, String, String)> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["compose_project"] == stack)
+        .map(|c| {
+            (
+                c["compose_service"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                c["id"].as_str().unwrap().to_string(),
+                c["state"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+async fn deploy_stack(live: &Live, stack: &str, from: Value) {
+    let base = format!("/api/v1/envs/local/stacks/{stack}");
+    let (status, plan) = live
+        .call("POST", &format!("{base}/plan"), Some(from.clone()))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{plan}");
+    let token = plan["plan"]["token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no plan: {plan}"));
+    let (status, started) = live
+        .call(
+            "POST",
+            &format!("{base}/deploy"),
+            Some(json!({"from": from, "plan_token": token})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{started}");
+    let id = started["task_id"].as_str().unwrap();
+    for _ in 0..600 {
+        let (_, t) = live.call("GET", &format!("/api/v1/tasks/{id}"), None).await;
+        if t["status"] != "running" {
+            assert_eq!(t["status"], "succeeded", "{t}");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("deploy of {stack} did not finish");
+}
+
+#[tokio::test]
+async fn stack_lifecycle_against_docker() {
+    let (live, _) = start().await;
+    let stack = format!("fleetops-it-stack-{}", std::process::id());
+    let compose = |level: &str| {
+        format!(
+            r#"
+services:
+  db:
+    image: alpine:3.20
+    command: sleep 300
+    restart: unless-stopped
+    healthcheck: {{ test: ["CMD", "true"], interval: 1s, retries: 5 }}
+    volumes: ["data:/data"]
+  web:
+    image: alpine:3.20
+    command: sleep 300
+    restart: unless-stopped
+    environment: {{ LEVEL: {level} }}
+    ports: ["80"]
+    depends_on: {{ db: {{ condition: service_healthy }} }}
+volumes:
+  data:
+"#
+        )
+    };
+    let base = format!("/api/v1/envs/local/stacks/{stack}");
+    let (status, body) = live
+        .call(
+            "POST",
+            "/api/v1/envs/local/stacks",
+            Some(json!({"name": stack, "compose": compose("info")})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    deploy_stack(&live, &stack, json!({"source": "draft"})).await;
+    let first = stack_containers(&live, &stack).await;
+    assert_eq!(first.len(), 2, "{first:?}");
+    assert!(first.iter().all(|c| c.2 == "running"), "{first:?}");
+
+    let (status, _) = live
+        .call(
+            "PUT",
+            &format!("{base}/draft"),
+            Some(json!({"compose": compose("debug")})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    deploy_stack(&live, &stack, json!({"source": "draft"})).await;
+    let second = stack_containers(&live, &stack).await;
+    assert_eq!(second[0].1, first[0].1, "db is untouched");
+    assert_ne!(second[1].1, first[1].1, "web is recreated");
+
+    deploy_stack(&live, &stack, json!({"source": "revision", "revision": 1})).await;
+    let (_, inspect) = live
+        .call(
+            "GET",
+            &format!("/api/v1/envs/local/containers/{stack}-web-1"),
+            None,
+        )
+        .await;
+    let env = inspect["Config"]["Env"].as_array().unwrap();
+    assert!(env.iter().any(|e| e == "LEVEL=info"), "{env:?}");
+
+    let (status, _) = live
+        .call("DELETE", &format!("{base}?volumes=true"), None)
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(stack_containers(&live, &stack).await.is_empty());
+    let (_, nets) = live.call("GET", "/api/v1/envs/local/networks", None).await;
+    assert!(nets
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|n| n["name"] != format!("{stack}_default")));
+    let (_, vols) = live.call("GET", "/api/v1/envs/local/volumes", None).await;
+    assert!(vols
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|v| v["name"] != format!("{stack}_data")));
+}
