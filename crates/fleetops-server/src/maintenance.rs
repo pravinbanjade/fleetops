@@ -22,5 +22,12 @@ pub async fn run(store: Store) {
             Ok((s, a)) => tracing::debug!(sessions = s, audit = a, "maintenance prune"),
             Err(e) => tracing::warn!(error = %e, "maintenance prune failed"),
         }
+        match store
+            .prune_stack_revisions(fleetops_store::STACK_REVISIONS_KEPT)
+            .await
+        {
+            Ok(n) => tracing::debug!(revisions = n, "stack revision prune"),
+            Err(e) => tracing::warn!(error = %e, "stack revision prune failed"),
+        }
     }
 }

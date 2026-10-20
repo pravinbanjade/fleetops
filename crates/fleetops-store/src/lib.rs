@@ -10,6 +10,7 @@ mod environments;
 pub mod secrets;
 mod sessions;
 mod settings;
+mod stacks;
 mod users;
 
 pub use access::BindingRecord;
@@ -18,6 +19,7 @@ pub use audit::{AuditEntry, NewAudit};
 pub use environments::EnvironmentRecord;
 pub use sessions::{NewSession, SessionRecord};
 pub use settings::AUDIT_RETENTION_KEY;
+pub use stacks::{Draft, RevisionRecord, StackRecord, STACK_REVISIONS_KEPT};
 
 use fleetops_core::{Error, Result};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};

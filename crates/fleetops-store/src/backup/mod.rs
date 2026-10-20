@@ -46,12 +46,11 @@ impl SealedColumn {
 
 /// The Community sealed columns. Agent credentials are hashes, not sealed.
 pub fn community_sealed() -> Vec<SealedColumn> {
-    vec![SealedColumn::new(
-        "env_credentials",
-        "ciphertext",
-        "env_id",
-        "{id}",
-    )]
+    vec![
+        SealedColumn::new("env_credentials", "ciphertext", "env_id", "{id}"),
+        SealedColumn::new("stack_drafts", "variables", "stack_id", "stack:{id}"),
+        SealedColumn::new("stack_revisions", "variables", "id", "stack-revision:{id}"),
+    ]
 }
 
 /// The newest Community migration this build knows.

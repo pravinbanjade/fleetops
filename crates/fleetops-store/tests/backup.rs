@@ -568,3 +568,27 @@ fn streaming_encryptor_matches_decrypt() {
         assert_eq!(back, plain, "len {len}");
     }
 }
+
+#[tokio::test]
+async fn restore_reseals_stack_variables() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ka, kb) = (SecretKey::random(), SecretKey::random());
+    let store = populated(&ka, dir.path()).await;
+    let env = store.list_environments().await.unwrap()[0].id;
+    let vars = vec!["TOKEN=s3cret".to_string()];
+    let st = store
+        .create_stack(env, "shop", "services: {}", &vars, None, 1)
+        .await
+        .unwrap();
+    store
+        .create_revision(st.id, "services: {}", &vars, "deploy", None, None, None, 1)
+        .await
+        .unwrap();
+    let file = backup_file(&store, dir.path()).await;
+    let o = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o")).unwrap();
+    assert_eq!(reseal(&o.db, &o.manifest, &kb).await.unwrap(), 3);
+    let s = Store::open(&o.db).await.unwrap().with_secret_key(&kb);
+    let st = s.stack_by_name(env, "shop").await.unwrap();
+    assert_eq!(s.draft(st.id).await.unwrap().unwrap().variables, vars);
+    assert_eq!(s.revision_variables(st.id, 1).await.unwrap(), vars);
+}
