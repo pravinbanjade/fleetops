@@ -1,6 +1,7 @@
 //! Domain types shared by every fleetops crate. No I/O lives here.
 
 pub mod access;
+pub mod compose;
 pub mod docker;
 pub mod edition;
 pub mod env;
