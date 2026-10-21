@@ -110,6 +110,8 @@ pub struct AppState {
     /// Stacks with a git sync running, and whether another was asked for
     /// meanwhile.
     pub git_syncs: Arc<std::sync::Mutex<std::collections::HashMap<i64, bool>>>,
+    /// Webhook requests per stack and client address.
+    pub hook_limiter: Arc<LoginLimiter>,
 }
 
 impl AppState {
@@ -135,6 +137,10 @@ impl AppState {
             staged: Arc::default(),
             stack_locks: Arc::default(),
             git_syncs: Arc::default(),
+            hook_limiter: Arc::new(LoginLimiter::new(
+                crate::routes::stack_hooks::HOOK_MAX_REQUESTS,
+                crate::routes::stack_hooks::HOOK_WINDOW,
+            )),
         }
     }
 

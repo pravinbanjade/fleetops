@@ -886,6 +886,20 @@ export type HelmRevision = {
     updated: number;
 };
 
+export type HookAccepted = {
+    /**
+     * accepted | ignored (a push to another branch)
+     */
+    status: string;
+};
+
+export type HookRefused = {
+    /**
+     * Always `unauthorized`.
+     */
+    error: string;
+};
+
 /**
  * One hook a deploy runs, as the plan lists it.
  */
@@ -5496,6 +5510,45 @@ export type GetOpenApiResponses = {
      */
     200: unknown;
 };
+
+export type StackWebhookData = {
+    body?: never;
+    path: {
+        /**
+         * Stack id
+         */
+        id: number;
+    };
+    query?: {
+        /**
+         * The webhook secret, for senders that cannot sign.
+         */
+        secret?: string;
+    };
+    url: '/api/v1/stacks/hooks/{id}';
+};
+
+export type StackWebhookErrors = {
+    /**
+     * Not verified; the same for every reason
+     */
+    401: HookRefused;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type StackWebhookError = StackWebhookErrors[keyof StackWebhookErrors];
+
+export type StackWebhookResponses = {
+    /**
+     * Accepted, or ignored for another branch
+     */
+    202: HookAccepted;
+};
+
+export type StackWebhookResponse = StackWebhookResponses[keyof StackWebhookResponses];
 
 export type GetTaskData = {
     body?: never;

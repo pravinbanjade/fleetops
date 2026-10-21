@@ -8,6 +8,7 @@ pub mod envs;
 pub(crate) mod helm;
 pub(crate) mod kube;
 pub(crate) mod kube_generic;
+pub mod stack_hooks;
 pub mod tasks;
 pub mod users;
 
@@ -55,6 +56,7 @@ pub fn api() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::ws::handler))
         .routes(routes!(crate::agents::connect::handler))
         .routes(routes!(tasks::get))
+        .routes(routes!(stack_hooks::hook).layer(DefaultBodyLimit::max(stack_hooks::HOOK_BODY_MAX)))
         .merge(env_routes())
         .fallback(not_found)
 }

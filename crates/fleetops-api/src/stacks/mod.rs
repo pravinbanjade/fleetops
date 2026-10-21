@@ -7,6 +7,7 @@ pub mod git;
 pub mod recover;
 pub mod restore;
 pub mod start;
+pub mod webhook;
 
 pub use deploy::{deploy_stream, execute, Timing};
 pub use recover::{recover_all, recover_stack, restore_and_settle, run_recovery};

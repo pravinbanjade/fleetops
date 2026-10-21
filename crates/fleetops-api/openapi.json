@@ -6811,6 +6811,72 @@
         ]
       }
     },
+    "/api/v1/stacks/hooks/{id}": {
+      "post": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Push webhook for a git-backed stack",
+        "description": "Signed with the stack's webhook secret: GitHub `X-Hub-Signature-256`, Gitea or Forgejo `X-Gitea-Signature`, GitLab `X-Gitlab-Token`, or `?secret=`. Starts a sync in the background.",
+        "operationId": "stackWebhook",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Stack id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "secret",
+            "in": "query",
+            "description": "The webhook secret, for senders that cannot sign.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted, or ignored for another branch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not verified; the same for every reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookRefused"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
     "/api/v1/tasks/{id}": {
       "get": {
         "tags": [
@@ -9500,6 +9566,30 @@
           "updated": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "HookAccepted": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "accepted | ignored (a push to another branch)"
+          }
+        }
+      },
+      "HookRefused": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Always `unauthorized`."
           }
         }
       },

@@ -35,6 +35,7 @@ futures-util = "0.3"
 gix = { version = "0.89", default-features = false, features = ["blocking-http-transport-reqwest", "sha1"] }
 flate2 = "1"
 hex = "0.4"
+hmac = "0.12"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "server", "http1"] }
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "tls12", "logging"] }

@@ -283,3 +283,35 @@ async fn audit_sync(
         tracing::error!(error = %e, "failed to write audit log");
     }
 }
+
+/// Syncs every polled stack whose interval has passed, a few at a time.
+pub async fn poll_once(s: &AppState) {
+    use futures_util::StreamExt;
+    let due = match s.store.git_stacks_due(now_unix()).await {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(error = %e, "listing git stacks to poll failed");
+            return;
+        }
+    };
+    futures_util::stream::iter(due)
+        .for_each_concurrent(POLL_CONCURRENCY, |stack| async move {
+            if let Err(e) = sync_stack(s, &stack, SyncTrigger::Poll).await {
+                tracing::warn!(error = %e, stack = %stack.name, "git sync failed");
+            }
+        })
+        .await;
+}
+
+/// Syncs that run at once when polling.
+pub const POLL_CONCURRENCY: usize = 4;
+pub const POLL_TICK: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Polls git stacks every 30 seconds.
+pub async fn run_git_polling(s: AppState) {
+    let mut tick = tokio::time::interval(POLL_TICK);
+    loop {
+        tick.tick().await;
+        poll_once(&s).await;
+    }
+}
