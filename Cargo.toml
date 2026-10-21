@@ -17,6 +17,7 @@ fleetops-api = { path = "crates/fleetops-api" }
 fleetops-docker = { path = "crates/fleetops-docker" }
 fleetops-tunnel = { path = "crates/fleetops-tunnel" }
 fleetops-kube = { path = "crates/fleetops-kube" }
+fleetops-git = { path = "crates/fleetops-git" }
 fleetops-ee = { path = "ee/crates/fleetops-ee" }
 
 aes-gcm = { version = "0.10", features = ["stream"] }
@@ -31,6 +32,7 @@ axum = { version = "0.8", features = ["ws", "multipart"] }
 axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
 clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
+gix = { version = "0.89", default-features = false, features = ["blocking-http-transport-reqwest", "sha1"] }
 flate2 = "1"
 hex = "0.4"
 http-body-util = "0.1"

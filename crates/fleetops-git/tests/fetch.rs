@@ -1,0 +1,289 @@
+use fleetops_git::testing::{GitServer, ServerOpts, TestRepo};
+use fleetops_git::{fetch_file, Limits, Source};
+use std::time::Duration;
+
+const TOKEN: &str = "s3cret-token";
+const COMPOSE: &str = "services:\n  web:\n    image: nginx:1.27\n";
+
+fn source(server: &GitServer, branch: &str, path: &str, token: Option<&str>) -> Source {
+    Source {
+        url: server.url("repo.git"),
+        branch: branch.into(),
+        path: path.into(),
+        token: token.map(Into::into),
+    }
+}
+
+async fn served(opts: ServerOpts) -> (TestRepo, GitServer) {
+    let repo = TestRepo::new("main");
+    let server = GitServer::start(&repo.root(), opts).await;
+    (repo, server)
+}
+
+fn message(e: fleetops_core::Error) -> String {
+    e.detail()
+}
+
+#[tokio::test]
+async fn reads_file_at_branch_head() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    let head = repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let f = fetch_file(
+        &cache.path().join("1"),
+        &source(&server, "main", "compose.yaml", None),
+        Limits::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(f.commit, head);
+    assert_eq!(f.content, COMPOSE);
+}
+
+#[tokio::test]
+async fn second_fetch_sees_new_commit_in_same_cache() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let src = source(&server, "main", "compose.yaml", None);
+    fetch_file(&dir, &src, Limits::default()).await.unwrap();
+    assert!(dir.exists());
+    let two = repo.commit(&[("compose.yaml", "services: {}\n")], "two");
+    let f = fetch_file(&dir, &src, Limits::default()).await.unwrap();
+    assert_eq!(f.commit, two);
+    assert_eq!(f.content, "services: {}\n");
+}
+
+#[tokio::test]
+async fn custom_branch_and_path() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(&[("compose.yaml", COMPOSE)], "main");
+    let id = repo.commit_on("deploy", &[("ops/stack.yml", "x: 1\n")], "deploy");
+    let cache = tempfile::tempdir().unwrap();
+    let f = fetch_file(
+        &cache.path().join("1"),
+        &source(&server, "deploy", "ops/stack.yml", None),
+        Limits::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(f.commit, id);
+    assert_eq!(f.content, "x: 1\n");
+}
+
+#[tokio::test]
+async fn missing_branch() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let e = fetch_file(
+        &cache.path().join("1"),
+        &source(&server, "nope", "compose.yaml", None),
+        Limits::default(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(message(e), "branch 'nope' not found");
+}
+
+#[tokio::test]
+async fn missing_path() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    let head = repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let e = fetch_file(
+        &cache.path().join("1"),
+        &source(&server, "main", "other.yaml", None),
+        Limits::default(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        message(e),
+        format!("other.yaml not found at {}", &head[..7])
+    );
+}
+
+#[tokio::test]
+async fn token_required_and_used() {
+    let (repo, server) = served(ServerOpts {
+        token: Some(TOKEN.into()),
+        ..Default::default()
+    })
+    .await;
+    repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let none = fetch_file(
+        &dir,
+        &source(&server, "main", "compose.yaml", None),
+        Limits::default(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(message(none), "the repository needs an access token");
+    let wrong = fetch_file(
+        &dir,
+        &source(&server, "main", "compose.yaml", Some("wrong")),
+        Limits::default(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(message(wrong), "the repository refused the credentials");
+    let f = fetch_file(
+        &dir,
+        &source(&server, "main", "compose.yaml", Some(TOKEN)),
+        Limits::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(f.content, COMPOSE);
+}
+
+#[tokio::test]
+async fn errors_never_contain_token() {
+    let (repo, server) = served(ServerOpts {
+        token: Some("other".into()),
+        ..Default::default()
+    })
+    .await;
+    repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let mut errors = vec![];
+    for (branch, path) in [("main", "compose.yaml"), ("nope", "compose.yaml")] {
+        let e = fetch_file(
+            &cache.path().join("1"),
+            &source(&server, branch, path, Some(TOKEN)),
+            Limits::default(),
+        )
+        .await
+        .unwrap_err();
+        errors.push(e.to_string());
+    }
+    // An unreachable server, too.
+    let gone = Source {
+        url: "http://127.0.0.1:9/repo.git".into(),
+        branch: "main".into(),
+        path: "compose.yaml".into(),
+        token: Some(TOKEN.into()),
+    };
+    errors.push(
+        fetch_file(&cache.path().join("2"), &gone, Limits::default())
+            .await
+            .unwrap_err()
+            .to_string(),
+    );
+    for e in errors {
+        assert!(!e.contains(TOKEN), "{e}");
+    }
+}
+
+fn noise(len: usize) -> String {
+    let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+    (0..len)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            char::from(b"0123456789abcdef"[(x & 15) as usize])
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn size_cap_interrupts() {
+    let (repo, server) = served(ServerOpts {
+        delay: Duration::from_millis(300),
+        ..Default::default()
+    })
+    .await;
+    repo.commit(
+        &[("compose.yaml", COMPOSE), ("big.txt", &noise(512 * 1024))],
+        "big",
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let e = fetch_file(
+        &dir,
+        &source(&server, "main", "compose.yaml", None),
+        Limits {
+            max_bytes: 4096,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        message(e),
+        "the repository is larger than 200 MB at depth 1"
+    );
+    // The partial cache is removed once the fetch has stopped.
+    for _ in 0..100 {
+        if !dir.exists() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("the cache dir was not removed");
+}
+
+#[tokio::test]
+async fn timeout_interrupts() {
+    let (repo, server) = served(ServerOpts {
+        delay: Duration::from_secs(2),
+        ..Default::default()
+    })
+    .await;
+    repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let started = std::time::Instant::now();
+    let e = fetch_file(
+        &cache.path().join("1"),
+        &source(&server, "main", "compose.yaml", None),
+        Limits {
+            timeout: Duration::from_millis(200),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        message(e),
+        "fetching the repository took longer than 2 minutes"
+    );
+    assert!(started.elapsed() < Duration::from_secs(2));
+}
+
+#[tokio::test]
+async fn file_too_large() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let e = fetch_file(
+        &cache.path().join("1"),
+        &source(&server, "main", "compose.yaml", None),
+        Limits {
+            max_file: 10,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(message(e), "compose.yaml is larger than 10 bytes");
+}
+
+#[tokio::test]
+async fn force_push_fetches_new_head() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    repo.commit(&[("compose.yaml", "a: 1\n")], "two");
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let src = source(&server, "main", "compose.yaml", None);
+    fetch_file(&dir, &src, Limits::default()).await.unwrap();
+    let rewritten = repo.force_reset(&[("compose.yaml", "b: 2\n")], "rewritten");
+    let f = fetch_file(&dir, &src, Limits::default()).await.unwrap();
+    assert_eq!(f.commit, rewritten);
+    assert_eq!(f.content, "b: 2\n");
+}

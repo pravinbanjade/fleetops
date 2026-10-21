@@ -1,0 +1,32 @@
+[package]
+name = "fleetops-git"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+# A `git http-backend` server and fixture repos for tests.
+# Tests serve plain http, where gix otherwise refuses to send credentials;
+# only dev-dependencies turn this on, so release builds keep the refusal.
+testing = ["dep:axum", "dep:tempfile", "dep:base64", "gix-transport/http-client-insecure-credentials"]
+
+[dependencies]
+fleetops-core.workspace = true
+gix.workspace = true
+# gix's HTTP client, with rustls on the ring provider the binaries install
+# (gix's own rustls feature pulls in aws-lc-rs).
+reqwest = { package = "reqwest", version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls.workspace = true
+gix-transport = "0.61"
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+axum = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+
+[dev-dependencies]
+fleetops-git = { path = ".", features = ["testing"] }
+tempfile.workspace = true
+tokio.workspace = true
