@@ -1,0 +1,420 @@
+//! Planning a stack and starting its deploy (stacks spec §3–§4), shared by
+//! the deploy route and git syncs (§8).
+
+use super::{deploy_stream, recover_stack, stack_containers};
+use crate::tasks::{NewTask, TaskInfo, TaskStatus};
+use crate::AppState;
+use fleetops_core::compose::docker::LABEL_PROJECT;
+use fleetops_core::compose::plan::{plan, Live, Plan};
+use fleetops_core::compose::{parse, parse_variables, ComposeIssue, Project};
+use fleetops_core::docker::DockerOps;
+use fleetops_core::env::Environment;
+use fleetops_core::{now_unix, Error, Result};
+use fleetops_store::{NewAudit, RevisionRecord, StackRecord};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::collections::BTreeSet;
+use std::sync::Arc;
+use utoipa::ToSchema;
+
+/// Who starts a deploy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Actor {
+    User(i64),
+    /// A git sync (auto-deploy); audited as `system (git)`.
+    Git,
+}
+
+/// How a deploy no user started is shown in the audit log.
+pub const GIT_ACTOR: &str = "system (git)";
+
+impl Actor {
+    pub fn user_id(self) -> Option<i64> {
+        match self {
+            Actor::User(id) => Some(id),
+            Actor::Git => None,
+        }
+    }
+
+    /// Task owner; only admins see tasks owned by `0`.
+    fn owner(self) -> i64 {
+        self.user_id().unwrap_or(0)
+    }
+}
+
+/// What a plan or deploy is made from.
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
+#[serde(tag = "source", rename_all = "lowercase")]
+pub enum DeploySource {
+    /// The stack's saved draft.
+    Draft,
+    /// An earlier revision (a rollback).
+    Revision { revision: i64 },
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PlanResponse {
+    /// Compose problems; when any, there is no plan.
+    pub issues: Vec<ComposeIssue>,
+    pub warnings: Vec<ComposeIssue>,
+    pub plan: Option<Plan>,
+    /// The deployed revision's Compose file.
+    pub compose_before: Option<String>,
+    pub compose_after: String,
+    /// Names of variables added, removed or changed (never values).
+    pub variables_changed: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct DeployStarted {
+    pub task_id: String,
+    pub revision: i64,
+}
+
+pub(crate) fn issues_message(issues: &[ComposeIssue]) -> String {
+    issues
+        .iter()
+        .map(|i| {
+            if i.path.is_empty() {
+                i.message.clone()
+            } else {
+                format!("{}: {}", i.path, i.message)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// The compose and variables `from` names, and the revision it rolls back to.
+async fn source(
+    s: &AppState,
+    stack: &StackRecord,
+    from: DeploySource,
+) -> Result<(String, Vec<String>, Option<i64>)> {
+    match from {
+        DeploySource::Draft => {
+            let d = s
+                .store
+                .draft(stack.id)
+                .await?
+                .ok_or_else(|| Error::NotFound(format!("draft of stack '{}'", stack.name)))?;
+            Ok((d.compose, d.variables, None))
+        }
+        DeploySource::Revision { revision } => {
+            let r = s.store.revision(stack.id, revision).await?;
+            let v = s.store.revision_variables(stack.id, revision).await?;
+            Ok((r.compose, v, Some(revision)))
+        }
+    }
+}
+
+/// The deployed revision: its record, variables and (if it still parses)
+/// project.
+async fn deployed(
+    s: &AppState,
+    stack: &StackRecord,
+) -> Result<Option<(RevisionRecord, Vec<String>, Option<Project>)>> {
+    let Some(n) = stack.deployed_revision else {
+        return Ok(None);
+    };
+    let r = s.store.revision(stack.id, n).await?;
+    let v = s.store.revision_variables(stack.id, n).await?;
+    let p = parse(&r.compose, &v, &stack.name).ok().map(|p| p.project);
+    Ok(Some((r, v, p)))
+}
+
+async fn live(ops: &dyn DockerOps, stack: &str) -> Result<Live> {
+    let in_stack = |labels: &std::collections::BTreeMap<String, String>| {
+        labels.get(LABEL_PROJECT).map(String::as_str) == Some(stack)
+    };
+    let containers = ops.list_containers().await?;
+    Ok(Live {
+        containers: stack_containers(&containers, stack).cloned().collect(),
+        networks: ops
+            .list_networks()
+            .await?
+            .into_iter()
+            .filter(|n| in_stack(&n.labels))
+            .collect(),
+        volumes: ops
+            .list_volumes()
+            .await?
+            .into_iter()
+            .filter(|v| in_stack(&v.labels))
+            .collect(),
+        images: ops
+            .list_images()
+            .await?
+            .into_iter()
+            .flat_map(|i| i.repo_tags)
+            .collect(),
+    })
+}
+
+fn variables_changed(before: &[String], after: &[String]) -> Vec<String> {
+    let a = parse_variables(before).unwrap_or_default();
+    let b = parse_variables(after).unwrap_or_default();
+    let keys: BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+    keys.into_iter()
+        .filter(|k| a.get(*k) != b.get(*k))
+        .cloned()
+        .collect()
+}
+
+/// The plan of `from` for `stack`, with what was planned, the variables
+/// and the revision it rolls back to. Issues mean the file does not parse.
+pub(crate) type Planned = (
+    PlanResponse,
+    Option<(Project, Plan)>,
+    Vec<String>,
+    Option<i64>,
+);
+
+pub(crate) async fn make_plan(
+    s: &AppState,
+    ops: &dyn DockerOps,
+    stack: &StackRecord,
+    from: DeploySource,
+) -> Result<Planned> {
+    recover_stack(s, ops, stack).await?;
+    let (compose, variables, rollback_of) = source(s, stack, from).await?;
+    let dep = deployed(s, stack).await?;
+    let compose_before = dep.as_ref().map(|(r, _, _)| r.compose.clone());
+    let changed = variables_changed(
+        dep.as_ref().map(|(_, v, _)| v.as_slice()).unwrap_or(&[]),
+        &variables,
+    );
+    match parse(&compose, &variables, &stack.name) {
+        Err(issues) => Ok((
+            PlanResponse {
+                issues,
+                warnings: vec![],
+                plan: None,
+                compose_before,
+                compose_after: compose.clone(),
+                variables_changed: changed,
+            },
+            None,
+            variables,
+            rollback_of,
+        )),
+        Ok(parsed) => {
+            let live = live(ops, &stack.name).await?;
+            let prev = dep
+                .as_ref()
+                .and_then(|(r, _, p)| p.as_ref().map(|p| (p, r.number)));
+            let p = plan(&parsed.project, prev, &live);
+            Ok((
+                PlanResponse {
+                    issues: vec![],
+                    warnings: parsed.warnings,
+                    plan: Some(p.clone()),
+                    compose_before,
+                    compose_after: compose.clone(),
+                    variables_changed: changed,
+                },
+                Some((parsed.project, p)),
+                variables,
+                rollback_of,
+            ))
+        }
+    }
+}
+
+/// The commit a deploy of `from` records on a git stack.
+async fn git_commit(
+    s: &AppState,
+    stack: &StackRecord,
+    from: DeploySource,
+) -> Result<Option<String>> {
+    if stack.source != "git" {
+        return Ok(None);
+    }
+    Ok(match from {
+        DeploySource::Draft => s
+            .store
+            .stack_git(stack.id)
+            .await?
+            .and_then(|g| g.last_fetched_commit),
+        DeploySource::Revision { revision } => {
+            s.store.revision(stack.id, revision).await?.git_commit
+        }
+    })
+}
+
+/// Plans `from` again and deploys it in the background. `plan_token` is the
+/// reviewed plan's token; only auto-deploys pass `None`.
+pub async fn start_deploy(
+    s: &AppState,
+    ops: Arc<dyn DockerOps>,
+    env: Arc<dyn Environment>,
+    stack: &StackRecord,
+    from: DeploySource,
+    plan_token: Option<&str>,
+    actor: Actor,
+) -> Result<DeployStarted> {
+    let (resp, planned, variables, rollback_of) = make_plan(s, ops.as_ref(), stack, from).await?;
+    let Some((project, p)) = planned else {
+        return Err(Error::Invalid(issues_message(&resp.issues)));
+    };
+    if plan_token.is_some_and(|t| t != p.token) {
+        return Err(Error::Conflict(
+            "the stack changed since this plan was made; review again".into(),
+        ));
+    }
+    if !p.blocking.is_empty() {
+        return Err(Error::Invalid(p.blocking.join("; ")));
+    }
+    let commit = git_commit(s, stack, from).await?;
+    if !s.stack_locks.lock().unwrap().insert(stack.id) {
+        return Err(Error::Conflict(
+            "a deploy of this stack is already running".into(),
+        ));
+    }
+    let action = if rollback_of.is_some() {
+        "stack.rollback"
+    } else {
+        "stack.deploy"
+    };
+    let created = s
+        .store
+        .create_revision(
+            stack.id,
+            &resp.compose_after,
+            &variables,
+            if rollback_of.is_some() {
+                "rollback"
+            } else {
+                "deploy"
+            },
+            rollback_of,
+            commit.as_deref(),
+            actor.user_id(),
+            now_unix(),
+        )
+        .await;
+    let rev = match created {
+        Ok(r) => r,
+        Err(e) => {
+            s.stack_locks.lock().unwrap().remove(&stack.id);
+            return Err(e);
+        }
+    };
+    // A rolled-back git stack stops following its branch until resumed.
+    let paused = stack.source == "git" && rollback_of.is_some();
+    if paused {
+        if let Err(e) = s.store.set_git_paused(stack.id, true).await {
+            tracing::warn!(error = %e, stack = %stack.name, "pausing git sync failed");
+        }
+    }
+    let number = rev.number;
+    let stream = deploy_stream(
+        s.clone(),
+        ops.clone(),
+        stack.clone(),
+        rev,
+        project,
+        p,
+        s.config.stack_timing,
+    );
+    let store = s.store.clone();
+    let (env_id, stack_id, stack_name, is_git) = (
+        env.id(),
+        stack.id,
+        stack.name.clone(),
+        stack.source == "git",
+    );
+    let spawned = s.tasks.spawn(
+        NewTask {
+            kind: "stack.deploy",
+            env: env.name().to_string(),
+            target: stack.name.clone(),
+            owner: actor.owner(),
+        },
+        stream,
+        move |info: TaskInfo| async move {
+            let ok = matches!(info.status, TaskStatus::Succeeded);
+            let mut detail = if ok {
+                json!({ "task_id": info.id, "revision": number, "rollback_of": rollback_of })
+            } else {
+                json!({ "task_id": info.id, "revision": number, "error": info.error })
+            };
+            if let Some(c) = &commit {
+                detail["commit"] = json!(c);
+            }
+            if paused {
+                detail["paused"] = json!(true);
+            }
+            if actor == Actor::Git {
+                detail["by"] = json!(GIT_ACTOR);
+            }
+            if is_git {
+                settle_git(&store, stack_id, commit.as_deref(), ok, actor, &info).await;
+            }
+            let entry = NewAudit {
+                ts: now_unix(),
+                user_id: actor.user_id(),
+                environment_id: Some(env_id),
+                action,
+                target_type: Some("stack"),
+                target_id: Some(&stack_name),
+                result: if ok { "success" } else { "failure" },
+                detail: Some(detail),
+            };
+            if let Err(e) = store.insert_audit(&entry).await {
+                tracing::error!(error = %e, "failed to write audit log");
+            }
+        },
+    );
+    match spawned {
+        Ok(t) => Ok(DeployStarted {
+            task_id: t.info().id,
+            revision: number,
+        }),
+        Err(e) => {
+            // The stream was never polled, so nothing was deployed.
+            let _ = s
+                .store
+                .finish_revision(stack.id, number, Some(&e.to_string()))
+                .await;
+            s.stack_locks.lock().unwrap().remove(&stack.id);
+            Err(e)
+        }
+    }
+}
+
+/// After a git stack's deploy: a deployed pending commit is no longer
+/// pending, and a failed auto-deploy shows on the stack.
+async fn settle_git(
+    store: &fleetops_store::Store,
+    stack_id: i64,
+    commit: Option<&str>,
+    ok: bool,
+    actor: Actor,
+    info: &TaskInfo,
+) {
+    let res = if ok {
+        match store.stack_git(stack_id).await {
+            Ok(Some(g)) if g.pending_commit.is_some() && g.pending_commit.as_deref() == commit => {
+                store.set_git_pending(stack_id, None).await
+            }
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
+    } else if actor == Actor::Git {
+        let short = commit.map(|c| &c[..c.len().min(7)]).unwrap_or("?");
+        let err = info.error.as_deref().unwrap_or("unknown error");
+        store
+            .record_git_error(
+                stack_id,
+                &format!("auto-deploy of {short} failed: {err}"),
+                now_unix(),
+            )
+            .await
+    } else {
+        Ok(())
+    };
+    if let Err(e) = res {
+        tracing::warn!(error = %e, stack_id, "recording a git deploy failed");
+    }
+}

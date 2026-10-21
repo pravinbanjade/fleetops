@@ -5,10 +5,12 @@
 pub mod deploy;
 pub mod recover;
 pub mod restore;
+pub mod start;
 
 pub use deploy::{deploy_stream, execute, Timing};
 pub use recover::{recover_all, recover_stack, restore_and_settle, run_recovery};
 pub use restore::{restore, RestoreReport};
+pub use start::{start_deploy, Actor, DeploySource};
 
 use fleetops_core::compose::docker::{LABEL_PROJECT, LABEL_SERVICE};
 use fleetops_core::compose::plan::OLD_MARKER;

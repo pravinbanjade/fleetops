@@ -428,3 +428,82 @@ async fn save_rejects_renamed_masked_value() {
         .await;
     assert_eq!(g.json["draft"]["variables"], json!(["TOKEN=hunter2"]));
 }
+
+/// The newest audit row with `action`.
+async fn last_audit(app: &TestApp, action: &str) -> fleetops_store::AuditEntry {
+    app.store
+        .list_audit(1000, None)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|e| e.action == action)
+        .unwrap_or_else(|| panic!("no {action} audit row"))
+}
+
+/// Waits until the task's completion hook has written its audit row.
+async fn eventually_audited(app: &TestApp, action: &str) -> fleetops_store::AuditEntry {
+    for _ in 0..500 {
+        if app.audit_actions().await.iter().any(|a| a == action) {
+            return last_audit(app, action).await;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("no {action} audit row");
+}
+
+#[tokio::test]
+async fn deploy_route_unchanged_after_refactor() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, WEB, &[]).await;
+    let task = plan_and_deploy(&app, &s, json!({"source": "draft"})).await;
+    assert_eq!(task["status"], "succeeded", "{task:?}");
+    let revs = app
+        .send(req(
+            "GET",
+            &format!("{BASE}/shop/revisions"),
+            None,
+            Some(&s),
+        ))
+        .await;
+    assert_eq!(revs.json[0]["number"], 1);
+    assert_eq!(revs.json[0]["status"], "deployed");
+    assert_eq!(revs.json[0]["kind"], "deploy");
+    let row = eventually_audited(&app, "stack.deploy").await;
+    assert!(row.user_id.is_some());
+    assert_eq!(row.result, "success");
+    assert!(row.detail.unwrap().get("by").is_none());
+}
+
+#[tokio::test]
+async fn start_deploy_as_git_audits_system() {
+    use fleetops_api::stacks::{start_deploy, Actor, DeploySource};
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, WEB, &[]).await;
+    let env = app.state.envs.get("local").unwrap();
+    let ops = env.docker().unwrap();
+    let stack = app.store.stack_by_name(env.id(), "shop").await.unwrap();
+    let started = start_deploy(
+        &app.state,
+        ops,
+        env,
+        &stack,
+        DeploySource::Draft,
+        None,
+        Actor::Git,
+    )
+    .await
+    .unwrap();
+    let task = wait_task(&app, &s, &started.task_id).await;
+    assert_eq!(task["status"], "succeeded", "{task:?}");
+    let row = eventually_audited(&app, "stack.deploy").await;
+    assert_eq!(row.user_id, None);
+    assert_eq!(row.detail.unwrap()["by"], "system (git)");
+    let rev = app
+        .store
+        .revision(stack.id, started.revision)
+        .await
+        .unwrap();
+    assert_eq!(rev.created_by, None);
+}
