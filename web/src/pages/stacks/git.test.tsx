@@ -138,8 +138,8 @@ describe("git-backed stacks", () => {
     const calls = mockFetch(routes(status({ pending_commit: SHA })));
     const { screen } = renderApp("/envs/local/stacks/shop");
     await openGitTab(screen);
-    expect(await screen.findByText("0123456")).toBeInTheDocument();
-    const section = screen.getByRole("region", { name: "Sync" });
+    const section = await screen.findByRole("region", { name: "Sync" });
+    expect(within(section).getByText(/Update available/)).toHaveTextContent("Update available: 0123456");
     await userEvent.click(within(section).getByRole("button", { name: "Review deploy" }));
     await screen.findByRole("dialog", { name: "Deploy shop" });
     const p = calls.find((c) => c.method === "POST" && c.path.endsWith("/shop/plan"));

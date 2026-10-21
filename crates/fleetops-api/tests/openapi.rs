@@ -122,6 +122,8 @@ fn mutations_need_a_session_and_a_csrf_token_and_reads_a_session() {
         "stageSetupBackup",
         "restoreSetupBackup",
         "login",
+        // Git hosts call it; the stack's webhook secret is the credential.
+        "stackWebhook",
     ];
     for (path, m, op) in operations() {
         let id = op["operationId"].as_str().unwrap();

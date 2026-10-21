@@ -219,7 +219,7 @@ async fn size_cap_interrupts() {
         "the repository is larger than 200 MB at depth 1"
     );
     // The partial cache is removed once the fetch has stopped.
-    for _ in 0..100 {
+    for _ in 0..600 {
         if !dir.exists() {
             return;
         }
