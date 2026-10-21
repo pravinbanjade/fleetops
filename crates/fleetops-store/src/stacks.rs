@@ -46,7 +46,7 @@ pub struct Draft {
     pub updated_at: i64,
 }
 
-const STACK_COLS: &str =
+pub(crate) const STACK_COLS: &str =
     "id, environment_id AS env_id, name, source, deployed_revision, created_at, created_by";
 const REV_COLS: &str = "id, stack_id, number, compose, git_commit, status, error, kind, rollback_of, created_at, created_by";
 
@@ -133,6 +133,17 @@ impl Store {
         .await
         .map_err(db_err)?
         .ok_or_else(|| Error::NotFound(format!("stack '{name}'")))
+    }
+
+    pub async fn stack_by_id(&self, id: i64) -> Result<StackRecord> {
+        sqlx::query_as(AssertSqlSafe(format!(
+            "SELECT {STACK_COLS} FROM stacks WHERE id = ?"
+        )))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_err)?
+        .ok_or_else(|| Error::NotFound(format!("stack {id}")))
     }
 
     pub async fn delete_stack(&self, id: i64) -> Result<()> {

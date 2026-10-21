@@ -592,3 +592,67 @@ async fn restore_reseals_stack_variables() {
     assert_eq!(s.draft(st.id).await.unwrap().unwrap().variables, vars);
     assert_eq!(s.revision_variables(st.id, 1).await.unwrap(), vars);
 }
+
+#[tokio::test]
+async fn restore_reseals_stack_git_token_and_secret() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ka, kb) = (SecretKey::random(), SecretKey::random());
+    let store = populated(&ka, dir.path()).await;
+    let env = store.list_environments().await.unwrap()[0].id;
+    let st = store
+        .create_stack(env, "shop", "", &[], None, 1)
+        .await
+        .unwrap();
+    let settings = fleetops_store::GitSettings {
+        url: "https://git.example/shop.git".into(),
+        branch: "main".into(),
+        path: "compose.yaml".into(),
+        sync: "webhook".into(),
+        poll_seconds: 300,
+        auto_deploy: true,
+    };
+    store
+        .set_stack_git(
+            st.id,
+            &settings,
+            fleetops_store::TokenChange::Set("tok"),
+            Some("sec"),
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    // A git stack without a token restores too.
+    let bare = store
+        .create_stack(env, "bare", "", &[], None, 1)
+        .await
+        .unwrap();
+    store
+        .set_stack_git(
+            bare.id,
+            &settings,
+            fleetops_store::TokenChange::Keep,
+            Some("sec2"),
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    let file = backup_file(&store, dir.path()).await;
+    let o = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o")).unwrap();
+    reseal(&o.db, &o.manifest, &kb).await.unwrap();
+    let s = Store::open(&o.db).await.unwrap().with_secret_key(&kb);
+    assert_eq!(
+        s.stack_git_token(st.id).await.unwrap().as_deref(),
+        Some("tok")
+    );
+    assert_eq!(
+        s.stack_git_secret(st.id).await.unwrap().as_deref(),
+        Some("sec")
+    );
+    assert_eq!(s.stack_git_token(bare.id).await.unwrap(), None);
+    assert_eq!(
+        s.stack_git_secret(bare.id).await.unwrap().as_deref(),
+        Some("sec2")
+    );
+}

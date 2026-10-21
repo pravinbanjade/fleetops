@@ -11,6 +11,7 @@ pub mod secrets;
 mod sessions;
 mod settings;
 mod stacks;
+mod stacks_git;
 mod users;
 
 pub use access::BindingRecord;
@@ -20,6 +21,7 @@ pub use environments::EnvironmentRecord;
 pub use sessions::{NewSession, SessionRecord};
 pub use settings::AUDIT_RETENTION_KEY;
 pub use stacks::{Draft, RevisionRecord, StackRecord, STACK_REVISIONS_KEPT};
+pub use stacks_git::{GitRecord, GitSettings, TokenChange};
 
 use fleetops_core::{Error, Result};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};

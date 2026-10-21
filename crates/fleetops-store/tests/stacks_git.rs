@@ -1,0 +1,272 @@
+use fleetops_store::{GitSettings, Store, TokenChange};
+
+async fn setup() -> (Store, i64) {
+    let s = Store::in_memory().await.unwrap();
+    let env = s
+        .create_environment("local", "docker-local", "unix:///var/run/docker.sock", 1)
+        .await
+        .unwrap();
+    let st = s
+        .create_stack(env.id, "shop", "", &["A=1".to_string()], None, 1)
+        .await
+        .unwrap();
+    (s, st.id)
+}
+
+fn settings(sync: &str) -> GitSettings {
+    GitSettings {
+        url: "https://git.example/shop.git".into(),
+        branch: "main".into(),
+        path: "compose.yaml".into(),
+        sync: sync.into(),
+        poll_seconds: 300,
+        auto_deploy: false,
+    }
+}
+
+#[tokio::test]
+async fn set_get_round_trip() {
+    let (s, id) = setup().await;
+    let rec = s
+        .set_stack_git(
+            id,
+            &settings("poll"),
+            TokenChange::Set("tok"),
+            Some("sec"),
+            None,
+            5,
+        )
+        .await
+        .unwrap();
+    assert_eq!(rec.url, "https://git.example/shop.git");
+    assert_eq!(rec.sync, "poll");
+    assert!(rec.has_token);
+    assert!(!rec.paused);
+    assert_eq!(rec.updated_at, 5);
+    assert_eq!(s.stack_git(id).await.unwrap(), Some(rec));
+    assert_eq!(s.stack_git_token(id).await.unwrap().as_deref(), Some("tok"));
+    assert_eq!(
+        s.stack_git_secret(id).await.unwrap().as_deref(),
+        Some("sec")
+    );
+}
+
+#[tokio::test]
+async fn source_becomes_git_then_inline_on_detach() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(s.stack_by_id(id).await.unwrap().source, "git");
+    s.detach_stack_git(id).await.unwrap();
+    assert_eq!(s.stack_by_id(id).await.unwrap().source, "inline");
+    assert!(s.stack_git(id).await.unwrap().is_none());
+    assert!(s.draft(id).await.unwrap().is_some());
+}
+
+#[tokio::test]
+async fn first_insert_requires_secret() {
+    let (s, id) = setup().await;
+    assert!(s
+        .set_stack_git(id, &settings("manual"), TokenChange::Keep, None, None, 1)
+        .await
+        .is_err());
+    assert_eq!(s.stack_by_id(id).await.unwrap().source, "inline");
+}
+
+#[tokio::test]
+async fn token_keep_clear_set() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Set("a"),
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.set_stack_git(id, &settings("manual"), TokenChange::Keep, None, None, 2)
+        .await
+        .unwrap();
+    assert_eq!(s.stack_git_token(id).await.unwrap().as_deref(), Some("a"));
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Set("b"),
+        None,
+        None,
+        3,
+    )
+    .await
+    .unwrap();
+    assert_eq!(s.stack_git_token(id).await.unwrap().as_deref(), Some("b"));
+    let rec = s
+        .set_stack_git(id, &settings("manual"), TokenChange::Clear, None, None, 4)
+        .await
+        .unwrap();
+    assert!(!rec.has_token);
+    assert_eq!(s.stack_git_token(id).await.unwrap(), None);
+    // The secret is kept when it is not given again.
+    assert_eq!(
+        s.stack_git_secret(id).await.unwrap().as_deref(),
+        Some("sec")
+    );
+}
+
+#[tokio::test]
+async fn token_and_secret_sealed_at_rest() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Set("plain-token"),
+        Some("plain-secret"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    let (token, secret): (String, String) =
+        sqlx::query_as("SELECT token, webhook_secret FROM stack_git WHERE stack_id = ?")
+            .bind(id)
+            .fetch_one(s.pool())
+            .await
+            .unwrap();
+    for (raw, plain) in [(&token, "plain-token"), (&secret, "plain-secret")] {
+        assert!(raw.starts_with("v1:"), "{raw}");
+        assert!(!raw.contains(plain));
+    }
+}
+
+#[tokio::test]
+async fn changing_source_resets_sync_state() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.record_git_fetch(id, "c1", "services: {}\n", 2)
+        .await
+        .unwrap();
+    s.set_git_pending(id, Some("c1")).await.unwrap();
+    s.record_git_error(id, "boom", 3).await.unwrap();
+    let mut changed = settings("manual");
+    changed.auto_deploy = true;
+    let rec = s
+        .set_stack_git(id, &changed, TokenChange::Keep, None, None, 4)
+        .await
+        .unwrap();
+    assert_eq!(rec.last_fetched_commit.as_deref(), Some("c1"));
+    assert_eq!(rec.pending_commit.as_deref(), Some("c1"));
+    assert_eq!(rec.last_sync_error.as_deref(), Some("boom"));
+    changed.branch = "other".into();
+    let rec = s
+        .set_stack_git(id, &changed, TokenChange::Keep, None, None, 5)
+        .await
+        .unwrap();
+    assert_eq!(rec.last_fetched_commit, None);
+    assert_eq!(rec.pending_commit, None);
+    assert_eq!(rec.last_sync_error, None);
+}
+
+#[tokio::test]
+async fn record_fetch_updates_draft_compose_keeps_variables() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.record_git_error(id, "earlier", 2).await.unwrap();
+    s.record_git_fetch(id, "c1", "services: {}\n", 7)
+        .await
+        .unwrap();
+    let d = s.draft(id).await.unwrap().unwrap();
+    assert_eq!(d.compose, "services: {}\n");
+    assert_eq!(d.variables, vec!["A=1".to_string()]);
+    let rec = s.stack_git(id).await.unwrap().unwrap();
+    assert_eq!(rec.last_fetched_commit.as_deref(), Some("c1"));
+    assert_eq!(rec.last_sync_at, Some(7));
+    assert_eq!(rec.last_sync_error, None);
+}
+
+#[tokio::test]
+async fn due_selection() {
+    let (s, poll) = setup().await;
+    let env = s.stack_by_id(poll).await.unwrap().env_id;
+    let manual = s.create_stack(env, "m", "", &[], None, 1).await.unwrap().id;
+    let hook = s.create_stack(env, "h", "", &[], None, 1).await.unwrap().id;
+    s.set_stack_git(
+        poll,
+        &settings("poll"),
+        TokenChange::Keep,
+        Some("s"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.set_stack_git(
+        manual,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("s"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.set_stack_git(
+        hook,
+        &settings("webhook"),
+        TokenChange::Keep,
+        Some("s"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    let ids = |v: Vec<fleetops_store::StackRecord>| v.into_iter().map(|r| r.id).collect::<Vec<_>>();
+    assert_eq!(ids(s.git_stacks_due(1000).await.unwrap()), vec![poll]);
+    s.record_git_fetch(poll, "c", "", 1000).await.unwrap();
+    assert!(s.git_stacks_due(1299).await.unwrap().is_empty());
+    assert_eq!(ids(s.git_stacks_due(1300).await.unwrap()), vec![poll]);
+}
+
+#[tokio::test]
+async fn cascade_on_stack_delete() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.delete_stack(id).await.unwrap();
+    assert!(s.stack_git(id).await.unwrap().is_none());
+    assert!(s.stack_by_id(id).await.is_err());
+}
