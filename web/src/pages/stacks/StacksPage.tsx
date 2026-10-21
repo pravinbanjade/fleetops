@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi } from "@tanstack/react-router";
+import { GitBranch } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { StackSummary } from "@/api/gen/types.gen";
 import { useEnvAccess } from "@/api/access";
@@ -37,8 +38,15 @@ function stackColumns(env: string) {
       cell: (c) => (
         <span className="flex items-center gap-2">
           {c.getValue() ? <StateBadge state={c.getValue()!} /> : <span className="text-muted-foreground">never deployed</span>}
-          {c.row.original.draft_differs && c.row.original.deployed_revision != null && (
+          {c.row.original.source !== "git" && c.row.original.draft_differs && c.row.original.deployed_revision != null && (
             <Badge variant="outline">Update pending</Badge>
+          )}
+          {c.row.original.update_available && <Badge variant="outline">Update available</Badge>}
+          {c.row.original.paused && <Badge variant="outline">Paused</Badge>}
+          {c.row.original.sync_error && (
+            <Badge variant="destructive" title={c.row.original.sync_error}>
+              Sync error
+            </Badge>
           )}
         </span>
       ),
@@ -47,7 +55,18 @@ function stackColumns(env: string) {
       header: "Revision",
       cell: (c) => (c.getValue() != null ? `#${c.getValue()}` : ""),
     }),
-    col.accessor("source", { header: "Source" }),
+    col.accessor("source", {
+      header: "Source",
+      cell: (c) =>
+        c.getValue() === "git" ? (
+          <span className="inline-flex items-center gap-1">
+            <GitBranch className="size-3.5" aria-hidden />
+            git
+          </span>
+        ) : (
+          c.getValue()
+        ),
+    }),
     col.accessor("updated_at", { header: "Updated", cell: (c) => formatAgo(c.getValue()) }),
   ];
 }

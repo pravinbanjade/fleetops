@@ -37,6 +37,7 @@ export function RevisionsTab({
     );
   if (!revs.data) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (revs.data.length === 0) return <p className="text-sm text-muted-foreground">Not deployed yet.</p>;
+  const commits = revs.data.some((r) => r.git_commit);
   return (
     <>
       <table aria-label="Revisions" className="w-full text-sm">
@@ -45,6 +46,7 @@ export function RevisionsTab({
             <th className="py-1 pr-3 font-medium">Revision</th>
             <th className="py-1 pr-3 font-medium">Kind</th>
             <th className="py-1 pr-3 font-medium">Status</th>
+            {commits && <th className="py-1 pr-3 font-medium">Commit</th>}
             <th className="py-1 pr-3 font-medium">When</th>
             <th />
           </tr>
@@ -58,6 +60,7 @@ export function RevisionsTab({
                 <StateBadge state={r.status} />
                 {r.error && <div className="mt-1 text-xs text-destructive">{r.error}</div>}
               </td>
+              {commits && <td className="py-2 pr-3 font-mono text-xs">{r.git_commit?.slice(0, 7) ?? ""}</td>}
               <td className="py-2 pr-3 text-muted-foreground">{formatAgo(r.created_at)}</td>
               <td className="py-2 text-right whitespace-nowrap">
                 {r.number !== deployed && (

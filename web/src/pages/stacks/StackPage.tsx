@@ -12,6 +12,7 @@ import { ContainerState, StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorMessage } from "@/lib/errors";
+import { GitTab, secretKey } from "./GitTab";
 import { RemoveStackDialog } from "./RemoveStackDialog";
 import { ReviewDeployDialog } from "./ReviewDeployDialog";
 import { RevisionsTab } from "./RevisionsTab";
@@ -31,6 +32,8 @@ export function StackPage() {
   const { can } = useEnvAccess(env);
   const [review, setReview] = useState<DeploySource | null>(null);
   const [removing, setRemoving] = useState(false);
+  // A stack just created from git opens on its Git tab, to show the secret.
+  const [tab, setTab] = useState(() => (qc.getQueryData(secretKey(env, stack)) ? "git" : "editor"));
   const act = useMutation({
     mutationFn: async (action: StackActionName) => {
       const { data } = await stackAction({ path: { env, stack, action } });
@@ -63,6 +66,7 @@ export function StackPage() {
     }, {}),
   ).sort(([a], [b]) => a.localeCompare(b));
   const canOperate = can("stacks.operate");
+  const isGit = d.stack.source === "git";
   return (
     <Page
       title={stack}
@@ -103,9 +107,10 @@ export function StackPage() {
         </>
       }
     >
-      <Tabs defaultValue="editor">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="editor">Editor</TabsTrigger>
+          {isGit && <TabsTrigger value="git">Git</TabsTrigger>}
           <TabsTrigger value="services">Services</TabsTrigger>
           <TabsTrigger value="revisions">Revisions</TabsTrigger>
         </TabsList>
@@ -119,6 +124,17 @@ export function StackPage() {
             onReview={() => setReview({ source: "draft" })}
           />
         </TabsContent>
+        {isGit && (
+          <TabsContent value="git" className="pt-4">
+            <GitTab
+              env={env}
+              stack={stack}
+              canEdit={can("stacks.create")}
+              canOperate={canOperate}
+              onReview={setReview}
+            />
+          </TabsContent>
+        )}
         <TabsContent value="services" className="pt-4">
           {byService.length === 0 ? (
             <p className="text-sm text-muted-foreground">No containers.</p>

@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { saveStackDraft, validateStack } from "@/api/gen/sdk.gen";
 import type { ComposeIssue, StackDetail } from "@/api/gen/types.gen";
-import { keys } from "@/api/queries";
+import { keys, stackGitQuery } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/errors";
@@ -20,6 +20,20 @@ const toRows = (vars: string[]): Row[] =>
     const i = v.indexOf("=");
     return i < 0 ? { key: v, value: "" } : { key: v.slice(0, i), value: v.slice(i + 1) };
   });
+/** A link to the file on hosts whose URL layout is known. */
+export function repoFileLink(url: string, branch: string, path: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const base = `${u.origin}${u.pathname.replace(/\.git$/, "").replace(/\/$/, "")}`;
+  if (u.hostname === "github.com") return `${base}/blob/${branch}/${path}`;
+  if (u.hostname === "gitlab.com") return `${base}/-/blob/${branch}/${path}`;
+  return null;
+}
+
 const toLines = (rows: Row[]) => rows.filter((r) => r.key.trim()).map((r) => `${r.key.trim()}=${r.value}`);
 
 /** The Compose file and variables of a stack's draft, validated as you type. */
@@ -38,6 +52,10 @@ export function StackEditor({
 }) {
   const qc = useQueryClient();
   const name = detail.stack.name;
+  const isGit = detail.stack.source === "git";
+  const git = useQuery({ ...stackGitQuery(env, name), enabled: isGit });
+  // A git stack's file comes from its repository; only its variables are edited here.
+  const editFile = canEdit && !isGit;
   const [compose, setCompose] = useState(detail.draft.compose);
   const [rows, setRows] = useState<Row[]>(() => toRows(detail.draft.variables));
   const [issues, setIssues] = useState<ComposeIssue[]>([]);
@@ -74,7 +92,24 @@ export function StackEditor({
   const setRow = (i: number, r: Partial<Row>) => setRows((old) => old.map((o, n) => (n === i ? { ...o, ...r } : o)));
   return (
     <div className="grid gap-4">
-      {canEdit ? (
+      {isGit && git.data && (
+        <p className="text-sm text-muted-foreground">
+          From{" "}
+          {(() => {
+            const g = git.data.git;
+            const label = `${g.url} @ ${g.branch}: ${g.path}`;
+            const href = repoFileLink(g.url, g.branch, g.path);
+            return href ? (
+              <a href={href} target="_blank" rel="noreferrer" className="font-ident underline">
+                {label}
+              </a>
+            ) : (
+              <span className="font-ident">{label}</span>
+            );
+          })()}
+        </p>
+      )}
+      {editFile ? (
         <Suspense fallback={<p className="text-sm text-muted-foreground">Loading editor…</p>}>
           <CodeMirrorField label="Compose file" value={compose} onChange={setCompose} />
         </Suspense>

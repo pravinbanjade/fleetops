@@ -22,6 +22,7 @@ import {
   listComposeProjects,
   getStack,
   listStackRevisions,
+  getStackGit,
   listStacks,
   listContainers,
   listEnvs,
@@ -86,6 +87,7 @@ export const keys = {
   stacks: (env: string) => ["env", env, "stacks"] as const,
   stack: (env: string, name: string) => ["env", env, "stacks", name] as const,
   stackRevisions: (env: string, name: string) => ["env", env, "stacks", name, "revisions"] as const,
+  stackGit: (env: string, name: string) => ["env", env, "stacks", name, "git"] as const,
   /** A filtered list (`filter`) is cached apart from the whole one. */
   kube: (env: string, kind: string, ns?: string, filter?: KubeFilter) =>
     (filter ? ["env", env, "k8s", kind, ns ?? "*", filter] : ["env", env, "k8s", kind, ns ?? "*"]) as readonly string[],
@@ -366,6 +368,12 @@ export const stackRevisionsQuery = (env: string, name: string) =>
   queryOptions({
     queryKey: keys.stackRevisions(env, name),
     queryFn: async () => (await listStackRevisions({ path: { env, stack: name } })).data,
+  });
+
+export const stackGitQuery = (env: string, name: string) =>
+  queryOptions({
+    queryKey: keys.stackGit(env, name),
+    queryFn: async () => (await getStackGit({ path: { env, stack: name } })).data,
   });
 
 /** How far back the dashboard's event feed starts, in seconds. */
