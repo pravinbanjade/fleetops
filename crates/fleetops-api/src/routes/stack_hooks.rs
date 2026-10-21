@@ -26,6 +26,9 @@ pub const HOOK_BODY_MAX: usize = 5 * 1024 * 1024;
 /// Requests per stack and client address in [`HOOK_WINDOW`].
 pub const HOOK_MAX_REQUESTS: u32 = 30;
 pub const HOOK_WINDOW: Duration = Duration::from_secs(60);
+/// Requests per client address in [`HOOK_WINDOW`], whatever the stack, so
+/// walking ids cannot flood the audit log.
+pub const HOOK_MAX_PER_ADDRESS: u32 = 120;
 
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -94,8 +97,10 @@ pub async fn hook(
     headers: HeaderMap,
     body: Bytes,
 ) -> ApiResult<Response> {
+    let now = Instant::now();
+    s.hook_address_limiter.try_acquire(&meta.ip, now)?;
     s.hook_limiter
-        .try_acquire(&limiter_key(&id.to_string(), &meta.ip), Instant::now())?;
+        .try_acquire(&limiter_key(&id.to_string(), &meta.ip), now)?;
     let refuse = |reason: &'static str, env: Option<i64>, provider: Option<Provider>| {
         let s = s.clone();
         async move {

@@ -925,3 +925,50 @@ async fn stack_variables_masked_without_reveal() {
     let shown = r.send(&get).await;
     assert_eq!(shown.json["draft"]["variables"], json!(["TOKEN=hunter2"]));
 }
+
+#[tokio::test]
+async fn auto_deploy_from_git_needs_operate_too() {
+    let r = Rig::new().await;
+    let body = |auto: bool| json!({"url": "https://git.example/r.git", "branch": "main", "sync": "manual", "auto_deploy": auto});
+    let put = |auto: bool| Case {
+        method: "PUT",
+        path: "/api/v1/envs/local/stacks/shop/git",
+        body: Some(body(auto)),
+        need: "stacks.create",
+    };
+    let create_only = PermSet::default()
+        .with(p("stacks.view"))
+        .with(p("stacks.create"));
+    r.give(vec![custom(create_only)]);
+    let refused = r.send(&put(true)).await;
+    assert_eq!(
+        refused.status,
+        axum::http::StatusCode::FORBIDDEN,
+        "{:?}",
+        refused.json
+    );
+    assert!(
+        refused.json["message"]
+            .as_str()
+            .unwrap()
+            .contains("stacks.operate"),
+        "{:?}",
+        refused.json
+    );
+    // Without auto-deploy, Create is enough (this rig has no data directory).
+    let allowed = r.send(&put(false)).await;
+    assert_ne!(
+        allowed.status,
+        axum::http::StatusCode::FORBIDDEN,
+        "{:?}",
+        allowed.json
+    );
+    r.give(vec![custom(create_only.with(p("stacks.operate")))]);
+    let both = r.send(&put(true)).await;
+    assert_ne!(
+        both.status,
+        axum::http::StatusCode::FORBIDDEN,
+        "{:?}",
+        both.json
+    );
+}

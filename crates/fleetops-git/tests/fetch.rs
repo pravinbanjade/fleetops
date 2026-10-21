@@ -287,3 +287,34 @@ async fn force_push_fetches_new_head() {
     assert_eq!(f.commit, rewritten);
     assert_eq!(f.content, "b: 2\n");
 }
+
+#[tokio::test]
+async fn fetch_after_an_interrupted_one_is_not_disturbed_by_its_cleanup() {
+    let (repo, server) = served(ServerOpts {
+        delay: Duration::from_millis(700),
+        ..Default::default()
+    })
+    .await;
+    let head = repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let src = source(&server, "main", "compose.yaml", None);
+    let cut = fetch_file(
+        &dir,
+        &src,
+        Limits {
+            timeout: Duration::from_millis(100),
+            ..Default::default()
+        },
+    )
+    .await;
+    assert!(cut.is_err());
+    // Straight away, while the interrupted fetch is still winding down.
+    let f = fetch_file(&dir, &src, Limits::default()).await.unwrap();
+    assert_eq!(f.commit, head);
+    // Its late cleanup must not remove the cache the second fetch made.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(dir.exists());
+    let again = fetch_file(&dir, &src, Limits::default()).await.unwrap();
+    assert_eq!(again.commit, head);
+}

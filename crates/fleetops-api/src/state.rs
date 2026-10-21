@@ -112,6 +112,8 @@ pub struct AppState {
     pub git_syncs: Arc<std::sync::Mutex<std::collections::HashMap<i64, bool>>>,
     /// Webhook requests per stack and client address.
     pub hook_limiter: Arc<LoginLimiter>,
+    /// Webhook requests per client address, across stacks.
+    pub hook_address_limiter: Arc<LoginLimiter>,
 }
 
 impl AppState {
@@ -139,6 +141,10 @@ impl AppState {
             git_syncs: Arc::default(),
             hook_limiter: Arc::new(LoginLimiter::new(
                 crate::routes::stack_hooks::HOOK_MAX_REQUESTS,
+                crate::routes::stack_hooks::HOOK_WINDOW,
+            )),
+            hook_address_limiter: Arc::new(LoginLimiter::new(
+                crate::routes::stack_hooks::HOOK_MAX_PER_ADDRESS,
                 crate::routes::stack_hooks::HOOK_WINDOW,
             )),
         }

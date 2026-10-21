@@ -68,6 +68,7 @@ pub enum SyncOutcome {
 /// same commit is pending.
 const AUTO_DEPLOY_FAILED: &str = "auto-deploy of ";
 pub const UNREACHABLE: &str = "the environment is not reachable; the update is pending";
+pub const BUSY: &str = "a deploy of this stack is running; the update is pending";
 
 /// `<data_dir>/git/<stack id>`.
 pub fn cache_dir(s: &AppState, stack_id: i64) -> Result<PathBuf> {
@@ -179,8 +180,12 @@ async fn sync_fetched(
     };
     let commit = fetched.commit.clone();
     let short = &commit[..7];
+    // An auto-deploy that could not start yet (environment down, another
+    // deploy running) is tried again on the next sync of the same commit.
+    let deferred = matches!(git.last_sync_error.as_deref(), Some(UNREACHABLE | BUSY));
     let fresh = git.last_fetched_commit.as_deref() != Some(commit.as_str())
-        || matches!(trigger, SyncTrigger::Resume(_));
+        || matches!(trigger, SyncTrigger::Resume(_))
+        || deferred;
     s.store
         .record_git_fetch(stack.id, &commit, &fetched.content, now_unix())
         .await?;
@@ -242,6 +247,10 @@ async fn sync_fetched(
             s.store
                 .record_git_error(stack.id, UNREACHABLE, now_unix())
                 .await?;
+            Ok(SyncOutcome::Pending { commit })
+        }
+        Err(Error::Conflict(_)) if s.stack_locks.lock().unwrap().contains(&stack.id) => {
+            s.store.record_git_error(stack.id, BUSY, now_unix()).await?;
             Ok(SyncOutcome::Pending { commit })
         }
         Err(e) => {

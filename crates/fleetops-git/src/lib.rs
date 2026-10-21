@@ -127,11 +127,24 @@ enum Cut {
     TooBig,
 }
 
+/// One lock per cache directory: a fetch waits until an earlier one,
+/// interrupted or not, has stopped writing there and cleaned up.
+fn dir_lock(cache: &Path) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>,
+    > = std::sync::OnceLock::new();
+    let mut m = LOCKS.get_or_init(Default::default).lock().unwrap();
+    // Forget directories nobody is using.
+    m.retain(|_, l| Arc::strong_count(l) > 1);
+    m.entry(cache.to_path_buf()).or_default().clone()
+}
+
 /// Fetches `src.branch` into `cache` (depth 1) and reads `src.path` at its
 /// head.
 pub async fn fetch_file(cache: &Path, src: &Source, limits: Limits) -> Result<Fetched> {
     // gix's HTTP client uses rustls without a built-in provider.
     let _ = rustls::crypto::ring::default_provider().install_default();
+    let guard = dir_lock(cache).lock_owned().await;
     let interrupt = Arc::new(AtomicBool::new(false));
     let mut job = tokio::task::spawn_blocking({
         let (cache, src, interrupt) = (cache.to_path_buf(), src.clone(), interrupt.clone());
@@ -157,11 +170,13 @@ pub async fn fetch_file(cache: &Path, src: &Source, limits: Limits) -> Result<Fe
         Err(cut) => {
             interrupt.store(true, Ordering::Relaxed);
             // The blocking fetch notices the interrupt on its next read;
-            // its partial cache goes once it has stopped.
+            // its partial cache goes once it has stopped, and the next fetch
+            // into this directory waits for that.
             let dir = cache.to_path_buf();
             tokio::spawn(async move {
                 let _ = job.await;
                 let _ = std::fs::remove_dir_all(&dir);
+                drop(guard);
             });
             return Err(Error::Invalid(
                 match cut {
@@ -186,10 +201,14 @@ pub async fn fetch_file(cache: &Path, src: &Source, limits: Limits) -> Result<Fe
         )),
         Err(Fail::BranchMissing(b)) => Err(Error::Invalid(format!("branch '{b}' not found"))),
         Err(Fail::Invalid(m)) => Err(Error::Invalid(scrub(m))),
-        Err(Fail::Network(m)) => Err(Error::Upstream {
-            status: 502,
-            message: scrub(format!("git fetch: {m}")),
-        }),
+        Err(Fail::Network(m)) => {
+            // A cache a failed fetch may have left half-written starts again.
+            let _ = std::fs::remove_dir_all(cache);
+            Err(Error::Upstream {
+                status: 502,
+                message: scrub(format!("git fetch: {m}")),
+            })
+        }
     }
 }
 

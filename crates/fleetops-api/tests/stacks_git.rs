@@ -3,7 +3,7 @@ mod common;
 use axum::http::StatusCode;
 use common::git::*;
 use common::*;
-use fleetops_api::stacks::git::{sync_stack, SyncOutcome, SyncTrigger, UNREACHABLE};
+use fleetops_api::stacks::git::{sync_stack, SyncOutcome, SyncTrigger, BUSY, UNREACHABLE};
 use fleetops_git::testing::ServerOpts;
 use fleetops_store::TokenChange;
 use serde_json::json;
@@ -239,4 +239,41 @@ async fn concurrent_triggers_coalesce() {
         .unwrap();
     assert_eq!(out, SyncOutcome::Pending { commit: newer });
     assert_eq!(g.server.fetches.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn auto_deploy_retried_once_the_environment_is_back() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    let head = g.repo.commit(&[("compose.yaml", WEB_A)], "one");
+    g.fake.reachable.store(false, Ordering::SeqCst);
+    assert_eq!(
+        g.sync(SyncTrigger::Poll).await,
+        SyncOutcome::Pending {
+            commit: head.clone()
+        }
+    );
+    // A second pass while still down keeps the reason in view.
+    g.sync(SyncTrigger::Poll).await;
+    assert_eq!(g.git().await.last_sync_error.as_deref(), Some(UNREACHABLE));
+    g.fake.reachable.store(true, Ordering::SeqCst);
+    let (n, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert_eq!(task["status"], "succeeded", "{task:?}");
+    let rev = g.store.revision(g.stack.id, n).await.unwrap();
+    assert_eq!(rev.git_commit.as_deref(), Some(head.as_str()));
+}
+
+#[tokio::test]
+async fn auto_deploy_retried_after_a_running_deploy() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    let head = g.repo.commit(&[("compose.yaml", WEB_A)], "one");
+    // Someone else's deploy holds the stack.
+    assert!(g.state.stack_locks.lock().unwrap().insert(g.stack.id));
+    assert_eq!(
+        g.sync(SyncTrigger::Poll).await,
+        SyncOutcome::Pending { commit: head }
+    );
+    assert_eq!(g.git().await.last_sync_error.as_deref(), Some(BUSY));
+    g.state.stack_locks.lock().unwrap().remove(&g.stack.id);
+    let (_, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert_eq!(task["status"], "succeeded", "{task:?}");
 }

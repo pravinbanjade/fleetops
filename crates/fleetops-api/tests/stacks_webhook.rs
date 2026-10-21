@@ -276,3 +276,25 @@ async fn poll_runs_at_most_4_at_once() {
     let most = slow.in_flight_max.load(Ordering::SeqCst);
     assert!((1..=4).contains(&most), "{most} requests at once");
 }
+
+#[tokio::test]
+async fn one_address_is_limited_across_stack_ids() {
+    let g = webhook_app().await;
+    let mut last = StatusCode::OK;
+    for id in 0..121 {
+        last = g
+            .send(hook(10_000 + id, "?secret=nope", &[], "{}"))
+            .await
+            .status;
+    }
+    assert_eq!(last, StatusCode::TOO_MANY_REQUESTS);
+    let rows = g
+        .store
+        .list_audit(1000, None)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.action == "stack.git.webhook")
+        .count();
+    assert_eq!(rows, 120);
+}

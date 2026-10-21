@@ -12,7 +12,7 @@ use crate::{
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
-use fleetops_core::perm::{Row, Verb};
+use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::{GitRecord, GitSettings, StackRecord, TokenChange};
 use rand::RngCore;
@@ -163,6 +163,17 @@ pub async fn set(
     ApiJson(body): ApiJson<GitBody>,
 ) -> ApiResult<Json<GitSaved>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    // Create authors and Operate ships: a source that deploys itself is both.
+    if body.auto_deploy
+        && !c
+            .grants
+            .allows(Permission::new(Row::Stacks, Verb::Operate), None)
+    {
+        return Err(Error::Forbidden(
+            "deploying new commits automatically also needs stacks.operate".into(),
+        )
+        .into());
+    }
     let stack = stack_of(&s, &c, &name).await?;
     let settings = settings(&s, &body)?;
     cache_dir(&s, stack.id)?;
