@@ -10,6 +10,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for licensing and sign-off. This page 
 | Node.js | 24 or newer |
 | pnpm | 12 (`packageManager` in `web/package.json`) |
 | Docker or Podman | A reachable Docker-compatible socket |
+| git | The CLI, for the git-backed stack tests: they build fixture repositories and serve them with `git http-backend` |
 
 ## Run it locally
 

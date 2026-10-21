@@ -10,7 +10,7 @@ It is an open-source alternative to Portainer: roles, Kubernetes namespace scopi
 
 ![The FleetOps dashboard for a Docker host: containers that need attention, running containers with live CPU and memory, disk usage and recent events](docs/images/dashboard.png)
 
-> **Status: early development (0.x).** Docker, multi-host agents, Kubernetes, Helm and per-environment roles all work today. Expect rough edges and breaking changes between minor versions. Stacks and GitOps are next.
+> **Status: early development (0.x).** Docker, multi-host agents, Kubernetes, Helm and per-environment roles all work today. Expect rough edges and breaking changes between minor versions.
 
 ## Why FleetOps
 
@@ -99,6 +99,7 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 - **Images:** pull with layer progress, build from a Dockerfile or tar context with a streamed log, tag, history, inspect, remove and prune.
 - **Volumes and networks:** create, inspect, connect and disconnect, remove and prune.
 - **Stacks:** write a Compose file and its variables in the browser and deploy it to any Docker environment, local or through an agent. Before each deploy you see what changes: services created, recreated (with the fields that changed) or removed, and a diff of the file. A failed or interrupted deploy puts the stack back as it was. Every deploy is a revision you can roll back to. Compose runs natively in FleetOps, so no `docker compose` binary is needed; `build`, `secrets` and `configs` are not supported. Projects deployed outside FleetOps are listed too, with start, stop, restart and down.
+- **GitOps:** a stack can take its Compose file from a branch of an HTTPS git repository, with an optional access token. FleetOps syncs it by hand, by polling, or on a push webhook from GitHub, GitLab, Gitea or Forgejo, then deploys each new version or shows it as an update to review. Variables stay in FleetOps, sealed. Rolling a git stack back pauses its sync until you resume it. SSH URLs, submodules and LFS are not supported.
 
 **Kubernetes**
 - Browse workloads, services, ingresses, network policies, config, storage, RBAC, events and every custom resource the cluster serves, in one namespace or all.
@@ -212,10 +213,9 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 
 ## Roadmap
 
-**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · backup and restore · Compose stacks with plan, deploy and rollback · Enterprise audit export, teams, custom roles, single sign-on (OIDC, LDAP) and scheduled backups.
+**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · backup and restore · Compose stacks with plan, deploy and rollback, from the browser or a git repository · Enterprise audit export, teams, custom roles, single sign-on (OIDC, LDAP) and scheduled backups.
 
 **Next:**
-- **GitOps:** stacks backed by a git repository, synced by webhook or polling.
 - **Port-forward:** reach a pod's port through FleetOps.
 - **Enterprise:** API tokens, SIEM forwarding and long audit retention.
 
