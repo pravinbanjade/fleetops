@@ -12,6 +12,7 @@ fleetops-core.workspace = true
 fleetops-store.workspace = true
 fleetops-tunnel.workspace = true
 fleetops-kube.workspace = true
+fleetops-git.workspace = true
 argon2.workspace = true
 axum.workspace = true
 bytes.workspace = true
@@ -31,6 +32,7 @@ utoipa-axum.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+fleetops-git = { workspace = true, features = ["testing"] }
 async-trait.workspace = true
 futures-util.workspace = true
 tempfile.workspace = true

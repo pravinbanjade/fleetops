@@ -47,6 +47,10 @@ pub struct ApiConfig {
     pub data_dir: Option<std::path::PathBuf>,
     /// Stack deploy waits (stacks spec §4); shortened in tests.
     pub stack_timing: crate::stacks::Timing,
+    /// Accept `http://` git URLs; only tests set it.
+    pub git_allow_http: bool,
+    /// Caps on one git fetch (stacks spec §8).
+    pub git_limits: fleetops_git::Limits,
 }
 
 impl Default for ApiConfig {
@@ -65,6 +69,8 @@ impl Default for ApiConfig {
             public_url: None,
             data_dir: None,
             stack_timing: Default::default(),
+            git_allow_http: false,
+            git_limits: Default::default(),
         }
     }
 }
@@ -101,6 +107,9 @@ pub struct AppState {
     pub staged: Arc<crate::backup::StagedBackups>,
     /// Stacks with a deploy running, by stack id (one at a time per stack).
     pub stack_locks: Arc<std::sync::Mutex<std::collections::HashSet<i64>>>,
+    /// Stacks with a git sync running, and whether another was asked for
+    /// meanwhile.
+    pub git_syncs: Arc<std::sync::Mutex<std::collections::HashMap<i64, bool>>>,
 }
 
 impl AppState {
@@ -125,6 +134,7 @@ impl AppState {
             restart: Arc::new(crate::backup::NoRestart),
             staged: Arc::default(),
             stack_locks: Arc::default(),
+            git_syncs: Arc::default(),
         }
     }
 

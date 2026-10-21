@@ -3,6 +3,7 @@
 //! recovery of deploys a restart cut off.
 
 pub mod deploy;
+pub mod git;
 pub mod recover;
 pub mod restore;
 pub mod start;

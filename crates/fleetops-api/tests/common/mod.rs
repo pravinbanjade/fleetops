@@ -4,6 +4,7 @@ pub mod agent;
 pub mod contract;
 pub mod fake_docker;
 pub mod fake_kube;
+pub mod git;
 
 use axum::{
     body::Body,
