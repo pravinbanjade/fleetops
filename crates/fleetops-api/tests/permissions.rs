@@ -372,6 +372,42 @@ fn cases() -> Vec<Case> {
         ),
         c(
             "GET",
+            "/api/v1/envs/local/stacks/shop/git",
+            None,
+            "stacks.view",
+        ),
+        c(
+            "PUT",
+            "/api/v1/envs/local/stacks/shop/git",
+            Some(json!({"url": "https://git.example/r.git", "branch": "main", "sync": "manual"})),
+            "stacks.create",
+        ),
+        c(
+            "DELETE",
+            "/api/v1/envs/local/stacks/shop/git",
+            None,
+            "stacks.create",
+        ),
+        c(
+            "POST",
+            "/api/v1/envs/local/stacks/shop/git/sync",
+            None,
+            "stacks.operate",
+        ),
+        c(
+            "POST",
+            "/api/v1/envs/local/stacks/shop/git/resume",
+            None,
+            "stacks.operate",
+        ),
+        c(
+            "POST",
+            "/api/v1/envs/local/stacks/shop/git/secret",
+            None,
+            "stacks.create",
+        ),
+        c(
+            "GET",
             "/api/v1/envs/k/k8s/deployments",
             None,
             "workloads.view",

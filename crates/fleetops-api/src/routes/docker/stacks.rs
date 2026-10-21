@@ -42,6 +42,12 @@ pub struct StackSummary {
     pub updated_at: i64,
     /// The saved draft differs from the deployed revision.
     pub draft_differs: bool,
+    /// A git stack has a fetched commit that is not deployed.
+    pub update_available: bool,
+    /// A git stack's auto-sync is held after a rollback.
+    pub paused: bool,
+    /// A git stack's last sync error.
+    pub sync_error: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -149,7 +155,7 @@ fn unmask_variables(lines: &mut [String], stored: &[String]) -> Result<()> {
     Ok(())
 }
 
-async fn audit<T>(
+pub(super) async fn audit<T>(
     s: &AppState,
     c: &EnvCtx,
     action: &str,
@@ -205,7 +211,11 @@ async fn summary(s: &AppState, stack: StackRecord) -> Result<StackSummary> {
     .flatten()
     .max()
     .unwrap_or(0);
+    let git = s.store.stack_git(stack.id).await?;
     Ok(StackSummary {
+        update_available: git.as_ref().is_some_and(|g| g.pending_commit.is_some()),
+        paused: git.as_ref().is_some_and(|g| g.paused),
+        sync_error: git.and_then(|g| g.last_sync_error),
         name: stack.name.clone(),
         source: stack.source.clone(),
         deployed_revision: stack.deployed_revision,
@@ -358,12 +368,16 @@ pub async fn save_draft(
     let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     check_size(&body.compose, &body.variables)?;
-    let stored = s
-        .store
-        .draft(stack.id)
-        .await?
-        .map(|d| d.variables)
-        .unwrap_or_default();
+    let stored = s.store.draft(stack.id).await?;
+    if stack.source == "git"
+        && stored.as_ref().map(|d| d.compose.as_str()) != Some(body.compose.as_str())
+    {
+        return Err(Error::Invalid(
+            "a git stack's Compose file comes from its repository; change it there".into(),
+        )
+        .into());
+    }
+    let stored = stored.map(|d| d.variables).unwrap_or_default();
     unmask_variables(&mut body.variables, &stored)?;
     let res = s
         .store
@@ -550,7 +564,13 @@ pub async fn remove(
         .ok_or_else(|| Error::Conflict("a deploy of this stack is running".into()))?;
     let outcome = remove_objects(&c, &name, q.volumes).await;
     let outcome = match outcome {
-        Ok(()) => s.store.delete_stack(stack.id).await,
+        Ok(()) => {
+            let res = s.store.delete_stack(stack.id).await;
+            if res.is_ok() {
+                crate::stacks::git::remove_cache(&s, stack.id);
+            }
+            res
+        }
         Err(e) => Err(e),
     };
     audit(

@@ -689,6 +689,81 @@ export type ExecOptions = {
  */
 export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso' | 'backup';
 
+export type GitBody = {
+    auto_deploy?: boolean;
+    branch: string;
+    /**
+     * Forget the stored access token.
+     */
+    clear_token?: boolean;
+    /**
+     * The Compose file in the repository; `compose.yaml` by default.
+     */
+    path?: string | null;
+    /**
+     * At least 60; 300 by default.
+     */
+    poll_seconds?: number | null;
+    /**
+     * manual | poll | webhook
+     */
+    sync: string;
+    /**
+     * A new access token; omit it to keep the stored one.
+     */
+    token?: string | null;
+    /**
+     * An https URL, without credentials.
+     */
+    url: string;
+};
+
+export type GitRecord = {
+    auto_deploy: boolean;
+    branch: string;
+    /**
+     * Whether an access token is stored (it is never returned).
+     */
+    has_token: boolean;
+    last_fetched_commit?: string | null;
+    last_sync_at?: number | null;
+    last_sync_error?: string | null;
+    path: string;
+    /**
+     * Auto-deploy is held after a rollback until resumed.
+     */
+    paused: boolean;
+    /**
+     * A fetched commit whose Compose file is not deployed yet.
+     */
+    pending_commit?: string | null;
+    poll_seconds: number;
+    stack_id: number;
+    /**
+     * manual | poll | webhook
+     */
+    sync: string;
+    updated_at: number;
+    url: string;
+};
+
+export type GitSaved = {
+    status: GitStatus;
+    /**
+     * The webhook secret, only when it was just created; it is never
+     * shown again.
+     */
+    webhook_secret?: string | null;
+};
+
+export type GitStatus = {
+    git: GitRecord;
+    /**
+     * Where git hosts send push events. Relative when no public URL is set.
+     */
+    webhook_url: string;
+};
+
 /**
  * One grant: where it applies and what it allows.
  */
@@ -1299,6 +1374,10 @@ export type ScaleBody = {
     replicas: number;
 };
 
+export type SecretRotated = {
+    webhook_secret: string;
+};
+
 /**
  * One key of a Secret, for a role with Reveal on Secrets.
  */
@@ -1424,9 +1503,21 @@ export type StackSummary = {
     last_status?: string | null;
     name: string;
     /**
+     * A git stack's auto-sync is held after a rollback.
+     */
+    paused: boolean;
+    /**
      * inline | git
      */
     source: string;
+    /**
+     * A git stack's last sync error.
+     */
+    sync_error?: string | null;
+    /**
+     * A git stack has a fetched commit that is not deployed.
+     */
+    update_available: boolean;
     updated_at: number;
 };
 
@@ -1455,6 +1546,24 @@ export type StatsSample = {
      * Unix milliseconds.
      */
     time: number;
+};
+
+export type SyncOutcome = {
+    commit: string;
+    outcome: 'up_to_date';
+} | {
+    commit: string;
+    outcome: 'pending';
+} | {
+    commit: string;
+    outcome: 'deploying';
+    revision: number;
+    task_id: string;
+} | {
+    outcome: 'queued';
+} | {
+    error: string;
+    outcome: 'failed';
 };
 
 export type TagBody = {
@@ -4770,6 +4879,210 @@ export type SaveStackDraftResponses = {
 };
 
 export type SaveStackDraftResponse = SaveStackDraftResponses[keyof SaveStackDraftResponses];
+
+export type DetachStackGitData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/git';
+};
+
+export type DetachStackGitErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DetachStackGitError = DetachStackGitErrors[keyof DetachStackGitErrors];
+
+export type DetachStackGitResponses = {
+    /**
+     * Detached
+     */
+    204: void;
+};
+
+export type DetachStackGitResponse = DetachStackGitResponses[keyof DetachStackGitResponses];
+
+export type GetStackGitData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/git';
+};
+
+export type GetStackGitErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetStackGitError = GetStackGitErrors[keyof GetStackGitErrors];
+
+export type GetStackGitResponses = {
+    /**
+     * The git source
+     */
+    200: GitStatus;
+};
+
+export type GetStackGitResponse = GetStackGitResponses[keyof GetStackGitResponses];
+
+export type SetStackGitData = {
+    body: GitBody;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/git';
+};
+
+export type SetStackGitErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type SetStackGitError = SetStackGitErrors[keyof SetStackGitErrors];
+
+export type SetStackGitResponses = {
+    /**
+     * Saved
+     */
+    200: GitSaved;
+};
+
+export type SetStackGitResponse = SetStackGitResponses[keyof SetStackGitResponses];
+
+export type ResumeStackGitData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/git/resume';
+};
+
+export type ResumeStackGitErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ResumeStackGitError = ResumeStackGitErrors[keyof ResumeStackGitErrors];
+
+export type ResumeStackGitResponses = {
+    /**
+     * What the sync did
+     */
+    200: SyncOutcome;
+};
+
+export type ResumeStackGitResponse = ResumeStackGitResponses[keyof ResumeStackGitResponses];
+
+export type RotateStackGitSecretData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/git/secret';
+};
+
+export type RotateStackGitSecretErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RotateStackGitSecretError = RotateStackGitSecretErrors[keyof RotateStackGitSecretErrors];
+
+export type RotateStackGitSecretResponses = {
+    /**
+     * The new secret
+     */
+    200: SecretRotated;
+};
+
+export type RotateStackGitSecretResponse = RotateStackGitSecretResponses[keyof RotateStackGitSecretResponses];
+
+export type SyncStackGitData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/git/sync';
+};
+
+export type SyncStackGitErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type SyncStackGitError = SyncStackGitErrors[keyof SyncStackGitErrors];
+
+export type SyncStackGitResponses = {
+    /**
+     * What the sync did
+     */
+    200: SyncOutcome;
+};
+
+export type SyncStackGitResponse = SyncStackGitResponses[keyof SyncStackGitResponses];
 
 export type PlanStackData = {
     body: DeploySource;

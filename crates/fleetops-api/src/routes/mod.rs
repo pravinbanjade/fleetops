@@ -61,8 +61,8 @@ pub fn api() -> OpenApiRouter<AppState> {
 
 fn env_routes() -> OpenApiRouter<AppState> {
     use docker::{
-        compose, containers as c, image_tasks, images as i, networks as n, stacks, system,
-        volumes as v,
+        compose, containers as c, image_tasks, images as i, networks as n, stacks, stacks_git,
+        system, volumes as v,
     };
     OpenApiRouter::new()
         .routes(routes!(envs::list, envs::create))
@@ -112,6 +112,14 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(stacks::revisions))
         .routes(routes!(stacks::revision))
         .routes(routes!(stacks::action))
+        .routes(routes!(
+            stacks_git::get,
+            stacks_git::set,
+            stacks_git::detach
+        ))
+        .routes(routes!(stacks_git::sync))
+        .routes(routes!(stacks_git::resume))
+        .routes(routes!(stacks_git::rotate_secret))
         .routes(routes!(kube::apply))
         .routes(routes!(kube::templates))
         .routes(routes!(helm::list))

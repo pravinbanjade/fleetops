@@ -5774,6 +5774,350 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/stacks/{stack}/git": {
+      "get": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "The stack's git source and its last sync",
+        "operationId": "getStackGit",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The git source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Take the stack's Compose file from a git repository",
+        "description": "Saves the source and starts a sync in the background. The webhook secret is returned only when it is created.",
+        "operationId": "setStackGit",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitSaved"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Stop taking the stack's Compose file from git",
+        "description": "The stack keeps its draft and revisions and becomes an inline stack.",
+        "operationId": "detachStackGit",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Detached"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/git/resume": {
+      "post": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Follow the branch again after a rollback",
+        "description": "Turns auto-sync back on and syncs; with auto-deploy on, the branch head is deployed.",
+        "operationId": "resumeStackGit",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the sync did",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncOutcome"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/git/secret": {
+      "post": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Replace the webhook secret",
+        "description": "The new secret is returned once; the old one stops working.",
+        "operationId": "rotateStackGitSecret",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretRotated"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/git/sync": {
+      "post": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Fetch the branch now",
+        "operationId": "syncStackGit",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the sync did",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncOutcome"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/stacks/{stack}/plan": {
       "post": {
         "tags": [
@@ -8719,6 +9063,170 @@
           "backup"
         ]
       },
+      "GitBody": {
+        "type": "object",
+        "required": [
+          "url",
+          "branch",
+          "sync"
+        ],
+        "properties": {
+          "auto_deploy": {
+            "type": "boolean"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "clear_token": {
+            "type": "boolean",
+            "description": "Forget the stored access token."
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The Compose file in the repository; `compose.yaml` by default."
+          },
+          "poll_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "At least 60; 300 by default."
+          },
+          "sync": {
+            "type": "string",
+            "description": "manual | poll | webhook"
+          },
+          "token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A new access token; omit it to keep the stored one."
+          },
+          "url": {
+            "type": "string",
+            "description": "An https URL, without credentials."
+          }
+        },
+        "additionalProperties": false
+      },
+      "GitRecord": {
+        "type": "object",
+        "required": [
+          "stack_id",
+          "url",
+          "branch",
+          "path",
+          "sync",
+          "poll_seconds",
+          "auto_deploy",
+          "paused",
+          "has_token",
+          "updated_at"
+        ],
+        "properties": {
+          "auto_deploy": {
+            "type": "boolean"
+          },
+          "branch": {
+            "type": "string"
+          },
+          "has_token": {
+            "type": "boolean",
+            "description": "Whether an access token is stored (it is never returned)."
+          },
+          "last_fetched_commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_sync_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "last_sync_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "Auto-deploy is held after a rollback until resumed."
+          },
+          "pending_commit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A fetched commit whose Compose file is not deployed yet."
+          },
+          "poll_seconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stack_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sync": {
+            "type": "string",
+            "description": "manual | poll | webhook"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "GitSaved": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/GitStatus"
+          },
+          "webhook_secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The webhook secret, only when it was just created; it is never\nshown again."
+          }
+        }
+      },
+      "GitStatus": {
+        "type": "object",
+        "required": [
+          "git",
+          "webhook_url"
+        ],
+        "properties": {
+          "git": {
+            "$ref": "#/components/schemas/GitRecord"
+          },
+          "webhook_url": {
+            "type": "string",
+            "description": "Where git hosts send push events. Relative when no public URL is set."
+          }
+        }
+      },
       "GrantView": {
         "type": "object",
         "description": "One grant: where it applies and what it allows.",
@@ -10263,6 +10771,17 @@
           }
         }
       },
+      "SecretRotated": {
+        "type": "object",
+        "required": [
+          "webhook_secret"
+        ],
+        "properties": {
+          "webhook_secret": {
+            "type": "string"
+          }
+        }
+      },
       "SecretValue": {
         "type": "object",
         "description": "One key of a Secret, for a role with Reveal on Secrets.",
@@ -10688,7 +11207,9 @@
           "name",
           "source",
           "updated_at",
-          "draft_differs"
+          "draft_differs",
+          "update_available",
+          "paused"
         ],
         "properties": {
           "deployed_revision": {
@@ -10712,9 +11233,24 @@
           "name": {
             "type": "string"
           },
+          "paused": {
+            "type": "boolean",
+            "description": "A git stack's auto-sync is held after a rollback."
+          },
           "source": {
             "type": "string",
             "description": "inline | git"
+          },
+          "sync_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A git stack's last sync error."
+          },
+          "update_available": {
+            "type": "boolean",
+            "description": "A git stack has a fetched commit that is not deployed."
           },
           "updated_at": {
             "type": "integer",
@@ -10798,6 +11334,109 @@
             "description": "Unix milliseconds."
           }
         }
+      },
+      "SyncOutcome": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The deployed revision already has this file.",
+            "required": [
+              "commit",
+              "outcome"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "up_to_date"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The file differs from the deployed one and waits for a deploy.",
+            "required": [
+              "commit",
+              "outcome"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "pending"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An auto-deploy of the commit started.",
+            "required": [
+              "commit",
+              "task_id",
+              "revision",
+              "outcome"
+            ],
+            "properties": {
+              "commit": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "deploying"
+                ]
+              },
+              "revision": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "task_id": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A sync of this stack is running; it fetches once more when done.",
+            "required": [
+              "outcome"
+            ],
+            "properties": {
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "queued"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "error",
+              "outcome"
+            ],
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "failed"
+                ]
+              }
+            }
+          }
+        ]
       },
       "TagBody": {
         "type": "object",
