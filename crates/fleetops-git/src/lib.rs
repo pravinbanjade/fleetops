@@ -65,6 +65,48 @@ pub const TOKEN_USER: &str = "x-access-token";
 /// The file in the cache that records which URL it holds.
 const URL_FILE: &str = "fleetops-url";
 
+/// Packs a cache may hold. Each fetch adds one, so past this the cache is
+/// dropped and the next fetch starts again at depth 1.
+pub const MAX_PACKS: usize = 16;
+
+/// `m` with the token taken out, raw, percent-encoded and base64-encoded
+/// (alone or as basic-auth credentials).
+fn scrub(m: String, token: Option<&str>) -> String {
+    use base64::engine::general_purpose::{STANDARD, URL_SAFE};
+    use base64::Engine;
+    let Some(t) = token.filter(|t| !t.is_empty()) else {
+        return m;
+    };
+    let pct: String = t
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect();
+    let basic = format!("{TOKEN_USER}:{t}");
+    let mut forms = vec![t.to_string(), pct.clone(), pct.to_lowercase()];
+    for v in [t, basic.as_str()] {
+        for e in [STANDARD.encode(v), URL_SAFE.encode(v)] {
+            forms.push(e.trim_end_matches('=').to_string());
+            forms.push(e);
+        }
+    }
+    // Longest first, so a shorter form never leaves part of a longer one.
+    forms.sort_by_key(|f| std::cmp::Reverse(f.len()));
+    forms.into_iter().fold(m, |m, f| m.replace(&f, "***"))
+}
+
+fn packs(cache: &Path) -> usize {
+    std::fs::read_dir(cache.join("objects/pack")).map_or(0, |d| {
+        d.flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "pack"))
+            .count()
+    })
+}
+
 pub fn validate_url(url: &str, allow_http: bool) -> std::result::Result<(), String> {
     const HTTPS_ONLY: &str = "only https git URLs are supported";
     let u = url::Url::parse(url).map_err(|_| HTTPS_ONLY.to_string())?;
@@ -187,12 +229,14 @@ pub async fn fetch_file(cache: &Path, src: &Source, limits: Limits) -> Result<Fe
             ));
         }
     };
-    let scrub = |m: String| match &src.token {
-        Some(t) if !t.is_empty() => m.replace(t.as_str(), "***"),
-        _ => m,
-    };
+    let scrub = |m: String| scrub(m, src.token.as_deref());
     match joined.map_err(|e| Error::Internal(format!("git fetch stopped: {e}")))? {
-        Ok(f) => Ok(f),
+        Ok(f) => {
+            if packs(cache) > MAX_PACKS {
+                let _ = std::fs::remove_dir_all(cache);
+            }
+            Ok(f)
+        }
         Err(Fail::NeedsToken) => Err(Error::Invalid(
             "the repository needs an access token".into(),
         )),
@@ -375,6 +419,25 @@ pub fn cache_path(root: &Path, id: i64) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scrub_hides_encoded_tokens() {
+        use base64::Engine;
+        let t = "tok/en+1=";
+        let b64 = |v: &str| base64::engine::general_purpose::STANDARD.encode(v);
+        let basic = b64(&format!("{TOKEN_USER}:{t}"));
+        let m = format!(
+            "a {t} b tok%2Fen%2B1%3D c tok%2fen%2b1%3d d {} e Basic {basic}",
+            b64(t)
+        );
+        let out = scrub(m, Some(t));
+        assert!(!out.contains(t), "{out}");
+        assert!(!out.to_lowercase().contains("tok%2fen"), "{out}");
+        assert!(!out.contains(&b64(t)), "{out}");
+        assert!(!out.contains(&basic), "{out}");
+        assert_eq!(scrub("plain".into(), None), "plain");
+        assert_eq!(scrub("plain".into(), Some("")), "plain");
+    }
 
     #[test]
     fn url_rules() {

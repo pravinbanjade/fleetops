@@ -9,7 +9,7 @@ license.workspace = true
 # A `git http-backend` server and fixture repos for tests.
 # Tests serve plain http, where gix otherwise refuses to send credentials;
 # only dev-dependencies turn this on, so release builds keep the refusal.
-testing = ["dep:axum", "dep:tempfile", "dep:base64", "gix-transport/http-client-insecure-credentials"]
+testing = ["dep:axum", "dep:tempfile", "gix-transport/http-client-insecure-credentials"]
 
 [dependencies]
 fleetops-core.workspace = true
@@ -22,9 +22,9 @@ gix-transport = "0.61"
 tokio.workspace = true
 tracing.workspace = true
 url.workspace = true
+base64.workspace = true
 axum = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
-base64 = { workspace = true, optional = true }
 
 [dev-dependencies]
 fleetops-git = { path = ".", features = ["testing"] }

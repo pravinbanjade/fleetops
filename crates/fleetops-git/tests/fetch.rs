@@ -318,3 +318,31 @@ async fn fetch_after_an_interrupted_one_is_not_disturbed_by_its_cleanup() {
     let again = fetch_file(&dir, &src, Limits::default()).await.unwrap();
     assert_eq!(again.commit, head);
 }
+
+fn packs(dir: &std::path::Path) -> usize {
+    std::fs::read_dir(dir.join("objects/pack"))
+        .map(|d| {
+            d.flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "pack"))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+#[tokio::test]
+async fn cache_packs_stay_bounded() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let src = source(&server, "main", "compose.yaml", None);
+    for i in 0..(fleetops_git::MAX_PACKS + 4) {
+        let head = repo.commit(&[("compose.yaml", &format!("# {i}\n{COMPOSE}"))], "next");
+        let f = fetch_file(&dir, &src, Limits::default()).await.unwrap();
+        assert_eq!(f.commit, head);
+        assert!(
+            packs(&dir) <= fleetops_git::MAX_PACKS,
+            "{} packs",
+            packs(&dir)
+        );
+    }
+}
