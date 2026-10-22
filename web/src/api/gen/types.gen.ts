@@ -1343,11 +1343,20 @@ export type ResourcePlan = {
 };
 
 export type RevisionDetail = {
+    /**
+     * The secrets and configs it deployed, by name; never their content.
+     */
+    files: Array<RevisionFileName>;
     revision: RevisionRecord;
     /**
      * Masked without `stacks.reveal`.
      */
     variables: Array<string>;
+};
+
+export type RevisionFileName = {
+    kind: FileKind;
+    name: string;
 };
 
 export type RevisionRecord = {

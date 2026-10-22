@@ -10936,9 +10936,17 @@
         "type": "object",
         "required": [
           "revision",
-          "variables"
+          "variables",
+          "files"
         ],
         "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RevisionFileName"
+            },
+            "description": "The secrets and configs it deployed, by name; never their content."
+          },
           "revision": {
             "$ref": "#/components/schemas/RevisionRecord"
           },
@@ -10948,6 +10956,21 @@
               "type": "string"
             },
             "description": "Masked without `stacks.reveal`."
+          }
+        }
+      },
+      "RevisionFileName": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/FileKind"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },

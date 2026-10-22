@@ -166,3 +166,25 @@ describe("stack secrets tab", () => {
     expect(await screen.findByRole("table", { name: "Secrets" })).toBeInTheDocument();
   });
 });
+
+describe("revision files", () => {
+  it("lists the files a revision used, by name", async () => {
+    const rev = {
+      id: 1, stack_id: 1, number: 1, compose: COMPOSE, git_commit: null, status: "superseded",
+      error: null, kind: "deploy", rollback_of: null, created_at: 4, created_by: 1,
+    };
+    mockFetch({
+      ...routes(),
+      "GET /api/v1/envs/local/stacks/shop/revisions": { json: [rev] },
+      "GET /api/v1/envs/local/stacks/shop/revisions/1": {
+        json: { revision: rev, variables: [], files: [{ kind: "config", name: "app" }, { kind: "secret", name: "db_password" }] },
+      },
+    });
+    const { screen } = renderApp("/envs/local/stacks/shop");
+    await userEvent.click(await screen.findByRole("tab", { name: "Revisions" }));
+    const table = await screen.findByRole("table", { name: "Revisions" });
+    await userEvent.click(within(table).getByRole("button", { name: "View" }));
+    const dialog = await screen.findByRole("dialog", { name: "Revision 1" });
+    expect(await within(dialog).findByText("config app, secret db_password")).toBeInTheDocument();
+  });
+});

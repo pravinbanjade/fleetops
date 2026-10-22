@@ -102,6 +102,14 @@ pub struct RevisionDetail {
     pub revision: RevisionRecord,
     /// Masked without `stacks.reveal`.
     pub variables: Vec<String>,
+    /// The secrets and configs it deployed, by name; never their content.
+    pub files: Vec<RevisionFileName>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RevisionFileName {
+    pub kind: FileKind,
+    pub name: String,
 }
 
 #[derive(Deserialize, Default, IntoParams)]
@@ -532,9 +540,24 @@ pub async fn revision(
     if !c.grants.allows(REVEAL, None) {
         mask_env(&mut variables);
     }
+    let files = s
+        .store
+        .revision_files(stack.id, n)
+        .await?
+        .into_iter()
+        .map(|f| RevisionFileName {
+            kind: if f.kind == "secret" {
+                FileKind::Secret
+            } else {
+                FileKind::Config
+            },
+            name: f.name,
+        })
+        .collect();
     Ok(Json(RevisionDetail {
         revision,
         variables,
+        files,
     }))
 }
 

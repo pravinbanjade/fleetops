@@ -93,6 +93,12 @@ export function RevisionsTab({
               Variables: <span className="font-ident">{shown.data.variables.join(", ")}</span>
             </p>
           )}
+          {shown.data && shown.data.files.length > 0 && (
+            <p className="text-sm">
+              Files:{" "}
+              <span className="font-ident">{shown.data.files.map((f) => `${f.kind} ${f.name}`).join(", ")}</span>
+            </p>
+          )}
         </DialogContent>
       </Dialog>
     </>

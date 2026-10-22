@@ -662,3 +662,29 @@ async fn setting_a_secret_marks_draft_differs() {
     let g = app.send(req("GET", BASE, None, Some(&s))).await;
     assert_eq!(g.json[0]["draft_differs"], false);
 }
+
+#[tokio::test]
+async fn revision_lists_the_files_it_used_without_values() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, SECRET_STACK, &["APP_CONF=a", "X=1"]).await;
+    set_secret(&app, "Zq9-value").await;
+    plan_and_deploy(&app, &s, json!({"source": "draft"})).await;
+    let r = app
+        .send(req(
+            "GET",
+            &format!("{BASE}/shop/revisions/1"),
+            None,
+            Some(&s),
+        ))
+        .await;
+    assert_eq!(
+        r.json["files"],
+        json!([
+            {"kind": "config", "name": "app"},
+            {"kind": "config", "name": "inline"},
+            {"kind": "secret", "name": "db_password"},
+        ])
+    );
+    assert!(!r.json.to_string().contains("Zq9-value"));
+}
