@@ -508,3 +508,18 @@ async fn secrets_tab_edit_never_auto_deploys() {
     assert_eq!(g.git().await.pending_commit, None);
     assert_eq!(g.revisions().await.len(), 1);
 }
+
+#[tokio::test]
+async fn unused_config_file_is_neither_read_nor_compared() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    let compose = format!("{CONF_STACK}  spare: {{ file: ./missing.conf }}\n");
+    g.repo
+        .commit(&[("compose.yaml", &compose), ("site.conf", "v1")], "one");
+    let (_, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert_eq!(task["status"], "succeeded", "{task:?}");
+    let readme = g.repo.commit(&[("README.md", "hi")], "docs");
+    assert_eq!(
+        g.sync(SyncTrigger::Poll).await,
+        SyncOutcome::UpToDate { commit: readme }
+    );
+}

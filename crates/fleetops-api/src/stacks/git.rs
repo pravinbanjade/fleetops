@@ -4,7 +4,7 @@
 use super::start::{start_deploy, Actor, DeploySource, GIT_ACTOR};
 use crate::AppState;
 use fleetops_core::compose::files::repo_path;
-use fleetops_core::compose::{parse, FileSource};
+use fleetops_core::compose::{parse, FileKind, FileSource};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::{GitRecord, NewAudit, StackRecord};
 use serde::Serialize;
@@ -305,8 +305,9 @@ async fn sync_fetched(
     }
 }
 
-/// The `file:` configs of the fetched Compose file, read from the repository
-/// at its commit, as (name, content). Empty when the file does not parse.
+/// The `file:` configs a service of the fetched Compose file mounts, read
+/// from the repository at its commit, as (name, content). Empty when the
+/// file does not parse.
 async fn read_configs(
     s: &AppState,
     git: &GitRecord,
@@ -318,10 +319,18 @@ async fn read_configs(
     let Ok(parsed) = parse(&fetched.content, variables, &stack.name) else {
         return Ok(vec![]);
     };
+    let p = &parsed.project;
     let mut names = vec![];
     let mut paths = vec![];
-    for (name, src) in &parsed.project.configs {
-        if let FileSource::File { path } = src {
+    for (name, src) in &p.configs {
+        // Only what a service mounts is deployed, so only that is read and
+        // compared with what was deployed.
+        let used = p.services.values().any(|svc| {
+            svc.files
+                .iter()
+                .any(|f| f.kind == FileKind::Config && &f.source == name)
+        });
+        if let (FileSource::File { path }, true) = (src, used) {
             names.push(name.clone());
             paths.push(repo_path(&git.path, path)?);
         }
