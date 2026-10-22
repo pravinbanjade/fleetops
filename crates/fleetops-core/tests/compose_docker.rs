@@ -128,3 +128,30 @@ fn network_and_volume_specs_carry_labels() {
     assert_eq!(v.name, "shop_data");
     assert_eq!(v.labels[LABEL_VOLUME], "data");
 }
+
+/// The canonical JSON of a service without secrets or configs must not
+/// change, or upgrading FleetOps would recreate every stack. The expected
+/// hash was captured before `Service` gained `files`.
+#[test]
+fn hash_of_file_less_service_is_unchanged() {
+    let p = project(
+        r#"
+services:
+  web:
+    image: nginx:1.27
+    command: ["nginx", "-g", "daemon off;"]
+    environment: {A: "1"}
+    ports: ["8080:80"]
+    volumes: ["data:/data"]
+    labels: [team=web]
+    healthcheck: { test: curl -f http://localhost, interval: 10s }
+    restart: unless-stopped
+volumes:
+  data:
+"#,
+    );
+    assert_eq!(
+        service_hash(&p.services["web"]),
+        "ef7c7a5598cc4bcf1290d2c504a4a192d5246844f79ced7a642a4cf17dcf6d03"
+    );
+}

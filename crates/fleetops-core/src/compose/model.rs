@@ -11,6 +11,11 @@ pub struct Project {
     pub services: BTreeMap<String, Service>,
     pub networks: BTreeMap<String, Network>,
     pub volumes: BTreeMap<String, Volume>,
+    /// Top-level `secrets:` and `configs:`, by Compose key.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub secrets: BTreeMap<String, FileSource>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub configs: BTreeMap<String, FileSource>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -51,6 +56,60 @@ pub struct Service {
     pub nano_cpus: Option<i64>,
     pub pull_policy: PullPolicy,
     pub replicas: u32,
+    /// Secrets and configs copied into the container before it starts.
+    /// Skipped when empty, so a service without any hashes as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<FileMount>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FileKind {
+    Secret,
+    Config,
+}
+
+impl FileKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FileKind::Secret => "secret",
+            FileKind::Config => "config",
+        }
+    }
+}
+
+/// Where a top-level secret or config gets its content. `file:` is only a
+/// name here: what it means (a Secrets-tab value, or a repo file) depends
+/// on the stack, and is decided when values are resolved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum FileSource {
+    File {
+        path: String,
+    },
+    Environment {
+        var: String,
+    },
+    /// Configs only; already interpolated.
+    Content {
+        text: String,
+    },
+}
+
+/// One secret or config attached to a service.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileMount {
+    pub kind: FileKind,
+    /// The top-level key.
+    pub source: String,
+    /// Absolute path in the container.
+    pub target: String,
+    pub uid: String,
+    pub gid: String,
+    pub mode: u32,
+    /// Keyed digest of the content, filled in when values are resolved, so
+    /// the config hash changes with the value. Empty after parsing.
+    pub digest: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

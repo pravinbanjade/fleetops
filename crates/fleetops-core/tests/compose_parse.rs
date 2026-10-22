@@ -137,6 +137,7 @@ volumes:
         nano_cpus: Some(500_000_000),
         pull_policy: PullPolicy::Always,
         replicas: 1,
+        files: vec![],
     };
     assert_eq!(web, &expected);
 }
@@ -231,7 +232,7 @@ secrets:
     assert!(has(&i, "services.web.env_file", "not supported"), "{i:?}");
     assert!(has(&i, "services.web.imgae", "unknown"), "{i:?}");
     assert!(has(&i, "services.web.deploy.placement", "unknown"), "{i:?}");
-    assert!(has(&i, "secrets", "not supported"), "{i:?}");
+    assert!(has(&i, "secrets.s", "needs one source"), "{i:?}");
 }
 
 #[test]
@@ -359,4 +360,170 @@ fn variables_are_interpolated_verbatim() {
     .project;
     assert_eq!(p.services["web"].environment["P"], "a$b \"c\" ");
     assert_eq!(p.services["web"].environment["K"], "x=y");
+}
+
+#[test]
+fn secrets_and_configs_parse_with_defaults() {
+    let p = ok(r#"
+services:
+  db:
+    image: postgres
+    secrets:
+      - db_password
+      - source: api_key
+        target: pw
+        uid: "999"
+        gid: "998"
+        mode: 0400
+    configs:
+      - pg_conf
+      - source: app_conf
+        target: /etc/app.conf
+        mode: "0440"
+secrets:
+  db_password: { file: ./pw.txt }
+  api_key: { environment: API_KEY }
+configs:
+  pg_conf: { content: "x" }
+  app_conf: { file: ./app.conf }
+"#);
+    let f = &p.services["db"].files;
+    let get = |kind: FileKind, source: &str| {
+        f.iter()
+            .find(|m| m.kind == kind && m.source == source)
+            .unwrap_or_else(|| panic!("{source} missing: {f:?}"))
+            .clone()
+    };
+    let pw = get(FileKind::Secret, "db_password");
+    assert_eq!(pw.target, "/run/secrets/db_password");
+    assert_eq!(
+        (pw.uid.as_str(), pw.gid.as_str(), pw.mode),
+        ("0", "0", 0o444)
+    );
+    assert_eq!(pw.digest, "");
+    let key = get(FileKind::Secret, "api_key");
+    assert_eq!(key.target, "/run/secrets/pw");
+    assert_eq!(
+        (key.uid.as_str(), key.gid.as_str(), key.mode),
+        ("999", "998", 0o400)
+    );
+    assert_eq!(get(FileKind::Config, "pg_conf").target, "/pg_conf");
+    let app = get(FileKind::Config, "app_conf");
+    assert_eq!((app.target.as_str(), app.mode), ("/etc/app.conf", 0o440));
+}
+
+#[test]
+fn top_level_sources() {
+    let p = parse(
+        r#"
+services:
+  web: { image: x, secrets: [a, b], configs: [c, d] }
+secrets:
+  a: { file: ./a.txt }
+  b: { environment: B }
+configs:
+  c: { content: "a=${X}" }
+  d: { file: conf/d.conf }
+"#,
+        &["X=1".into()],
+        "shop",
+    )
+    .expect("valid")
+    .project;
+    assert_eq!(
+        p.secrets["a"],
+        FileSource::File {
+            path: "./a.txt".into()
+        }
+    );
+    assert_eq!(p.secrets["b"], FileSource::Environment { var: "B".into() });
+    assert_eq!(p.configs["c"], FileSource::Content { text: "a=1".into() });
+    assert_eq!(
+        p.configs["d"],
+        FileSource::File {
+            path: "conf/d.conf".into()
+        }
+    );
+}
+
+#[test]
+fn refused_file_forms() {
+    let i = issues(
+        r#"
+services:
+  web:
+    image: x
+    secrets: [ext, missing, s1, { source: s2, target: /run/secrets/s1 }]
+    configs: [{ source: c1, target: rel/path }]
+  db:
+    image: x
+    volumes: ["data:/var/lib/data", "/srv/conf:/etc/conf"]
+    tmpfs: /run/tmp
+    configs:
+      - { source: c1, target: /var/lib/data }
+      - { source: c1, target: /etc/conf/x.conf }
+    secrets: [{ source: s1, target: /run/tmp/s }]
+  ro:
+    image: x
+    read_only: true
+    secrets: [s1]
+volumes:
+  data:
+secrets:
+  ext: { external: true }
+  named: { name: other, file: ./x }
+  drv: { file: ./x, driver: foo }
+  tpl: { file: ./x, template_driver: golang }
+  two: { file: ./x, environment: X }
+  none: {}
+  sc: { content: "x" }
+  s1: { file: ./s1 }
+  s2: { file: ./s2 }
+configs:
+  c1: { content: "x" }
+"#,
+    );
+    assert!(has(&i, "secrets.ext.external", "not supported"), "{i:?}");
+    assert!(has(&i, "secrets.named.name", "not supported"), "{i:?}");
+    assert!(has(&i, "secrets.drv.driver", "not supported"), "{i:?}");
+    assert!(
+        has(&i, "secrets.tpl.template_driver", "not supported"),
+        "{i:?}"
+    );
+    assert!(has(&i, "secrets.two", "only one of"), "{i:?}");
+    assert!(has(&i, "secrets.none", "needs one source"), "{i:?}");
+    assert!(has(&i, "secrets.sc.content", "unknown"), "{i:?}");
+    assert!(
+        has(
+            &i,
+            "services.web.secrets[1]",
+            "secret 'missing' is not defined under secrets"
+        ),
+        "{i:?}"
+    );
+    assert!(has(&i, "services.web.secrets[3]", "same target"), "{i:?}");
+    assert!(
+        has(&i, "services.web.configs[0].target", "absolute"),
+        "{i:?}"
+    );
+    assert!(has(&i, "services.db.configs[0]", "mount"), "{i:?}");
+    assert!(has(&i, "services.db.configs[1]", "mount"), "{i:?}");
+    assert!(has(&i, "services.db.secrets[0]", "mount"), "{i:?}");
+    assert!(has(&i, "services.ro.secrets", "read-only"), "{i:?}");
+}
+
+#[test]
+fn x_keys_allowed_in_file_declarations() {
+    let p = ok(r#"
+services:
+  web:
+    image: x
+    secrets: [{ source: a, x-note: hi }]
+secrets:
+  a: { file: ./a, x-owner: ops }
+configs:
+  b: { content: "x", x-owner: ops }
+"#);
+    assert_eq!(p.services["web"].files.len(), 1);
+    assert!(p.configs.contains_key("b"));
 }

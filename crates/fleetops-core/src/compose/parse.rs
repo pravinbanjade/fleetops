@@ -30,7 +30,9 @@ pub fn validate_stack_name(name: &str) -> Result<(), String> {
     }
 }
 
-const TOP_KEYS: &[&str] = &["name", "version", "services", "networks", "volumes"];
+const TOP_KEYS: &[&str] = &[
+    "name", "version", "services", "networks", "volumes", "secrets", "configs",
+];
 const SERVICE_KEYS: &[&str] = &[
     "image",
     "container_name",
@@ -65,6 +67,8 @@ const SERVICE_KEYS: &[&str] = &[
     "cpus",
     "pull_policy",
     "deploy",
+    "secrets",
+    "configs",
 ];
 
 /// Why a well-known Compose key is refused, for a clearer message than
@@ -72,7 +76,6 @@ const SERVICE_KEYS: &[&str] = &[
 fn unsupported_reason(key: &str) -> Option<&'static str> {
     Some(match key {
         "build" => "images must come from a registry",
-        "secrets" | "configs" => "use stack variables instead",
         "env_file" => "use stack variables instead",
         "extends" | "include" => "a stack is a single file",
         "profiles" => "every service in a stack is deployed",
@@ -82,6 +85,9 @@ fn unsupported_reason(key: &str) -> Option<&'static str> {
 
 struct Cx<'a> {
     vars: &'a BTreeMap<String, String>,
+    /// Top-level secret and config keys, valid or not, so a service naming
+    /// a broken declaration gets one issue rather than two.
+    declared: BTreeSet<(FileKind, String)>,
     issues: Vec<ComposeIssue>,
     warnings: Vec<ComposeIssue>,
 }
@@ -383,6 +389,7 @@ pub fn parse(yaml: &str, variables: &[String], stack: &str) -> Result<Parsed, Ve
     let vars = parse_variables(variables).map_err(|e| vec![e])?;
     let mut cx = Cx {
         vars: &vars,
+        declared: BTreeSet::new(),
         issues: vec![],
         warnings: vec![],
     };
@@ -436,6 +443,24 @@ fn project(cx: &mut Cx, root: &Value, stack: &str) -> Option<Project> {
             }
         }
     }
+    let mut secrets = BTreeMap::new();
+    let mut configs = BTreeMap::new();
+    for (kind, out) in [
+        (FileKind::Secret, &mut secrets),
+        (FileKind::Config, &mut configs),
+    ] {
+        let key = top_key(kind);
+        if let Some(v) = top.get(key).filter(|v| !v.is_null()) {
+            if let Some(m) = cx.map(v, key) {
+                for (k, fv) in m {
+                    cx.declared.insert((kind, k.clone()));
+                    if let Some(src) = file_decl(cx, kind, k, fv) {
+                        out.insert(k.clone(), src);
+                    }
+                }
+            }
+        }
+    }
     let mut services = BTreeMap::new();
     match top.get("services") {
         None | Some(Value::Null) => cx.err("services", "a stack needs at least one service"),
@@ -470,7 +495,214 @@ fn project(cx: &mut Cx, root: &Value, stack: &str) -> Option<Project> {
         services,
         networks,
         volumes,
+        secrets,
+        configs,
     })
+}
+
+fn top_key(kind: FileKind) -> &'static str {
+    match kind {
+        FileKind::Secret => "secrets",
+        FileKind::Config => "configs",
+    }
+}
+
+/// Swarm-only keys of a top-level secret or config.
+const SWARM_FILE_KEYS: &[&str] = &[
+    "external",
+    "name",
+    "driver",
+    "driver_opts",
+    "template_driver",
+];
+
+fn file_decl(cx: &mut Cx, kind: FileKind, key: &str, v: &Value) -> Option<FileSource> {
+    let path = join(top_key(kind), key);
+    let m = cx.map(v, &path)?;
+    let sources: &[&str] = match kind {
+        FileKind::Secret => &["file", "environment"],
+        FileKind::Config => &["file", "environment", "content"],
+    };
+    for k in m.keys().filter(|k| SWARM_FILE_KEYS.contains(&k.as_str())) {
+        cx.err(
+            &join(&path, k),
+            format!(
+                "'{k}' is not supported: FleetOps holds the value itself; use {}",
+                sources.join(", ")
+            ),
+        );
+    }
+    let allowed: Vec<&str> = sources.iter().chain(SWARM_FILE_KEYS).copied().collect();
+    cx.keys(m, &allowed, &path);
+    let given: Vec<&str> = sources
+        .iter()
+        .copied()
+        .filter(|k| m.contains_key(*k))
+        .collect();
+    match given.as_slice() {
+        [] => {
+            cx.err(&path, format!("needs one source: {}", sources.join(", ")));
+            None
+        }
+        [k] => {
+            let val = cx.opt_string(m, k, &path)?;
+            Some(match *k {
+                "file" => FileSource::File { path: val },
+                "environment" => FileSource::Environment { var: val },
+                _ => FileSource::Content { text: val },
+            })
+        }
+        _ => {
+            cx.err(&path, format!("set only one of {}", given.join(", ")));
+            None
+        }
+    }
+}
+
+/// A service's `secrets:` or `configs:` list, short or long entries, with
+/// the Compose defaults filled in. Each mount comes with its YAML path.
+fn file_mounts(cx: &mut Cx, kind: FileKind, v: &Value, path: &str) -> Vec<(String, FileMount)> {
+    let items = match v {
+        Value::Null => return vec![],
+        Value::Array(items) => items,
+        _ => {
+            cx.err(path, "must be a list");
+            return vec![];
+        }
+    };
+    let mut out = vec![];
+    for (i, item) in items.iter().enumerate() {
+        let ip = idx(path, i);
+        let mut mount = FileMount {
+            kind,
+            source: String::new(),
+            target: String::new(),
+            uid: "0".into(),
+            gid: "0".into(),
+            mode: 0o444,
+            digest: String::new(),
+        };
+        let mut target = None;
+        match item {
+            Value::Object(m) => {
+                cx.keys(m, &["source", "target", "uid", "gid", "mode"], &ip);
+                let Some(source) = cx.opt_string(m, "source", &ip) else {
+                    cx.err(&join(&ip, "source"), "source is required");
+                    continue;
+                };
+                mount.source = source;
+                target = cx.opt_string(m, "target", &ip);
+                for (key, field) in [("uid", &mut mount.uid), ("gid", &mut mount.gid)] {
+                    if let Some(id) = cx.opt_string(m, key, &ip) {
+                        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+                            cx.err(&join(&ip, key), "must be a number");
+                        }
+                        *field = id;
+                    }
+                }
+                if let Some(mv) = m.get("mode").filter(|v| !v.is_null()) {
+                    match file_mode(mv) {
+                        Some(mode) => mount.mode = mode,
+                        None => cx.err(&join(&ip, "mode"), "must be an octal mode such as 0440"),
+                    }
+                }
+            }
+            other => match cx.string(other, &ip) {
+                Some(s) => mount.source = s,
+                None => continue,
+            },
+        }
+        if !cx.declared.contains(&(kind, mount.source.clone())) {
+            let what = kind.as_str();
+            cx.err(
+                &ip,
+                format!(
+                    "{what} '{}' is not defined under {}",
+                    mount.source,
+                    top_key(kind)
+                ),
+            );
+            continue;
+        }
+        mount.target = match (kind, target) {
+            (FileKind::Secret, None) => format!("/run/secrets/{}", mount.source),
+            (FileKind::Config, None) => format!("/{}", mount.source),
+            (_, Some(t)) if t.starts_with('/') => t,
+            (FileKind::Secret, Some(t)) => format!("/run/secrets/{t}"),
+            (FileKind::Config, Some(_)) => {
+                cx.err(&join(&ip, "target"), "must be an absolute path");
+                continue;
+            }
+        };
+        out.push((ip, mount));
+    }
+    out
+}
+
+/// A mode as Compose reads it: a YAML integer is the mode itself (`0o440`,
+/// or `288` in decimal); `0440` reaches us as the float 440.0 (the YAML
+/// parser does not read a leading zero as octal), so its digits are octal,
+/// as they are in a string.
+fn file_mode(v: &Value) -> Option<u32> {
+    let mode = match v {
+        Value::Number(n) if n.is_u64() => u32::try_from(n.as_u64()?).ok()?,
+        Value::Number(n) => {
+            let f = n.as_f64()?;
+            if f.fract() != 0.0 || f < 0.0 {
+                return None;
+            }
+            u32::from_str_radix(&(f as u64).to_string(), 8).ok()?
+        }
+        Value::String(s) => u32::from_str_radix(s.strip_prefix("0o").unwrap_or(s), 8).ok()?,
+        _ => return None,
+    };
+    (mode <= 0o7777).then_some(mode)
+}
+
+/// Checks a service's files against each other and its mounts: a file
+/// copied in before start would be hidden by a mount over its path, and
+/// Docker refuses to copy into a read-only root filesystem.
+fn check_files(
+    cx: &mut Cx,
+    path: &str,
+    files: &[(String, FileMount)],
+    mount_targets: &[String],
+    read_only: bool,
+) {
+    if read_only && !files.is_empty() {
+        let key = if files.iter().any(|(_, f)| f.kind == FileKind::Secret) {
+            "secrets"
+        } else {
+            "configs"
+        };
+        cx.err(
+            &join(path, key),
+            "secrets and configs cannot be copied into a read-only container: remove read_only: true",
+        );
+        return;
+    }
+    let mut seen = BTreeSet::new();
+    for (p, f) in files {
+        if !seen.insert(f.target.as_str()) {
+            cx.err(
+                p,
+                format!("another secret or config has the same target {}", f.target),
+            );
+        }
+        let under = |m: &String| {
+            let m = m.trim_end_matches('/');
+            f.target == m || f.target.starts_with(&format!("{m}/")) || m.is_empty()
+        };
+        if let Some(m) = mount_targets.iter().find(|m| under(m)) {
+            cx.err(
+                p,
+                format!(
+                    "target {} is under the mount {m}, which would hide it",
+                    f.target
+                ),
+            );
+        }
+    }
 }
 
 fn network(cx: &mut Cx, stack: &str, key: &str, v: &Value) -> Option<Network> {
@@ -830,6 +1062,28 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
             .map(|v| cx.string_list(v, &join(&path, key)))
             .unwrap_or_default()
     };
+    let tmpfs = list(cx, "tmpfs");
+    let read_only = cx.bool(m, "read_only", &path).unwrap_or(false);
+    let mut files = vec![];
+    for kind in [FileKind::Secret, FileKind::Config] {
+        if let Some(v) = m.get(top_key(kind)) {
+            files.extend(file_mounts(cx, kind, v, &join(&path, top_key(kind))));
+        }
+    }
+    let mount_targets: Vec<String> = mounts
+        .iter()
+        .map(|m| match m {
+            Mount::Volume { target, .. } | Mount::Bind { target, .. } | Mount::Tmpfs { target } => {
+                target.clone()
+            }
+        })
+        .chain(
+            tmpfs
+                .iter()
+                .map(|t| t.split(':').next().unwrap_or_default().to_string()),
+        )
+        .collect();
+    check_files(cx, &path, &files, &mount_targets, read_only);
     Some(Service {
         name: name.to_string(),
         image,
@@ -852,10 +1106,10 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
         dns: list(cx, "dns"),
         cap_add: list(cx, "cap_add"),
         cap_drop: list(cx, "cap_drop"),
-        tmpfs: list(cx, "tmpfs"),
+        tmpfs,
         devices: list(cx, "devices"),
         privileged: cx.bool(m, "privileged", &path).unwrap_or(false),
-        read_only: cx.bool(m, "read_only", &path).unwrap_or(false),
+        read_only,
         init: cx.bool(m, "init", &path),
         shm_size: cx.size(m, "shm_size", &path),
         stop_signal: cx.opt_string(m, "stop_signal", &path),
@@ -865,6 +1119,7 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
         nano_cpus,
         pull_policy,
         replicas,
+        files: files.into_iter().map(|(_, f)| f).collect(),
     })
 }
 
