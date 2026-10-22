@@ -842,6 +842,7 @@ impl StreamOps for FakeDocker {
     /// A Dockerfile containing `fail` fails the way a failing RUN step does.
     fn build_image(&self, spec: BuildSpec) -> BoxStream<Value> {
         let fails = matches!(&spec.context, BuildContext::Dockerfile(d) if String::from_utf8_lossy(d).contains("fail"));
+        self.call(format!("build {}", spec.tag.as_deref().unwrap_or("-")));
         if !fails {
             if let Some(tag) = &spec.tag {
                 self.state

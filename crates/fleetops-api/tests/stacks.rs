@@ -143,7 +143,7 @@ async fn validate_reports_issues_with_paths() {
         .send(req(
             "POST",
             &format!("{BASE}/validate"),
-            Some(json!({"name": "shop", "compose": "services:\n  web:\n    build: .\n"})),
+            Some(json!({"name": "shop", "compose": "services:\n  web:\n    build: { ssh: [x] }\n  db: { restart: always }\n"})),
             Some(&s),
         ))
         .await;
@@ -154,8 +154,8 @@ async fn validate_reports_issues_with_paths() {
         .iter()
         .map(|i| i["path"].as_str().unwrap())
         .collect();
-    assert!(paths.contains(&"services.web.build"), "{paths:?}");
-    assert!(paths.contains(&"services.web.image"), "{paths:?}");
+    assert!(paths.contains(&"services.web.build.ssh"), "{paths:?}");
+    assert!(paths.contains(&"services.db.image"), "{paths:?}");
 }
 
 #[tokio::test]

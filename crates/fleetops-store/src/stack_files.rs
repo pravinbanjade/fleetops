@@ -196,4 +196,9 @@ impl Store {
     pub fn file_digest_key(&self) -> [u8; 32] {
         self.key.derive(b"fleetops stack file digest v1")
     }
+
+    /// The key of stack build hashes, derived from the server key.
+    pub fn build_key(&self) -> [u8; 32] {
+        self.key.derive(b"fleetops stack build v1")
+    }
 }

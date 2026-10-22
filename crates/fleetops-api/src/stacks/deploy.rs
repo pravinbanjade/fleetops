@@ -3,6 +3,7 @@
 //! aside, and only removed once every service is up. Any failure before
 //! that is undone by [`super::restore`].
 
+use super::build::{cleanup, Prepared};
 use super::restore::old_suffix;
 use super::{is_old, service_of, stack_containers};
 use crate::AppState;
@@ -18,7 +19,7 @@ use fleetops_core::{Error, Result};
 use fleetops_store::{RevisionRecord, StackRecord};
 use futures_util::StreamExt;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -58,10 +59,12 @@ fn needs_exit_check(svc: &Service) -> bool {
 /// Runs the plan's steps against the environment. `files` holds the
 /// content of every secret and config the project's services use. On
 /// error nothing is undone here; the caller runs `restore`.
+#[allow(clippy::too_many_arguments)]
 pub async fn execute(
     ops: &dyn DockerOps,
     project: &Project,
     files: &FileValues,
+    builds: &BTreeMap<String, Prepared>,
     plan: &Plan,
     revision: i64,
     timing: &Timing,
@@ -84,6 +87,33 @@ pub async fn execute(
             }
             if let Some(status) = v["status"].as_str() {
                 say(progress, "pull", format!("{}: {status}", img.image));
+            }
+        }
+    }
+    for img in plan.images.iter().filter(|i| i.build) {
+        let prepared = builds
+            .get(&img.image)
+            .ok_or_else(|| Error::Internal(format!("no build was prepared for {}", img.image)))?;
+        for note in &prepared.notes {
+            say(progress, "build", note.clone());
+        }
+        say(progress, "build", format!("building {}", img.image));
+        let fail = |msg: String| Error::Upstream {
+            status: 500,
+            message: format!("build {}: {msg}", img.image),
+        };
+        let mut s = ops.build_image(prepared.spec.clone());
+        while let Some(item) = s.next().await {
+            let v = item.map_err(|e| fail(e.to_string()))?;
+            if let Some(msg) = v["error"].as_str().or(v["errorDetail"]["message"].as_str()) {
+                return Err(fail(msg.to_string()));
+            }
+            if let Some(line) = v["stream"]
+                .as_str()
+                .map(str::trim_end)
+                .filter(|l| !l.is_empty())
+            {
+                say(progress, "build", line.to_string());
             }
         }
     }
@@ -430,6 +460,8 @@ pub fn deploy_stream(
     revision: RevisionRecord,
     project: Project,
     files: FileValues,
+    builds: BTreeMap<String, Prepared>,
+    keep: BTreeSet<String>,
     plan: Plan,
     timing: Timing,
 ) -> BoxStream<Value> {
@@ -447,6 +479,7 @@ pub fn deploy_stream(
             ops.as_ref(),
             &project,
             &files,
+            &builds,
             &plan,
             revision.number,
             &timing,
@@ -455,6 +488,9 @@ pub fn deploy_stream(
         .await;
         match outcome {
             Ok(()) => {
+                for line in cleanup(ops.as_ref(), &project.name, &keep).await {
+                    say(&send, "commit", line);
+                }
                 if let Err(e) = state
                     .store
                     .finish_revision(stack.id, revision.number, None)

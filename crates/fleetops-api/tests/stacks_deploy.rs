@@ -45,7 +45,17 @@ async fn deploy_files(
     rev: i64,
 ) -> Result<()> {
     let plan = plan(p, prev.map(|x| (x, rev - 1)), &live(f).await);
-    execute(f.as_ref(), p, files, &plan, rev, &timing(), &|_| {}).await
+    execute(
+        f.as_ref(),
+        p,
+        files,
+        &Default::default(),
+        &plan,
+        rev,
+        &timing(),
+        &|_| {},
+    )
+    .await
 }
 
 const KEY: [u8; 32] = [3; 32];

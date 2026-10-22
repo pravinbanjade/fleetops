@@ -1,6 +1,7 @@
 //! Planning a stack and starting its deploy (stacks spec §3–§4), shared by
 //! the deploy route and git syncs (§8).
 
+use super::build::{self as builds, BuildInputs};
 use super::{deploy_stream, recover_stack, stack_containers};
 use crate::tasks::{NewTask, TaskInfo, TaskStatus};
 use crate::AppState;
@@ -11,7 +12,7 @@ use fleetops_core::compose::{parse, parse_variables, ComposeIssue, FileKind, Pro
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
 use fleetops_core::{now_unix, Error, Result};
-use fleetops_store::{NewAudit, RevisionFile, RevisionRecord, StackRecord};
+use fleetops_store::{Builds, NewAudit, RevisionFile, RevisionRecord, StackRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -190,6 +191,13 @@ async fn deployed(
         // A file the snapshot lacks keeps an empty digest, which reads as
         // changed: the safe side.
         let _ = resolve(p, &v, &values, &s.store.file_digest_key());
+        let inputs = builds::revision_inputs(s, stack, n).await?;
+        let _ = fleetops_core::compose::build::apply(
+            p,
+            &inputs.trees,
+            inputs.git,
+            &s.store.build_key(),
+        );
     }
     Ok(Some((r, v, p)))
 }
@@ -232,10 +240,19 @@ fn variables_changed(before: &[String], after: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// The plan of `from` for `stack`, with what was planned (and the content
-/// of its files) and what it was made from. Issues mean the file does not
-/// parse, or a secret or config has no value.
-pub(crate) type Planned = (PlanResponse, Option<(Project, Plan, FileValues)>, Source);
+/// A plan ready to deploy: the project, the plan, the content of its files
+/// and what its builds come from.
+pub(crate) struct Ready {
+    pub project: Project,
+    pub plan: Plan,
+    pub files: FileValues,
+    pub inputs: BuildInputs,
+}
+
+/// The plan of `from` for `stack`, with what was planned and what it was
+/// made from. Issues mean the file does not parse, a secret or config has
+/// no value, or a build cannot be made.
+pub(crate) type Planned = (PlanResponse, Option<Ready>, Source);
 
 pub(crate) async fn make_plan(
     s: &AppState,
@@ -251,15 +268,39 @@ pub(crate) async fn make_plan(
         dep.as_ref().map(|(_, v, _)| v.as_slice()).unwrap_or(&[]),
         &src.variables,
     );
-    let parsed = parse(&src.compose, &src.variables, &stack.name).and_then(|mut parsed| {
+    let mut parsed = parse(&src.compose, &src.variables, &stack.name).and_then(|mut parsed| {
         let files = resolve(
             &mut parsed.project,
             &src.variables,
             &src.values,
             &s.store.file_digest_key(),
         )?;
-        Ok((parsed, files))
+        Ok((parsed, files, BuildInputs::default()))
     });
+    if let Ok((parsed_ok, _, inputs)) = &mut parsed {
+        let (found, issues) = match from {
+            DeploySource::Draft => {
+                builds::draft_inputs(s, stack, src.commit.as_deref(), &parsed_ok.project).await?
+            }
+            DeploySource::Revision { revision } => {
+                (builds::revision_inputs(s, stack, revision).await?, vec![])
+            }
+        };
+        *inputs = found;
+        let applied = if issues.is_empty() {
+            fleetops_core::compose::build::apply(
+                &mut parsed_ok.project,
+                &inputs.trees,
+                inputs.git,
+                &s.store.build_key(),
+            )
+        } else {
+            Err(issues)
+        };
+        if let Err(issues) = applied {
+            parsed = Err(issues);
+        }
+    }
     match parsed {
         Err(issues) => Ok((
             PlanResponse {
@@ -273,12 +314,27 @@ pub(crate) async fn make_plan(
             None,
             src,
         )),
-        Ok((parsed, files)) => {
+        Ok((parsed, files, inputs)) => {
             let live = live(ops, &stack.name).await?;
             let prev = dep
                 .as_ref()
                 .and_then(|(r, _, p)| p.as_ref().map(|p| (p, r.number)));
             let p = plan(&parsed.project, prev, &live);
+            let issues = builds::check_rebuilds(s, stack, &parsed.project, &p, &inputs).await?;
+            if !issues.is_empty() {
+                return Ok((
+                    PlanResponse {
+                        issues,
+                        warnings: parsed.warnings,
+                        plan: None,
+                        compose_before,
+                        compose_after: src.compose.clone(),
+                        variables_changed: changed,
+                    },
+                    None,
+                    src,
+                ));
+            }
             Ok((
                 PlanResponse {
                     issues: vec![],
@@ -288,7 +344,12 @@ pub(crate) async fn make_plan(
                     compose_after: src.compose.clone(),
                     variables_changed: changed,
                 },
-                Some((parsed.project, p, files)),
+                Some(Ready {
+                    project: parsed.project,
+                    plan: p,
+                    files,
+                    inputs,
+                }),
                 src,
             ))
         }
@@ -313,7 +374,13 @@ pub async fn start_deploy(
         commit,
         ..
     } = src;
-    let Some((project, p, files)) = planned else {
+    let Some(Ready {
+        project,
+        plan: p,
+        files,
+        inputs,
+    }) = planned
+    else {
         return Err(Error::Invalid(issues_message(&resp.issues)));
     };
     if plan_token.is_some_and(|t| t != p.token) {
@@ -324,6 +391,19 @@ pub async fn start_deploy(
     if !p.blocking.is_empty() {
         return Err(Error::Invalid(p.blocking.join("; ")));
     }
+    let built: Builds = builds::builds_of(&project, &inputs);
+    // Images of the deploy before this one stay, for a quick rollback.
+    let mut keep: BTreeSet<String> = built.values().map(|b| b.image.clone()).collect();
+    if let Some(n) = stack.deployed_revision {
+        keep.extend(
+            s.store
+                .revision_builds(stack.id, n)
+                .await?
+                .into_values()
+                .map(|b| b.image),
+        );
+    }
+    let prepared = builds::prepare(s, stack, &project, &p, &inputs).await?;
     if !s.stack_locks.lock().unwrap().insert(stack.id) {
         return Err(Error::Conflict(
             "a deploy of this stack is already running".into(),
@@ -357,7 +437,7 @@ pub async fn start_deploy(
                     value: value.clone(),
                 })
                 .collect::<Vec<_>>(),
-            &Default::default(),
+            &built,
         )
         .await;
     let rev = match created {
@@ -382,6 +462,8 @@ pub async fn start_deploy(
         rev,
         project,
         files,
+        prepared,
+        keep,
         p,
         s.config.stack_timing,
     );

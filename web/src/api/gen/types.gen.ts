@@ -914,6 +914,10 @@ export type HookStep = {
 };
 
 export type ImagePlan = {
+    /**
+     * Built on the environment from the service's `build:`.
+     */
+    build: boolean;
     image: string;
     pull: boolean;
 };

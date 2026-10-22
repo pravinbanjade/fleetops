@@ -9844,9 +9844,14 @@
         "type": "object",
         "required": [
           "image",
-          "pull"
+          "pull",
+          "build"
         ],
         "properties": {
+          "build": {
+            "type": "boolean",
+            "description": "Built on the environment from the service's `build:`."
+          },
           "image": {
             "type": "string"
           },

@@ -2,6 +2,7 @@
 //! `DockerOps`, the restore that undoes a failed or interrupted deploy, and
 //! recovery of deploys a restart cut off.
 
+pub mod build;
 pub mod deploy;
 pub mod git;
 pub mod recover;
