@@ -229,7 +229,8 @@ pub async fn set(
         if e.to_string().contains("surrogate") {
             Error::Invalid("the value must be UTF-8 text".into())
         } else {
-            Error::Invalid(format!("invalid request body: {e}"))
+            // serde's message can quote the value, so it is not passed on.
+            Error::Invalid(r#"the body must be {"value": "<text>"}"#.into())
         }
     })?;
     if body.value.len() > MAX_VALUE {

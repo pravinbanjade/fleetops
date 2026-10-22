@@ -269,3 +269,19 @@ async fn audit_records_name_not_value() {
     let text = format!("{audit:?}");
     assert!(!text.contains("hunter2") && !text.contains("conf-text"));
 }
+
+#[tokio::test]
+async fn a_malformed_body_never_echoes_the_value() {
+    let app = app().await;
+    let s = setup(&app).await;
+    let r = app
+        .send(req(
+            "PUT",
+            &format!("{BASE}/shop/files/secret/db_password"),
+            Some(json!({ "value": 987654321 })),
+            Some(&s),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert!(!r.json.to_string().contains("987654321"), "{:?}", r.json);
+}
