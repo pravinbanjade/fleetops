@@ -98,6 +98,21 @@ pub fn container_body(project: &Project, svc: &Service, n: u32, revision: i64) -
         .filter(|f| f.kind == FileKind::Secret)
         .map(|f| f.target.as_str())
         .collect();
+    if !svc.files.is_empty() {
+        let files: Vec<super::files::LabelledFile> = svc
+            .files
+            .iter()
+            .map(|f| super::files::LabelledFile {
+                kind: f.kind,
+                name: f.source.clone(),
+                digest: f.digest.clone(),
+            })
+            .collect();
+        labels.insert(
+            super::files::LABEL_FILES.into(),
+            serde_json::to_string(&files).expect("strings serialise"),
+        );
+    }
     if !secrets.is_empty() {
         labels.insert(
             super::files::LABEL_SECRETS.into(),

@@ -571,6 +571,10 @@ configs:
     let (status, text) = container_file(&live, "local", &db, "/run/secrets/db_password").await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{text}");
     assert!(!text.contains("Pg-s3cret-it"));
+    // `/var/run` is a symlink to `/run` in the image, and Docker follows it.
+    let (status, text) = container_file(&live, "local", &db, "/var/run/secrets/db_password").await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{text}");
+    assert!(!text.contains("Pg-s3cret-it"));
 
     let (status, _) = live
         .call("DELETE", &format!("{base}?volumes=true"), None)

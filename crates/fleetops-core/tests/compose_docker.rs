@@ -182,3 +182,25 @@ configs:
     let w = container_body(&p, &p.services["web"], 1, 1);
     assert!(w.pointer("/Labels/io.fleetops.stack.secrets").is_none());
 }
+
+#[test]
+fn container_body_labels_every_file_with_its_digest() {
+    let mut p = project(
+        "services:\n  db:\n    image: x\n    secrets: [a]\n    configs: [c]\n  web: { image: x }\nsecrets:\n  a: { file: ./a }\nconfigs:\n  c: { content: \"x\" }\n",
+    );
+    for f in &mut p.services.get_mut("db").unwrap().files {
+        f.digest = format!("d-{}", f.source);
+    }
+    let b = container_body(&p, &p.services["db"], 1, 1);
+    let label = b.pointer("/Labels/io.fleetops.stack.files").unwrap();
+    let v: serde_json::Value = serde_json::from_str(label.as_str().unwrap()).unwrap();
+    assert_eq!(
+        v,
+        serde_json::json!([
+            {"kind": "secret", "name": "a", "digest": "d-a"},
+            {"kind": "config", "name": "c", "digest": "d-c"},
+        ])
+    );
+    let w = container_body(&p, &p.services["web"], 1, 1);
+    assert!(w.pointer("/Labels/io.fleetops.stack.files").is_none());
+}

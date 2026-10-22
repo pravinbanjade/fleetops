@@ -454,3 +454,72 @@ async fn config_path_still_downloads() {
         .await;
     assert_eq!(r.status, StatusCode::OK);
 }
+
+/// A stack container with secret `pw` (whose deployed value is the fake's
+/// file content, "hello") and config `app`, labelled as the deploy labels it.
+fn container_with_files(app: &TestApp) {
+    use fleetops_core::compose::files::digest;
+    use fleetops_core::compose::FileKind;
+    let key = app.store.file_digest_key();
+    let mut c = summary("c1", "shop-db-1", "running", Some("shop"));
+    c.labels.insert(
+        "io.fleetops.stack.secrets".into(),
+        r#"["/run/secrets/pw"]"#.into(),
+    );
+    c.labels.insert(
+        "io.fleetops.stack.files".into(),
+        json!([
+            {"kind": "secret", "name": "pw", "digest": digest(&key, FileKind::Secret, "pw", "hello")},
+            {"kind": "config", "name": "app", "digest": digest(&key, FileKind::Config, "app", "x")},
+        ])
+        .to_string(),
+    );
+    app.fake.add(c);
+}
+
+#[tokio::test]
+async fn secret_content_is_refused_through_any_path_alias() {
+    let app = app().await;
+    let s = app.with_local().await;
+    container_with_files(&app);
+    // `/var/run` is a symlink to `/run` in Debian and Alpine images, and
+    // Docker follows symlinked directories in an archive path.
+    let r = app
+        .send(req(
+            "GET",
+            "/api/v1/envs/local/containers/c1/files/download?path=/var/run/secrets/pw",
+            None,
+            Some(&s),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "{:?}", r.json);
+    assert!(r.json.to_string().contains("this is a stack secret"));
+    assert!(!r.json.to_string().contains("hello"));
+}
+
+#[tokio::test]
+async fn recreate_and_duplicate_refuse_containers_with_stack_files() {
+    let app = app().await;
+    let s = app.with_local().await;
+    container_with_files(&app);
+    for (path, body) in [
+        ("recreate", json!({"image": "nginx:2"})),
+        ("duplicate", json!({"name": "copy"})),
+    ] {
+        let r = app
+            .send(req(
+                "POST",
+                &format!("/api/v1/envs/local/containers/c1/{path}"),
+                Some(body),
+                Some(&s),
+            ))
+            .await;
+        assert_eq!(r.status, StatusCode::CONFLICT, "{path}: {:?}", r.json);
+        assert!(
+            r.json.to_string().contains("deploy the stack"),
+            "{path}: {:?}",
+            r.json
+        );
+    }
+    assert!(app.fake.container("c1").is_some());
+}

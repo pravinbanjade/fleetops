@@ -17,6 +17,28 @@ pub const MAX_FILES: usize = 64;
 /// Files tab can refuse them without a database lookup.
 pub const LABEL_SECRETS: &str = "io.fleetops.stack.secrets";
 
+/// Every secret and config of a container, with its keyed digest (never
+/// its content): the Files tab refuses a download whose content matches a
+/// secret's, whatever path reached it, and stack containers are not
+/// recreated outside a deploy, which would drop the files.
+pub const LABEL_FILES: &str = "io.fleetops.stack.files";
+
+/// One entry of [`LABEL_FILES`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LabelledFile {
+    pub kind: FileKind,
+    pub name: String,
+    pub digest: String,
+}
+
+/// The entries of a container's [`LABEL_FILES`]; empty without one.
+pub fn labelled_files(labels: &BTreeMap<String, String>) -> Vec<LabelledFile> {
+    labels
+        .get(LABEL_FILES)
+        .and_then(|l| serde_json::from_str(l).ok())
+        .unwrap_or_default()
+}
+
 /// Values by (kind, name).
 pub type FileValues = BTreeMap<(FileKind, String), String>;
 

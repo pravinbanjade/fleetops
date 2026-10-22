@@ -12,7 +12,8 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use fleetops_core::compose::files::secret_paths;
+use fleetops_core::compose::files::{digest, labelled_files, secret_paths};
+use fleetops_core::compose::FileKind;
 use fleetops_core::docker::{mask_env, unmask_env};
 use fleetops_core::docker::{
     ContainerAction, ContainerSpec, ContainerSummary, DirListing, DockerOps, PruneReport,
@@ -295,6 +296,7 @@ pub async fn recreate_container(
         c.grants.check_env(delete),
     )
     .await?;
+    refuse_stack_files(c.ops.as_ref(), &id).await?;
     // A spec read without Reveal carries masked values: keep the live ones.
     if spec.env.iter().any(|e| e.ends_with(MASK)) {
         let live = c.ops.container_spec(&id).await?;
@@ -328,6 +330,7 @@ pub async fn duplicate(
     ApiJson(body): ApiJson<NameBody>,
 ) -> ApiResult<(StatusCode, Json<Created>)> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Create)).await?;
+    refuse_stack_files(c.ops.as_ref(), &id).await?;
     let mut spec = c.ops.container_spec(&id).await?;
     spec.name = Some(body.name);
     spec.validate()?;
@@ -372,6 +375,50 @@ pub async fn list_files(
     Ok(Json(listing))
 }
 
+async fn labels_of(ops: &dyn DockerOps, id: &str) -> Result<BTreeMap<String, String>> {
+    let inspect = ops.inspect_container(id).await?;
+    Ok(serde_json::from_value(inspect["Config"]["Labels"].clone()).unwrap_or_default())
+}
+
+/// Refuses a file whose content is one of the container's secrets. A path
+/// check alone is not enough: Docker follows symlinked directories in an
+/// archive path (`/var/run` is `/run` in Debian and Alpine images).
+async fn refuse_secret_content(
+    s: &AppState,
+    ops: &dyn DockerOps,
+    id: &str,
+    data: &[u8],
+) -> Result<()> {
+    let Ok(text) = std::str::from_utf8(data) else {
+        // Secrets are UTF-8 text.
+        return Ok(());
+    };
+    let key = s.store.file_digest_key();
+    let hit = labelled_files(&labels_of(ops, id).await?)
+        .iter()
+        .any(|f| f.kind == FileKind::Secret && digest(&key, f.kind, &f.name, text) == f.digest);
+    if hit {
+        return Err(Error::Forbidden("this is a stack secret".into()));
+    }
+    Ok(())
+}
+
+/// A stack container's secrets and configs live in its writable layer, so
+/// a copy made outside a deploy would start without them.
+async fn refuse_stack_files(ops: &dyn DockerOps, id: &str) -> Result<()> {
+    let labels = labels_of(ops, id).await?;
+    if labelled_files(&labels).is_empty() {
+        return Ok(());
+    }
+    let stack = labels
+        .get(fleetops_core::compose::docker::LABEL_PROJECT)
+        .map(String::as_str)
+        .unwrap_or("its stack");
+    Err(Error::Conflict(format!(
+        "this container has secrets or configs from stack '{stack}', which a copy would not get: deploy the stack instead"
+    )))
+}
+
 /// `path` with `//`, `.`, `..` and a trailing `/` resolved, absolute.
 fn normalise(path: &str) -> String {
     let mut parts: Vec<&str> = vec![];
@@ -391,9 +438,7 @@ fn normalise(path: &str) -> String {
 /// returns the container's secret targets, normalised. They come from the
 /// label the deploy set, so containers of older revisions are covered too.
 async fn refuse_secret(ops: &dyn DockerOps, id: &str, path: &str) -> Result<Vec<String>> {
-    let inspect = ops.inspect_container(id).await?;
-    let labels: BTreeMap<String, String> =
-        serde_json::from_value(inspect["Config"]["Labels"].clone()).unwrap_or_default();
+    let labels = labels_of(ops, id).await?;
     let secrets: Vec<String> = secret_paths(&labels).iter().map(|p| normalise(p)).collect();
     if secrets.contains(&normalise(path)) {
         return Err(Error::Forbidden("this is a stack secret".into()));
@@ -419,6 +464,7 @@ pub async fn download_file(
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Reveal)).await?;
     refuse_secret(c.ops.as_ref(), &id, &q.path).await?;
     let data = c.ops.read_file(&id, &q.path, MAX_DOWNLOAD_BYTES).await?;
+    refuse_secret_content(&s, c.ops.as_ref(), &id, &data).await?;
     let file_name: String = q
         .path
         .rsplit('/')
