@@ -18,6 +18,7 @@ gix.workspace = true
 # (gix's own rustls feature pulls in aws-lc-rs).
 reqwest = { package = "reqwest", version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls.workspace = true
+tar.workspace = true
 gix-transport = "0.61"
 tokio.workspace = true
 tracing.workspace = true

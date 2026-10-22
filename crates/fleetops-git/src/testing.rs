@@ -103,6 +103,20 @@ impl TestRepo {
         git(&w, &["rev-parse", "HEAD"])
     }
 
+    /// Marks `path` (already written) executable for the next commit.
+    pub fn set_executable(&self, path: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let p = self.work().join(path);
+        std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    /// Adds a symlink `path` → `target` for the next commit.
+    pub fn add_symlink(&self, path: &str, target: &str) {
+        let p = self.work().join(path);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(target, p).unwrap();
+    }
+
     /// Commits `files` on another branch, leaving the main one alone.
     pub fn commit_on(&self, branch: &str, files: &[(&str, &str)], msg: &str) -> String {
         let w = self.work();
@@ -154,6 +168,9 @@ pub struct ServerOpts {
     pub delay: Duration,
     /// Each fetch takes a permit before it is served.
     pub hold: Option<Arc<tokio::sync::Semaphore>>,
+    /// Speaks protocol v0 only, where a commit that no ref points at
+    /// cannot be fetched by id.
+    pub v0_only: bool,
 }
 
 struct Shared {
@@ -245,6 +262,7 @@ async fn serve(State(st): State<Arc<Shared>>, req: Request) -> Response {
     }
     let body = axum::body::to_bytes(body, 64 * 1024 * 1024).await.unwrap();
     cgi(
+        st.opts.v0_only,
         &st.root,
         parts.method.as_ref(),
         parts.uri.path(),
@@ -255,7 +273,9 @@ async fn serve(State(st): State<Arc<Shared>>, req: Request) -> Response {
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn cgi(
+    v0_only: bool,
     root: &Path,
     method: &str,
     path: &str,
@@ -281,7 +301,14 @@ async fn cgi(
         .env("QUERY_STRING", query)
         .env("CONTENT_TYPE", header("content-type"))
         .env("CONTENT_LENGTH", body.len().to_string())
-        .env("GIT_PROTOCOL", header("git-protocol"))
+        .env(
+            "GIT_PROTOCOL",
+            if v0_only {
+                String::new()
+            } else {
+                header("git-protocol")
+            },
+        )
         .env("HTTP_CONTENT_ENCODING", header("content-encoding"))
         .env("REMOTE_ADDR", "127.0.0.1")
         .stdin(std::process::Stdio::piped())

@@ -5,6 +5,8 @@
 #[cfg(feature = "testing")]
 pub mod testing;
 
+mod dockerignore;
+
 use fleetops_core::{Error, Result};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -306,11 +308,24 @@ fn fetch_blocking(
     let branch = &src.branch;
     let tracking = format!("refs/remotes/origin/{branch}");
     let spec = format!("+refs/heads/{branch}:{tracking}");
+    fetch_with(&repo, src, &spec, Some(branch), interrupt)?;
+    read_file(&repo, &tracking, &src.path, max_file)
+}
+
+/// Fetches `spec` at depth 1 with the source's credentials. With
+/// `branch`, a branch the remote does not advertise is `BranchMissing`.
+fn fetch_with(
+    repo: &gix::Repository,
+    src: &Source,
+    spec: &str,
+    branch: Option<&str>,
+    interrupt: &AtomicBool,
+) -> std::result::Result<(), Fail> {
     let net = |e: gix::Error| Fail::Network(e.to_string());
     let remote = repo
         .remote_at(src.url.as_str())
         .map_err(net)?
-        .with_refspecs([spec.as_str()], gix::remote::Direction::Fetch)
+        .with_refspecs([spec], gix::remote::Direction::Fetch)
         .map_err(net)?;
     let asked = Arc::new(AtomicBool::new(false));
     let token = src.token.clone().filter(|t| !t.is_empty());
@@ -348,14 +363,16 @@ fn fetch_blocking(
     let prepare = connection
         .prepare_fetch(gix::progress::Discard, Default::default())
         .map_err(auth_fail)?;
-    let wanted = format!("refs/heads/{branch}");
-    let advertised = prepare
-        .ref_map()
-        .mappings
-        .iter()
-        .any(|m| m.remote.as_name().is_some_and(|n| n == wanted.as_bytes()));
-    if !advertised {
-        return Err(Fail::BranchMissing(branch.clone()));
+    if let Some(branch) = branch {
+        let wanted = format!("refs/heads/{branch}");
+        let advertised = prepare
+            .ref_map()
+            .mappings
+            .iter()
+            .any(|m| m.remote.as_name().is_some_and(|n| n == wanted.as_bytes()));
+        if !advertised {
+            return Err(Fail::BranchMissing(branch.to_string()));
+        }
     }
     prepare
         .with_shallow(gix::remote::fetch::Shallow::DepthAtRemote(
@@ -363,7 +380,282 @@ fn fetch_blocking(
         ))
         .receive(gix::progress::Discard, interrupt)
         .map_err(auth_fail)?;
-    read_file(&repo, &tracking, &src.path, max_file)
+    Ok(())
+}
+
+/// Opens a cache `fetch_file` filled and reads the tree of `commit`.
+fn commit_tree<'r>(
+    repo: &'r gix::Repository,
+    commit: &str,
+) -> std::result::Result<gix::Tree<'r>, Fail> {
+    let id = gix::ObjectId::from_hex(commit.as_bytes()).map_err(|e| read_fail(&e))?;
+    repo.find_commit(id)
+        .map_err(|e| read_fail(&e))?
+        .tree()
+        .map_err(|e| read_fail(&e))
+}
+
+/// The tree of directory `dir` (`""` = the root) in `tree`.
+fn dir_tree<'r>(
+    tree: gix::Tree<'r>,
+    dir: &str,
+    short: &str,
+) -> std::result::Result<gix::Tree<'r>, Fail> {
+    if dir.is_empty() {
+        return Ok(tree);
+    }
+    let entry = tree
+        .lookup_entry_by_path(dir)
+        .map_err(|e| read_fail(&e))?
+        .ok_or_else(|| Fail::Invalid(format!("{dir} not found at {short}")))?;
+    if !entry.mode().is_tree() {
+        return Err(Fail::Invalid(format!("{dir} is not a directory")));
+    }
+    entry
+        .object()
+        .map_err(|e| read_fail(&e))?
+        .try_into_tree()
+        .map_err(|e| read_fail(&e))
+}
+
+fn invalid(f: Fail) -> Error {
+    match f {
+        Fail::Invalid(m) => Error::Invalid(m),
+        Fail::Network(m) => Error::Internal(m),
+        _ => Error::Internal("reading the fetched commit failed".into()),
+    }
+}
+
+/// Runs a blocking read of the cache under its lock.
+async fn with_cache<T: Send + 'static>(
+    cache: &Path,
+    f: impl FnOnce(&gix::Repository) -> std::result::Result<T, Fail> + Send + 'static,
+) -> Result<T> {
+    let _guard = dir_lock(cache).lock_owned().await;
+    let cache = cache.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let repo =
+            gix::open_opts(&cache, gix::open::Options::isolated()).map_err(|e| read_fail(&e))?;
+        f(&repo)
+    })
+    .await
+    .map_err(|e| Error::Internal(format!("git read stopped: {e}")))?
+    .map_err(invalid)
+}
+
+/// Git's content id of each directory of `dirs` (`""` = the root) at
+/// `commit`: it changes exactly when something under the directory does.
+pub async fn tree_ids(cache: &Path, commit: &str, dirs: &[String]) -> Result<Vec<String>> {
+    let (commit, dirs) = (commit.to_string(), dirs.to_vec());
+    with_cache(cache, move |repo| {
+        let short = &commit[..commit.len().min(7)];
+        dirs.iter()
+            .map(|d| {
+                Ok(dir_tree(commit_tree(repo, &commit)?, d, short)?
+                    .id
+                    .to_string())
+            })
+            .collect()
+    })
+    .await
+}
+
+/// Caps on a build context.
+#[derive(Debug, Clone, Copy)]
+pub struct TarLimits {
+    pub max_bytes: usize,
+    pub max_entries: usize,
+}
+
+/// A directory of a commit as a build context.
+#[derive(Debug, Clone)]
+pub struct DirTar {
+    pub tar: Vec<u8>,
+    /// Submodules, which are left out.
+    pub skipped: Vec<String>,
+}
+
+/// A tar of directory `dir` at `commit`, with its `.dockerignore` applied:
+/// paths relative to `dir`, in tree order, mtime 0, owner 0, mode 644 or
+/// 755, symlinks kept. The same tree always gives the same bytes.
+pub async fn tar_dir(cache: &Path, commit: &str, dir: &str, limits: TarLimits) -> Result<DirTar> {
+    let (commit, dir) = (commit.to_string(), dir.to_string());
+    with_cache(cache, move |repo| {
+        let short = &commit[..commit.len().min(7)];
+        let tree = dir_tree(commit_tree(repo, &commit)?, &dir, short)?;
+        let ignore = match tree
+            .lookup_entry_by_path(".dockerignore")
+            .map_err(|e| read_fail(&e))?
+        {
+            Some(e) if e.mode().is_blob() => {
+                let blob = e.object().map_err(|e| read_fail(&e))?;
+                dockerignore::Matcher::new(&String::from_utf8_lossy(&blob.data))
+            }
+            _ => dockerignore::Matcher::new(""),
+        };
+        let mut w = TarWriter {
+            b: tar::Builder::new(Vec::new()),
+            ignore,
+            limits,
+            dir: if dir.is_empty() {
+                ".".into()
+            } else {
+                dir.clone()
+            },
+            bytes: 0,
+            entries: 0,
+            skipped: vec![],
+        };
+        w.walk(&tree, "")?;
+        let tar = w.b.into_inner().map_err(|e| read_fail(&e))?;
+        Ok(DirTar {
+            tar,
+            skipped: w.skipped,
+        })
+    })
+    .await
+}
+
+struct TarWriter {
+    b: tar::Builder<Vec<u8>>,
+    ignore: dockerignore::Matcher,
+    limits: TarLimits,
+    dir: String,
+    bytes: usize,
+    entries: usize,
+    skipped: Vec<String>,
+}
+
+impl TarWriter {
+    fn count(&mut self, size: usize) -> std::result::Result<(), Fail> {
+        self.entries += 1;
+        self.bytes += size;
+        if self.entries > self.limits.max_entries {
+            return Err(Fail::Invalid(format!(
+                "the build context {} has more than {} entries",
+                self.dir, self.limits.max_entries
+            )));
+        }
+        if self.bytes > self.limits.max_bytes {
+            return Err(Fail::Invalid(format!(
+                "the build context {} is larger than {}",
+                self.dir,
+                human_size(self.limits.max_bytes as u64)
+            )));
+        }
+        Ok(())
+    }
+
+    fn header(kind: tar::EntryType, mode: u32, size: u64) -> tar::Header {
+        let mut h = tar::Header::new_gnu();
+        h.set_entry_type(kind);
+        h.set_mode(mode);
+        h.set_size(size);
+        h.set_mtime(0);
+        h.set_uid(0);
+        h.set_gid(0);
+        h
+    }
+
+    fn walk(&mut self, tree: &gix::Tree<'_>, prefix: &str) -> std::result::Result<(), Fail> {
+        for entry in tree.iter() {
+            let entry = entry.map_err(|e| read_fail(&e))?;
+            let path = format!("{prefix}{}", entry.filename());
+            let mode = entry.mode();
+            let ignored = self.ignore.ignored(&path);
+            if mode.is_tree() {
+                if ignored && !self.ignore.has_exceptions() {
+                    continue;
+                }
+                let sub = entry
+                    .object()
+                    .map_err(|e| read_fail(&e))?
+                    .try_into_tree()
+                    .map_err(|e| read_fail(&e))?;
+                if !ignored {
+                    self.count(0)?;
+                    let mut h = Self::header(tar::EntryType::Directory, 0o755, 0);
+                    self.b
+                        .append_data(&mut h, format!("{path}/"), std::io::empty())
+                        .map_err(|e| read_fail(&e))?;
+                }
+                self.walk(&sub, &format!("{path}/"))?;
+            } else if mode.is_commit() {
+                self.skipped.push(path);
+            } else if !ignored {
+                let blob = entry.object().map_err(|e| read_fail(&e))?;
+                self.count(blob.data.len())?;
+                if mode.is_link() {
+                    let target = String::from_utf8_lossy(&blob.data).into_owned();
+                    let mut h = Self::header(tar::EntryType::Symlink, 0o777, 0);
+                    self.b
+                        .append_link(&mut h, &path, target)
+                        .map_err(|e| read_fail(&e))?;
+                } else {
+                    let exec = mode.is_executable();
+                    let mut h = Self::header(
+                        tar::EntryType::Regular,
+                        if exec { 0o755 } else { 0o644 },
+                        blob.data.len() as u64,
+                    );
+                    self.b
+                        .append_data(&mut h, &path, blob.data.as_slice())
+                        .map_err(|e| read_fail(&e))?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Whether the cache holds `commit`.
+pub fn has_commit(cache: &Path, commit: &str) -> bool {
+    let Ok(repo) = gix::open_opts(cache, gix::open::Options::isolated()) else {
+        return false;
+    };
+    gix::ObjectId::from_hex(commit.as_bytes())
+        .ok()
+        .is_some_and(|id| repo.find_commit(id).is_ok())
+}
+
+/// Fetches one commit by id (depth 1) into the cache, for a rollback to a
+/// commit the cache no longer holds. A git host that refuses to serve an
+/// unadvertised commit gives `commit <short> cannot be fetched`.
+pub async fn fetch_commit(cache: &Path, src: &Source, commit: &str, limits: Limits) -> Result<()> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let _guard = dir_lock(cache).lock_owned().await;
+    let short = commit[..commit.len().min(7)].to_string();
+    let interrupt = Arc::new(AtomicBool::new(false));
+    let job = tokio::task::spawn_blocking({
+        let (cache, src, commit, interrupt) = (
+            cache.to_path_buf(),
+            src.clone(),
+            commit.to_string(),
+            interrupt.clone(),
+        );
+        move || {
+            let repo = open_cache(&cache, &src.url)?;
+            let spec = format!("{commit}:refs/fleetops/commits/{commit}");
+            fetch_with(&repo, &src, &spec, None, &interrupt)
+        }
+    });
+    let joined = match tokio::time::timeout(limits.timeout, job).await {
+        Ok(j) => j.map_err(|e| Error::Internal(format!("git fetch stopped: {e}")))?,
+        Err(_) => {
+            interrupt.store(true, Ordering::Relaxed);
+            return Err(Error::Invalid(format!("commit {short} cannot be fetched")));
+        }
+    };
+    match joined {
+        Ok(()) => Ok(()),
+        Err(Fail::NeedsToken) => Err(Error::Invalid(
+            "the repository needs an access token".into(),
+        )),
+        Err(Fail::RefusedToken) => Err(Error::Invalid(
+            "the repository refused the credentials".into(),
+        )),
+        Err(_) => Err(Error::Invalid(format!("commit {short} cannot be fetched"))),
+    }
 }
 
 fn read_file(

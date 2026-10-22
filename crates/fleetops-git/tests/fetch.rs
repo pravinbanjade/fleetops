@@ -1,5 +1,7 @@
 use fleetops_git::testing::{GitServer, ServerOpts, TestRepo};
-use fleetops_git::{fetch_file, read_at, Limits, Source};
+use fleetops_git::{
+    fetch_commit, fetch_file, has_commit, read_at, tar_dir, tree_ids, Limits, Source, TarLimits,
+};
 use std::time::Duration;
 
 const TOKEN: &str = "s3cret-token";
@@ -421,4 +423,211 @@ async fn read_at_works_right_after_the_fetch_that_hits_the_pack_cap() {
             .unwrap();
         assert_eq!(got, vec![i.to_string()]);
     }
+}
+
+const BIG: TarLimits = TarLimits {
+    max_bytes: 100 * 1024 * 1024,
+    max_entries: 20_000,
+};
+
+async fn fetched(server: &GitServer, dir: &std::path::Path) -> String {
+    fetch_file(
+        dir,
+        &source(server, "main", "compose.yaml", None),
+        Limits::default(),
+    )
+    .await
+    .unwrap()
+    .commit
+}
+
+/// (path, mode, kind, content or link target) of every entry.
+fn entries(tar: &[u8]) -> Vec<(String, u32, char, String)> {
+    use std::io::Read;
+    let mut a = tar::Archive::new(tar);
+    a.entries()
+        .unwrap()
+        .map(|e| {
+            let mut e = e.unwrap();
+            let h = e.header().clone();
+            let path = e.path().unwrap().to_string_lossy().into_owned();
+            let kind = if h.entry_type().is_dir() {
+                'd'
+            } else if h.entry_type().is_symlink() {
+                'l'
+            } else {
+                'f'
+            };
+            let mut body = String::new();
+            if kind == 'l' {
+                body = e
+                    .link_name()
+                    .unwrap()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+            } else {
+                e.read_to_string(&mut body).unwrap();
+            }
+            (path, h.mode().unwrap() & 0o777, kind, body)
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn tree_ids_change_only_with_the_directory() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(
+        &[("compose.yaml", COMPOSE), ("api/a", "1"), ("web/w", "1")],
+        "one",
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let c1 = fetched(&server, &dir).await;
+    let dirs = vec!["api".to_string(), "web".to_string(), String::new()];
+    let one = tree_ids(&dir, &c1, &dirs).await.unwrap();
+    repo.commit(&[("web/w", "2")], "two");
+    let c2 = fetched(&server, &dir).await;
+    let two = tree_ids(&dir, &c2, &dirs).await.unwrap();
+    assert_eq!(one[0], two[0], "api untouched");
+    assert_ne!(one[1], two[1], "web changed");
+    assert_ne!(one[2], two[2], "root changed");
+    assert_eq!(one[0].len(), 40);
+}
+
+#[tokio::test]
+async fn tar_dir_is_deterministic_and_applies_dockerignore() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(
+        &[
+            ("compose.yaml", COMPOSE),
+            ("app/Dockerfile", "FROM alpine\n"),
+            ("app/run.sh", "#!/bin/sh\n"),
+            ("app/.dockerignore", "*.log\nsecret/\n"),
+            ("app/x.log", "noise"),
+            ("app/secret/key", "k"),
+            ("app/src/main.c", "int main;"),
+            ("other/file", "o"),
+        ],
+        "one",
+    );
+    repo.set_executable("app/run.sh");
+    repo.add_symlink("app/link", "src/main.c");
+    repo.commit(&[], "modes");
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let c = fetched(&server, &dir).await;
+    let a = tar_dir(&dir, &c, "app", BIG).await.unwrap();
+    let b = tar_dir(&dir, &c, "app", BIG).await.unwrap();
+    assert_eq!(a.tar, b.tar, "deterministic");
+    let got = entries(&a.tar);
+    let files: Vec<&str> = got
+        .iter()
+        .filter(|e| e.2 != 'd')
+        .map(|e| e.0.as_str())
+        .collect();
+    assert_eq!(
+        files,
+        vec![
+            ".dockerignore",
+            "Dockerfile",
+            "link",
+            "run.sh",
+            "src/main.c"
+        ],
+        "{got:?}"
+    );
+    let find = |p: &str| got.iter().find(|e| e.0 == p).unwrap().clone();
+    assert_eq!(find("run.sh").1, 0o755);
+    assert_eq!(find("Dockerfile").1, 0o644);
+    assert_eq!(
+        (find("link").2, find("link").3.as_str()),
+        ('l', "src/main.c")
+    );
+    assert!(a.skipped.is_empty());
+}
+
+#[tokio::test]
+async fn tar_dir_limits() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(
+        &[("compose.yaml", COMPOSE), ("app/a", "1"), ("app/b", "2")],
+        "one",
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let c = fetched(&server, &dir).await;
+    let e = tar_dir(
+        &dir,
+        &c,
+        "app",
+        TarLimits {
+            max_bytes: 1 << 20,
+            max_entries: 1,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(message(e), "the build context app has more than 1 entries");
+    let e = tar_dir(
+        &dir,
+        &c,
+        "app",
+        TarLimits {
+            max_bytes: 1,
+            max_entries: 100,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(message(e).starts_with("the build context app is larger than"));
+}
+
+#[tokio::test]
+async fn missing_dir_is_reported() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    let head = repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    fetched(&server, &dir).await;
+    let e = tree_ids(&dir, &head, &["api".into()]).await.unwrap_err();
+    assert_eq!(message(e), format!("api not found at {}", &head[..7]));
+    let e = tar_dir(&dir, &head, "compose.yaml", BIG).await.unwrap_err();
+    assert_eq!(message(e), "compose.yaml is not a directory");
+}
+
+#[tokio::test]
+async fn fetch_commit_brings_an_old_commit_back() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    let c1 = repo.commit(&[("compose.yaml", COMPOSE), ("app/a", "1")], "one");
+    repo.commit(&[("app/a", "2")], "two");
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    fetched(&server, &dir).await;
+    assert!(!has_commit(&dir, &c1));
+    let src = source(&server, "main", "compose.yaml", None);
+    fetch_commit(&dir, &src, &c1, Limits::default())
+        .await
+        .unwrap();
+    assert!(has_commit(&dir, &c1));
+    assert_eq!(tree_ids(&dir, &c1, &["app".into()]).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn fetch_commit_refused_names_the_commit() {
+    let (repo, server) = served(ServerOpts {
+        v0_only: true,
+        ..Default::default()
+    })
+    .await;
+    let c1 = repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    repo.force_reset(&[("compose.yaml", COMPOSE), ("x", "y")], "rewritten");
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    fetched(&server, &dir).await;
+    let src = source(&server, "main", "compose.yaml", None);
+    let e = fetch_commit(&dir, &src, &c1, Limits::default())
+        .await
+        .unwrap_err();
+    assert_eq!(message(e), format!("commit {} cannot be fetched", &c1[..7]));
 }
