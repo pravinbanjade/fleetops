@@ -101,7 +101,8 @@ fn fresh_stack_creates_everything() {
         plan.images,
         vec![ImagePlan {
             image: "x".into(),
-            pull: true
+            pull: true,
+            build: false,
         }]
     );
     assert!(plan.blocking.is_empty());
@@ -282,4 +283,61 @@ fn file_reasons_name_the_item() {
         service_reasons(&a.services["db"], &mode.services["db"]),
         vec!["secret db_password changed"]
     );
+}
+
+fn built(yaml: &str, tree: &str) -> Project {
+    let mut p = project(yaml);
+    let trees: fleetops_core::compose::build::Trees = p
+        .services
+        .iter()
+        .filter(|(_, s)| s.build.is_some())
+        .map(|(n, _)| (n.clone(), tree.to_string()))
+        .collect();
+    fleetops_core::compose::build::apply(&mut p, &trees, true, &[1; 32]).unwrap();
+    p
+}
+
+const BUILD_YAML: &str = "services:\n  api:\n    build: ./api\n  db:\n    image: postgres\n";
+
+#[test]
+fn build_planned_only_when_missing_and_recreated() {
+    let p = built(BUILD_YAML, "t1");
+    let tag = p.services["api"].image.clone();
+    let fresh = plan(&p, None, &Live::default());
+    let img = fresh.images.iter().find(|i| i.image == tag).unwrap();
+    assert!(img.build && !img.pull, "{img:?}");
+    let mut live = Live::default();
+    live.images.push(tag.clone());
+    let present = plan(&p, None, &live);
+    let img = present.images.iter().find(|i| i.image == tag).unwrap();
+    assert!(!img.build && !img.pull, "{img:?}");
+    let mut same = deployed_live(&p);
+    same.images.push(tag.clone());
+    let unchanged = plan(&p, Some((&p, 1)), &same);
+    assert!(unchanged.images.iter().all(|i| i.image != tag));
+}
+
+#[test]
+fn pull_policy_build_builds_a_recreated_service_only() {
+    let yaml = "services:\n  api:\n    build: ./api\n    pull_policy: build\n";
+    let p = built(yaml, "t1");
+    let tag = p.services["api"].image.clone();
+    let mut live = deployed_live(&p);
+    live.images.push(tag.clone());
+    let unchanged = plan(&p, Some((&p, 1)), &live);
+    assert!(unchanged.images.is_empty(), "{:?}", unchanged.images);
+    let mut fresh = Live::default();
+    fresh.images.push(tag.clone());
+    let created = plan(&p, None, &fresh);
+    assert!(created.images.iter().any(|i| i.image == tag && i.build));
+}
+
+#[test]
+fn build_change_reason() {
+    let old = built(BUILD_YAML, "t1");
+    let new = built(BUILD_YAML, "t2");
+    let p = plan(&new, Some((&old, 1)), &deployed_live(&old));
+    assert_eq!(action(&p, "api"), ServiceAction::Recreate);
+    assert_eq!(reasons(&p, "api"), ["build changed"]);
+    assert_eq!(action(&p, "db"), ServiceAction::Unchanged);
 }

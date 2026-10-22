@@ -62,6 +62,8 @@ pub struct ResourcePlan {
 pub struct ImagePlan {
     pub image: String,
     pub pull: bool,
+    /// Built on the environment from the service's `build:`.
+    pub build: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -93,7 +95,11 @@ fn in_project(labels: &BTreeMap<String, String>, project: &str) -> bool {
 /// never shown, except the image.
 pub fn service_reasons(old: &Service, new: &Service) -> Vec<String> {
     let mut out = Vec::new();
-    if old.image != new.image {
+    let both_build = old.build.is_some() && new.build.is_some();
+    if old.build != new.build {
+        out.push("build changed".to_string());
+    }
+    if old.image != new.image && !both_build {
         out.push(format!("image: {} → {}", old.image, new.image));
     }
     let (Value::Object(a), Value::Object(b)) = (json!(old), json!(new)) else {
@@ -101,7 +107,7 @@ pub fn service_reasons(old: &Service, new: &Service) -> Vec<String> {
     };
     let keys: BTreeSet<&String> = a.keys().chain(b.keys()).collect();
     for k in keys {
-        if matches!(k.as_str(), "image" | "name" | "replicas") {
+        if matches!(k.as_str(), "image" | "name" | "replicas" | "build") {
             continue;
         }
         let (va, vb) = (
@@ -346,10 +352,17 @@ pub fn plan(new: &Project, deployed: Option<(&Project, i64)>, live: &Live) -> Pl
     }
 
     let local: BTreeSet<String> = live.images.iter().map(|i| normalise_image(i)).collect();
-    let mut images: BTreeMap<String, bool> = BTreeMap::new();
+    // image → (pull, build)
+    let mut images: BTreeMap<String, (bool, bool)> = BTreeMap::new();
     for sname in &needs_containers {
         let svc = &new.services[sname];
         let present = local.contains(&normalise_image(&svc.image));
+        if svc.build.is_some() {
+            // A build service never pulls; its tag carries the build hash.
+            let build = !present || svc.pull_policy == PullPolicy::Build;
+            images.entry(svc.image.clone()).or_default().1 |= build;
+            continue;
+        }
         let pull = match svc.pull_policy {
             PullPolicy::Always => true,
             PullPolicy::Missing | PullPolicy::Build => !present,
@@ -363,12 +376,11 @@ pub fn plan(new: &Project, deployed: Option<(&Project, i64)>, live: &Live) -> Pl
                 false
             }
         };
-        let e = images.entry(svc.image.clone()).or_insert(false);
-        *e |= pull;
+        images.entry(svc.image.clone()).or_default().0 |= pull;
     }
     let images = images
         .into_iter()
-        .map(|(image, pull)| ImagePlan { image, pull })
+        .map(|(image, (pull, build))| ImagePlan { image, pull, build })
         .collect();
 
     let mut pairs: Vec<(String, String)> = containers
