@@ -65,6 +65,7 @@ async fn github_push_accepted_and_synced() {
                 .find(|e| e.action == "stack.git.webhook")
                 .unwrap();
             assert_eq!(row.result, "success");
+            assert_eq!(row.target_id.as_deref(), Some("shop"));
             assert_eq!(row.detail.unwrap()["provider"], "github");
             return;
         }
@@ -147,6 +148,17 @@ async fn unknown_stack_and_non_webhook_stack_same_401() {
             bad.headers.get("content-type")
         );
     }
+    let targets: Vec<_> = g
+        .store
+        .list_audit(100, None)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.action == "stack.git.webhook")
+        .filter_map(|e| e.target_id)
+        .collect();
+    assert!(targets.contains(&"9999".to_string()), "{targets:?}");
+    assert!(targets.contains(&"shop".to_string()), "{targets:?}");
     let reasons: Vec<_> = g
         .store
         .list_audit(100, None)

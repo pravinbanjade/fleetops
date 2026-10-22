@@ -7,7 +7,7 @@ use crate::auth::limiter::limiter_key;
 use crate::extract::{ApiPath, ApiQuery};
 use crate::stacks::git::{sync_stack, SyncTrigger};
 use crate::stacks::start::GIT_ACTOR;
-use crate::stacks::webhook::{pushed_branch, verify, Provider};
+use crate::stacks::webhook::{pushed_branch, verify};
 use crate::{ApiResult, AppState};
 use axum::body::Bytes;
 use axum::extract::State;
@@ -29,6 +29,8 @@ pub const HOOK_WINDOW: Duration = Duration::from_secs(60);
 /// Requests per client address in [`HOOK_WINDOW`], whatever the stack, so
 /// walking ids cannot flood the audit log.
 pub const HOOK_MAX_PER_ADDRESS: u32 = 120;
+/// Checked against when the stack has no secret, so the work is the same.
+const UNKNOWN_SECRET: &str = "no secret: this stack takes no webhooks";
 
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -43,14 +45,15 @@ pub struct HookAccepted {
     pub status: &'static str,
 }
 
-async fn audit(s: &AppState, id: i64, env: Option<i64>, result: &str, detail: Value) {
+/// `target` is the stack's name, or the id asked for when there is none.
+async fn audit(s: &AppState, target: &str, env: Option<i64>, result: &str, detail: Value) {
     let entry = NewAudit {
         ts: now_unix(),
         user_id: None,
         environment_id: env,
         action: "stack.git.webhook",
         target_type: Some("stack"),
-        target_id: Some(&id.to_string()),
+        target_id: Some(target),
         result,
         detail: Some(detail),
     };
@@ -101,39 +104,53 @@ pub async fn hook(
     s.hook_address_limiter.try_acquire(&meta.ip, now)?;
     s.hook_limiter
         .try_acquire(&limiter_key(&id.to_string(), &meta.ip), now)?;
-    let refuse = |reason: &'static str, env: Option<i64>, provider: Option<Provider>| {
-        let s = s.clone();
+    // Every request reads the same rows and checks a signature, so how long
+    // a refusal takes does not tell which stacks exist.
+    let (stack, git, secret) = tokio::join!(
+        s.store.stack_by_id(id),
+        s.store.stack_git(id),
+        s.store.stack_git_secret(id),
+    );
+    let verified = verify(
+        &headers,
+        q.secret.as_deref(),
+        &body,
+        secret
+            .as_ref()
+            .ok()
+            .and_then(Option::as_deref)
+            .unwrap_or(UNKNOWN_SECRET),
+    );
+    let (target, env) = match &stack {
+        Ok(st) => (st.name.clone(), Some(st.env_id)),
+        Err(_) => (id.to_string(), None),
+    };
+    let refuse = |reason: &'static str| {
+        let (s, target) = (s.clone(), target.clone());
         async move {
-            let mut d = json!({ "reason": reason, "by": GIT_ACTOR });
-            if let Some(p) = provider {
-                d["provider"] = json!(p.name());
-            }
-            audit(&s, id, env, "failure", d).await;
+            let d = json!({ "reason": reason, "by": GIT_ACTOR });
+            audit(&s, &target, env, "failure", d).await;
             Ok(unauthorized())
         }
     };
-    let Ok(stack) = s.store.stack_by_id(id).await else {
-        return refuse("no such stack", None, None).await;
+    let Ok(stack) = stack else {
+        return refuse("no such stack").await;
     };
-    let env = Some(stack.env_id);
-    let (Ok(Some(git)), Ok(Some(secret))) = (
-        s.store.stack_git(id).await,
-        s.store.stack_git_secret(id).await,
-    ) else {
-        return refuse("not a git stack", env, None).await;
+    let (Ok(Some(git)), Ok(Some(_))) = (git, secret) else {
+        return refuse("not a git stack").await;
     };
     if git.sync != "webhook" {
-        return refuse("webhooks are off for this stack", env, None).await;
+        return refuse("webhooks are off for this stack").await;
     }
-    let provider = match verify(&headers, q.secret.as_deref(), &body, &secret) {
+    let provider = match verified {
         Ok(p) => p,
-        Err(reason) => return refuse(reason, env, None).await,
+        Err(reason) => return refuse(reason).await,
     };
     let branch = pushed_branch(&body);
     if branch.as_deref().is_some_and(|b| b != git.branch) {
         audit(
             &s,
-            id,
+            &target,
             env,
             "success",
             json!({ "provider": provider.name(), "ignored": "another branch", "branch": branch, "by": GIT_ACTOR }),
@@ -147,7 +164,7 @@ pub async fn hook(
     }
     audit(
         &s,
-        id,
+        &target,
         env,
         "success",
         json!({ "provider": provider.name(), "branch": branch, "by": GIT_ACTOR }),
