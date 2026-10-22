@@ -507,3 +507,158 @@ async fn start_deploy_as_git_audits_system() {
         .unwrap();
     assert_eq!(rev.created_by, None);
 }
+
+const SECRET_STACK: &str = "services:\n  db:\n    image: postgres\n    secrets: [db_password]\n    configs: [app, inline]\n  web:\n    image: nginx\nsecrets:\n  db_password: { file: ./pw.txt }\nconfigs:\n  app: { environment: APP_CONF }\n  inline: { content: \"x=${X}\" }\n";
+
+async fn stack_id(app: &TestApp) -> i64 {
+    let env = app.store.list_environments().await.unwrap()[0].id;
+    app.store.stack_by_name(env, "shop").await.unwrap().id
+}
+
+async fn set_secret(app: &TestApp, value: &str) {
+    let id = stack_id(app).await;
+    app.store
+        .set_stack_file(id, "secret", "db_password", value, None, 1)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn missing_secret_blocks_plan_with_exact_copy() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, SECRET_STACK, &["APP_CONF=a", "X=1"]).await;
+    let p = plan(&app, &s, json!({"source": "draft"})).await;
+    assert_eq!(p.status, StatusCode::OK, "{:?}", p.json);
+    assert!(p.json["plan"].is_null());
+    assert_eq!(
+        p.json["issues"],
+        json!([{"path": "secrets.db_password", "message": "secret db_password has no value: set it in the Secrets tab"}])
+    );
+}
+
+#[tokio::test]
+async fn changing_a_secret_recreates_only_its_services() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, SECRET_STACK, &["APP_CONF=a", "X=1"]).await;
+    set_secret(&app, "one").await;
+    let t = plan_and_deploy(&app, &s, json!({"source": "draft"})).await;
+    assert_eq!(t["status"], "succeeded", "{t:?}");
+    set_secret(&app, "two").await;
+    let p = plan(&app, &s, json!({"source": "draft"})).await;
+    let services = p.json["plan"]["services"].as_array().unwrap();
+    let by = |n: &str| services.iter().find(|x| x["name"] == n).unwrap().clone();
+    assert_eq!(by("db")["action"], "recreate");
+    assert_eq!(by("db")["reasons"], json!(["secret db_password changed"]));
+    assert_eq!(by("web")["action"], "unchanged");
+}
+
+#[tokio::test]
+async fn rollback_uses_the_revision_snapshot() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, SECRET_STACK, &["APP_CONF=a", "X=1"]).await;
+    set_secret(&app, "AAA").await;
+    plan_and_deploy(&app, &s, json!({"source": "draft"})).await;
+    set_secret(&app, "BBB").await;
+    plan_and_deploy(&app, &s, json!({"source": "draft"})).await;
+    let t = plan_and_deploy(&app, &s, json!({"source": "revision", "revision": 1})).await;
+    assert_eq!(t["status"], "succeeded", "{t:?}");
+    let last = app
+        .fake
+        .state
+        .lock()
+        .unwrap()
+        .archives
+        .last()
+        .unwrap()
+        .1
+        .clone();
+    let text = String::from_utf8_lossy(&last).into_owned();
+    assert!(text.contains("AAA") && !text.contains("BBB"));
+    let id = stack_id(&app).await;
+    let files = app.store.stack_files(id).await.unwrap();
+    assert_eq!(files[0].value, "BBB");
+}
+
+#[tokio::test]
+async fn revision_snapshot_includes_variable_and_inline_sources() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, SECRET_STACK, &["APP_CONF=from-var", "X=1"]).await;
+    set_secret(&app, "pw").await;
+    plan_and_deploy(&app, &s, json!({"source": "draft"})).await;
+    let id = stack_id(&app).await;
+    let got: Vec<(String, String, String)> = app
+        .store
+        .revision_files(id, 1)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|f| (f.kind, f.name, f.value))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("config".into(), "app".into(), "from-var".into()),
+            ("config".into(), "inline".into(), "x=1".into()),
+            ("secret".into(), "db_password".into(), "pw".into()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn secret_value_never_in_responses() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    const VALUE: &str = "Zq9-unguessable-value";
+    create(&app, &s, SECRET_STACK, &["APP_CONF=a", "X=1"]).await;
+    set_secret(&app, VALUE).await;
+    let p = plan(&app, &s, json!({"source": "draft"})).await;
+    let t = plan_and_deploy(&app, &s, json!({"source": "draft"})).await;
+    set_secret(&app, "other").await;
+    let p2 = plan(&app, &s, json!({"source": "draft"})).await;
+    let get = |path: String| {
+        let app = &app;
+        let s = &s;
+        async move { app.send(req("GET", &path, None, Some(s))).await.json }
+    };
+    let bodies = vec![
+        p.json,
+        t,
+        p2.json,
+        get(format!("{BASE}/shop")).await,
+        get(BASE.to_string()).await,
+        get(format!("{BASE}/shop/revisions")).await,
+        get(format!("{BASE}/shop/revisions/1")).await,
+    ];
+    for b in &bodies {
+        assert!(!b.to_string().contains(VALUE), "{b}");
+    }
+    let audit = app.store.list_audit(1000, None).await.unwrap();
+    assert!(!format!("{audit:?}").contains(VALUE));
+}
+
+#[tokio::test]
+async fn setting_a_secret_marks_draft_differs() {
+    let app = fast_app().await;
+    let s = app.with_local().await;
+    create(&app, &s, SECRET_STACK, &["APP_CONF=a", "X=1"]).await;
+    set_secret(&app, "one").await;
+    plan_and_deploy(&app, &s, json!({"source": "draft"})).await;
+    let g = app.send(req("GET", BASE, None, Some(&s))).await;
+    assert_eq!(g.json[0]["draft_differs"], false, "{:?}", g.json);
+    set_secret(&app, "two").await;
+    let g = app.send(req("GET", BASE, None, Some(&s))).await;
+    assert_eq!(g.json[0]["draft_differs"], true);
+    // An unused stored value does not count.
+    set_secret(&app, "one").await;
+    let id = stack_id(&app).await;
+    app.store
+        .set_stack_file(id, "secret", "spare", "x", None, 1)
+        .await
+        .unwrap();
+    let g = app.send(req("GET", BASE, None, Some(&s))).await;
+    assert_eq!(g.json[0]["draft_differs"], false);
+}

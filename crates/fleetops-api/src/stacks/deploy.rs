@@ -9,6 +9,7 @@ use crate::AppState;
 use fleetops_core::compose::docker::{
     container_body, container_name, network_create, start_order, volume_create, LABEL_NUMBER,
 };
+use fleetops_core::compose::files::{archive, FileValues};
 use fleetops_core::compose::plan::{Plan, ResourceAction, ServiceAction};
 use fleetops_core::compose::{DependsCondition, Project, Service};
 use fleetops_core::docker::{split_image_reference, ContainerAction, DockerOps};
@@ -54,11 +55,13 @@ fn needs_exit_check(svc: &Service) -> bool {
     matches!(svc.restart.as_deref(), None | Some("no"))
 }
 
-/// Runs the plan's steps against the environment. On error nothing is
-/// undone here; the caller runs `restore`.
+/// Runs the plan's steps against the environment. `files` holds the
+/// content of every secret and config the project's services use. On
+/// error nothing is undone here; the caller runs `restore`.
 pub async fn execute(
     ops: &dyn DockerOps,
     project: &Project,
+    files: &FileValues,
     plan: &Plan,
     revision: i64,
     timing: &Timing,
@@ -199,6 +202,18 @@ pub async fn execute(
                 carry_volumes(&mut body, vols);
             }
             let id = ops.create_container_raw(&name, &body).await?;
+            if !svc.files.is_empty() {
+                let n = svc.files.len();
+                let what = if n == 1 { "file" } else { "files" };
+                say(progress, "service", format!("writing {n} {what} to {name}"));
+                // The error names the container, never a file's content.
+                ops.put_archive(&id, "/", archive(svc, files))
+                    .await
+                    .map_err(|e| Error::Upstream {
+                        status: 500,
+                        message: format!("write files to {name}: {e}"),
+                    })?;
+            }
             ops.container_action(&id, ContainerAction::Start)
                 .await
                 .map_err(|e| Error::Upstream {
@@ -413,6 +428,7 @@ pub fn deploy_stream(
     stack: StackRecord,
     revision: RevisionRecord,
     project: Project,
+    files: FileValues,
     plan: Plan,
     timing: Timing,
 ) -> BoxStream<Value> {
@@ -429,6 +445,7 @@ pub fn deploy_stream(
         let outcome = execute(
             ops.as_ref(),
             &project,
+            &files,
             &plan,
             revision.number,
             &timing,

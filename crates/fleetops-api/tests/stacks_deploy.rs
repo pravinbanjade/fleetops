@@ -3,8 +3,9 @@ mod common;
 use common::fake_docker::FakeDocker;
 use fleetops_api::stacks::{execute, restore, Timing};
 use fleetops_core::compose::docker::{LABEL_REVISION, LABEL_SERVICE};
+use fleetops_core::compose::files::{resolve, FileValues};
 use fleetops_core::compose::plan::{plan, Live};
-use fleetops_core::compose::{parse, Project};
+use fleetops_core::compose::{parse, FileKind, Project};
 use fleetops_core::docker::{ContainerOps, NetworkOps, VolumeOps};
 use fleetops_core::Result;
 use serde_json::json;
@@ -33,8 +34,47 @@ async fn live(f: &FakeDocker) -> Live {
 }
 
 async fn deploy(f: &Arc<FakeDocker>, p: &Project, prev: Option<&Project>, rev: i64) -> Result<()> {
+    deploy_files(f, p, &FileValues::new(), prev, rev).await
+}
+
+async fn deploy_files(
+    f: &Arc<FakeDocker>,
+    p: &Project,
+    files: &FileValues,
+    prev: Option<&Project>,
+    rev: i64,
+) -> Result<()> {
     let plan = plan(p, prev.map(|x| (x, rev - 1)), &live(f).await);
-    execute(f.as_ref(), p, &plan, rev, &timing(), &|_| {}).await
+    execute(f.as_ref(), p, files, &plan, rev, &timing(), &|_| {}).await
+}
+
+const KEY: [u8; 32] = [3; 32];
+
+/// A project with a secret, resolved with `value`.
+fn with_secret(value: &str) -> (Project, FileValues) {
+    let mut p = project(
+        "services:\n  db: { image: postgres, secrets: [db_password] }\n  web: { image: nginx }\nsecrets:\n  db_password: { file: ./pw }\n",
+    );
+    let values = FileValues::from([((FileKind::Secret, "db_password".into()), value.into())]);
+    let files = resolve(&mut p, &[], &values, &KEY).unwrap();
+    (p, files)
+}
+
+/// Entries of a tar as (path, mode, content).
+fn untar(tar: &[u8]) -> Vec<(String, u32, String)> {
+    use std::io::Read;
+    let mut a = tar::Archive::new(tar);
+    a.entries()
+        .unwrap()
+        .map(|e| {
+            let mut e = e.unwrap();
+            let mode = e.header().mode().unwrap();
+            let path = e.path().unwrap().to_string_lossy().into_owned();
+            let mut body = String::new();
+            e.read_to_string(&mut body).unwrap();
+            (path, mode, body)
+        })
+        .collect()
 }
 
 /// Containers as (name, state, service, revision), sorted.
@@ -335,4 +375,56 @@ async fn anonymous_volumes_carried_over() {
         mounts.contains(&json!({"Type": "volume", "Source": "anon2", "Target": "/image/declared"})),
         "{mounts:?}"
     );
+}
+
+#[tokio::test]
+async fn deploy_writes_files_between_create_and_start() {
+    let f = FakeDocker::new();
+    let (p, files) = with_secret("s3cr3t");
+    deploy_files(&f, &p, &files, None, 1).await.unwrap();
+    let calls = f.calls();
+    let create = pos(&calls, "create_raw:shop-db-1");
+    let id = f
+        .state
+        .lock()
+        .unwrap()
+        .containers
+        .iter()
+        .find(|c| c.name == "shop-db-1")
+        .unwrap()
+        .id
+        .clone();
+    let put = pos(&calls, &format!("put_archive {id} /"));
+    let start = pos(&calls, &format!("start {id}"));
+    assert!(create < put && put < start, "{calls:?}");
+    let archives = f.state.lock().unwrap().archives.clone();
+    assert_eq!(archives.len(), 1, "only db has files");
+    assert_eq!(archives[0].0, id);
+    assert_eq!(
+        untar(&archives[0].1),
+        vec![(
+            "run/secrets/db_password".to_string(),
+            0o444,
+            "s3cr3t".to_string()
+        )]
+    );
+}
+
+#[tokio::test]
+async fn put_archive_failure_restores_the_stack() {
+    let f = FakeDocker::new();
+    let (v1, files1) = with_secret("one");
+    deploy_files(&f, &v1, &files1, None, 1).await.unwrap();
+    let before = snapshot(&f);
+    let (v2, files2) = with_secret("two");
+    *f.fail_on.lock().unwrap() = Some("put_archive".into());
+    let err = deploy_files(&f, &v2, &files2, Some(&v1), 2)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("write files to shop-db-1"), "{err}");
+    assert!(!err.contains("two"), "{err}");
+    *f.fail_on.lock().unwrap() = None;
+    restore(f.as_ref(), "shop", 2).await.unwrap();
+    assert_eq!(snapshot(&f), before);
 }

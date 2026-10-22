@@ -7,19 +7,20 @@ use crate::{
     auth::extract::CurrentUser,
     authz::Need,
     extract::{ApiJson, ApiPath, ApiQuery},
-    stacks::start::{make_plan, start_deploy, Actor},
+    stacks::start::{draft_values, make_plan, revision_values, start_deploy, Actor},
     stacks::{is_old, recover_stack, stack_containers, try_lock},
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::compose::docker::LABEL_PROJECT;
-use fleetops_core::compose::{parse, validate_stack_name, ComposeIssue};
+use fleetops_core::compose::{parse, validate_stack_name, ComposeIssue, FileKind, FileSource};
 use fleetops_core::docker::{mask_env, ContainerAction};
 use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::{Draft, NewAudit, RevisionRecord, StackRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 use utoipa::{IntoParams, ToSchema};
 
 pub use crate::stacks::start::{DeploySource, DeployStarted, PlanResponse};
@@ -186,6 +187,42 @@ pub(super) async fn audit<T>(
     }
 }
 
+/// Whether a `file:` value the draft's services use differs from what the
+/// deployed revision ran with. A draft that does not parse is judged on its
+/// text alone.
+async fn files_differ(
+    s: &AppState,
+    stack: &StackRecord,
+    draft: &Draft,
+    deployed: i64,
+) -> Result<bool> {
+    let Ok(parsed) = parse(&draft.compose, &draft.variables, &stack.name) else {
+        return Ok(false);
+    };
+    let p = parsed.project;
+    let used: BTreeSet<(FileKind, String)> = p
+        .services
+        .values()
+        .flat_map(|svc| svc.files.iter().map(|f| (f.kind, &f.source)))
+        .filter(|(kind, name)| {
+            let decls = match kind {
+                FileKind::Secret => &p.secrets,
+                FileKind::Config => &p.configs,
+            };
+            matches!(decls.get(*name), Some(FileSource::File { .. }))
+        })
+        .map(|(kind, name)| (kind, name.clone()))
+        .collect();
+    if used.is_empty() {
+        return Ok(false);
+    }
+    let chosen = draft_values(s, stack).await?;
+    let ran = revision_values(s, stack, deployed).await?;
+    Ok(used
+        .iter()
+        .any(|key| chosen.get(key).is_none() || chosen.get(key) != ran.get(key)))
+}
+
 async fn summary(s: &AppState, stack: StackRecord) -> Result<StackSummary> {
     let revs = s.store.list_revisions(stack.id).await?;
     let draft = s.store.draft(stack.id).await?;
@@ -198,6 +235,7 @@ async fn summary(s: &AppState, stack: StackRecord) -> Result<StackSummary> {
         (Some(d), Some(r)) => {
             d.compose != r.compose
                 || d.variables != s.store.revision_variables(stack.id, r.number).await?
+                || files_differ(s, &stack, d, r.number).await?
         }
         (Some(_), None) => true,
         _ => false,

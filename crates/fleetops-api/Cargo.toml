@@ -33,6 +33,7 @@ utoipa-axum.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+tar.workspace = true
 fleetops-git = { workspace = true, features = ["testing"] }
 async-trait.workspace = true
 futures-util.workspace = true

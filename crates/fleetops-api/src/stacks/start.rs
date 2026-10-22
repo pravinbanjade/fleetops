@@ -5,12 +5,13 @@ use super::{deploy_stream, recover_stack, stack_containers};
 use crate::tasks::{NewTask, TaskInfo, TaskStatus};
 use crate::AppState;
 use fleetops_core::compose::docker::LABEL_PROJECT;
+use fleetops_core::compose::files::{resolve, FileValues};
 use fleetops_core::compose::plan::{plan, Live, Plan};
-use fleetops_core::compose::{parse, parse_variables, ComposeIssue, Project};
+use fleetops_core::compose::{parse, parse_variables, ComposeIssue, FileKind, Project};
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
 use fleetops_core::{now_unix, Error, Result};
-use fleetops_store::{NewAudit, RevisionRecord, StackRecord};
+use fleetops_store::{NewAudit, RevisionFile, RevisionRecord, StackRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -92,6 +93,51 @@ pub(crate) struct Source {
     rollback_of: Option<i64>,
     /// The git commit the file came from, on a git stack.
     commit: Option<String>,
+    /// Values for `file:` secrets and configs.
+    values: FileValues,
+}
+
+fn file_kind(kind: &str) -> FileKind {
+    if kind == "secret" {
+        FileKind::Secret
+    } else {
+        FileKind::Config
+    }
+}
+
+/// The values a deploy of the draft uses for `file:` sources: secrets from
+/// the Secrets tab; configs from the repository on a git stack, and from
+/// the Secrets tab otherwise.
+pub(crate) async fn draft_values(s: &AppState, stack: &StackRecord) -> Result<FileValues> {
+    let config_source = if stack.source == "git" {
+        "repo"
+    } else {
+        "fleetops"
+    };
+    Ok(s.store
+        .stack_files(stack.id)
+        .await?
+        .into_iter()
+        .filter(|f| match f.kind.as_str() {
+            "secret" => f.source == "fleetops",
+            _ => f.source == config_source,
+        })
+        .map(|f| ((file_kind(&f.kind), f.name), f.value))
+        .collect())
+}
+
+/// What revision `number` deployed, as values.
+pub(crate) async fn revision_values(
+    s: &AppState,
+    stack: &StackRecord,
+    number: i64,
+) -> Result<FileValues> {
+    Ok(s.store
+        .revision_files(stack.id, number)
+        .await?
+        .into_iter()
+        .map(|f| ((file_kind(&f.kind), f.name), f.value))
+        .collect())
 }
 
 async fn source(s: &AppState, stack: &StackRecord, from: DeploySource) -> Result<Source> {
@@ -110,6 +156,7 @@ async fn source(s: &AppState, stack: &StackRecord, from: DeploySource) -> Result
                 variables: d.variables,
                 rollback_of: None,
                 commit: commit.filter(|_| git),
+                values: draft_values(s, stack).await?,
             })
         }
         DeploySource::Revision { revision } => {
@@ -120,13 +167,14 @@ async fn source(s: &AppState, stack: &StackRecord, from: DeploySource) -> Result
                 variables: v,
                 rollback_of: Some(revision),
                 commit: r.git_commit.filter(|_| git),
+                values: revision_values(s, stack, revision).await?,
             })
         }
     }
 }
 
 /// The deployed revision: its record, variables and (if it still parses)
-/// project.
+/// project, with its files resolved from the revision's snapshot.
 async fn deployed(
     s: &AppState,
     stack: &StackRecord,
@@ -136,7 +184,13 @@ async fn deployed(
     };
     let r = s.store.revision(stack.id, n).await?;
     let v = s.store.revision_variables(stack.id, n).await?;
-    let p = parse(&r.compose, &v, &stack.name).ok().map(|p| p.project);
+    let mut p = parse(&r.compose, &v, &stack.name).ok().map(|p| p.project);
+    if let Some(p) = p.as_mut() {
+        let values = revision_values(s, stack, n).await?;
+        // A file the snapshot lacks keeps an empty digest, which reads as
+        // changed: the safe side.
+        let _ = resolve(p, &v, &values, &s.store.file_digest_key());
+    }
     Ok(Some((r, v, p)))
 }
 
@@ -178,9 +232,10 @@ fn variables_changed(before: &[String], after: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// The plan of `from` for `stack`, with what was planned and what it was
-/// made from. Issues mean the file does not parse.
-pub(crate) type Planned = (PlanResponse, Option<(Project, Plan)>, Source);
+/// The plan of `from` for `stack`, with what was planned (and the content
+/// of its files) and what it was made from. Issues mean the file does not
+/// parse, or a secret or config has no value.
+pub(crate) type Planned = (PlanResponse, Option<(Project, Plan, FileValues)>, Source);
 
 pub(crate) async fn make_plan(
     s: &AppState,
@@ -196,7 +251,16 @@ pub(crate) async fn make_plan(
         dep.as_ref().map(|(_, v, _)| v.as_slice()).unwrap_or(&[]),
         &src.variables,
     );
-    match parse(&src.compose, &src.variables, &stack.name) {
+    let parsed = parse(&src.compose, &src.variables, &stack.name).and_then(|mut parsed| {
+        let files = resolve(
+            &mut parsed.project,
+            &src.variables,
+            &src.values,
+            &s.store.file_digest_key(),
+        )?;
+        Ok((parsed, files))
+    });
+    match parsed {
         Err(issues) => Ok((
             PlanResponse {
                 issues,
@@ -209,7 +273,7 @@ pub(crate) async fn make_plan(
             None,
             src,
         )),
-        Ok(parsed) => {
+        Ok((parsed, files)) => {
             let live = live(ops, &stack.name).await?;
             let prev = dep
                 .as_ref()
@@ -224,7 +288,7 @@ pub(crate) async fn make_plan(
                     compose_after: src.compose.clone(),
                     variables_changed: changed,
                 },
-                Some((parsed.project, p)),
+                Some((parsed.project, p, files)),
                 src,
             ))
         }
@@ -249,7 +313,7 @@ pub async fn start_deploy(
         commit,
         ..
     } = src;
-    let Some((project, p)) = planned else {
+    let Some((project, p, files)) = planned else {
         return Err(Error::Invalid(issues_message(&resp.issues)));
     };
     if plan_token.is_some_and(|t| t != p.token) {
@@ -285,7 +349,14 @@ pub async fn start_deploy(
             commit.as_deref(),
             actor.user_id(),
             now_unix(),
-            &[],
+            &files
+                .iter()
+                .map(|((kind, name), value)| RevisionFile {
+                    kind: kind.as_str().into(),
+                    name: name.clone(),
+                    value: value.clone(),
+                })
+                .collect::<Vec<_>>(),
         )
         .await;
     let rev = match created {
@@ -309,6 +380,7 @@ pub async fn start_deploy(
         stack.clone(),
         rev,
         project,
+        files,
         p,
         s.config.stack_timing,
     );
