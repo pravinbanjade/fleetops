@@ -347,6 +347,10 @@ pub trait ContainerOps: Send + Sync {
     async fn prune_containers(&self) -> Result<PruneReport>;
     async fn list_dir(&self, id: &str, path: &str) -> Result<DirListing>;
     async fn read_file(&self, id: &str, path: &str, max_bytes: u64) -> Result<Vec<u8>>;
+    /// Extracts a tar archive into the container at `path`
+    /// (`PUT /containers/{id}/archive`); the stacks deploy writes secrets
+    /// and configs this way before starting a container.
+    async fn put_archive(&self, id: &str, path: &str, tar: Vec<u8>) -> Result<()>;
 }
 
 #[async_trait]

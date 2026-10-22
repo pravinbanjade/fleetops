@@ -29,6 +29,8 @@ pub struct FakeState {
     pub inspect_state: BTreeMap<String, Value>,
     /// Top-level fields merged into `inspect_container`, by id or name.
     pub inspect_extra: BTreeMap<String, Value>,
+    /// Every `put_archive` tar, by container id, oldest first.
+    pub archives: Vec<(String, Vec<u8>)>,
     next_id: usize,
 }
 
@@ -362,6 +364,17 @@ impl ContainerOps for FakeDocker {
             return Err(Error::Invalid("too big".into()));
         }
         Ok(data)
+    }
+    async fn put_archive(&self, id: &str, path: &str, tar: Vec<u8>) -> Result<()> {
+        self.check(format!("put_archive {id} {path}"))?;
+        self.container(id)
+            .ok_or_else(|| not_found("container", id))?;
+        self.state
+            .lock()
+            .unwrap()
+            .archives
+            .push((id.to_string(), tar));
+        Ok(())
     }
 }
 

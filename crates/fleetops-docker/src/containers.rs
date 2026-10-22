@@ -162,4 +162,14 @@ impl ContainerOps for LocalDocker {
         }
         Ok(data)
     }
+
+    async fn put_archive(&self, id: &str, path: &str, tar: Vec<u8>) -> Result<()> {
+        let opts = bollard::query_parameters::UploadToContainerOptionsBuilder::default()
+            .path(path)
+            .build();
+        self.client
+            .upload_to_container(id, Some(opts), bollard::body_full(tar.into()))
+            .await
+            .map_err(map_err)
+    }
 }

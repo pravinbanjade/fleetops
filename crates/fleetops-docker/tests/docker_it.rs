@@ -548,6 +548,49 @@ mod streams {
     }
 
     #[tokio::test]
+    async fn put_archive_writes_files_with_owner_and_mode() {
+        let d = docker().await;
+        let name = unique("archive");
+        let mut spec = sleeper(&name);
+        spec.cmd = Some(vec![
+            "sh".into(),
+            "-c".into(),
+            r#"stat -c "%u %a" /run/secrets/pw; cat /etc/app/x.conf"#.into(),
+        ]);
+        let id = d.create_container(&spec).await.unwrap();
+        let mut b = tar::Builder::new(Vec::new());
+        for (path, uid, mode, body) in [
+            ("run/secrets/pw", 999, 0o400, "s3cr3t"),
+            ("etc/app/x.conf", 0, 0o444, "hello"),
+        ] {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(body.len() as u64);
+            h.set_uid(uid);
+            h.set_mode(mode);
+            b.append_data(&mut h, path, body.as_bytes()).unwrap();
+        }
+        d.put_archive(&id, "/", b.into_inner().unwrap())
+            .await
+            .unwrap();
+        d.container_action(&id, ContainerAction::Start)
+            .await
+            .unwrap();
+        for _ in 0..50 {
+            if d.inspect_container(&id).await.unwrap()["State"]["Running"] == false {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let opts = LogOptions {
+            follow: false,
+            ..Default::default()
+        };
+        let lines: Vec<_> = d.logs(&id, &opts).map(|l| l.unwrap().text).collect().await;
+        assert_eq!(lines, ["999 400", "hello"]);
+        d.remove_container(&id, true, false).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn logs_come_back_as_lines_per_stream() {
         let d = docker().await;
         let name = unique("logs");

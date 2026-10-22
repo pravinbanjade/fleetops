@@ -84,6 +84,9 @@ impl ContainerOps for Fake {
     async fn read_file(&self, _id: &str, _path: &str, _max: u64) -> Result<Vec<u8>> {
         unimplemented!()
     }
+    async fn put_archive(&self, _id: &str, _path: &str, _tar: Vec<u8>) -> Result<()> {
+        unimplemented!()
+    }
 }
 
 fn spec() -> ContainerSpec {
