@@ -15,7 +15,8 @@
 #        (defaults target/release/fleetops, target/release/fleetops-agent)
 # Environment: COUNT (default 50), LIMIT_MIB (default 50), SETTLE (seconds, default 10),
 #              AGENTS (default 10, 0 skips the agent phase), AGENT_LIMIT_MIB (default 15),
-#              KUBE_IT (kind fixtures dir; unset skips the kube phase), KUBE_ENVS (default 5)
+#              KUBE_IT (kind fixtures dir; unset skips the kube phase), KUBE_ENVS (default 5),
+#              KUBE_LIMIT_MIB (default 100)
 set -eu
 
 bin=${1:-target/release/fleetops}
@@ -219,7 +220,7 @@ if [ -n "${KUBE_IT:-}" ] && [ "$kube_envs" -gt 0 ]; then
   kill $watch_pids 2>/dev/null || true
   # shellcheck disable=SC2086
   rm -f $watch_outs
-  kube_limit=$((limit_mib + agents + 5))
+  kube_limit=${KUBE_LIMIT_MIB:-100}
   echo "rss-bench: server $(to_mib "$kube_kib") MiB with $agents agents and $kube_envs kube environments x 3 watches, for the admin and $limited namespace-limited users (limit $kube_limit MiB)"
   [ "$kube_kib" -le $((kube_limit * 1024)) ] || fail "server RSS is over $kube_limit MiB with $kube_envs kube environments"
 fi

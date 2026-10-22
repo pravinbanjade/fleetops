@@ -29,7 +29,7 @@ Open <http://localhost:5173>. `make dev-server` keeps its data in `./.dev-data`,
 | `make test-docker` | Integration tests against the current docker context's daemon (`docker-it` feature); the Docker suite runs a second time through an agent tunnel |
 | `make test-web` | Web typecheck, lint, vitest, and a check that the generated API client matches the OpenAPI document |
 | `make e2e` | `make build` and the agent, then the Playwright end-to-end tests in Chromium against the current docker context's daemon |
-| `make rss-bench` | `make build`, then checks idle RSS stays under 50 MiB with 50 containers, under 50 MiB + 1 MiB per agent with 10 agents, and under 15 MiB per agent (`COUNT`, `LIMIT_MIB`, `AGENTS`, `AGENT_LIMIT_MIB` override). With `KUBE_IT_RSS=target/kube-it`, it also checks the server stays within that limit + 5 MiB with 5 kubeconfig clusters being listed |
+| `make rss-bench` | `make build`, then checks idle RSS stays under 50 MiB with 50 containers, under 50 MiB + 1 MiB per agent with 10 agents, and under 15 MiB per agent (`COUNT`, `LIMIT_MIB`, `AGENTS`, `AGENT_LIMIT_MIB` override). With `KUBE_IT_RSS=target/kube-it`, it also checks the server stays under 100 MiB (`KUBE_LIMIT_MIB`) with 5 kubeconfig clusters being listed and watched |
 | `make test-kube` | Creates or reuses the `kind` cluster `fleetops-test` (`brew install kind`), then runs the Kubernetes suite through a kubeconfig and again through the agent tunnel |
 | `make e2e-kube` | The Playwright Kubernetes test against that cluster |
 | `make agent-kube-smoke` | Loads `$(AGENT_IMAGE)` into the cluster, runs `$(IMAGE)` on kind's network, applies the generated manifest, and checks that the cluster environment comes up |
