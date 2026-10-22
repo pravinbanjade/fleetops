@@ -6,6 +6,9 @@
 pub mod testing;
 
 mod dockerignore;
+mod keys;
+
+pub use keys::{generate_key, parse_key, KeyPair};
 
 use fleetops_core::{Error, Result};
 use std::path::{Path, PathBuf};
