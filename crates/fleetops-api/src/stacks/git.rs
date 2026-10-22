@@ -3,11 +3,13 @@
 
 use super::start::{start_deploy, Actor, DeploySource, GIT_ACTOR};
 use crate::AppState;
-use fleetops_core::compose::parse;
+use fleetops_core::compose::files::repo_path;
+use fleetops_core::compose::{parse, FileSource};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::{GitRecord, NewAudit, StackRecord};
 use serde::Serialize;
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use utoipa::ToSchema;
 
@@ -168,13 +170,8 @@ async fn sync_fetched(
         path: git.path.clone(),
         token: s.store.stack_git_token(stack.id).await?,
     };
-    let fetched = match fleetops_git::fetch_file(
-        &cache_dir(s, stack.id)?,
-        &source,
-        s.config.git_limits,
-    )
-    .await
-    {
+    let cache = cache_dir(s, stack.id)?;
+    let fetched = match fleetops_git::fetch_file(&cache, &source, s.config.git_limits).await {
         Ok(f) => f,
         Err(e) => {
             let error = e.detail();
@@ -186,30 +183,65 @@ async fn sync_fetched(
     };
     let commit = fetched.commit.clone();
     let short = &commit[..7];
-    // A new file, not a new commit, is what auto-deploys: a commit that
-    // leaves the file alone never retries a failed auto-deploy. One that
-    // could not start yet (environment down, another deploy running) is
-    // tried again on the next sync.
     let draft = s.store.draft(stack.id).await?;
+    let variables = draft
+        .as_ref()
+        .map(|d| d.variables.clone())
+        .unwrap_or_default();
+    // Config files the Compose file names, from the same commit. A file
+    // that does not parse is reported below, with no configs read.
+    let configs = match read_configs(s, git, &cache, &fetched, &variables, stack).await {
+        Ok(c) => c,
+        Err(msg) => {
+            let error = format!("{} at {short} has problems: {msg}", git.path);
+            s.store
+                .record_git_error(stack.id, &error, now_unix())
+                .await?;
+            return Ok(SyncOutcome::Failed { error });
+        }
+    };
+    let stored: BTreeMap<String, String> = s
+        .store
+        .stack_files(stack.id)
+        .await?
+        .into_iter()
+        .filter(|f| f.source == "repo")
+        .map(|f| (f.name, f.value))
+        .collect();
+    // New content (the Compose file or a config file), not a new commit, is
+    // what auto-deploys: a commit that leaves both alone never retries a
+    // failed auto-deploy. One that could not start yet (environment down,
+    // another deploy running) is tried again on the next sync.
     let deferred = matches!(git.last_sync_error.as_deref(), Some(UNREACHABLE | BUSY));
     let fresh = git.last_fetched_commit.is_none()
         || draft.as_ref().map(|d| d.compose.as_str()) != Some(fetched.content.as_str())
+        || stored != configs.iter().cloned().collect::<BTreeMap<_, _>>()
         || matches!(trigger, SyncTrigger::Resume(_))
         || deferred;
     if !s
         .store
-        .record_git_fetch(stack.id, &commit, &fetched.content, &[], now_unix())
+        .record_git_fetch(stack.id, &commit, &fetched.content, &configs, now_unix())
         .await?
     {
         return Ok(SyncOutcome::Failed {
             error: DETACHED.into(),
         });
     }
-    let deployed = match stack.deployed_revision {
-        Some(n) => Some(s.store.revision(stack.id, n).await?.compose),
-        None => None,
+    let up_to_date = match stack.deployed_revision {
+        Some(n) if s.store.revision(stack.id, n).await?.compose == fetched.content => {
+            let ran: BTreeMap<String, String> = s
+                .store
+                .revision_files(stack.id, n)
+                .await?
+                .into_iter()
+                .filter(|f| f.kind == "config")
+                .map(|f| (f.name, f.value))
+                .collect();
+            configs.iter().all(|(name, v)| ran.get(name) == Some(v))
+        }
+        _ => false,
     };
-    if deployed.as_deref() == Some(fetched.content.as_str()) {
+    if up_to_date {
         s.store.set_git_pending(stack.id, None).await?;
         return Ok(SyncOutcome::UpToDate { commit });
     }
@@ -222,7 +254,6 @@ async fn sync_fetched(
     };
     // The file is checked even when nothing deploys it, so a broken commit
     // shows on the stack straight away.
-    let variables = draft.map(|d| d.variables).unwrap_or_default();
     if let Err(issues) = parse(&fetched.content, &variables, &stack.name) {
         let msg = super::start::issues_message(&issues);
         return fail(format!("{} at {short} has problems: {msg}", git.path)).await;
@@ -272,6 +303,37 @@ async fn sync_fetched(
             .await
         }
     }
+}
+
+/// The `file:` configs of the fetched Compose file, read from the repository
+/// at its commit, as (name, content). Empty when the file does not parse.
+async fn read_configs(
+    s: &AppState,
+    git: &GitRecord,
+    cache: &std::path::Path,
+    fetched: &fleetops_git::Fetched,
+    variables: &[String],
+    stack: &StackRecord,
+) -> std::result::Result<Vec<(String, String)>, String> {
+    let Ok(parsed) = parse(&fetched.content, variables, &stack.name) else {
+        return Ok(vec![]);
+    };
+    let mut names = vec![];
+    let mut paths = vec![];
+    for (name, src) in &parsed.project.configs {
+        if let FileSource::File { path } = src {
+            names.push(name.clone());
+            paths.push(repo_path(&git.path, path)?);
+        }
+    }
+    if paths.is_empty() {
+        return Ok(vec![]);
+    }
+    let contents =
+        fleetops_git::read_at(cache, &fetched.commit, &paths, s.config.git_limits.max_file)
+            .await
+            .map_err(|e| e.detail())?;
+    Ok(names.into_iter().zip(contents).collect())
 }
 
 async fn audit_sync(

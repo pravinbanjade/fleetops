@@ -1,6 +1,7 @@
 mod common;
 
 use axum::http::StatusCode;
+use common::git::GitApp;
 use common::git::*;
 use common::*;
 use fleetops_api::stacks::git::{
@@ -351,4 +352,159 @@ async fn detach_during_a_sync_keeps_the_draft_and_drops_the_cache() {
         ""
     );
     assert!(!cache_dir(&g.state, g.stack.id).unwrap().exists());
+}
+
+const CONF_STACK: &str = "services:\n  web:\n    image: nginx:1.27\n    configs: [{ source: site, target: /etc/nginx/conf.d/site.conf }]\nconfigs:\n  site: { file: ./site.conf }\n";
+
+async fn repo_configs(g: &GitApp) -> Vec<(String, String)> {
+    g.store
+        .stack_files(g.stack.id)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|f| f.source == "repo")
+        .map(|f| (f.name, f.value))
+        .collect()
+}
+
+fn last_archive(g: &GitApp) -> String {
+    let st = g.fake.state.lock().unwrap();
+    String::from_utf8_lossy(&st.archives.last().expect("an archive").1).into_owned()
+}
+
+#[tokio::test]
+async fn config_file_is_read_from_the_repo_at_the_commit() {
+    let g = git_app(Some(("manual", false)), ServerOpts::default()).await;
+    let head = g
+        .repo
+        .commit(&[("compose.yaml", CONF_STACK), ("site.conf", "v1")], "one");
+    assert_eq!(
+        g.sync(SyncTrigger::Manual(1)).await,
+        SyncOutcome::Pending { commit: head }
+    );
+    assert_eq!(repo_configs(&g).await, vec![("site".into(), "v1".into())]);
+}
+
+#[tokio::test]
+async fn config_only_commit_is_pending() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    g.repo
+        .commit(&[("compose.yaml", CONF_STACK), ("site.conf", "v1")], "one");
+    let (_, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert_eq!(task["status"], "succeeded", "{task:?}");
+    g.store.set_git_paused(g.stack.id, true).await.unwrap();
+    let two = g.repo.commit(&[("site.conf", "v2")], "conf");
+    assert_eq!(
+        g.sync(SyncTrigger::Poll).await,
+        SyncOutcome::Pending {
+            commit: two.clone()
+        }
+    );
+    assert_eq!(g.git().await.pending_commit.as_deref(), Some(two.as_str()));
+    assert_eq!(repo_configs(&g).await, vec![("site".into(), "v2".into())]);
+}
+
+#[tokio::test]
+async fn config_only_commit_auto_deploys() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    g.repo
+        .commit(&[("compose.yaml", CONF_STACK), ("site.conf", "v1")], "one");
+    g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert!(last_archive(&g).contains("v1"));
+    g.repo.commit(&[("site.conf", "v2-new")], "conf");
+    let (n, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert_eq!(
+        (n, task["status"].clone()),
+        (2, json!("succeeded")),
+        "{task:?}"
+    );
+    assert!(last_archive(&g).contains("v2-new"));
+}
+
+#[tokio::test]
+async fn commit_changing_nothing_is_not_fresh() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    g.repo
+        .commit(&[("compose.yaml", CONF_STACK), ("site.conf", "v1")], "one");
+    g.sync_and_deploy(SyncTrigger::Poll).await;
+    let readme = g.repo.commit(&[("README.md", "hi")], "docs");
+    assert_eq!(
+        g.sync(SyncTrigger::Poll).await,
+        SyncOutcome::UpToDate { commit: readme }
+    );
+    assert_eq!(g.revisions().await.len(), 1);
+}
+
+#[tokio::test]
+async fn missing_config_path_fails_the_sync_and_keeps_the_draft() {
+    let g = git_app(Some(("manual", false)), ServerOpts::default()).await;
+    let one = g
+        .repo
+        .commit(&[("compose.yaml", CONF_STACK), ("site.conf", "v1")], "one");
+    g.sync(SyncTrigger::Manual(1)).await;
+    let broken = CONF_STACK.replace("./site.conf", "./other.conf");
+    let two = g.repo.commit(&[("compose.yaml", &broken)], "two");
+    match g.sync(SyncTrigger::Manual(1)).await {
+        SyncOutcome::Failed { error } => assert_eq!(
+            error,
+            format!(
+                "compose.yaml at {} has problems: other.conf not found at {}",
+                &two[..7],
+                &two[..7]
+            )
+        ),
+        other => panic!("expected a failure, got {other:?}"),
+    }
+    let draft = g.store.draft(g.stack.id).await.unwrap().unwrap();
+    assert_eq!(draft.compose, CONF_STACK);
+    assert_eq!(
+        g.git().await.last_fetched_commit.as_deref(),
+        Some(one.as_str())
+    );
+    assert_eq!(repo_configs(&g).await, vec![("site".into(), "v1".into())]);
+}
+
+#[tokio::test]
+async fn secrets_file_is_never_read_from_the_repo() {
+    let g = git_app(Some(("manual", false)), ServerOpts::default()).await;
+    let compose = "services:\n  web:\n    image: nginx:1.27\n    secrets: [pw]\nsecrets:\n  pw: { file: ./pw.txt }\n";
+    g.repo
+        .commit(&[("compose.yaml", compose), ("pw.txt", "in-git")], "one");
+    g.sync(SyncTrigger::Manual(1)).await;
+    assert!(g.store.stack_files(g.stack.id).await.unwrap().is_empty());
+    let p = g
+        .send(req(
+            "POST",
+            &format!("{STACKS}/{}/plan", g.stack.name),
+            Some(json!({"source": "draft"})),
+            Some(&g.admin),
+        ))
+        .await;
+    assert_eq!(
+        p.json["issues"][0]["message"],
+        "secret pw has no value: set it in the Secrets tab"
+    );
+}
+
+#[tokio::test]
+async fn secrets_tab_edit_never_auto_deploys() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    let compose = "services:\n  web:\n    image: nginx:1.27\n    secrets: [pw]\nsecrets:\n  pw: { file: ./pw.txt }\n";
+    let head = g.repo.commit(&[("compose.yaml", compose)], "one");
+    g.store
+        .set_stack_file(g.stack.id, "secret", "pw", "one", None, 1)
+        .await
+        .unwrap();
+    let (_, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert_eq!(task["status"], "succeeded", "{task:?}");
+    g.store
+        .set_stack_file(g.stack.id, "secret", "pw", "two", None, 2)
+        .await
+        .unwrap();
+    assert_eq!(
+        g.sync(SyncTrigger::Poll).await,
+        SyncOutcome::UpToDate { commit: head }
+    );
+    assert_eq!(g.git().await.pending_commit, None);
+    assert_eq!(g.revisions().await.len(), 1);
 }
