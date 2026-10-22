@@ -165,17 +165,11 @@ async fn sync_fetched(
     git: &GitRecord,
     trigger: SyncTrigger,
 ) -> Result<SyncOutcome> {
-    let source = fleetops_git::Source {
-        url: git.url.clone(),
-        branch: git.branch.clone(),
-        path: git.path.clone(),
-        token: s.store.stack_git_token(stack.id).await?,
-        ssh_key: None,
-        host_key: None,
-        seen_host_key: Default::default(),
-    };
+    let source = git_source(s, git).await?;
     let cache = cache_dir(s, stack.id)?;
-    let fetched = match fleetops_git::fetch_file(&cache, &source, s.config.git_limits).await {
+    let fetched = fleetops_git::fetch_file(&cache, &source, s.config.git_limits).await;
+    record_host_key(s, git, &source).await?;
+    let fetched = match fetched {
         Ok(f) => f,
         Err(e) => {
             let error = e.detail();
@@ -455,5 +449,41 @@ pub async fn run_git_polling(s: AppState) {
     loop {
         tick.tick().await;
         poll_once(&s).await;
+    }
+}
+
+/// Where the stack's git source fetches from, with the credential of its
+/// URL's kind.
+pub(crate) async fn git_source(s: &AppState, git: &GitRecord) -> Result<fleetops_git::Source> {
+    let ssh = fleetops_git::is_ssh_url(&git.url);
+    Ok(fleetops_git::Source {
+        url: git.url.clone(),
+        branch: git.branch.clone(),
+        path: git.path.clone(),
+        token: match ssh {
+            true => None,
+            false => s.store.stack_git_token(git.stack_id).await?,
+        },
+        ssh_key: match ssh {
+            true => s.store.stack_git_key(git.stack_id).await?,
+            false => None,
+        },
+        host_key: git.ssh_host_key.clone(),
+        seen_host_key: Default::default(),
+    })
+}
+
+/// Pins the host key a fetch from `src` saw, when the stack has none yet
+/// (stack git SSH spec §3), whether or not the fetch succeeded.
+pub(crate) async fn record_host_key(
+    s: &AppState,
+    git: &GitRecord,
+    src: &fleetops_git::Source,
+) -> Result<()> {
+    match src.seen_host_key.get() {
+        Some(seen) if git.ssh_host_key.is_none() => {
+            s.store.set_git_host_key(git.stack_id, Some(&seen)).await
+        }
+        _ => Ok(()),
     }
 }

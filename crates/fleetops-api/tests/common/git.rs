@@ -4,8 +4,9 @@
 use super::*;
 use fleetops_api::stacks::git::{sync_stack, SyncOutcome, SyncTrigger};
 use fleetops_api::stacks::Timing;
-use fleetops_git::testing::{GitServer, ServerOpts, TestRepo};
-use fleetops_store::{GitSettings, StackRecord, TokenChange};
+use fleetops_git::testing::{GitServer, ServerOpts, SshOpts, SshServer, TestRepo};
+use fleetops_git::KeyPair;
+use fleetops_store::{GitSettings, KeyChange, StackRecord, TokenChange};
 use std::time::Duration;
 
 pub const STACKS: &str = "/api/v1/envs/local/stacks";
@@ -18,6 +19,9 @@ pub struct GitApp {
     pub repo: TestRepo,
     pub server: GitServer,
     pub stack: StackRecord,
+    /// With [`ssh_git_app`]: the SSH server and the key the stack holds.
+    pub ssh: Option<SshServer>,
+    pub key: Option<KeyPair>,
 }
 
 impl std::ops::Deref for GitApp {
@@ -96,6 +100,54 @@ pub async fn git_app(attach: Option<(&str, bool)>, opts: ServerOpts) -> GitApp {
         repo,
         server,
         stack,
+        ssh: None,
+        key: None,
+    }
+}
+
+/// [`git_app`] over SSH: the repo is also served by an SSH server set up by
+/// `opts` (given the key the stack holds), and the stack is attached to it
+/// with that key unless `attach` is None.
+pub async fn ssh_git_app(
+    attach: Option<(&str, bool)>,
+    opts: impl FnOnce(&KeyPair) -> SshOpts,
+) -> GitApp {
+    let mut g = git_app(None, ServerOpts::default()).await;
+    let key = fleetops_git::generate_key("fleetops:shop");
+    let ssh = SshServer::start(&g.repo.root(), opts(&key)).await;
+    if let Some((sync, auto)) = attach {
+        let settings = GitSettings {
+            url: ssh.url("repo.git"),
+            ..settings(&g.server, sync, auto)
+        };
+        g.store
+            .set_stack_git_with(
+                g.stack.id,
+                &settings,
+                TokenChange::Keep,
+                KeyChange::Set {
+                    private: &key.private,
+                    public: &key.public,
+                },
+                Some("hook-secret"),
+                None,
+                1,
+            )
+            .await
+            .unwrap();
+        g.stack = g.store.stack_by_id(g.stack.id).await.unwrap();
+    }
+    g.ssh = Some(ssh);
+    g.key = Some(key);
+    g
+}
+
+/// SSH options that let `key` in, speaking protocol v2.
+pub fn authorised(key: &KeyPair) -> SshOpts {
+    SshOpts {
+        authorized: vec![key.public.clone()],
+        accept_env: true,
+        hold: None,
     }
 }
 

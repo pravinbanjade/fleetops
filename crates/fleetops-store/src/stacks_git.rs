@@ -127,7 +127,13 @@ impl Store {
         user: Option<i64>,
         now: i64,
     ) -> Result<GitRecord> {
-        let mut tx = self.pool.begin().await.map_err(db_err)?;
+        // Immediate: this reads before it writes, and a sync writing in
+        // between would otherwise fail the upgrade with "database is locked".
+        let mut tx = self
+            .pool
+            .begin_with("BEGIN IMMEDIATE")
+            .await
+            .map_err(db_err)?;
         let existing: Option<(String, String, String)> =
             sqlx::query_as("SELECT url, branch, path FROM stack_git WHERE stack_id = ?")
                 .bind(stack_id)

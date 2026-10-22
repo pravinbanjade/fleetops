@@ -14,7 +14,7 @@ use crate::{
 use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
-use fleetops_store::{GitRecord, GitSettings, StackRecord, TokenChange};
+use fleetops_store::{GitRecord, GitSettings, KeyChange, StackRecord, TokenChange};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -34,7 +34,8 @@ pub struct GitStatus {
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GitBody {
-    /// An https URL, without credentials.
+    /// An https or ssh URL (`ssh://…` or `[user@]host:path`), without
+    /// credentials.
     pub url: String,
     pub branch: String,
     /// The Compose file in the repository; `compose.yaml` by default.
@@ -45,11 +46,19 @@ pub struct GitBody {
     pub poll_seconds: Option<i64>,
     #[serde(default)]
     pub auto_deploy: bool,
-    /// A new access token; omit it to keep the stored one.
+    /// A new access token, for https URLs; omit it to keep the stored one.
     pub token: Option<String>,
     /// Forget the stored access token.
     #[serde(default)]
     pub clear_token: bool,
+    /// For ssh URLs: generate a new ed25519 deploy key.
+    #[serde(default)]
+    pub generate_key: bool,
+    /// For ssh URLs: an unencrypted OpenSSH ed25519 or ECDSA private key.
+    pub ssh_key: Option<String>,
+    /// Forget the stored SSH key.
+    #[serde(default)]
+    pub clear_key: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -179,10 +188,49 @@ pub async fn set(
     cache_dir(&s, stack.id)?;
     let before = s.store.stack_git(stack.id).await?;
     let secret = before.is_none().then(new_secret);
-    let token = match (&body.token, body.clear_token) {
-        (_, true) => TokenChange::Clear,
-        (Some(t), false) if !t.is_empty() => TokenChange::Set(t),
-        _ => TokenChange::Keep,
+    let ssh = fleetops_git::is_ssh_url(&settings.url);
+    let new_token = body.token.as_deref().filter(|t| !t.is_empty());
+    let pasted = body.ssh_key.as_deref().filter(|k| !k.trim().is_empty());
+    if body.generate_key && pasted.is_some() {
+        return Err(Error::Invalid("send either generate_key or ssh_key, not both".into()).into());
+    }
+    if ssh && new_token.is_some() {
+        return Err(Error::Invalid(
+            "an access token is only for https URLs; use an SSH key".into(),
+        )
+        .into());
+    }
+    if !ssh && (body.generate_key || pasted.is_some()) {
+        return Err(Error::Invalid("an SSH key is only for ssh URLs".into()).into());
+    }
+    let pair = match pasted {
+        Some(k) => Some(fleetops_git::parse_key(k).map_err(Error::Invalid)?),
+        None if body.generate_key => Some(fleetops_git::generate_key(&format!(
+            "fleetops:{}",
+            stack.name
+        ))),
+        None => None,
+    };
+    let had = |f: fn(&GitRecord) -> bool| before.as_ref().is_some_and(f);
+    // A URL of the other kind forgets the old kind's credential.
+    let token = match new_token {
+        Some(t) => TokenChange::Set(t),
+        None if body.clear_token || (ssh && had(|b| b.has_token)) => TokenChange::Clear,
+        None => TokenChange::Keep,
+    };
+    let key = match &pair {
+        Some(p) => KeyChange::Set {
+            private: &p.private,
+            public: &p.public,
+        },
+        None if body.clear_key || (!ssh && had(|b| b.has_key)) => KeyChange::Clear,
+        None => KeyChange::Keep,
+    };
+    let key_note = match key {
+        KeyChange::Set { .. } if body.generate_key => "generated",
+        KeyChange::Set { .. } => "set",
+        KeyChange::Clear => "cleared",
+        KeyChange::Keep => "kept",
     };
     let token_note = match token {
         TokenChange::Keep => "kept",
@@ -195,10 +243,11 @@ pub async fn set(
     let user = c.user.user.id;
     let res = s
         .store
-        .set_stack_git(
+        .set_stack_git_with(
             stack.id,
             &settings,
             token,
+            key,
             secret.as_deref(),
             Some(user),
             now_unix(),
@@ -207,6 +256,7 @@ pub async fn set(
     let detail = json!({
         "url": settings.url, "branch": settings.branch, "path": settings.path,
         "sync": settings.sync, "auto_deploy": settings.auto_deploy, "token": token_note,
+        "key": key_note,
     });
     audit(&s, &c, "stack.git.update", &name, &res, Some(detail)).await;
     let git = res?;
@@ -346,4 +396,36 @@ pub async fn rotate_secret(
     Ok(Json(SecretRotated {
         webhook_secret: secret,
     }))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/envs/{env}/stacks/{stack}/git/host-key",
+    operation_id = "resetStackGitHostKey",
+    tag = "stacks",
+    summary = "Accept a new SSH host key",
+    description = "Forgets the pinned host key; the next sync pins the key the server then shows.",
+    params(EnvParam, ("stack" = String, Path, description = "Stack name")),
+    responses((status = 204, description = "Forgotten"))
+)]
+pub async fn reset_host_key(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath((env, name)): ApiPath<(String, String)>,
+) -> ApiResult<StatusCode> {
+    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let stack = stack_of(&s, &c, &name).await?;
+    let git = git_of(&s, &stack).await?;
+    let res = s.store.set_git_host_key(stack.id, None).await;
+    audit(
+        &s,
+        &c,
+        "stack.git.host_key.reset",
+        &name,
+        &res,
+        Some(json!({ "was": git.ssh_host_key })),
+    )
+    .await;
+    res?;
+    Ok(StatusCode::NO_CONTENT)
 }

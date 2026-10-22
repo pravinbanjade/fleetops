@@ -42,18 +42,6 @@ fn has_build(project: &Project) -> bool {
     project.services.values().any(|s| s.build.is_some())
 }
 
-fn git_source(git: &GitRecord, token: Option<String>) -> fleetops_git::Source {
-    fleetops_git::Source {
-        url: git.url.clone(),
-        branch: git.branch.clone(),
-        path: git.path.clone(),
-        token,
-        ssh_key: None,
-        host_key: None,
-        seen_host_key: Default::default(),
-    }
-}
-
 /// Makes sure the stack's cache holds `commit`, fetching it by id if not.
 async fn ensure_commit(
     s: &AppState,
@@ -65,8 +53,10 @@ async fn ensure_commit(
     if fleetops_git::has_commit(&cache, commit) {
         return Ok(());
     }
-    let token = s.store.stack_git_token(stack.id).await?;
-    fleetops_git::fetch_commit(&cache, &git_source(git, token), commit, s.config.git_limits).await
+    let src = crate::stacks::git::git_source(s, git).await?;
+    let fetched = fleetops_git::fetch_commit(&cache, &src, commit, s.config.git_limits).await;
+    crate::stacks::git::record_host_key(s, git, &src).await?;
+    fetched
 }
 
 /// The inputs of a draft's builds: on a git stack, each build service's

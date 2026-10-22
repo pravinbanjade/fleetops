@@ -695,9 +695,17 @@ export type GitBody = {
     auto_deploy?: boolean;
     branch: string;
     /**
+     * Forget the stored SSH key.
+     */
+    clear_key?: boolean;
+    /**
      * Forget the stored access token.
      */
     clear_token?: boolean;
+    /**
+     * For ssh URLs: generate a new ed25519 deploy key.
+     */
+    generate_key?: boolean;
     /**
      * The Compose file in the repository; `compose.yaml` by default.
      */
@@ -707,15 +715,20 @@ export type GitBody = {
      */
     poll_seconds?: number | null;
     /**
+     * For ssh URLs: an unencrypted OpenSSH ed25519 or ECDSA private key.
+     */
+    ssh_key?: string | null;
+    /**
      * manual | poll | webhook
      */
     sync: string;
     /**
-     * A new access token; omit it to keep the stored one.
+     * A new access token, for https URLs; omit it to keep the stored one.
      */
     token?: string | null;
     /**
-     * An https URL, without credentials.
+     * An https or ssh URL (`ssh://…` or `[user@]host:path`), without
+     * credentials.
      */
     url: string;
 };
@@ -723,6 +736,10 @@ export type GitBody = {
 export type GitRecord = {
     auto_deploy: boolean;
     branch: string;
+    /**
+     * Whether an SSH key is stored (the private key is never returned).
+     */
+    has_key: boolean;
     /**
      * Whether an access token is stored (it is never returned).
      */
@@ -740,6 +757,14 @@ export type GitRecord = {
      */
     pending_commit?: string | null;
     poll_seconds: number;
+    /**
+     * The SSH host key pinned for the stack (`<algorithm> SHA256:…`).
+     */
+    ssh_host_key?: string | null;
+    /**
+     * The stored SSH key's public line, to add to the git host.
+     */
+    ssh_public_key?: string | null;
     stack_id: number;
     /**
      * manual | poll | webhook
@@ -5174,6 +5199,40 @@ export type SetStackGitResponses = {
 };
 
 export type SetStackGitResponse = SetStackGitResponses[keyof SetStackGitResponses];
+
+export type ResetStackGitHostKeyData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/git/host-key';
+};
+
+export type ResetStackGitHostKeyErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ResetStackGitHostKeyError = ResetStackGitHostKeyErrors[keyof ResetStackGitHostKeyErrors];
+
+export type ResetStackGitHostKeyResponses = {
+    /**
+     * Forgotten
+     */
+    204: void;
+};
+
+export type ResetStackGitHostKeyResponse = ResetStackGitHostKeyResponses[keyof ResetStackGitHostKeyResponses];
 
 export type ResumeStackGitData = {
     body?: never;

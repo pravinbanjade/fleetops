@@ -482,3 +482,31 @@ async fn rollback_builds_the_recorded_tree_after_a_path_change() {
         "built the wrong tree"
     );
 }
+
+#[tokio::test]
+async fn ssh_stack_builds_and_fetches_a_rollback_commit_over_ssh() {
+    let g = ssh_git_app(Some(("manual", false)), authorised).await;
+    g.repo.commit(
+        &[
+            ("compose.yaml", BUILD),
+            ("app/Dockerfile", "FROM alpine AS prod\n"),
+            ("app/main.txt", "one"),
+        ],
+        "one",
+    );
+    g.sync(SyncTrigger::Manual(1)).await;
+    let t = deploy(&g, draft()).await;
+    assert_eq!(t["status"], "succeeded", "{t}");
+    let one = image_of(&g, "api");
+    assert!(tar_paths(&builds(&g)[0]).contains(&"main.txt".to_string()));
+    deploy_code(&g, "two").await;
+    forget_image(&g, &one);
+    let _ = std::fs::remove_dir_all(
+        fleetops_api::stacks::git::cache_dir(&g.state, g.stack.id).unwrap(),
+    );
+    let t = deploy(&g, json!({"source": "revision", "revision": 1})).await;
+    assert_eq!(t["status"], "succeeded", "{t}");
+    let b = builds(&g);
+    assert_eq!(b.len(), 3);
+    assert_eq!(b[2].tag.as_deref(), Some(one.as_str()));
+}

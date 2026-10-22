@@ -6150,6 +6150,57 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/stacks/{stack}/git/host-key": {
+      "delete": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Accept a new SSH host key",
+        "description": "Forgets the pinned host key; the next sync pins the key the server then shows.",
+        "operationId": "resetStackGitHostKey",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Forgotten"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/stacks/{stack}/git/resume": {
       "post": {
         "tags": [
@@ -9355,9 +9406,17 @@
           "branch": {
             "type": "string"
           },
+          "clear_key": {
+            "type": "boolean",
+            "description": "Forget the stored SSH key."
+          },
           "clear_token": {
             "type": "boolean",
             "description": "Forget the stored access token."
+          },
+          "generate_key": {
+            "type": "boolean",
+            "description": "For ssh URLs: generate a new ed25519 deploy key."
           },
           "path": {
             "type": [
@@ -9374,6 +9433,13 @@
             "format": "int64",
             "description": "At least 60; 300 by default."
           },
+          "ssh_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For ssh URLs: an unencrypted OpenSSH ed25519 or ECDSA private key."
+          },
           "sync": {
             "type": "string",
             "description": "manual | poll | webhook"
@@ -9383,11 +9449,11 @@
               "string",
               "null"
             ],
-            "description": "A new access token; omit it to keep the stored one."
+            "description": "A new access token, for https URLs; omit it to keep the stored one."
           },
           "url": {
             "type": "string",
-            "description": "An https URL, without credentials."
+            "description": "An https or ssh URL (`ssh://…` or `[user@]host:path`), without\ncredentials."
           }
         },
         "additionalProperties": false
@@ -9404,6 +9470,7 @@
           "auto_deploy",
           "paused",
           "has_token",
+          "has_key",
           "updated_at"
         ],
         "properties": {
@@ -9412,6 +9479,10 @@
           },
           "branch": {
             "type": "string"
+          },
+          "has_key": {
+            "type": "boolean",
+            "description": "Whether an SSH key is stored (the private key is never returned)."
           },
           "has_token": {
             "type": "boolean",
@@ -9453,6 +9524,20 @@
           "poll_seconds": {
             "type": "integer",
             "format": "int64"
+          },
+          "ssh_host_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The SSH host key pinned for the stack (`<algorithm> SHA256:…`)."
+          },
+          "ssh_public_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The stored SSH key's public line, to add to the git host."
           },
           "stack_id": {
             "type": "integer",

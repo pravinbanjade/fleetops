@@ -122,6 +122,7 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(stacks_git::sync))
         .routes(routes!(stacks_git::resume))
         .routes(routes!(stacks_git::rotate_secret))
+        .routes(routes!(stacks_git::reset_host_key))
         .routes(routes!(stack_files::list))
         .routes(routes!(stack_files::set, stack_files::remove))
         .routes(routes!(kube::apply))
