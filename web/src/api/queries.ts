@@ -23,6 +23,7 @@ import {
   getStack,
   listStackRevisions,
   getStackGit,
+  listStackFiles,
   listStacks,
   listContainers,
   listEnvs,
@@ -88,6 +89,7 @@ export const keys = {
   stack: (env: string, name: string) => ["env", env, "stacks", name] as const,
   stackRevisions: (env: string, name: string) => ["env", env, "stacks", name, "revisions"] as const,
   stackGit: (env: string, name: string) => ["env", env, "stacks", name, "git"] as const,
+  stackFiles: (env: string, name: string) => ["env", env, "stacks", name, "files"] as const,
   /** A filtered list (`filter`) is cached apart from the whole one. */
   kube: (env: string, kind: string, ns?: string, filter?: KubeFilter) =>
     (filter ? ["env", env, "k8s", kind, ns ?? "*", filter] : ["env", env, "k8s", kind, ns ?? "*"]) as readonly string[],
@@ -374,6 +376,12 @@ export const stackGitQuery = (env: string, name: string) =>
   queryOptions({
     queryKey: keys.stackGit(env, name),
     queryFn: async () => (await getStackGit({ path: { env, stack: name } })).data,
+  });
+
+export const stackFilesQuery = (env: string, name: string) =>
+  queryOptions({
+    queryKey: keys.stackFiles(env, name),
+    queryFn: async () => (await listStackFiles({ path: { env, stack: name } })).data,
   });
 
 /** How far back the dashboard's event feed starts, in seconds. */

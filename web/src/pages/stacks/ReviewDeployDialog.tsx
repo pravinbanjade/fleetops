@@ -10,6 +10,7 @@ import { DiffView } from "@/components/yaml-editor/DiffView";
 import { errorMessage } from "@/lib/errors";
 import { useTask, useTaskTracker } from "@/live/TaskProvider";
 import { TaskView } from "@/pages/images/TaskDialogs";
+import { IssueLine } from "./SecretsTab";
 
 const ACTION_LABEL: Record<ServicePlan["action"], string> = {
   create: "Create",
@@ -26,11 +27,14 @@ export function ReviewDeployDialog({
   stack,
   source,
   onClose,
+  onSecrets,
 }: {
   env: string;
   stack: string;
   source: DeploySource;
   onClose: () => void;
+  /** Opens the stack's Secrets tab, where a missing value is set. */
+  onSecrets?: () => void;
 }) {
   const qc = useQueryClient();
   const tracker = useTaskTracker();
@@ -93,11 +97,11 @@ export function ReviewDeployDialog({
           <div className="grid max-h-[65vh] gap-4 overflow-auto">
             {p.issues.length > 0 && (
               <section aria-label="Problems" className="grid gap-1 text-sm text-destructive">
-                <h3 className="font-semibold">Fix these in the Compose file first</h3>
+                <h3 className="font-semibold">Fix these first</h3>
                 <ul className="grid gap-0.5">
                   {p.issues.map((i, n) => (
                     <li key={n}>
-                      <span className="font-ident">{i.path || "file"}</span>: {i.message}
+                      <IssueLine issue={i} onSecrets={onSecrets} />
                     </li>
                   ))}
                 </ul>

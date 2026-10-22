@@ -16,6 +16,7 @@ import { GitTab, secretKey } from "./GitTab";
 import { RemoveStackDialog } from "./RemoveStackDialog";
 import { ReviewDeployDialog } from "./ReviewDeployDialog";
 import { RevisionsTab } from "./RevisionsTab";
+import { SecretsTab } from "./SecretsTab";
 import { StackEditor } from "./StackEditor";
 
 const route = getRouteApi("/authed/shell/envs/$env/stacks/$stack");
@@ -111,6 +112,7 @@ export function StackPage() {
         <TabsList>
           <TabsTrigger value="editor">Editor</TabsTrigger>
           {isGit && <TabsTrigger value="git">Git</TabsTrigger>}
+          <TabsTrigger value="secrets">Secrets</TabsTrigger>
           <TabsTrigger value="services">Services</TabsTrigger>
           <TabsTrigger value="revisions">Revisions</TabsTrigger>
         </TabsList>
@@ -122,6 +124,7 @@ export function StackPage() {
             canEdit={can("stacks.create")}
             canDeploy={canOperate}
             onReview={() => setReview({ source: "draft" })}
+            onSecrets={() => setTab("secrets")}
           />
         </TabsContent>
         {isGit && (
@@ -135,6 +138,9 @@ export function StackPage() {
             />
           </TabsContent>
         )}
+        <TabsContent value="secrets" className="pt-4">
+          <SecretsTab env={env} stack={stack} isGit={isGit} canEdit={can("stacks.create")} />
+        </TabsContent>
         <TabsContent value="services" className="pt-4">
           {byService.length === 0 ? (
             <p className="text-sm text-muted-foreground">No containers.</p>
@@ -176,7 +182,18 @@ export function StackPage() {
           />
         </TabsContent>
       </Tabs>
-      {review && <ReviewDeployDialog env={env} stack={stack} source={review} onClose={() => setReview(null)} />}
+      {review && (
+        <ReviewDeployDialog
+          env={env}
+          stack={stack}
+          source={review}
+          onClose={() => setReview(null)}
+          onSecrets={() => {
+            setReview(null);
+            setTab("secrets");
+          }}
+        />
+      )}
       {removing && <RemoveStackDialog env={env} stack={stack} onClose={() => setRemoving(false)} />}
     </Page>
   );

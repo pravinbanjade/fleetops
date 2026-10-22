@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/errors";
 import { FormError } from "@/pages/AuthLayout";
+import { IssueLine } from "./SecretsTab";
 
 const CodeMirrorField = lazy(() => import("@/components/yaml-editor/CodeMirrorField"));
 
@@ -43,12 +44,14 @@ export function StackEditor({
   canEdit,
   canDeploy,
   onReview,
+  onSecrets,
 }: {
   env: string;
   detail: StackDetail;
   canEdit: boolean;
   canDeploy: boolean;
   onReview: () => void;
+  onSecrets?: () => void;
 }) {
   const qc = useQueryClient();
   const name = detail.stack.name;
@@ -122,7 +125,7 @@ export function StackEditor({
         <ul aria-label="Problems" className="grid gap-0.5 text-sm text-destructive">
           {issues.map((i, n) => (
             <li key={n}>
-              <span className="font-ident">{i.path || "file"}</span>: {i.message}
+              <IssueLine issue={i} onSecrets={onSecrets} />
             </li>
           ))}
         </ul>
