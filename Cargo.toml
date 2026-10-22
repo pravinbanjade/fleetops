@@ -81,3 +81,5 @@ yamux = "0.14"
 # Release binaries ship without debug symbols (the image is about 20 MB).
 [profile.release]
 strip = true
+lto = true
+codegen-units = 1
