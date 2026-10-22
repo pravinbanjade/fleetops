@@ -155,3 +155,30 @@ volumes:
         "ef7c7a5598cc4bcf1290d2c504a4a192d5246844f79ced7a642a4cf17dcf6d03"
     );
 }
+
+#[test]
+fn container_body_labels_secret_targets_only_when_present() {
+    let p = project(
+        r#"
+services:
+  db:
+    image: x
+    secrets: [a, { source: b, target: /x/b }]
+    configs: [c]
+  web:
+    image: x
+    configs: [c]
+secrets:
+  a: { file: ./a }
+  b: { file: ./b }
+configs:
+  c: { content: "x" }
+"#,
+    );
+    let b = container_body(&p, &p.services["db"], 1, 1);
+    let label = b.pointer("/Labels/io.fleetops.stack.secrets").unwrap();
+    let paths: Vec<String> = serde_json::from_str(label.as_str().unwrap()).unwrap();
+    assert_eq!(paths, vec!["/run/secrets/a", "/x/b"]);
+    let w = container_body(&p, &p.services["web"], 1, 1);
+    assert!(w.pointer("/Labels/io.fleetops.stack.secrets").is_none());
+}

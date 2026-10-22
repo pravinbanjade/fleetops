@@ -248,3 +248,38 @@ fn network_mode_dependents_recreate_with_target() {
         ["vpn is recreated, and this service shares its network"]
     );
 }
+
+#[test]
+fn file_reasons_name_the_item() {
+    let yaml = |extra: &str| {
+        project(&format!(
+            "services:\n  db:\n    image: x\n    secrets: [{extra}]\nsecrets:\n  db_password: {{ file: ./pw }}\n  other: {{ file: ./o }}\n"
+        ))
+    };
+    let with_digest = |mut p: Project, d: &str| {
+        for f in &mut p.services.get_mut("db").unwrap().files {
+            f.digest = d.to_string();
+        }
+        p
+    };
+    let a = with_digest(yaml("db_password"), "aa");
+    let b = with_digest(yaml("db_password"), "bb");
+    assert_eq!(
+        service_reasons(&a.services["db"], &b.services["db"]),
+        vec!["secret db_password changed"]
+    );
+    let none = project("services:\n  db: { image: x }\n");
+    assert_eq!(
+        service_reasons(&none.services["db"], &a.services["db"]),
+        vec!["secret db_password added"]
+    );
+    assert_eq!(
+        service_reasons(&a.services["db"], &none.services["db"]),
+        vec!["secret db_password removed"]
+    );
+    let mode = with_digest(yaml("{ source: db_password, mode: 0400 }"), "aa");
+    assert_eq!(
+        service_reasons(&a.services["db"], &mode.services["db"]),
+        vec!["secret db_password changed"]
+    );
+}

@@ -111,6 +111,10 @@ pub fn service_reasons(old: &Service, new: &Service) -> Vec<String> {
         if va == vb {
             continue;
         }
+        if k == "files" {
+            file_reasons(va, vb, &mut out);
+            continue;
+        }
         match (va, vb) {
             (Value::Object(ma), Value::Object(mb))
                 if matches!(k.as_str(), "environment" | "labels") =>
@@ -129,6 +133,31 @@ pub fn service_reasons(old: &Service, new: &Service) -> Vec<String> {
         }
     }
     out
+}
+
+/// Reasons for changed secrets and configs, naming the item, never the
+/// value: `secret db_password changed`.
+fn file_reasons(old: &Value, new: &Value, out: &mut Vec<String>) {
+    let by_item = |v: &Value| -> BTreeMap<(String, String), Value> {
+        v.as_array()
+            .into_iter()
+            .flatten()
+            .map(|f| {
+                let s = |k: &str| f[k].as_str().unwrap_or_default().to_string();
+                ((s("kind"), s("source")), f.clone())
+            })
+            .collect()
+    };
+    let (a, b) = (by_item(old), by_item(new));
+    let items: BTreeSet<&(String, String)> = a.keys().chain(b.keys()).collect();
+    for item @ (kind, name) in items {
+        match (a.get(item), b.get(item)) {
+            (None, Some(_)) => out.push(format!("{kind} {name} added")),
+            (Some(_), None) => out.push(format!("{kind} {name} removed")),
+            (Some(x), Some(y)) if x != y => out.push(format!("{kind} {name} changed")),
+            _ => {}
+        }
+    }
 }
 
 pub fn plan(new: &Project, deployed: Option<(&Project, i64)>, live: &Live) -> Plan {

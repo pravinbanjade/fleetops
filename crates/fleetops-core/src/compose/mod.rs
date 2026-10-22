@@ -3,6 +3,7 @@
 //! running. Pure; the deploy runner in `fleetops-api` does the I/O.
 
 pub mod docker;
+pub mod files;
 pub mod interp;
 pub mod model;
 pub mod parse;

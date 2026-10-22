@@ -92,6 +92,18 @@ pub fn container_body(project: &Project, svc: &Service, n: u32, revision: i64) -
     labels.insert(LABEL_CONFIG_FILES.into(), "fleetops".into());
     labels.insert(LABEL_HASH.into(), service_hash(svc));
     labels.insert(LABEL_REVISION.into(), revision.to_string());
+    let secrets: Vec<&str> = svc
+        .files
+        .iter()
+        .filter(|f| f.kind == FileKind::Secret)
+        .map(|f| f.target.as_str())
+        .collect();
+    if !secrets.is_empty() {
+        labels.insert(
+            super::files::LABEL_SECRETS.into(),
+            serde_json::to_string(&secrets).expect("strings serialise"),
+        );
+    }
 
     let mut exposed = Map::new();
     let mut bindings: Map<String, Value> = Map::new();
