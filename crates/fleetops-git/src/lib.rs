@@ -6,10 +6,12 @@
 pub mod testing;
 
 mod dockerignore;
+mod host_keys;
 mod keys;
 mod ssh;
 
 pub use keys::{generate_key, parse_key, KeyPair};
+pub use host_keys::host_key_text;
 pub use ssh::is_ssh_url;
 
 use fleetops_core::{Error, Result};
