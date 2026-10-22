@@ -51,6 +51,8 @@ docker run -d --name fleetops -p 9000:9000 \
   fleets/fleetops
 ```
 
+The same images are mirrored to `ghcr.io/pravinbanjade/fleetops` (and `fleetops-ee`, `fleetops-agent`) for hosts that hit Docker Hub's pull limits.
+
 Open <http://localhost:9000> and create the admin account. Setup locks if no admin is created within 10 minutes of starting, until the server restarts.
 
 The image runs as a non-root user on `distroless/static` for linux/amd64 and linux/arm64. It reaches the socket through the group that owns it, which `--group-add` grants. That group is read from inside a throwaway container because on Docker Desktop and Colima the socket lives in a VM and its group differs from the one on the host; the same command works on Linux.
@@ -131,6 +133,7 @@ With an Enterprise license, FleetOps also backs up daily to S3-compatible storag
 | | Community | Enterprise |
 |---|---|---|
 | License | Apache-2.0 | [FleetOps Enterprise License](ee/LICENSE) plus a subscription |
+| Price | Free, any number of nodes | Per node, in blocks of ten: see [pricing](https://fleetops.pravinb.com.np/pricing) |
 | Image | `fleets/fleetops` | `fleets/fleetops-ee` |
 | Docker, Kubernetes, Helm, agents | ✓ | ✓ |
 | Roles and namespace scoping | ✓ | ✓ |
@@ -144,7 +147,7 @@ With an Enterprise license, FleetOps also backs up daily to S3-compatible storag
 | Scheduled backups (S3, local directory) | | ✓ |
 | API tokens | | planned |
 
-The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license covers a number of nodes: each Docker or Podman host is one, and a Kubernetes cluster counts its nodes. At the limit, new environments are refused; a cluster that grows past it only warns admins. Users are never limited.
+Enterprise is for paying customers only: there is no free tier or trial license, since Community is already free on any number of nodes. The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license covers a number of nodes: each Docker or Podman host is one, and a Kubernetes cluster counts its nodes. At the limit, new environments are refused; a cluster that grows past it only warns admins. Users are never limited.
 
 Teams come with any Enterprise license: add a user to a team in **Admin → Teams** and they get its environment access, alongside their own. Each grant a user holds, direct or through a team, is checked on its own, so Operator on one namespace plus Viewer on the whole cluster is Operator on that namespace and Viewer everywhere else.
 

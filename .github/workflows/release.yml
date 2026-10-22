@@ -1,10 +1,12 @@
 name: Release
 
 # A tag vX.Y.Z, matching the workspace version in Cargo.toml, publishes the
-# multi-arch Community, Enterprise and agent images to Docker Hub, and a
-# GitHub release with static linux binaries of each and SHA-256 checksums.
-# Needs DOCKERHUB_USERNAME and DOCKERHUB_TOKEN as secrets of the
-# Production environment.
+# multi-arch Community, Enterprise and agent images to Docker Hub and the
+# GitHub Container Registry, and a GitHub release with static linux binaries
+# of each and SHA-256 checksums. Needs DOCKERHUB_USERNAME and DOCKERHUB_TOKEN
+# as secrets of the Production environment; GHCR uses the job's token. A
+# package pushed to GHCR for the first time is private: make it public once
+# in its package settings.
 
 on:
   push:
@@ -21,6 +23,8 @@ env:
   SERVER_IMAGE: docker.io/fleets/fleetops
   AGENT_IMAGE: docker.io/fleets/fleetops-agent
   EE_IMAGE: docker.io/fleets/fleetops-ee
+  # GHCR names must be lowercase, so the owner is spelled out.
+  GHCR: ghcr.io/pravinbanjade
 
 jobs:
   release:
@@ -31,6 +35,7 @@ jobs:
     environment: Production
     permissions:
       contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v7
 
@@ -52,11 +57,18 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - id: meta-server
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.SERVER_IMAGE }}
+          images: |
+            ${{ env.SERVER_IMAGE }}
+            ${{ env.GHCR }}/fleetops
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -64,7 +76,9 @@ jobs:
       - id: meta-agent
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.AGENT_IMAGE }}
+          images: |
+            ${{ env.AGENT_IMAGE }}
+            ${{ env.GHCR }}/fleetops-agent
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -72,7 +86,9 @@ jobs:
       - id: meta-ee
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.EE_IMAGE }}
+          images: |
+            ${{ env.EE_IMAGE }}
+            ${{ env.GHCR }}/fleetops-ee
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -152,7 +168,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           notes=$(cat <<EOF
-          Images for linux/amd64 and linux/arm64:
+          Images for linux/amd64 and linux/arm64, on Docker Hub and mirrored to $GHCR:
 
           - \`$SERVER_IMAGE:$VERSION\`: Community, Apache-2.0
           - \`$EE_IMAGE:$VERSION\`: Enterprise, needs a license
