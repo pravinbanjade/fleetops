@@ -175,6 +175,9 @@ pub async fn build(
         context,
         tag,
         dockerfile: dockerfile.filter(|d| !d.is_empty()),
+        args: Default::default(),
+        target: None,
+        labels: Default::default(),
     });
     start_task(
         &s,

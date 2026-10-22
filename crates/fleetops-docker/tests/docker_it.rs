@@ -716,11 +716,58 @@ mod streams {
             ),
             tag: Some(tag.clone()),
             dockerfile: None,
+            args: Default::default(),
+            target: None,
+            labels: Default::default(),
         };
         let items: Vec<_> = d.build_image(spec).map(|r| r.unwrap()).collect().await;
         let text: String = items.iter().filter_map(|v| v["stream"].as_str()).collect();
         assert!(text.contains("built-ok-42"), "{text}");
         let img = d.inspect_image(&tag).await.unwrap();
+        d.remove_image(img["Id"].as_str().unwrap(), true)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn build_passes_args_target_and_labels() {
+        let d = docker().await;
+        let tag = format!("fleetops-it-args:{}", std::process::id());
+        let spec = BuildSpec {
+            context: BuildContext::Dockerfile(
+                b"FROM alpine:3.20 AS a\nARG V\nRUN echo $V > /v\nFROM a AS b\nRUN echo b > /b\n"
+                    .to_vec(),
+            ),
+            tag: Some(tag.clone()),
+            dockerfile: None,
+            args: [("V".to_string(), "42".to_string())].into(),
+            target: Some("a".into()),
+            labels: [("io.fleetops.stack.project".to_string(), "it".to_string())].into(),
+        };
+        let items: Vec<_> = d.build_image(spec).collect().await;
+        assert!(items.iter().all(|i| i.is_ok()), "{items:?}");
+        let img = d.inspect_image(&tag).await.unwrap();
+        assert_eq!(img["Config"]["Labels"]["io.fleetops.stack.project"], "it");
+        let name = unique("args");
+        let mut c = sleeper(&name);
+        c.image = tag.clone();
+        c.cmd = Some(vec![
+            "sh".into(),
+            "-c".into(),
+            "cat /v; ls /b 2>&1 || true".into(),
+        ]);
+        let id = run_to_exit(&d, &name, c).await;
+        let opts = LogOptions {
+            follow: false,
+            ..Default::default()
+        };
+        let lines: Vec<_> = d.logs(&id, &opts).map(|l| l.unwrap().text).collect().await;
+        assert_eq!(lines[0], "42", "{lines:?}");
+        assert!(
+            lines[1].contains("No such file"),
+            "target a has no /b: {lines:?}"
+        );
+        d.remove_container(&id, true, false).await.unwrap();
         d.remove_image(img["Id"].as_str().unwrap(), true)
             .await
             .unwrap();
@@ -733,6 +780,9 @@ mod streams {
             context: BuildContext::Dockerfile(b"FROM alpine:3.20\nRUN exit 7\n".to_vec()),
             tag: None,
             dockerfile: None,
+            args: Default::default(),
+            target: None,
+            labels: Default::default(),
         };
         let items: Vec<_> = d.build_image(spec).collect().await;
         assert!(

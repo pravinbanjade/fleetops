@@ -284,6 +284,15 @@ impl StreamOps for LocalDocker {
         if let Some(t) = &spec.tag {
             o = o.t(t);
         }
+        if !spec.args.is_empty() {
+            o = o.buildargs(&spec.args.clone().into_iter().collect());
+        }
+        if let Some(t) = &spec.target {
+            o = o.target(t);
+        }
+        if !spec.labels.is_empty() {
+            o = o.labels(&spec.labels.clone().into_iter().collect());
+        }
         let opts = o.build();
         let client = self.client.clone();
         // build_image borrows the client, so it runs on a task that owns one.

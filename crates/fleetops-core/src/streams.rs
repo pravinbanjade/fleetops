@@ -165,6 +165,12 @@ pub struct BuildSpec {
     pub tag: Option<String>,
     /// Dockerfile path inside the context; default `Dockerfile`.
     pub dockerfile: Option<String>,
+    /// `--build-arg`s.
+    pub args: std::collections::BTreeMap<String, String>,
+    /// The stage to stop at.
+    pub target: Option<String>,
+    /// Labels on the built image.
+    pub labels: std::collections::BTreeMap<String, String>,
 }
 
 #[async_trait]

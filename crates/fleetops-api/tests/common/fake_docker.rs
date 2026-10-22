@@ -29,6 +29,8 @@ pub struct FakeState {
     pub inspect_state: BTreeMap<String, Value>,
     /// Top-level fields merged into `inspect_container`, by id or name.
     pub inspect_extra: BTreeMap<String, Value>,
+    /// Images built (or added) here: tag → labels.
+    pub images: BTreeMap<String, BTreeMap<String, String>>,
     /// Every `put_archive` tar, by container id, oldest first.
     pub archives: Vec<(String, Vec<u8>)>,
     next_id: usize,
@@ -381,15 +383,28 @@ impl ContainerOps for FakeDocker {
 #[async_trait]
 impl ImageOps for FakeDocker {
     async fn list_images(&self) -> Result<Vec<ImageSummary>> {
-        Ok(vec![ImageSummary {
+        let mut out = vec![ImageSummary {
             id: "sha256:alpine".into(),
             repo_tags: vec!["alpine:3.20".into()],
             size: 1,
             created: 0,
             in_use: true,
-        }])
+        }];
+        for tag in self.state.lock().unwrap().images.keys() {
+            out.push(ImageSummary {
+                id: format!("sha256:{tag}"),
+                repo_tags: vec![tag.clone()],
+                size: 1,
+                created: 0,
+                in_use: false,
+            });
+        }
+        Ok(out)
     }
     async fn inspect_image(&self, id: &str) -> Result<Value> {
+        if let Some(labels) = self.state.lock().unwrap().images.get(id) {
+            return Ok(json!({"Id": format!("sha256:{id}"), "Config": {"Labels": labels}}));
+        }
         if id != "sha256:alpine" {
             return Err(not_found("image", id));
         }
@@ -403,7 +418,8 @@ impl ImageOps for FakeDocker {
         Ok(())
     }
     async fn remove_image(&self, id: &str, _force: bool) -> Result<Vec<String>> {
-        self.call(format!("rmi {id}"));
+        self.check(format!("rmi {id}"))?;
+        self.state.lock().unwrap().images.remove(id);
         Ok(vec![id.to_string()])
     }
     async fn prune_images(&self, all: bool) -> Result<PruneReport> {
@@ -826,6 +842,15 @@ impl StreamOps for FakeDocker {
     /// A Dockerfile containing `fail` fails the way a failing RUN step does.
     fn build_image(&self, spec: BuildSpec) -> BoxStream<Value> {
         let fails = matches!(&spec.context, BuildContext::Dockerfile(d) if String::from_utf8_lossy(d).contains("fail"));
+        if !fails {
+            if let Some(tag) = &spec.tag {
+                self.state
+                    .lock()
+                    .unwrap()
+                    .images
+                    .insert(tag.clone(), spec.labels.clone());
+            }
+        }
         self.streams().builds.push(spec);
         let tail = if fails {
             Ok(
