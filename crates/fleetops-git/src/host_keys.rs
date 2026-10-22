@@ -74,8 +74,12 @@ mod tests {
         // A pin never overrides the published key.
         assert!(check_host_key("github.com", Some("ssh-ed25519 SHA256:x"), gh).is_ok());
         assert_eq!(
-            check_host_key("github.com", Some("ssh-ed25519 SHA256:x"), "ssh-ed25519 SHA256:x")
-                .unwrap_err(),
+            check_host_key(
+                "github.com",
+                Some("ssh-ed25519 SHA256:x"),
+                "ssh-ed25519 SHA256:x"
+            )
+            .unwrap_err(),
             "the host key of github.com does not match its published key (now SHA256:x)"
         );
         assert!(check_host_key("git.acme", None, "ssh-ed25519 SHA256:a").is_ok());

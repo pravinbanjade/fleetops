@@ -53,7 +53,10 @@ pub fn parse_key(text: &str) -> Result<KeyPair, String> {
     match key.algorithm() {
         Algorithm::Ed25519 | Algorithm::Ecdsa { .. } => Ok(pair(&key)),
         Algorithm::Rsa { .. } => Err("RSA keys are not supported: use ed25519".into()),
-        a => Err(format!("{} keys are not supported: use ed25519", a.as_str())),
+        a => Err(format!(
+            "{} keys are not supported: use ed25519",
+            a.as_str()
+        )),
     }
 }
 

@@ -48,6 +48,9 @@ fn git_source(git: &GitRecord, token: Option<String>) -> fleetops_git::Source {
         branch: git.branch.clone(),
         path: git.path.clone(),
         token,
+        ssh_key: None,
+        host_key: None,
+        seen_host_key: Default::default(),
     }
 }
 

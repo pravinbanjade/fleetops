@@ -345,3 +345,230 @@ async fn cgi(
     }
     resp.body(Body::from(rest.to_vec())).unwrap()
 }
+
+/// How [`SshServer`] behaves.
+#[derive(Clone, Default)]
+pub struct SshOpts {
+    /// Public key lines (`ssh-ed25519 AAAA… comment`) allowed in.
+    pub authorized: Vec<String>,
+    /// Passes the client's `GIT_PROTOCOL` on, so it speaks protocol v2;
+    /// otherwise v0, as OpenSSH without `AcceptEnv`.
+    pub accept_env: bool,
+    /// Each `git-upload-pack` takes a permit before it starts, and keeps it
+    /// unless its client has disconnected by then.
+    pub hold: Option<Arc<tokio::sync::Semaphore>>,
+}
+
+/// An SSH server that runs `git upload-pack` on repositories under a root,
+/// with a fixed host key per server.
+pub struct SshServer {
+    pub addr: SocketAddr,
+    /// `<algorithm> SHA256:…`, as [`crate::host_key_text`] gives it.
+    pub host_key: String,
+    /// SSH sessions open now.
+    pub sessions: Arc<AtomicUsize>,
+}
+
+impl SshServer {
+    pub async fn start(root: &Path, opts: SshOpts) -> Self {
+        use russh::server::Server as _;
+        let key =
+            russh::keys::PrivateKey::from_openssh(crate::generate_key("host").private).unwrap();
+        let host_key = crate::host_key_text(key.public_key());
+        let config = Arc::new(russh::server::Config {
+            keys: vec![key],
+            auth_rejection_time: Duration::from_millis(10),
+            auth_rejection_time_initial: Some(Duration::ZERO),
+            ..Default::default()
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let sessions = Arc::new(AtomicUsize::new(0));
+        let mut server = SshShared {
+            sessions: sessions.clone(),
+            root: root.to_path_buf(),
+            opts: Arc::new(opts),
+            channels: Default::default(),
+            protocol: None,
+            session: None,
+        };
+        tokio::spawn(async move {
+            let _ = server.run_on_socket(config, &listener).await;
+        });
+        Self {
+            addr,
+            host_key,
+            sessions,
+        }
+    }
+
+    pub fn url(&self, repo: &str) -> String {
+        format!("ssh://git@127.0.0.1:{}/{repo}", self.addr.port())
+    }
+}
+
+type SshChannels = Arc<
+    std::sync::Mutex<
+        std::collections::HashMap<russh::ChannelId, russh::Channel<russh::server::Msg>>,
+    >,
+>;
+
+#[derive(Clone)]
+struct SshShared {
+    root: PathBuf,
+    opts: Arc<SshOpts>,
+    channels: SshChannels,
+    /// The client's `GIT_PROTOCOL`, when passed on.
+    protocol: Option<String>,
+    sessions: Arc<AtomicUsize>,
+    /// Dropped with the client's session, which tells held fetches it went.
+    session: Option<Arc<SessionGuard>>,
+}
+
+struct SessionGuard {
+    gone: tokio::sync::watch::Sender<()>,
+    sessions: Arc<AtomicUsize>,
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        self.sessions.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl russh::server::Server for SshShared {
+    type Handler = Self;
+    fn new_client(&mut self, _: Option<SocketAddr>) -> Self {
+        Self {
+            channels: Default::default(),
+            protocol: None,
+            session: Some(Arc::new(SessionGuard {
+                gone: tokio::sync::watch::channel(()).0,
+                sessions: {
+                    self.sessions.fetch_add(1, Ordering::SeqCst);
+                    self.sessions.clone()
+                },
+            })),
+            ..self.clone()
+        }
+    }
+}
+
+impl russh::server::Handler for SshShared {
+    type Error = russh::Error;
+
+    async fn auth_publickey(
+        &mut self,
+        _user: &str,
+        key: &russh::keys::PublicKey,
+    ) -> Result<russh::server::Auth, Self::Error> {
+        let line = key.to_openssh().unwrap();
+        let sent = line.split(' ').take(2).collect::<Vec<_>>();
+        let ok = self
+            .opts
+            .authorized
+            .iter()
+            .any(|a| a.split(' ').take(2).collect::<Vec<_>>() == sent);
+        Ok(if ok {
+            russh::server::Auth::Accept
+        } else {
+            russh::server::Auth::reject()
+        })
+    }
+
+    async fn channel_open_session(
+        &mut self,
+        channel: russh::Channel<russh::server::Msg>,
+        reply: russh::server::ChannelOpenHandle,
+        _: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        self.channels.lock().unwrap().insert(channel.id(), channel);
+        reply.accept().await;
+        Ok(())
+    }
+
+    async fn env_request(
+        &mut self,
+        channel: russh::ChannelId,
+        name: &str,
+        value: &str,
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        if self.opts.accept_env && name == "GIT_PROTOCOL" {
+            self.protocol = Some(value.to_string());
+            session.channel_success(channel)?;
+        } else {
+            session.channel_failure(channel)?;
+        }
+        Ok(())
+    }
+
+    async fn exec_request(
+        &mut self,
+        id: russh::ChannelId,
+        data: &[u8],
+        session: &mut russh::server::Session,
+    ) -> Result<(), Self::Error> {
+        let command = String::from_utf8_lossy(data).to_string();
+        let path = command
+            .strip_prefix("git-upload-pack '")
+            .and_then(|p| p.strip_suffix('\''))
+            .map(|p| p.replace(r"'\''", "'"));
+        let channel = self.channels.lock().unwrap().remove(&id);
+        let (Some(path), Some(channel)) = (path, channel) else {
+            session.channel_failure(id)?;
+            return Ok(());
+        };
+        session.channel_success(id)?;
+        let handle = session.handle();
+        let dir = self.root.join(path.trim_start_matches('/'));
+        let (hold, protocol) = (self.opts.hold.clone(), self.protocol.clone());
+        let mut gone = self
+            .session
+            .as_ref()
+            .expect("a client's handler")
+            .gone
+            .subscribe();
+        tokio::spawn(async move {
+            if let Some(h) = &hold {
+                // A client that goes while held gives its permit up; one
+                // still there keeps it for good.
+                let permit = tokio::select! {
+                    p = h.acquire() => p.unwrap(),
+                    _ = gone.changed() => return,
+                };
+                permit.forget();
+            }
+            let mut cmd = tokio::process::Command::new("git");
+            cmd.arg("upload-pack")
+                .arg(&dir)
+                .env_remove("GIT_PROTOCOL")
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .kill_on_drop(true);
+            if let Some(p) = protocol {
+                cmd.env("GIT_PROTOCOL", p);
+            }
+            let mut child = cmd.spawn().expect("git upload-pack");
+            let (mut stdin, mut stdout) =
+                (child.stdin.take().unwrap(), child.stdout.take().unwrap());
+            let (mut rx, mut tx) = tokio::io::split(channel.into_stream());
+            let input = tokio::spawn(async move {
+                let _ = tokio::io::copy(&mut rx, &mut stdin).await;
+            });
+            let _ = tokio::io::copy(&mut stdout, &mut tx).await;
+            let _ = tx.flush().await;
+            let code = child
+                .wait()
+                .await
+                .map(|s| s.code().unwrap_or(1))
+                .unwrap_or(1);
+            input.abort();
+            let _ = handle.exit_status_request(id, code as u32).await;
+            let _ = handle.eof(id).await;
+            let _ = handle.close(id).await;
+        });
+        Ok(())
+    }
+}

@@ -28,6 +28,7 @@ tracing.workspace = true
 url.workspace = true
 base64.workspace = true
 rand.workspace = true
+tokio-util = { workspace = true, features = ["io-util"] }
 axum = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 

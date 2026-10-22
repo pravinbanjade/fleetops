@@ -14,6 +14,9 @@ fn source(server: &GitServer, branch: &str, path: &str, token: Option<&str>) -> 
         branch: branch.into(),
         path: path.into(),
         token: token.map(Into::into),
+        ssh_key: None,
+        host_key: None,
+        seen_host_key: Default::default(),
     }
 }
 
@@ -170,6 +173,9 @@ async fn errors_never_contain_token() {
         branch: "main".into(),
         path: "compose.yaml".into(),
         token: Some(TOKEN.into()),
+        ssh_key: None,
+        host_key: None,
+        seen_host_key: Default::default(),
     };
     errors.push(
         fetch_file(&cache.path().join("2"), &gone, Limits::default())

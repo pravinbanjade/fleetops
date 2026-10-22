@@ -10,9 +10,9 @@ mod host_keys;
 mod keys;
 mod ssh;
 
-pub use keys::{generate_key, parse_key, KeyPair};
 pub use host_keys::host_key_text;
-pub use ssh::is_ssh_url;
+pub use keys::{generate_key, parse_key, KeyPair};
+pub use ssh::{is_ssh_url, SeenHostKey};
 
 use fleetops_core::{Error, Result};
 use std::path::{Path, PathBuf};
@@ -27,6 +27,12 @@ pub struct Source {
     pub branch: String,
     pub path: String,
     pub token: Option<String>,
+    /// An SSH URL's private key (OpenSSH text).
+    pub ssh_key: Option<String>,
+    /// The SSH host key pinned for the stack (`<algorithm> SHA256:…`).
+    pub host_key: Option<String>,
+    /// The SSH host key the fetch saw.
+    pub seen_host_key: SeenHostKey,
 }
 
 impl std::fmt::Debug for Source {
@@ -36,6 +42,8 @@ impl std::fmt::Debug for Source {
             .field("branch", &self.branch)
             .field("path", &self.path)
             .field("token", &self.token.as_ref().map(|_| "***"))
+            .field("ssh_key", &self.ssh_key.as_ref().map(|_| "***"))
+            .field("host_key", &self.host_key)
             .finish()
     }
 }
@@ -171,6 +179,10 @@ pub fn validate_path(p: &str) -> std::result::Result<(), String> {
 enum Fail {
     NeedsToken,
     RefusedToken,
+    NeedsKey,
+    RefusedKey,
+    /// The SSH host key was refused, with the message.
+    HostKey(String),
     BranchMissing(String),
     Invalid(String),
     Network(String),
@@ -205,12 +217,17 @@ pub async fn fetch_file(cache: &Path, src: &Source, limits: Limits) -> Result<Fe
     if packs(cache) >= MAX_PACKS {
         let _ = std::fs::remove_dir_all(cache);
     }
+    let start = Instant::now();
+    let (ssh, closer) = match ssh_connect(src, limits.timeout).await {
+        Ok(Some((conn, closer))) => (Some(conn), Some(closer)),
+        Ok(None) => (None, None),
+        Err(e) => return Err(fetch_error(e, src.token.as_deref())),
+    };
     let interrupt = Arc::new(AtomicBool::new(false));
     let mut job = tokio::task::spawn_blocking({
         let (cache, src, interrupt) = (cache.to_path_buf(), src.clone(), interrupt.clone());
-        move || fetch_blocking(&cache, &src, limits.max_file, &interrupt)
+        move || fetch_blocking(&cache, &src, ssh, limits.max_file, &interrupt)
     });
-    let start = Instant::now();
     let mut tick = tokio::time::interval(Duration::from_millis(250));
     let outcome = loop {
         tokio::select! {
@@ -229,6 +246,10 @@ pub async fn fetch_file(cache: &Path, src: &Source, limits: Limits) -> Result<Fe
         Ok(j) => j,
         Err(cut) => {
             interrupt.store(true, Ordering::Relaxed);
+            // A read blocked on the SSH channel ends when the session does.
+            if let Some(c) = &closer {
+                c.close().await;
+            }
             // The blocking fetch notices the interrupt on its next read;
             // its partial cache goes once it has stopped, and the next fetch
             // into this directory waits for that.
@@ -247,25 +268,52 @@ pub async fn fetch_file(cache: &Path, src: &Source, limits: Limits) -> Result<Fe
             ));
         }
     };
-    let scrub = |m: String| scrub(m, src.token.as_deref());
+    if let Some(c) = &closer {
+        c.close().await;
+    }
     match joined.map_err(|e| Error::Internal(format!("git fetch stopped: {e}")))? {
         Ok(f) => Ok(f),
-        Err(Fail::NeedsToken) => Err(Error::Invalid(
-            "the repository needs an access token".into(),
-        )),
-        Err(Fail::RefusedToken) => Err(Error::Invalid(
-            "the repository refused the credentials".into(),
-        )),
-        Err(Fail::BranchMissing(b)) => Err(Error::Invalid(format!("branch '{b}' not found"))),
-        Err(Fail::Invalid(m)) => Err(Error::Invalid(scrub(m))),
-        Err(Fail::Network(m)) => {
+        Err(f @ Fail::Network(_)) => {
             // A cache a failed fetch may have left half-written starts again.
             let _ = std::fs::remove_dir_all(cache);
-            Err(Error::Upstream {
-                status: 502,
-                message: scrub(format!("git fetch: {m}")),
-            })
+            Err(fetch_error(f, src.token.as_deref()))
         }
+        Err(f) => Err(fetch_error(f, src.token.as_deref())),
+    }
+}
+
+/// The SSH session of an SSH source, connected within `timeout`.
+async fn ssh_connect(
+    src: &Source,
+    timeout: Duration,
+) -> std::result::Result<Option<(ssh::SshConnection, ssh::Closer)>, Fail> {
+    if !ssh::is_ssh_url(&src.url) {
+        return Ok(None);
+    }
+    match tokio::time::timeout(timeout, ssh::connect(src)).await {
+        Ok(session) => Ok(Some(session?.split())),
+        Err(_) => Err(Fail::Network(format!(
+            "connecting to the SSH server took longer than {} seconds",
+            timeout.as_secs()
+        ))),
+    }
+}
+
+/// What a failed fetch says, with `token` scrubbed from it.
+fn fetch_error(f: Fail, token: Option<&str>) -> Error {
+    let scrub = |m: String| scrub(m, token);
+    match f {
+        Fail::NeedsToken => Error::Invalid("the repository needs an access token".into()),
+        Fail::RefusedToken => Error::Invalid("the repository refused the credentials".into()),
+        Fail::NeedsKey => Error::Invalid("the repository needs an SSH key".into()),
+        Fail::RefusedKey => Error::Invalid("the repository refused the SSH key".into()),
+        Fail::HostKey(m) => Error::Invalid(m),
+        Fail::BranchMissing(b) => Error::Invalid(format!("branch '{b}' not found")),
+        Fail::Invalid(m) => Error::Invalid(scrub(m)),
+        Fail::Network(m) => Error::Upstream {
+            status: 502,
+            message: scrub(format!("git fetch: {m}")),
+        },
     }
 }
 
@@ -311,6 +359,7 @@ fn open_cache(cache: &Path, url: &str) -> std::result::Result<gix::Repository, F
 fn fetch_blocking(
     cache: &Path,
     src: &Source,
+    ssh: Option<ssh::SshConnection>,
     max_file: u64,
     interrupt: &AtomicBool,
 ) -> std::result::Result<Fetched, Fail> {
@@ -318,15 +367,17 @@ fn fetch_blocking(
     let branch = &src.branch;
     let tracking = format!("refs/remotes/origin/{branch}");
     let spec = format!("+refs/heads/{branch}:{tracking}");
-    fetch_with(&repo, src, &spec, Some(branch), interrupt)?;
+    fetch_with(&repo, src, ssh, &spec, Some(branch), interrupt)?;
     read_file(&repo, &tracking, &src.path, max_file)
 }
 
-/// Fetches `spec` at depth 1 with the source's credentials. With
-/// `branch`, a branch the remote does not advertise is `BranchMissing`.
+/// Fetches `spec` at depth 1 with the source's credentials, over `ssh`
+/// when given. With `branch`, a branch the remote does not advertise is
+/// `BranchMissing`.
 fn fetch_with(
     repo: &gix::Repository,
     src: &Source,
+    ssh: Option<ssh::SshConnection>,
     spec: &str,
     branch: Option<&str>,
     interrupt: &AtomicBool,
@@ -337,6 +388,14 @@ fn fetch_with(
         .map_err(net)?
         .with_refspecs([spec], gix::remote::Direction::Fetch)
         .map_err(net)?;
+    if let Some(conn) = ssh {
+        return receive(
+            remote.to_connection_with_transport(conn),
+            branch,
+            interrupt,
+            net,
+        );
+    }
     let asked = Arc::new(AtomicBool::new(false));
     let token = src.token.clone().filter(|t| !t.is_empty());
     let connection = remote
@@ -370,9 +429,18 @@ fn fetch_with(
             Fail::Network(e.to_string())
         }
     };
+    receive(connection, branch, interrupt, auth_fail)
+}
+
+fn receive<T: gix::protocol::transport::client::blocking_io::Transport>(
+    connection: gix::remote::Connection<'_, '_, '_, T>,
+    branch: Option<&str>,
+    interrupt: &AtomicBool,
+    fail: impl Fn(gix::Error) -> Fail,
+) -> std::result::Result<(), Fail> {
     let prepare = connection
         .prepare_fetch(gix::progress::Discard, Default::default())
-        .map_err(auth_fail)?;
+        .map_err(&fail)?;
     if let Some(branch) = branch {
         let wanted = format!("refs/heads/{branch}");
         let advertised = prepare
@@ -389,7 +457,7 @@ fn fetch_with(
             std::num::NonZeroU32::MIN,
         ))
         .receive(gix::progress::Discard, interrupt)
-        .map_err(auth_fail)?;
+        .map_err(&fail)?;
     Ok(())
 }
 
@@ -675,6 +743,12 @@ pub async fn fetch_commit(cache: &Path, src: &Source, commit: &str, limits: Limi
     let _ = rustls::crypto::ring::default_provider().install_default();
     let _guard = dir_lock(cache).lock_owned().await;
     let short = commit[..commit.len().min(7)].to_string();
+    let start = Instant::now();
+    let (ssh, closer) = match ssh_connect(src, limits.timeout).await {
+        Ok(Some((conn, closer))) => (Some(conn), Some(closer)),
+        Ok(None) => (None, None),
+        Err(f) => return Err(commit_error(f, &short)),
+    };
     let interrupt = Arc::new(AtomicBool::new(false));
     let job = tokio::task::spawn_blocking({
         let (cache, src, commit, interrupt) = (
@@ -686,25 +760,34 @@ pub async fn fetch_commit(cache: &Path, src: &Source, commit: &str, limits: Limi
         move || {
             let repo = open_cache(&cache, &src.url)?;
             let spec = format!("{commit}:refs/fleetops/commits/{commit}");
-            fetch_with(&repo, &src, &spec, None, &interrupt)
+            fetch_with(&repo, &src, ssh, &spec, None, &interrupt)
         }
     });
-    let joined = match tokio::time::timeout(limits.timeout, job).await {
+    let left = limits.timeout.saturating_sub(start.elapsed());
+    let joined = match tokio::time::timeout(left, job).await {
         Ok(j) => j.map_err(|e| Error::Internal(format!("git fetch stopped: {e}")))?,
         Err(_) => {
             interrupt.store(true, Ordering::Relaxed);
+            if let Some(c) = &closer {
+                c.close().await;
+            }
             return Err(Error::Invalid(format!("commit {short} cannot be fetched")));
         }
     };
-    match joined {
-        Ok(()) => Ok(()),
-        Err(Fail::NeedsToken) => Err(Error::Invalid(
-            "the repository needs an access token".into(),
-        )),
-        Err(Fail::RefusedToken) => Err(Error::Invalid(
-            "the repository refused the credentials".into(),
-        )),
-        Err(_) => Err(Error::Invalid(format!("commit {short} cannot be fetched"))),
+    if let Some(c) = &closer {
+        c.close().await;
+    }
+    joined.map_err(|f| commit_error(f, &short))
+}
+
+fn commit_error(f: Fail, short: &str) -> Error {
+    match f {
+        f @ (Fail::NeedsToken
+        | Fail::RefusedToken
+        | Fail::NeedsKey
+        | Fail::RefusedKey
+        | Fail::HostKey(_)) => fetch_error(f, None),
+        _ => Error::Invalid(format!("commit {short} cannot be fetched")),
     }
 }
 
@@ -894,7 +977,11 @@ mod tests {
             branch: "main".into(),
             path: "compose.yaml".into(),
             token: Some("s3cret".into()),
+            ssh_key: Some("-----BEGIN OPENSSH PRIVATE KEY-----".into()),
+            host_key: None,
+            seen_host_key: Default::default(),
         };
         assert!(!format!("{s:?}").contains("s3cret"));
+        assert!(!format!("{s:?}").contains("PRIVATE"));
     }
 }

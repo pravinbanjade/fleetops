@@ -170,6 +170,9 @@ async fn sync_fetched(
         branch: git.branch.clone(),
         path: git.path.clone(),
         token: s.store.stack_git_token(stack.id).await?,
+        ssh_key: None,
+        host_key: None,
+        seen_host_key: Default::default(),
     };
     let cache = cache_dir(s, stack.id)?;
     let fetched = match fleetops_git::fetch_file(&cache, &source, s.config.git_limits).await {
