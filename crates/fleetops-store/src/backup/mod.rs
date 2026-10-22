@@ -51,6 +51,7 @@ pub fn community_sealed() -> Vec<SealedColumn> {
         SealedColumn::new("stack_drafts", "variables", "stack_id", "stack:{id}"),
         SealedColumn::new("stack_revisions", "variables", "id", "stack-revision:{id}"),
         SealedColumn::new("stack_git", "token", "stack_id", "stack-git-token:{id}"),
+        SealedColumn::new("stack_git", "ssh_key", "stack_id", "stack-git-key:{id}"),
         SealedColumn::new("stack_files", "value", "id", "stack-file:{id}"),
         SealedColumn::new(
             "stack_revision_files",

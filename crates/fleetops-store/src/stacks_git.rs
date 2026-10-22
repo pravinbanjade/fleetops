@@ -22,6 +22,12 @@ pub struct GitRecord {
     pub paused: bool,
     /// Whether an access token is stored (it is never returned).
     pub has_token: bool,
+    /// Whether an SSH key is stored (the private key is never returned).
+    pub has_key: bool,
+    /// The stored SSH key's public line, to add to the git host.
+    pub ssh_public_key: Option<String>,
+    /// The SSH host key pinned for the stack (`<algorithm> SHA256:…`).
+    pub ssh_host_key: Option<String>,
     pub last_fetched_commit: Option<String>,
     /// A fetched commit whose Compose file is not deployed yet.
     pub pending_commit: Option<String>,
@@ -41,6 +47,14 @@ pub struct GitSettings {
     pub auto_deploy: bool,
 }
 
+/// What saving settings does to the stored SSH key.
+#[derive(Debug, Clone, Copy)]
+pub enum KeyChange<'a> {
+    Keep,
+    Clear,
+    Set { private: &'a str, public: &'a str },
+}
+
 /// What saving settings does to the stored token.
 #[derive(Debug, Clone, Copy)]
 pub enum TokenChange<'a> {
@@ -50,11 +64,16 @@ pub enum TokenChange<'a> {
 }
 
 const GIT_COLS: &str = "stack_id, url, branch, path, sync, poll_seconds, auto_deploy, paused,
-    token IS NOT NULL AS has_token, last_fetched_commit, pending_commit, last_sync_at,
+    token IS NOT NULL AS has_token, ssh_key IS NOT NULL AS has_key, ssh_public_key, ssh_host_key,
+    last_fetched_commit, pending_commit, last_sync_at,
     last_sync_error, updated_at";
 
 fn token_aad(stack_id: i64) -> Vec<u8> {
     format!("stack-git-token:{stack_id}").into_bytes()
+}
+
+fn key_aad(stack_id: i64) -> Vec<u8> {
+    format!("stack-git-key:{stack_id}").into_bytes()
 }
 
 fn secret_aad(stack_id: i64) -> Vec<u8> {
@@ -71,14 +90,39 @@ impl Store {
             .map_err(|_| Error::Internal(format!("the stack's {what} is corrupt")))
     }
 
-    /// Attaches or updates the stack's git source and marks the stack `git`.
-    /// A new source needs `new_secret`. Changing the URL, branch or path
-    /// forgets what was fetched.
+    /// [`Self::set_stack_git_with`], keeping the stored SSH key.
     pub async fn set_stack_git(
         &self,
         stack_id: i64,
         settings: &GitSettings,
         token: TokenChange<'_>,
+        new_secret: Option<&str>,
+        user: Option<i64>,
+        now: i64,
+    ) -> Result<GitRecord> {
+        self.set_stack_git_with(
+            stack_id,
+            settings,
+            token,
+            KeyChange::Keep,
+            new_secret,
+            user,
+            now,
+        )
+        .await
+    }
+
+    /// Attaches or updates the stack's git source and marks the stack `git`.
+    /// A new source needs `new_secret`. Changing the URL, branch or path
+    /// forgets what was fetched; changing the URL also forgets the pinned
+    /// host key.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn set_stack_git_with(
+        &self,
+        stack_id: i64,
+        settings: &GitSettings,
+        token: TokenChange<'_>,
+        key: KeyChange<'_>,
         new_secret: Option<&str>,
         user: Option<i64>,
         now: i64,
@@ -139,6 +183,13 @@ impl Store {
                 .execute(&mut *tx)
                 .await
                 .map_err(db_err)?;
+                if url != settings.url {
+                    sqlx::query("UPDATE stack_git SET ssh_host_key = NULL WHERE stack_id = ?")
+                        .bind(stack_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(db_err)?;
+                }
                 if moved {
                     sqlx::query(
                         "UPDATE stack_git SET last_fetched_commit = NULL, pending_commit = NULL,
@@ -163,6 +214,23 @@ impl Store {
                         .map_err(db_err)?;
                 }
             }
+        }
+        let key = match key {
+            KeyChange::Keep => None,
+            KeyChange::Clear => Some((None, None)),
+            KeyChange::Set { private, public } => Some((
+                Some(self.secrets.seal(&key_aad(stack_id), private.as_bytes())),
+                Some(public),
+            )),
+        };
+        if let Some((sealed, public)) = key {
+            sqlx::query("UPDATE stack_git SET ssh_key = ?, ssh_public_key = ? WHERE stack_id = ?")
+                .bind(sealed)
+                .bind(public)
+                .bind(stack_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
         }
         sqlx::query("UPDATE stacks SET source = 'git' WHERE id = ?")
             .bind(stack_id)
@@ -196,6 +264,30 @@ impl Store {
             .flatten()
             .map(|s| self.open_text(&token_aad(stack_id), &s, "git token"))
             .transpose()
+    }
+
+    pub async fn stack_git_key(&self, stack_id: i64) -> Result<Option<String>> {
+        let sealed: Option<Option<String>> =
+            sqlx::query_scalar("SELECT ssh_key FROM stack_git WHERE stack_id = ?")
+                .bind(stack_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(db_err)?;
+        sealed
+            .flatten()
+            .map(|s| self.open_text(&key_aad(stack_id), &s, "SSH key"))
+            .transpose()
+    }
+
+    /// Pins (or, with `None`, forgets) the stack's SSH host key.
+    pub async fn set_git_host_key(&self, stack_id: i64, key: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE stack_git SET ssh_host_key = ? WHERE stack_id = ?")
+            .bind(key)
+            .bind(stack_id)
+            .execute(&self.pool)
+            .await
+            .map_err(db_err)?;
+        Ok(())
     }
 
     pub async fn stack_git_secret(&self, stack_id: i64) -> Result<Option<String>> {

@@ -23,7 +23,7 @@ pub use sessions::{NewSession, SessionRecord};
 pub use settings::AUDIT_RETENTION_KEY;
 pub use stack_files::{RevisionFile, StoredFile};
 pub use stacks::{Builds, BuiltImage, Draft, RevisionRecord, StackRecord, STACK_REVISIONS_KEPT};
-pub use stacks_git::{GitRecord, GitSettings, TokenChange};
+pub use stacks_git::{GitRecord, GitSettings, KeyChange, TokenChange};
 
 use fleetops_core::{Error, Result};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};

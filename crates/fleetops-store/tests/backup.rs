@@ -712,3 +712,47 @@ async fn backup_restore_reseals_stack_files() {
     assert_eq!(s.stack_files(st.id).await.unwrap()[0].value, "s3cret");
     assert_eq!(s.revision_files(st.id, 1).await.unwrap(), vec![f]);
 }
+
+#[tokio::test]
+async fn stack_ssh_key_survives_restore() {
+    use fleetops_store::{GitSettings, KeyChange, TokenChange};
+    let dir = tempfile::tempdir().unwrap();
+    let (ka, kb) = (SecretKey::random(), SecretKey::random());
+    let store = populated(&ka, dir.path()).await;
+    let env = store.list_environments().await.unwrap()[0].id;
+    let st = store
+        .create_stack(env, "shop", "", &[], None, 1)
+        .await
+        .unwrap();
+    let settings = GitSettings {
+        url: "git@git.example:shop.git".into(),
+        branch: "main".into(),
+        path: "compose.yaml".into(),
+        sync: "manual".into(),
+        poll_seconds: 300,
+        auto_deploy: false,
+    };
+    store
+        .set_stack_git_with(
+            st.id,
+            &settings,
+            TokenChange::Keep,
+            KeyChange::Set {
+                private: "the private key",
+                public: "ssh-ed25519 AAAA",
+            },
+            Some("sec"),
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    let file = backup_file(&store, dir.path()).await;
+    let o = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o")).unwrap();
+    reseal(&o.db, &o.manifest, &kb).await.unwrap();
+    let s = Store::open(&o.db).await.unwrap().with_secret_key(&kb);
+    assert_eq!(
+        s.stack_git_key(st.id).await.unwrap().as_deref(),
+        Some("the private key")
+    );
+}

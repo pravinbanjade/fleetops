@@ -1,4 +1,4 @@
-use fleetops_store::{GitSettings, Store, TokenChange};
+use fleetops_store::{GitSettings, KeyChange, Store, TokenChange};
 
 async fn setup() -> (Store, i64) {
     let s = Store::in_memory().await.unwrap();
@@ -477,4 +477,164 @@ async fn record_git_fetch_stores_build_trees() {
         .await
         .unwrap();
     assert_eq!(s.draft_build_trees(id).await.unwrap(), trees);
+}
+
+fn ssh_settings(url: &str) -> GitSettings {
+    GitSettings {
+        url: url.into(),
+        ..settings("manual")
+    }
+}
+
+#[tokio::test]
+async fn ssh_key_is_sealed_and_kept() {
+    let (s, id) = setup().await;
+    let private = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n";
+    let rec = s
+        .set_stack_git_with(
+            id,
+            &ssh_settings("git@git.example:shop.git"),
+            TokenChange::Keep,
+            KeyChange::Set {
+                private,
+                public: "ssh-ed25519 AAAA fleetops:shop",
+            },
+            Some("sec"),
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    assert!(rec.has_key);
+    assert_eq!(
+        rec.ssh_public_key.as_deref(),
+        Some("ssh-ed25519 AAAA fleetops:shop")
+    );
+    let raw: String = sqlx::query_scalar("SELECT ssh_key FROM stack_git WHERE stack_id = ?")
+        .bind(id)
+        .fetch_one(s.pool())
+        .await
+        .unwrap();
+    assert!(raw.starts_with("v1:") && !raw.contains("OPENSSH"), "{raw}");
+    assert_eq!(s.stack_git_key(id).await.unwrap().as_deref(), Some(private));
+    // Settings saved without a key change keep it.
+    let rec = s
+        .set_stack_git(
+            id,
+            &ssh_settings("git@git.example:shop.git"),
+            TokenChange::Keep,
+            None,
+            None,
+            2,
+        )
+        .await
+        .unwrap();
+    assert!(rec.has_key);
+    let rec = s
+        .set_stack_git_with(
+            id,
+            &ssh_settings("git@git.example:shop.git"),
+            TokenChange::Keep,
+            KeyChange::Clear,
+            None,
+            None,
+            3,
+        )
+        .await
+        .unwrap();
+    assert!(!rec.has_key);
+    assert_eq!(rec.ssh_public_key, None);
+    assert_eq!(s.stack_git_key(id).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn new_source_with_a_key() {
+    let (s, id) = setup().await;
+    let rec = s
+        .set_stack_git_with(
+            id,
+            &ssh_settings("git@git.example:shop.git"),
+            TokenChange::Keep,
+            KeyChange::Set {
+                private: "k",
+                public: "p",
+            },
+            Some("sec"),
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    assert!(rec.has_key);
+    assert_eq!(s.stack_git_key(id).await.unwrap().as_deref(), Some("k"));
+}
+
+#[tokio::test]
+async fn host_key_recorded_and_reset() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &ssh_settings("git@h:r"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(s.stack_git(id).await.unwrap().unwrap().ssh_host_key, None);
+    s.set_git_host_key(id, Some("ssh-ed25519 SHA256:a"))
+        .await
+        .unwrap();
+    assert_eq!(
+        s.stack_git(id)
+            .await
+            .unwrap()
+            .unwrap()
+            .ssh_host_key
+            .as_deref(),
+        Some("ssh-ed25519 SHA256:a")
+    );
+    s.set_git_host_key(id, None).await.unwrap();
+    assert_eq!(s.stack_git(id).await.unwrap().unwrap().ssh_host_key, None);
+}
+
+#[tokio::test]
+async fn url_change_forgets_host_key() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &ssh_settings("git@h:r"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.set_git_host_key(id, Some("ssh-ed25519 SHA256:a"))
+        .await
+        .unwrap();
+    // Another branch on the same URL keeps it.
+    let other_branch = GitSettings {
+        branch: "dev".into(),
+        ..ssh_settings("git@h:r")
+    };
+    let rec = s
+        .set_stack_git(id, &other_branch, TokenChange::Keep, None, None, 2)
+        .await
+        .unwrap();
+    assert_eq!(rec.ssh_host_key.as_deref(), Some("ssh-ed25519 SHA256:a"));
+    let rec = s
+        .set_stack_git(
+            id,
+            &ssh_settings("git@other:r"),
+            TokenChange::Keep,
+            None,
+            None,
+            3,
+        )
+        .await
+        .unwrap();
+    assert_eq!(rec.ssh_host_key, None);
 }
