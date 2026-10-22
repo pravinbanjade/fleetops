@@ -1,4 +1,5 @@
-use fleetops_store::{Store, STACK_REVISIONS_KEPT};
+use fleetops_store::secrets::SecretBox;
+use fleetops_store::{RevisionFile, Store, STACK_REVISIONS_KEPT};
 
 async fn setup() -> (Store, i64) {
     let s = Store::in_memory().await.unwrap();
@@ -84,7 +85,7 @@ async fn variables_round_trip_exactly() {
         ("services: {}", vars(&["Z=1"]), 2)
     );
     let r = s
-        .create_revision(rec.id, COMPOSE, &v, "deploy", None, None, None, 3)
+        .create_revision(rec.id, COMPOSE, &v, "deploy", None, None, None, 3, &[])
         .await
         .unwrap();
     assert_eq!(s.revision_variables(rec.id, r.number).await.unwrap(), v);
@@ -98,11 +99,11 @@ async fn revision_numbers_increment() {
         .await
         .unwrap();
     let a = s
-        .create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1)
+        .create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
         .await
         .unwrap();
     let b = s
-        .create_revision(st.id, COMPOSE, &[], "rollback", Some(1), None, None, 2)
+        .create_revision(st.id, COMPOSE, &[], "rollback", Some(1), None, None, 2, &[])
         .await
         .unwrap();
     assert_eq!((a.number, b.number), (1, 2));
@@ -122,11 +123,11 @@ async fn finish_success_supersedes_previous() {
         .create_stack(env, "shop", COMPOSE, &[], None, 1)
         .await
         .unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1)
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
         .await
         .unwrap();
     s.finish_revision(st.id, 1, None).await.unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2)
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2, &[])
         .await
         .unwrap();
     s.finish_revision(st.id, 2, None).await.unwrap();
@@ -148,11 +149,11 @@ async fn finish_failure_keeps_deployed() {
         .create_stack(env, "shop", COMPOSE, &[], None, 1)
         .await
         .unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1)
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
         .await
         .unwrap();
     s.finish_revision(st.id, 1, None).await.unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2)
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2, &[])
         .await
         .unwrap();
     s.finish_revision(st.id, 2, Some("boom")).await.unwrap();
@@ -178,11 +179,11 @@ async fn deploying_revisions_lists_only_deploying() {
         .create_stack(env, "shop", COMPOSE, &[], None, 1)
         .await
         .unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1)
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
         .await
         .unwrap();
     s.finish_revision(st.id, 1, None).await.unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2)
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2, &[])
         .await
         .unwrap();
     let d = s.deploying_revisions().await.unwrap();
@@ -197,12 +198,12 @@ async fn prune_keeps_25_and_deployed() {
         .create_stack(env, "shop", COMPOSE, &[], None, 1)
         .await
         .unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1)
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
         .await
         .unwrap();
     s.finish_revision(st.id, 1, None).await.unwrap();
     for n in 2..=30 {
-        s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, n)
+        s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, n, &[])
             .await
             .unwrap();
         s.finish_revision(st.id, n, Some("x")).await.unwrap();
@@ -236,4 +237,147 @@ async fn variables_sealed_at_rest() {
         .unwrap();
     assert!(raw.starts_with("v1:"));
     assert!(!raw.contains("hunter2"));
+}
+
+#[tokio::test]
+async fn stack_files_round_trip_sealed() {
+    let (s, env) = setup().await;
+    let st = s
+        .create_stack(env, "shop", COMPOSE, &[], None, 1)
+        .await
+        .unwrap();
+    s.set_stack_file(st.id, "secret", "db_password", "hunter2", None, 5)
+        .await
+        .unwrap();
+    let files = s.stack_files(st.id).await.unwrap();
+    assert_eq!(files.len(), 1);
+    let f = &files[0];
+    assert_eq!(
+        (
+            f.kind.as_str(),
+            f.source.as_str(),
+            f.name.as_str(),
+            f.value.as_str(),
+            f.updated_at
+        ),
+        ("secret", "fleetops", "db_password", "hunter2", 5)
+    );
+    let (id, raw): (i64, String) = sqlx::query_as("SELECT id, value FROM stack_files")
+        .fetch_one(s.pool())
+        .await
+        .unwrap();
+    assert!(raw.starts_with("v1:") && !raw.contains("hunter2"));
+    let b = SecretBox::new(s.secret_key());
+    assert!(b.open(format!("stack-file:{id}").as_bytes(), &raw).is_ok());
+    assert!(b
+        .open(format!("stack-file:{}", id + 1).as_bytes(), &raw)
+        .is_err());
+}
+
+#[tokio::test]
+async fn set_stack_file_upserts_and_remove_reports() {
+    let (s, env) = setup().await;
+    let st = s
+        .create_stack(env, "shop", COMPOSE, &[], None, 1)
+        .await
+        .unwrap();
+    s.set_stack_file(st.id, "secret", "pw", "a", None, 1)
+        .await
+        .unwrap();
+    s.set_stack_file(st.id, "secret", "pw", "b", None, 2)
+        .await
+        .unwrap();
+    s.set_stack_file(st.id, "config", "pw", "c", None, 3)
+        .await
+        .unwrap();
+    let files = s.stack_files(st.id).await.unwrap();
+    let vals: Vec<(&str, &str, i64)> = files
+        .iter()
+        .map(|f| (f.kind.as_str(), f.value.as_str(), f.updated_at))
+        .collect();
+    assert_eq!(vals, vec![("config", "c", 3), ("secret", "b", 2)]);
+    assert!(s.remove_stack_file(st.id, "secret", "pw").await.unwrap());
+    assert!(!s.remove_stack_file(st.id, "secret", "pw").await.unwrap());
+    assert_eq!(s.stack_files(st.id).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn revision_snapshot_round_trip() {
+    let (s, env) = setup().await;
+    let st = s
+        .create_stack(env, "shop", COMPOSE, &[], None, 1)
+        .await
+        .unwrap();
+    let files = vec![
+        RevisionFile {
+            kind: "secret".into(),
+            name: "pw".into(),
+            value: "hunter2".into(),
+        },
+        RevisionFile {
+            kind: "config".into(),
+            name: "app".into(),
+            value: "x=1".into(),
+        },
+    ];
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &files)
+        .await
+        .unwrap();
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2, &[])
+        .await
+        .unwrap();
+    let mut got = s.revision_files(st.id, 1).await.unwrap();
+    got.sort_by(|a, b| a.kind.cmp(&b.kind));
+    assert_eq!(got, vec![files[1].clone(), files[0].clone()]);
+    assert!(s.revision_files(st.id, 2).await.unwrap().is_empty());
+    let raw: Vec<String> = sqlx::query_scalar("SELECT value FROM stack_revision_files")
+        .fetch_all(s.pool())
+        .await
+        .unwrap();
+    assert!(raw
+        .iter()
+        .all(|r| r.starts_with("v1:") && !r.contains("hunter2")));
+}
+
+#[tokio::test]
+async fn stack_files_cascade_on_delete() {
+    let (s, env) = setup().await;
+    let st = s
+        .create_stack(env, "shop", COMPOSE, &[], None, 1)
+        .await
+        .unwrap();
+    s.set_stack_file(st.id, "secret", "pw", "a", None, 1)
+        .await
+        .unwrap();
+    let f = RevisionFile {
+        kind: "secret".into(),
+        name: "pw".into(),
+        value: "a".into(),
+    };
+    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[f])
+        .await
+        .unwrap();
+    s.delete_stack(st.id).await.unwrap();
+    let n: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM stack_files), (SELECT COUNT(*) FROM stack_revision_files)",
+    )
+    .fetch_one(s.pool())
+    .await
+    .unwrap();
+    assert_eq!(n, (0, 0));
+}
+
+#[tokio::test]
+async fn file_digest_key_is_stable_and_differs_from_raw_key() {
+    let (s, _) = setup().await;
+    let k = s.file_digest_key();
+    assert_eq!(k, s.file_digest_key());
+    let raw = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        s.secret_key().to_base64(),
+    )
+    .unwrap();
+    assert_ne!(k.as_slice(), raw.as_slice());
+    let other = Store::in_memory().await.unwrap();
+    assert_ne!(k, other.file_digest_key());
 }

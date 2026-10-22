@@ -234,7 +234,7 @@ async fn poll_once_syncs_due_only() {
         .await
         .unwrap();
     g.store
-        .record_git_fetch(other.id, "c", "", fleetops_core::now_unix())
+        .record_git_fetch(other.id, "c", "", &[], fleetops_core::now_unix())
         .await
         .unwrap();
     poll_once(&g.state).await;

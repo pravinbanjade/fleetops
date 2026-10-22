@@ -198,7 +198,7 @@ async fn sync_fetched(
         || deferred;
     if !s
         .store
-        .record_git_fetch(stack.id, &commit, &fetched.content, now_unix())
+        .record_git_fetch(stack.id, &commit, &fetched.content, &[], now_unix())
         .await?
     {
         return Ok(SyncOutcome::Failed {

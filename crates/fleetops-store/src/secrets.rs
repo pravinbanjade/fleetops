@@ -35,6 +35,15 @@ impl SecretKey {
         STANDARD.encode(self.0)
     }
 
+    /// A 32-byte key for one purpose: HMAC-SHA256 of `label`, keyed with
+    /// this key. Never the key itself.
+    pub fn derive(&self, label: &[u8]) -> [u8; 32] {
+        use hmac::{Hmac, Mac};
+        let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(&self.0).expect("any key length");
+        mac.update(label);
+        mac.finalize().into_bytes().into()
+    }
+
     pub fn from_base64(text: &str) -> Result<Self> {
         let bad = || Error::Invalid("FLEETOPS_SECRET_KEY must be 32 bytes, base64-encoded".into());
         let bytes = STANDARD.decode(text.trim()).map_err(|_| bad())?;

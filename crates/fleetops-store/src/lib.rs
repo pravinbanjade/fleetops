@@ -10,6 +10,7 @@ mod environments;
 pub mod secrets;
 mod sessions;
 mod settings;
+mod stack_files;
 mod stacks;
 mod stacks_git;
 mod users;
@@ -20,6 +21,7 @@ pub use audit::{AuditEntry, NewAudit};
 pub use environments::EnvironmentRecord;
 pub use sessions::{NewSession, SessionRecord};
 pub use settings::AUDIT_RETENTION_KEY;
+pub use stack_files::{RevisionFile, StoredFile};
 pub use stacks::{Draft, RevisionRecord, StackRecord, STACK_REVISIONS_KEPT};
 pub use stacks_git::{GitRecord, GitSettings, TokenChange};
 

@@ -160,7 +160,7 @@ async fn changing_source_resets_sync_state() {
     )
     .await
     .unwrap();
-    s.record_git_fetch(id, "c1", "services: {}\n", 2)
+    s.record_git_fetch(id, "c1", "services: {}\n", &[], 2)
         .await
         .unwrap();
     s.set_git_pending(id, Some("c1")).await.unwrap();
@@ -198,7 +198,7 @@ async fn record_fetch_updates_draft_compose_keeps_variables() {
     .await
     .unwrap();
     s.record_git_error(id, "earlier", 2).await.unwrap();
-    s.record_git_fetch(id, "c1", "services: {}\n", 7)
+    s.record_git_fetch(id, "c1", "services: {}\n", &[], 7)
         .await
         .unwrap();
     let d = s.draft(id).await.unwrap().unwrap();
@@ -248,7 +248,7 @@ async fn due_selection() {
     .unwrap();
     let ids = |v: Vec<fleetops_store::StackRecord>| v.into_iter().map(|r| r.id).collect::<Vec<_>>();
     assert_eq!(ids(s.git_stacks_due(1000).await.unwrap()), vec![poll]);
-    s.record_git_fetch(poll, "c", "", 1000).await.unwrap();
+    s.record_git_fetch(poll, "c", "", &[], 1000).await.unwrap();
     assert!(s.git_stacks_due(1299).await.unwrap().is_empty());
     assert_eq!(ids(s.git_stacks_due(1300).await.unwrap()), vec![poll]);
 }
@@ -286,7 +286,10 @@ async fn fetch_after_detach_leaves_draft_alone() {
     .unwrap();
     s.save_draft(id, "mine\n", &[], None, 2).await.unwrap();
     s.detach_stack_git(id).await.unwrap();
-    assert!(!s.record_git_fetch(id, "c1", "theirs\n", 3).await.unwrap());
+    assert!(!s
+        .record_git_fetch(id, "c1", "theirs\n", &[], 3)
+        .await
+        .unwrap());
     assert_eq!(s.draft(id).await.unwrap().unwrap().compose, "mine\n");
 }
 
@@ -304,7 +307,7 @@ async fn git_draft_reads_file_and_commit_together() {
     )
     .await
     .unwrap();
-    s.record_git_fetch(id, "c1", "one\n", 2).await.unwrap();
+    s.record_git_fetch(id, "c1", "one\n", &[], 2).await.unwrap();
     let (d, commit) = s.git_draft(id).await.unwrap().unwrap();
     assert_eq!(d.compose, "one\n");
     assert_eq!(d.variables, vec!["A=1".to_string()]);
@@ -324,7 +327,7 @@ async fn saving_variables_keeps_the_fetched_file() {
     )
     .await
     .unwrap();
-    s.record_git_fetch(id, "c2", "new\n", 2).await.unwrap();
+    s.record_git_fetch(id, "c2", "new\n", &[], 2).await.unwrap();
     s.save_draft_variables(id, &["A=2".to_string()], None, 3)
         .await
         .unwrap();
@@ -332,4 +335,105 @@ async fn saving_variables_keeps_the_fetched_file() {
     assert_eq!(d.compose, "new\n");
     assert_eq!(d.variables, vec!["A=2".to_string()]);
     assert_eq!(d.updated_at, 3);
+}
+
+fn configs(items: &[(&str, &str)]) -> Vec<(String, String)> {
+    items
+        .iter()
+        .map(|(n, v)| (n.to_string(), v.to_string()))
+        .collect()
+}
+
+#[tokio::test]
+async fn record_git_fetch_replaces_repo_configs_only() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.set_stack_file(id, "config", "app", "mine", None, 1)
+        .await
+        .unwrap();
+    s.record_git_fetch(id, "c1", "x", &configs(&[("app", "one"), ("old", "o")]), 2)
+        .await
+        .unwrap();
+    s.record_git_fetch(id, "c2", "x", &configs(&[("app", "two")]), 3)
+        .await
+        .unwrap();
+    let mut got: Vec<(String, String, String)> = s
+        .stack_files(id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|f| (f.source, f.name, f.value))
+        .collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec![
+            ("fleetops".into(), "app".into(), "mine".into()),
+            ("repo".into(), "app".into(), "two".into()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn detach_turns_repo_configs_into_fleetops_values() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.set_stack_file(id, "config", "app", "mine", None, 1)
+        .await
+        .unwrap();
+    s.set_stack_file(id, "secret", "pw", "p", None, 1)
+        .await
+        .unwrap();
+    s.record_git_fetch(
+        id,
+        "c1",
+        "x",
+        &configs(&[("app", "repo-app"), ("b", "bb")]),
+        2,
+    )
+    .await
+    .unwrap();
+    s.detach_stack_git(id).await.unwrap();
+    let mut got: Vec<(String, String, String, String)> = s
+        .stack_files(id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|f| (f.kind, f.source, f.name, f.value))
+        .collect();
+    got.sort();
+    let row = |k: &str, n: &str, v: &str| {
+        (
+            k.to_string(),
+            "fleetops".to_string(),
+            n.to_string(),
+            v.to_string(),
+        )
+    };
+    assert_eq!(
+        got,
+        vec![
+            row("config", "app", "repo-app"),
+            row("config", "b", "bb"),
+            row("secret", "pw", "p")
+        ]
+    );
 }

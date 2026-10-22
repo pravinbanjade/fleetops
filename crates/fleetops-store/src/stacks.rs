@@ -258,6 +258,7 @@ impl Store {
         git_commit: Option<&str>,
         user: Option<i64>,
         now: i64,
+        files: &[crate::RevisionFile],
     ) -> Result<RevisionRecord> {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         let rec: RevisionRecord = sqlx::query_as(AssertSqlSafe(format!(
@@ -282,6 +283,7 @@ impl Store {
             .execute(&mut *tx)
             .await
             .map_err(db_err)?;
+        self.insert_revision_files(&mut tx, rec.id, files).await?;
         tx.commit().await.map_err(db_err)?;
         Ok(rec)
     }

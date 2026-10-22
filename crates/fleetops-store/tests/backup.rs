@@ -581,7 +581,17 @@ async fn restore_reseals_stack_variables() {
         .await
         .unwrap();
     store
-        .create_revision(st.id, "services: {}", &vars, "deploy", None, None, None, 1)
+        .create_revision(
+            st.id,
+            "services: {}",
+            &vars,
+            "deploy",
+            None,
+            None,
+            None,
+            1,
+            &[],
+        )
         .await
         .unwrap();
     let file = backup_file(&store, dir.path()).await;
@@ -655,4 +665,48 @@ async fn restore_reseals_stack_git_token_and_secret() {
         s.stack_git_secret(bare.id).await.unwrap().as_deref(),
         Some("sec2")
     );
+}
+
+#[tokio::test]
+async fn backup_restore_reseals_stack_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let (ka, kb) = (SecretKey::random(), SecretKey::random());
+    let store = populated(&ka, dir.path()).await;
+    let env = store.list_environments().await.unwrap()[0].id;
+    let st = store
+        .create_stack(env, "shop", "services: {}", &[], None, 1)
+        .await
+        .unwrap();
+    store
+        .set_stack_file(st.id, "secret", "pw", "s3cret", None, 1)
+        .await
+        .unwrap();
+    let f = fleetops_store::RevisionFile {
+        kind: "secret".into(),
+        name: "pw".into(),
+        value: "s3cret".into(),
+    };
+    store
+        .create_revision(
+            st.id,
+            "services: {}",
+            &[],
+            "deploy",
+            None,
+            None,
+            None,
+            1,
+            std::slice::from_ref(&f),
+        )
+        .await
+        .unwrap();
+    let file = backup_file(&store, dir.path()).await;
+    let o = open_backup(File::open(&file).unwrap(), PW, &dir.path().join("o")).unwrap();
+    // The fixture's credential, draft and revision variables, and one
+    // value in each file table.
+    assert_eq!(reseal(&o.db, &o.manifest, &kb).await.unwrap(), 5);
+    let s = Store::open(&o.db).await.unwrap().with_secret_key(&kb);
+    let st = s.stack_by_name(env, "shop").await.unwrap();
+    assert_eq!(s.stack_files(st.id).await.unwrap()[0].value, "s3cret");
+    assert_eq!(s.revision_files(st.id, 1).await.unwrap(), vec![f]);
 }

@@ -285,6 +285,7 @@ pub async fn start_deploy(
             commit.as_deref(),
             actor.user_id(),
             now_unix(),
+            &[],
         )
         .await;
     let rev = match created {

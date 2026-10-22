@@ -236,6 +236,24 @@ impl Store {
             .execute(&mut *tx)
             .await
             .map_err(db_err)?;
+        // Repo configs become Secrets-tab values, so the stack deploys the
+        // same files as before.
+        sqlx::query(
+            "DELETE FROM stack_files WHERE stack_id = ? AND source = 'fleetops' AND kind = 'config'
+             AND name IN (SELECT name FROM stack_files WHERE stack_id = ? AND source = 'repo')",
+        )
+        .bind(stack_id)
+        .bind(stack_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+        sqlx::query(
+            "UPDATE stack_files SET source = 'fleetops' WHERE stack_id = ? AND source = 'repo'",
+        )
+        .bind(stack_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
         tx.commit().await.map_err(db_err)
     }
 
@@ -246,6 +264,7 @@ impl Store {
         stack_id: i64,
         commit: &str,
         compose: &str,
+        configs: &[(String, String)],
         now: i64,
     ) -> Result<bool> {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
@@ -270,6 +289,15 @@ impl Store {
             .execute(&mut *tx)
             .await
             .map_err(db_err)?;
+        sqlx::query("DELETE FROM stack_files WHERE stack_id = ? AND source = 'repo'")
+            .bind(stack_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        for (name, value) in configs {
+            self.put_file(&mut tx, stack_id, "config", "repo", name, value, None, now)
+                .await?;
+        }
         tx.commit().await.map_err(db_err)?;
         Ok(true)
     }
