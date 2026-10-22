@@ -523,3 +523,98 @@ async fn unused_config_file_is_neither_read_nor_compared() {
         SyncOutcome::UpToDate { commit: readme }
     );
 }
+
+const BUILD_STACK: &str = "services:\n  api:\n    build: ./app\n";
+
+async fn build_app_deployed(g: &GitApp) {
+    g.repo.commit(
+        &[
+            ("compose.yaml", BUILD_STACK),
+            ("app/Dockerfile", "FROM alpine\n"),
+            ("app/main.txt", "one"),
+        ],
+        "one",
+    );
+    let (_, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert_eq!(task["status"], "succeeded", "{task:?}");
+}
+
+fn build_count(g: &GitApp) -> usize {
+    g.fake.streams.lock().unwrap().builds.len()
+}
+
+#[tokio::test]
+async fn sync_never_tars_the_context() {
+    // A context over the 20,000-entry limit: a sync reads only its tree id,
+    // so it still records the commit; only a deploy would refuse it.
+    let g = git_app(Some(("manual", false)), ServerOpts::default()).await;
+    let names: Vec<String> = (0..20_001).map(|i| format!("app/f{i}")).collect();
+    let mut files: Vec<(&str, &str)> = names.iter().map(|n| (n.as_str(), "x")).collect();
+    files.push(("compose.yaml", BUILD_STACK));
+    let head = g.repo.commit(&files, "big");
+    assert_eq!(
+        g.sync(SyncTrigger::Manual(1)).await,
+        SyncOutcome::Pending { commit: head }
+    );
+    let trees = g.store.draft_build_trees(g.stack.id).await.unwrap();
+    assert_eq!(trees["api"].len(), 40);
+}
+
+#[tokio::test]
+async fn code_only_commit_is_pending() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    build_app_deployed(&g).await;
+    g.store.set_git_paused(g.stack.id, true).await.unwrap();
+    let two = g.repo.commit(&[("app/main.txt", "two")], "code");
+    assert_eq!(
+        g.sync(SyncTrigger::Poll).await,
+        SyncOutcome::Pending { commit: two }
+    );
+}
+
+#[tokio::test]
+async fn code_only_commit_auto_deploys_and_rebuilds() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    build_app_deployed(&g).await;
+    assert_eq!(build_count(&g), 1);
+    g.repo.commit(&[("app/main.txt", "two")], "code");
+    let (n, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert_eq!(
+        (n, task["status"].clone()),
+        (2, json!("succeeded")),
+        "{task:?}"
+    );
+    assert_eq!(build_count(&g), 2);
+}
+
+#[tokio::test]
+async fn commit_outside_every_context_is_up_to_date() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    build_app_deployed(&g).await;
+    let readme = g.repo.commit(&[("README.md", "hi")], "docs");
+    assert_eq!(
+        g.sync(SyncTrigger::Poll).await,
+        SyncOutcome::UpToDate { commit: readme }
+    );
+    assert_eq!(build_count(&g), 1);
+}
+
+#[tokio::test]
+async fn missing_build_context_fails_the_sync() {
+    let g = git_app(Some(("manual", false)), ServerOpts::default()).await;
+    let head = g.repo.commit(
+        &[("compose.yaml", "services:\n  api:\n    build: ./nope\n")],
+        "one",
+    );
+    match g.sync(SyncTrigger::Manual(1)).await {
+        SyncOutcome::Failed { error } => assert_eq!(
+            error,
+            format!(
+                "compose.yaml at {} has problems: nope not found at {}",
+                &head[..7],
+                &head[..7]
+            )
+        ),
+        other => panic!("expected a failure, got {other:?}"),
+    }
+}

@@ -3,6 +3,7 @@
 
 use super::start::{start_deploy, Actor, DeploySource, GIT_ACTOR};
 use crate::AppState;
+use fleetops_core::compose::build::context_dir;
 use fleetops_core::compose::files::repo_path;
 use fleetops_core::compose::{parse, FileKind, FileSource};
 use fleetops_core::{now_unix, Error, Result};
@@ -190,7 +191,12 @@ async fn sync_fetched(
         .unwrap_or_default();
     // Config files the Compose file names, from the same commit. A file
     // that does not parse is reported below, with no configs read.
-    let configs = match read_configs(s, git, &cache, &fetched, &variables, stack).await {
+    let read = async {
+        let configs = read_configs(s, git, &cache, &fetched, &variables, stack).await?;
+        let trees = read_build_trees(git, &cache, &fetched, &variables, stack).await?;
+        Ok::<_, String>((configs, trees))
+    };
+    let (configs, trees) = match read.await {
         Ok(c) => c,
         Err(msg) => {
             let error = format!("{} at {short} has problems: {msg}", git.path);
@@ -216,6 +222,7 @@ async fn sync_fetched(
     let fresh = git.last_fetched_commit.is_none()
         || draft.as_ref().map(|d| d.compose.as_str()) != Some(fetched.content.as_str())
         || stored != configs.iter().cloned().collect::<BTreeMap<_, _>>()
+        || s.store.draft_build_trees(stack.id).await? != trees
         || matches!(trigger, SyncTrigger::Resume(_))
         || deferred;
     if !s
@@ -225,7 +232,7 @@ async fn sync_fetched(
             &commit,
             &fetched.content,
             &configs,
-            &Default::default(),
+            &trees,
             now_unix(),
         )
         .await?
@@ -244,7 +251,11 @@ async fn sync_fetched(
                 .filter(|f| f.kind == "config")
                 .map(|f| (f.name, f.value))
                 .collect();
+            let built = s.store.revision_builds(stack.id, n).await?;
             configs.iter().all(|(name, v)| ran.get(name) == Some(v))
+                && trees
+                    .iter()
+                    .all(|(svc, t)| built.get(svc).is_some_and(|b| &b.tree == t))
         }
         _ => false,
     };
@@ -350,6 +361,36 @@ async fn read_configs(
             .await
             .map_err(|e| e.detail())?;
     Ok(names.into_iter().zip(contents).collect())
+}
+
+/// The git tree id of each build service's context in the fetched commit:
+/// cheap to read, and it changes exactly when the code under it does, so a
+/// sync never reads the code itself. Empty when the file does not parse.
+async fn read_build_trees(
+    git: &GitRecord,
+    cache: &std::path::Path,
+    fetched: &fleetops_git::Fetched,
+    variables: &[String],
+    stack: &StackRecord,
+) -> std::result::Result<BTreeMap<String, String>, String> {
+    let Ok(parsed) = parse(&fetched.content, variables, &stack.name) else {
+        return Ok(BTreeMap::new());
+    };
+    let mut names = vec![];
+    let mut dirs = vec![];
+    for (name, svc) in &parsed.project.services {
+        if let Some(b) = &svc.build {
+            names.push(name.clone());
+            dirs.push(context_dir(&git.path, &b.context)?);
+        }
+    }
+    if dirs.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let ids = fleetops_git::tree_ids(cache, &fetched.commit, &dirs)
+        .await
+        .map_err(|e| e.detail())?;
+    Ok(names.into_iter().zip(ids).collect())
 }
 
 async fn audit_sync(
