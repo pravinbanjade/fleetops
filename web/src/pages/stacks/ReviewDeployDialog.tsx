@@ -168,6 +168,7 @@ export function ReviewDeployDialog({
 function PlanView({ plan }: { plan: NonNullable<import("@/api/gen/types.gen").PlanResponse["plan"]> }) {
   const groups = ORDER.map((a) => [a, plan.services.filter((s) => s.action === a)] as const).filter(([, s]) => s.length);
   const pulls = plan.images.filter((i) => i.pull);
+  const builds = plan.images.filter((i) => i.build);
   const resources = [
     ...plan.networks.map((n) => ({ ...n, kind: "network" })),
     ...plan.volumes.map((v) => ({ ...v, kind: "volume" })),
@@ -208,6 +209,11 @@ function PlanView({ plan }: { plan: NonNullable<import("@/api/gen/types.gen").Pl
       {pulls.length > 0 && (
         <p>
           Pull: <span className="font-ident">{pulls.map((i) => i.image).join(", ")}</span>
+        </p>
+      )}
+      {builds.length > 0 && (
+        <p>
+          Build: <span className="font-ident">{builds.map((i) => i.image).join(", ")}</span>
         </p>
       )}
     </section>

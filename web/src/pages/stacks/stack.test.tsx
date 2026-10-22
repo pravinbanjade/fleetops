@@ -72,6 +72,32 @@ describe("stack page", () => {
     expect(within(dialog).getByRole("button", { name: "Deploy" })).toBeEnabled();
   });
 
+  it("lists builds next to pulls", async () => {
+    mockFetch({
+      ...routes,
+      "POST /api/v1/envs/local/stacks/shop/plan": {
+        json: {
+          ...plan,
+          plan: {
+            ...plan.plan,
+            images: [
+              { image: "nginx:1.27", pull: true, build: false },
+              { image: "shop-api:abc123def456", pull: false, build: true },
+              { image: "shop-db:000000000000", pull: false, build: false },
+            ],
+          },
+        },
+      },
+    });
+    const { screen } = renderApp("/envs/local/stacks/shop");
+    await userEvent.click(await screen.findByRole("button", { name: "Review deploy" }));
+    const dialog = await screen.findByRole("dialog", { name: "Deploy shop" });
+    const view = await within(dialog).findByRole("region", { name: "Plan" });
+    expect(within(view).getByText(/^Pull:/)).toHaveTextContent("Pull: nginx:1.27");
+    expect(within(view).getByText(/^Build:/)).toHaveTextContent("Build: shop-api:abc123def456");
+    expect(view).not.toHaveTextContent("shop-db:000000000000");
+  });
+
   it("disables Deploy when there are problems or blockers", async () => {
     mockFetch({
       ...routes,
