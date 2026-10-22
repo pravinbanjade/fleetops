@@ -7,6 +7,18 @@ use serde::Serialize;
 use sqlx::AssertSqlSafe;
 use utoipa::ToSchema;
 
+/// What a revision built for one service.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct BuiltImage {
+    /// The git tree id of the build context ("" on an inline stack).
+    pub tree: String,
+    /// The image tag the build produced.
+    pub image: String,
+}
+
+/// Service → what was built for it.
+pub type Builds = std::collections::BTreeMap<String, BuiltImage>;
+
 /// Revisions kept per stack (the deployed one is always kept too).
 pub const STACK_REVISIONS_KEPT: i64 = 25;
 
@@ -259,6 +271,7 @@ impl Store {
         user: Option<i64>,
         now: i64,
         files: &[crate::RevisionFile],
+        builds: &Builds,
     ) -> Result<RevisionRecord> {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
         let rec: RevisionRecord = sqlx::query_as(AssertSqlSafe(format!(
@@ -277,8 +290,9 @@ impl Store {
         .fetch_one(&mut *tx)
         .await
         .map_err(db_err)?;
-        sqlx::query("UPDATE stack_revisions SET variables = ? WHERE id = ?")
+        sqlx::query("UPDATE stack_revisions SET variables = ?, builds = ? WHERE id = ?")
             .bind(self.seal_vars(&revision_aad(rec.id), variables))
+            .bind(serde_json::to_string(builds).expect("strings serialise"))
             .bind(rec.id)
             .execute(&mut *tx)
             .await
@@ -311,6 +325,39 @@ impl Store {
         .map_err(db_err)?
         .ok_or_else(|| Error::NotFound(format!("revision {number}")))?;
         self.open_vars(&revision_aad(id), &sealed)
+    }
+
+    /// What revision `number` built; empty for one without builds.
+    pub async fn revision_builds(&self, stack_id: i64, number: i64) -> Result<Builds> {
+        let text: String = sqlx::query_scalar(
+            "SELECT builds FROM stack_revisions WHERE stack_id = ? AND number = ?",
+        )
+        .bind(stack_id)
+        .bind(number)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_err)?
+        .ok_or_else(|| Error::NotFound(format!("revision {number}")))?;
+        serde_json::from_str(&text)
+            .map_err(|e| Error::Internal(format!("revision builds are corrupt: {e}")))
+    }
+
+    /// The build context tree ids the last git sync recorded with the draft.
+    pub async fn draft_build_trees(
+        &self,
+        stack_id: i64,
+    ) -> Result<std::collections::BTreeMap<String, String>> {
+        let text: Option<String> =
+            sqlx::query_scalar("SELECT build_trees FROM stack_drafts WHERE stack_id = ?")
+                .bind(stack_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(db_err)?;
+        match text {
+            Some(t) => serde_json::from_str(&t)
+                .map_err(|e| Error::Internal(format!("draft build trees are corrupt: {e}"))),
+            None => Ok(Default::default()),
+        }
     }
 
     /// Newest first.

@@ -265,6 +265,7 @@ impl Store {
         commit: &str,
         compose: &str,
         configs: &[(String, String)],
+        trees: &std::collections::BTreeMap<String, String>,
         now: i64,
     ) -> Result<bool> {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
@@ -282,8 +283,11 @@ impl Store {
             // Detached or removed while the fetch ran.
             return Ok(false);
         }
-        sqlx::query("UPDATE stack_drafts SET compose = ?, updated_at = ? WHERE stack_id = ?")
+        sqlx::query(
+            "UPDATE stack_drafts SET compose = ?, build_trees = ?, updated_at = ? WHERE stack_id = ?",
+        )
             .bind(compose)
+            .bind(serde_json::to_string(trees).expect("strings serialise"))
             .bind(now)
             .bind(stack_id)
             .execute(&mut *tx)

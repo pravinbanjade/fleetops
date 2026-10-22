@@ -591,6 +591,7 @@ async fn restore_reseals_stack_variables() {
             None,
             1,
             &[],
+            &Default::default(),
         )
         .await
         .unwrap();
@@ -697,6 +698,7 @@ async fn backup_restore_reseals_stack_files() {
             None,
             1,
             std::slice::from_ref(&f),
+            &Default::default(),
         )
         .await
         .unwrap();

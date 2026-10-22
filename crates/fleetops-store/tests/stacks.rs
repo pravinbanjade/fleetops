@@ -1,5 +1,5 @@
 use fleetops_store::secrets::SecretBox;
-use fleetops_store::{RevisionFile, Store, STACK_REVISIONS_KEPT};
+use fleetops_store::{Builds, BuiltImage, RevisionFile, Store, STACK_REVISIONS_KEPT};
 
 async fn setup() -> (Store, i64) {
     let s = Store::in_memory().await.unwrap();
@@ -85,7 +85,18 @@ async fn variables_round_trip_exactly() {
         ("services: {}", vars(&["Z=1"]), 2)
     );
     let r = s
-        .create_revision(rec.id, COMPOSE, &v, "deploy", None, None, None, 3, &[])
+        .create_revision(
+            rec.id,
+            COMPOSE,
+            &v,
+            "deploy",
+            None,
+            None,
+            None,
+            3,
+            &[],
+            &Builds::new(),
+        )
         .await
         .unwrap();
     assert_eq!(s.revision_variables(rec.id, r.number).await.unwrap(), v);
@@ -99,11 +110,33 @@ async fn revision_numbers_increment() {
         .await
         .unwrap();
     let a = s
-        .create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
+        .create_revision(
+            st.id,
+            COMPOSE,
+            &[],
+            "deploy",
+            None,
+            None,
+            None,
+            1,
+            &[],
+            &Builds::new(),
+        )
         .await
         .unwrap();
     let b = s
-        .create_revision(st.id, COMPOSE, &[], "rollback", Some(1), None, None, 2, &[])
+        .create_revision(
+            st.id,
+            COMPOSE,
+            &[],
+            "rollback",
+            Some(1),
+            None,
+            None,
+            2,
+            &[],
+            &Builds::new(),
+        )
         .await
         .unwrap();
     assert_eq!((a.number, b.number), (1, 2));
@@ -123,13 +156,35 @@ async fn finish_success_supersedes_previous() {
         .create_stack(env, "shop", COMPOSE, &[], None, 1)
         .await
         .unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
-        .await
-        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        1,
+        &[],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
     s.finish_revision(st.id, 1, None).await.unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2, &[])
-        .await
-        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        2,
+        &[],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
     s.finish_revision(st.id, 2, None).await.unwrap();
     assert_eq!(s.revision(st.id, 1).await.unwrap().status, "superseded");
     assert_eq!(s.revision(st.id, 2).await.unwrap().status, "deployed");
@@ -149,13 +204,35 @@ async fn finish_failure_keeps_deployed() {
         .create_stack(env, "shop", COMPOSE, &[], None, 1)
         .await
         .unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
-        .await
-        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        1,
+        &[],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
     s.finish_revision(st.id, 1, None).await.unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2, &[])
-        .await
-        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        2,
+        &[],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
     s.finish_revision(st.id, 2, Some("boom")).await.unwrap();
     let r2 = s.revision(st.id, 2).await.unwrap();
     assert_eq!(
@@ -179,13 +256,35 @@ async fn deploying_revisions_lists_only_deploying() {
         .create_stack(env, "shop", COMPOSE, &[], None, 1)
         .await
         .unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
-        .await
-        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        1,
+        &[],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
     s.finish_revision(st.id, 1, None).await.unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2, &[])
-        .await
-        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        2,
+        &[],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
     let d = s.deploying_revisions().await.unwrap();
     assert_eq!(d.len(), 1);
     assert_eq!((d[0].0.name.as_str(), d[0].1.number), ("shop", 2));
@@ -198,14 +297,36 @@ async fn prune_keeps_25_and_deployed() {
         .create_stack(env, "shop", COMPOSE, &[], None, 1)
         .await
         .unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[])
-        .await
-        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        1,
+        &[],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
     s.finish_revision(st.id, 1, None).await.unwrap();
     for n in 2..=30 {
-        s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, n, &[])
-            .await
-            .unwrap();
+        s.create_revision(
+            st.id,
+            COMPOSE,
+            &[],
+            "deploy",
+            None,
+            None,
+            None,
+            n,
+            &[],
+            &Builds::new(),
+        )
+        .await
+        .unwrap();
         s.finish_revision(st.id, n, Some("x")).await.unwrap();
     }
     assert_eq!(STACK_REVISIONS_KEPT, 25);
@@ -320,12 +441,34 @@ async fn revision_snapshot_round_trip() {
             value: "x=1".into(),
         },
     ];
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &files)
-        .await
-        .unwrap();
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 2, &[])
-        .await
-        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        1,
+        &files,
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        2,
+        &[],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
     let mut got = s.revision_files(st.id, 1).await.unwrap();
     got.sort_by(|a, b| a.kind.cmp(&b.kind));
     assert_eq!(got, vec![files[1].clone(), files[0].clone()]);
@@ -354,9 +497,20 @@ async fn stack_files_cascade_on_delete() {
         name: "pw".into(),
         value: "a".into(),
     };
-    s.create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, 1, &[f])
-        .await
-        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        1,
+        &[f],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
     s.delete_stack(st.id).await.unwrap();
     let n: (i64, i64) = sqlx::query_as(
         "SELECT (SELECT COUNT(*) FROM stack_files), (SELECT COUNT(*) FROM stack_revision_files)",
@@ -380,4 +534,60 @@ async fn file_digest_key_is_stable_and_differs_from_raw_key() {
     assert_ne!(k.as_slice(), raw.as_slice());
     let other = Store::in_memory().await.unwrap();
     assert_ne!(k, other.file_digest_key());
+}
+
+#[tokio::test]
+async fn revision_builds_round_trip() {
+    let (s, env) = setup().await;
+    let st = s
+        .create_stack(env, "shop", COMPOSE, &[], None, 1)
+        .await
+        .unwrap();
+    let builds = Builds::from([(
+        "api".to_string(),
+        BuiltImage {
+            tree: "t1".into(),
+            image: "shop-api:0123456789ab".into(),
+        },
+    )]);
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        1,
+        &[],
+        &builds,
+    )
+    .await
+    .unwrap();
+    assert_eq!(s.revision_builds(st.id, 1).await.unwrap(), builds);
+}
+
+#[tokio::test]
+async fn old_revisions_have_no_builds() {
+    let (s, env) = setup().await;
+    let st = s
+        .create_stack(env, "shop", COMPOSE, &[], None, 1)
+        .await
+        .unwrap();
+    s.create_revision(
+        st.id,
+        COMPOSE,
+        &[],
+        "deploy",
+        None,
+        None,
+        None,
+        1,
+        &[],
+        &Builds::new(),
+    )
+    .await
+    .unwrap();
+    assert!(s.revision_builds(st.id, 1).await.unwrap().is_empty());
+    assert!(s.draft_build_trees(st.id).await.unwrap().is_empty());
 }

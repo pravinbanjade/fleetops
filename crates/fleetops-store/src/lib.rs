@@ -22,7 +22,7 @@ pub use environments::EnvironmentRecord;
 pub use sessions::{NewSession, SessionRecord};
 pub use settings::AUDIT_RETENTION_KEY;
 pub use stack_files::{RevisionFile, StoredFile};
-pub use stacks::{Draft, RevisionRecord, StackRecord, STACK_REVISIONS_KEPT};
+pub use stacks::{Builds, BuiltImage, Draft, RevisionRecord, StackRecord, STACK_REVISIONS_KEPT};
 pub use stacks_git::{GitRecord, GitSettings, TokenChange};
 
 use fleetops_core::{Error, Result};
