@@ -689,6 +689,8 @@ export type ExecOptions = {
  */
 export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso' | 'backup';
 
+export type FileKind = 'secret' | 'config';
+
 export type GitBody = {
     auto_deploy?: boolean;
     branch: string;
@@ -1490,6 +1492,52 @@ export type StackDetail = {
      */
     draft: Draft;
     stack: StackRecord;
+};
+
+export type StackFile = {
+    /**
+     * The text of a Secrets-tab or repo config; never a secret's.
+     */
+    content?: string | null;
+    kind: FileKind;
+    /**
+     * The top-level Compose key.
+     */
+    name: string;
+    /**
+     * The `file:` path as written, or for a `repo` source the path in the
+     * repository.
+     */
+    path?: string | null;
+    /**
+     * Whether it has a value.
+     */
+    set: boolean;
+    /**
+     * `fleetops` (a Secrets-tab value), `variable`, `inline` or `repo`.
+     */
+    source: string;
+    updated_at?: number | null;
+    updated_by?: string | null;
+    /**
+     * False for a stored value the draft no longer uses.
+     */
+    used: boolean;
+    /**
+     * Services that mount it.
+     */
+    used_by: Array<string>;
+    /**
+     * The stack variable, for a `variable` source.
+     */
+    variable?: string | null;
+};
+
+export type StackFileBody = {
+    /**
+     * UTF-8 text, at most 500 KiB.
+     */
+    value: string;
 };
 
 export type StackRecord = {
@@ -4893,6 +4941,124 @@ export type SaveStackDraftResponses = {
 };
 
 export type SaveStackDraftResponse = SaveStackDraftResponses[keyof SaveStackDraftResponses];
+
+export type ListStackFilesData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/files';
+};
+
+export type ListStackFilesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListStackFilesError = ListStackFilesErrors[keyof ListStackFilesErrors];
+
+export type ListStackFilesResponses = {
+    /**
+     * Secrets and configs
+     */
+    200: Array<StackFile>;
+};
+
+export type ListStackFilesResponse = ListStackFilesResponses[keyof ListStackFilesResponses];
+
+export type RemoveStackFileData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+        /**
+         * secret or config
+         */
+        kind: string;
+        /**
+         * The top-level Compose key
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/files/{kind}/{name}';
+};
+
+export type RemoveStackFileErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RemoveStackFileError = RemoveStackFileErrors[keyof RemoveStackFileErrors];
+
+export type RemoveStackFileResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type RemoveStackFileResponse = RemoveStackFileResponses[keyof RemoveStackFileResponses];
+
+export type SetStackFileData = {
+    body: StackFileBody;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+        /**
+         * secret or config
+         */
+        kind: string;
+        /**
+         * The top-level Compose key
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/files/{kind}/{name}';
+};
+
+export type SetStackFileErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type SetStackFileError = SetStackFileErrors[keyof SetStackFileErrors];
+
+export type SetStackFileResponses = {
+    /**
+     * Saved
+     */
+    204: void;
+};
+
+export type SetStackFileResponse = SetStackFileResponses[keyof SetStackFileResponses];
 
 export type DetachStackGitData = {
     body?: never;

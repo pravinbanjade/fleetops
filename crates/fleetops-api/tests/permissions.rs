@@ -408,6 +408,24 @@ fn cases() -> Vec<Case> {
         ),
         c(
             "GET",
+            "/api/v1/envs/local/stacks/shop/files",
+            None,
+            "stacks.view",
+        ),
+        c(
+            "PUT",
+            "/api/v1/envs/local/stacks/shop/files/secret/pw",
+            Some(json!({"value": "x"})),
+            "stacks.create",
+        ),
+        c(
+            "DELETE",
+            "/api/v1/envs/local/stacks/shop/files/secret/pw",
+            None,
+            "stacks.create",
+        ),
+        c(
+            "GET",
             "/api/v1/envs/k/k8s/deployments",
             None,
             "workloads.view",

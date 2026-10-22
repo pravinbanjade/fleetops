@@ -5774,6 +5774,211 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/stacks/{stack}/files": {
+      "get": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "The stack's secrets and configs",
+        "description": "Every secret and config the draft declares, then stored values it no longer uses. Secret values are never returned.",
+        "operationId": "listStackFiles",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Secrets and configs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StackFile"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/stacks/{stack}/files/{kind}/{name}": {
+      "put": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Set a secret or config value",
+        "description": "Stores the value in the Secrets tab, replacing one of the same name. The stack shows changes not deployed until it is deployed again. A secret's value is never returned.",
+        "operationId": "setStackFile",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "secret or config",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The top-level Compose key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StackFileBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Saved"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "Remove a stored secret or config value",
+        "operationId": "removeStackFile",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "secret or config",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "description": "The top-level Compose key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/stacks/{stack}/git": {
       "get": {
         "tags": [
@@ -9129,6 +9334,13 @@
           "backup"
         ]
       },
+      "FileKind": {
+        "type": "string",
+        "enum": [
+          "secret",
+          "config"
+        ]
+      },
       "GitBody": {
         "type": "object",
         "required": [
@@ -11245,6 +11457,92 @@
             "$ref": "#/components/schemas/StackRecord"
           }
         }
+      },
+      "StackFile": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "source",
+          "used_by",
+          "set",
+          "used"
+        ],
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The text of a Secrets-tab or repo config; never a secret's."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/FileKind"
+          },
+          "name": {
+            "type": "string",
+            "description": "The top-level Compose key."
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The `file:` path as written, or for a `repo` source the path in the\nrepository."
+          },
+          "set": {
+            "type": "boolean",
+            "description": "Whether it has a value."
+          },
+          "source": {
+            "type": "string",
+            "description": "`fleetops` (a Secrets-tab value), `variable`, `inline` or `repo`."
+          },
+          "updated_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "updated_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "used": {
+            "type": "boolean",
+            "description": "False for a stored value the draft no longer uses."
+          },
+          "used_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Services that mount it."
+          },
+          "variable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The stack variable, for a `variable` source."
+          }
+        }
+      },
+      "StackFileBody": {
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "UTF-8 text, at most 500 KiB."
+          }
+        },
+        "additionalProperties": false
       },
       "StackRecord": {
         "type": "object",
