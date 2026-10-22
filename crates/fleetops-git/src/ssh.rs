@@ -1,7 +1,7 @@
 //! SSH git sources (stack git SSH spec §1, §4): URLs, and fetches over an
 //! in-process SSH client that runs `git-upload-pack` on the server.
 
-use crate::host_keys::{check_host_key, host_key_text};
+use crate::host_keys::{check_host_key, host_key_text, is_published};
 use crate::{Fail, Source};
 use russh::client::{Handle, Msg};
 use russh::keys::{PrivateKey, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
@@ -49,7 +49,11 @@ impl russh::client::Handler for Client {
             return Ok(false);
         };
         let text = host_key_text(key);
-        self.seen.set(text.clone());
+        // A published host is checked against its keys, never pinned: an
+        // impostor's key is neither stored nor shown.
+        if !is_published(&self.host) {
+            self.seen.set(text.clone());
+        }
         match check_host_key(&self.host, self.pinned.as_deref(), &text) {
             Ok(()) => Ok(true),
             Err(m) => {
@@ -78,7 +82,10 @@ pub(crate) struct SshSession {
 
 /// Connects, checks the host key, authenticates with the source's key and
 /// starts `git-upload-pack`.
-pub(crate) async fn connect(src: &Source) -> Result<SshSession, Fail> {
+pub(crate) async fn connect(
+    src: &Source,
+    timeout: std::time::Duration,
+) -> Result<SshSession, Fail> {
     let target = ssh_target(&src.url).map_err(Fail::Invalid)?;
     let net = |e: russh::Error| Fail::Network(e.to_string());
     let refused = Arc::new(Mutex::new(None));
@@ -89,7 +96,12 @@ pub(crate) async fn connect(src: &Source) -> Result<SshSession, Fail> {
         refused: refused.clone(),
     };
     let host = target.host.trim_start_matches('[').trim_end_matches(']');
-    let config = Arc::new(russh::client::Config::default());
+    // russh runs the session on its own task, which a stalled key exchange
+    // would otherwise keep (with its socket) after the connect times out.
+    let config = Arc::new(russh::client::Config {
+        inactivity_timeout: Some(timeout),
+        ..Default::default()
+    });
     let mut handle = match russh::client::connect(config, (host, target.port), client).await {
         Ok(h) => h,
         Err(e) => {
@@ -211,7 +223,12 @@ pub(crate) fn ssh_target(url: &str) -> Result<SshTarget, String> {
             "" => DEFAULT_USER.to_string(),
             user => user.to_string(),
         };
-        (user, host, u.port().unwrap_or(22), u.path().to_string())
+        // Git decodes `ssh://` paths; `url` keeps them percent-encoded.
+        let path = percent_encoding::percent_decode_str(u.path())
+            .decode_utf8()
+            .map_err(|_| INVALID.to_string())?
+            .into_owned();
+        (user, host, u.port().unwrap_or(22), path)
     } else {
         let (front, path) = url.split_once(':').ok_or_else(|| INVALID.to_string())?;
         let (user, host) = match front.split_once('@') {
@@ -225,6 +242,9 @@ pub(crate) fn ssh_target(url: &str) -> Result<SshTarget, String> {
     }
     let host_ok = valid_name(&host) || (host.starts_with('[') && host.ends_with(']'));
     if !host_ok || !valid_name(&user) {
+        return Err(INVALID.into());
+    }
+    if path.contains(['\0', '\n', '\r']) {
         return Err(INVALID.into());
     }
     if path.trim_start_matches('/').is_empty() || path.starts_with(':') {
@@ -259,10 +279,40 @@ mod tests {
             (t.user.as_str(), t.host.as_str(), t.port, t.path.as_str()),
             ("deploy", "h", 2222, "/srv/r.git")
         );
+        assert_eq!(
+            ssh_target("ssh://h/srv/my%20repo.git").unwrap().path,
+            "/srv/my repo.git"
+        );
+        assert_eq!(
+            ssh_target("ssh://h/srv/my repo.git").unwrap().path,
+            "/srv/my repo.git"
+        );
+        assert!(ssh_target("ssh://h/a%0Ab").is_err());
         assert_eq!(ssh_target("h:r").unwrap().user, "git");
         assert_eq!(ssh_target("ssh://h/r").unwrap().user, "git");
         assert!(is_ssh_url("h:r") && is_ssh_url("ssh://h/r"));
         assert!(!is_ssh_url("https://h/r") && !is_ssh_url("a/b:c"));
+    }
+
+    #[tokio::test]
+    async fn published_hosts_never_record_a_key() {
+        use russh::client::Handler as _;
+        let key = russh::keys::PublicKey::from_openssh(&crate::generate_key("x").public).unwrap();
+        let offered = PublicKeyOrCertificate::PublicKey {
+            key,
+            hash_alg: None,
+        };
+        for (host, recorded) in [("github.com", false), ("git.acme", true)] {
+            let mut c = Client {
+                host: host.into(),
+                pinned: None,
+                seen: SeenHostKey::default(),
+                refused: Default::default(),
+            };
+            let trusted = c.check_server_key(&offered).await.unwrap();
+            assert_eq!(trusted, recorded, "{host}");
+            assert_eq!(c.seen.get().is_some(), recorded, "{host}");
+        }
     }
 
     #[test]

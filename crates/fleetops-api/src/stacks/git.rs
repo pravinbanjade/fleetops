@@ -474,7 +474,9 @@ pub(crate) async fn git_source(s: &AppState, git: &GitRecord) -> Result<fleetops
 }
 
 /// Pins the host key a fetch from `src` saw, when the stack has none yet
-/// (stack git SSH spec §3), whether or not the fetch succeeded.
+/// (stack git SSH spec §3), whether or not the fetch succeeded. The store
+/// re-checks both at write time, so a fetch that a URL change or a reset
+/// overtook pins nothing.
 pub(crate) async fn record_host_key(
     s: &AppState,
     git: &GitRecord,
@@ -482,7 +484,9 @@ pub(crate) async fn record_host_key(
 ) -> Result<()> {
     match src.seen_host_key.get() {
         Some(seen) if git.ssh_host_key.is_none() => {
-            s.store.set_git_host_key(git.stack_id, Some(&seen)).await
+            s.store
+                .pin_git_host_key(git.stack_id, &src.url, &seen)
+                .await
         }
         _ => Ok(()),
     }

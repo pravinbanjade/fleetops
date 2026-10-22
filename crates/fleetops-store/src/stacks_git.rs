@@ -285,6 +285,22 @@ impl Store {
             .transpose()
     }
 
+    /// Pins the host key a fetch of `url` saw, unless a key is pinned
+    /// already or the stack's URL changed since the fetch began.
+    pub async fn pin_git_host_key(&self, stack_id: i64, url: &str, key: &str) -> Result<()> {
+        sqlx::query(
+            "UPDATE stack_git SET ssh_host_key = ?
+             WHERE stack_id = ? AND url = ? AND ssh_host_key IS NULL",
+        )
+        .bind(key)
+        .bind(stack_id)
+        .bind(url)
+        .execute(&self.pool)
+        .await
+        .map_err(db_err)?;
+        Ok(())
+    }
+
     /// Pins (or, with `None`, forgets) the stack's SSH host key.
     pub async fn set_git_host_key(&self, stack_id: i64, key: Option<&str>) -> Result<()> {
         sqlx::query("UPDATE stack_git SET ssh_host_key = ? WHERE stack_id = ?")

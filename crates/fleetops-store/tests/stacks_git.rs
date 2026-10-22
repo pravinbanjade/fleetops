@@ -638,3 +638,49 @@ async fn url_change_forgets_host_key() {
         .unwrap();
     assert_eq!(rec.ssh_host_key, None);
 }
+
+#[tokio::test]
+async fn host_key_pins_only_while_unset_for_the_same_url() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &ssh_settings("git@a:r"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    // A fetch of the old URL finishing after the URL changed pins nothing.
+    s.set_stack_git(
+        id,
+        &ssh_settings("git@b:r"),
+        TokenChange::Keep,
+        None,
+        None,
+        2,
+    )
+    .await
+    .unwrap();
+    s.pin_git_host_key(id, "git@a:r", "ssh-ed25519 SHA256:a")
+        .await
+        .unwrap();
+    assert_eq!(s.stack_git(id).await.unwrap().unwrap().ssh_host_key, None);
+    s.pin_git_host_key(id, "git@b:r", "ssh-ed25519 SHA256:b")
+        .await
+        .unwrap();
+    // A pinned key is never replaced by a pin; only a reset clears it.
+    s.pin_git_host_key(id, "git@b:r", "ssh-ed25519 SHA256:other")
+        .await
+        .unwrap();
+    assert_eq!(
+        s.stack_git(id)
+            .await
+            .unwrap()
+            .unwrap()
+            .ssh_host_key
+            .as_deref(),
+        Some("ssh-ed25519 SHA256:b")
+    );
+}

@@ -203,3 +203,62 @@ async fn ssh_timeout_releases_the_cache() {
     .unwrap();
     assert_eq!(f.content, COMPOSE);
 }
+
+#[tokio::test]
+async fn path_with_a_space_and_a_quote() {
+    let (repo, server, key) = served(authorised).await;
+    repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    std::fs::rename(
+        repo.root().join("repo.git"),
+        repo.root().join("it's here.git"),
+    )
+    .unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let src = Source {
+        url: server.url("it's%20here.git"),
+        ..ssh_src(&server, Some(&key))
+    };
+    let f = fetch_file(&cache.path().join("1"), &src, Limits::default())
+        .await
+        .unwrap();
+    assert_eq!(f.content, COMPOSE);
+}
+
+#[tokio::test]
+async fn connect_timeout_during_kex_closes_the_socket() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    // Says hello, then never answers the key exchange.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let (mut sock, _) = listener.accept().await.unwrap();
+        sock.write_all(b"SSH-2.0-stall\r\n").await.unwrap();
+        let mut buf = [0u8; 4096];
+        while sock.read(&mut buf).await.is_ok_and(|n| n > 0) {}
+        let _ = closed_tx.send(());
+    });
+    let key = generate_key("k");
+    let src = Source {
+        url: format!("ssh://git@127.0.0.1:{port}/repo.git"),
+        branch: "main".into(),
+        path: "compose.yaml".into(),
+        token: None,
+        ssh_key: Some(key.private.clone()),
+        host_key: None,
+        seen_host_key: Default::default(),
+    };
+    let cache = tempfile::tempdir().unwrap();
+    let limits = Limits {
+        timeout: Duration::from_secs(1),
+        ..Limits::default()
+    };
+    let e = fetch_file(&cache.path().join("1"), &src, limits)
+        .await
+        .unwrap_err();
+    assert!(e.detail().contains("took longer than"), "{}", e.detail());
+    tokio::time::timeout(Duration::from_secs(5), closed_rx)
+        .await
+        .expect("the stalled SSH connection was left open")
+        .unwrap();
+}

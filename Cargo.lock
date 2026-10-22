@@ -1751,6 +1751,7 @@ dependencies = [
  "fleetops-git",
  "gix",
  "gix-transport",
+ "percent-encoding",
  "rand 0.8.8",
  "reqwest 0.13.5",
  "russh",

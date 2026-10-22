@@ -29,6 +29,11 @@ const KNOWN: &[(&str, &[&str])] = &[
     ),
 ];
 
+/// Whether FleetOps ships `host`'s published keys, so it is never pinned.
+pub(crate) fn is_published(host: &str) -> bool {
+    KNOWN.iter().any(|(h, _)| h.eq_ignore_ascii_case(host))
+}
+
 /// `<algorithm> SHA256:<fingerprint>`, as stored and shown.
 pub fn host_key_text(key: &PublicKey) -> String {
     format!(

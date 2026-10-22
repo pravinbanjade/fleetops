@@ -290,7 +290,7 @@ async fn ssh_connect(
     if !ssh::is_ssh_url(&src.url) {
         return Ok(None);
     }
-    match tokio::time::timeout(timeout, ssh::connect(src)).await {
+    match tokio::time::timeout(timeout, ssh::connect(src, timeout)).await {
         Ok(session) => Ok(Some(session?.split())),
         Err(_) => Err(Fail::Network(format!(
             "connecting to the SSH server took longer than {} seconds",
