@@ -252,8 +252,33 @@ async fn every_topic_works_against_the_real_daemon() {
 
 #[tokio::test]
 async fn an_agent_environment_serves_the_same_api_as_local() {
-    use fleetops_tunnel::control::*;
     let (live, addr) = start().await;
+    let session = connect_agent(&live, addr).await;
+
+    let (_, status) = live.call("GET", "/api/v1/envs/remote/status", None).await;
+    assert_eq!(status["state"], "up", "{status}");
+    // Same daemon behind both environments. (Container counts race with
+    // the other live test, so compare the daemon's identity instead.)
+    let (_, local) = live.call("GET", "/api/v1/envs/local/info", None).await;
+    let (_, remote) = live.call("GET", "/api/v1/envs/remote/info", None).await;
+    assert!(remote["ID"].is_string(), "{remote}");
+    assert_eq!(local["ID"], remote["ID"], "same daemon");
+    let (status, list) = live
+        .call("GET", "/api/v1/envs/remote/containers", None)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert!(list.is_array());
+
+    session.close().await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let (_, status) = live.call("GET", "/api/v1/envs/remote/status", None).await;
+    assert_eq!(status["state"], "down", "{status}");
+}
+
+/// Enrolls environment `remote` and connects a minimal in-process agent to
+/// it: the real tunnel, forwarding to DOCKER_HOST.
+async fn connect_agent(live: &Live, addr: SocketAddr) -> fleetops_tunnel::Session {
+    use fleetops_tunnel::control::*;
     let (status, created) = live
         .call_from(
             Some(&format!("http://{addr}")),
@@ -310,25 +335,7 @@ async fn an_agent_environment_serves_the_same_api_as_local() {
             }
         }
     });
-
-    let (_, status) = live.call("GET", "/api/v1/envs/remote/status", None).await;
-    assert_eq!(status["state"], "up", "{status}");
-    // Same daemon behind both environments. (Container counts race with
-    // the other live test, so compare the daemon's identity instead.)
-    let (_, local) = live.call("GET", "/api/v1/envs/local/info", None).await;
-    let (_, remote) = live.call("GET", "/api/v1/envs/remote/info", None).await;
-    assert!(remote["ID"].is_string(), "{remote}");
-    assert_eq!(local["ID"], remote["ID"], "same daemon");
-    let (status, list) = live
-        .call("GET", "/api/v1/envs/remote/containers", None)
-        .await;
-    assert_eq!(status, StatusCode::OK, "{list}");
-    assert!(list.is_array());
-
-    session.close().await;
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let (_, status) = live.call("GET", "/api/v1/envs/remote/status", None).await;
-    assert_eq!(status["state"], "down", "{status}");
+    session
 }
 
 /// The stack's containers as (service, id, state), from the API.
@@ -357,7 +364,11 @@ async fn stack_containers(live: &Live, stack: &str) -> Vec<(String, String, Stri
 }
 
 async fn deploy_stack(live: &Live, stack: &str, from: Value) {
-    let base = format!("/api/v1/envs/local/stacks/{stack}");
+    deploy_stack_in(live, "local", stack, from).await
+}
+
+async fn deploy_stack_in(live: &Live, env: &str, stack: &str, from: Value) {
+    let base = format!("/api/v1/envs/{env}/stacks/{stack}");
     let (status, plan) = live
         .call("POST", &format!("{base}/plan"), Some(from.clone()))
         .await;
@@ -467,4 +478,143 @@ volumes:
         .unwrap()
         .iter()
         .all(|v| v["name"] != format!("{stack}_data")));
+}
+
+/// Downloads a file from a container through the Files API, as text.
+async fn container_file(
+    live: &Live,
+    env: &str,
+    container: &str,
+    path: &str,
+) -> (StatusCode, String) {
+    let mut r = Request::get(format!(
+        "/api/v1/envs/{env}/containers/{container}/files/download?path={path}"
+    ))
+    .header("cookie", &live.cookie)
+    .body(Body::empty())
+    .unwrap();
+    r.extensions_mut()
+        .insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 1))));
+    let res = live.router.clone().oneshot(r).await.unwrap();
+    let status = res.status();
+    let bytes = res.into_body().collect().await.unwrap().to_bytes();
+    (status, String::from_utf8_lossy(&bytes).into_owned())
+}
+
+#[tokio::test]
+async fn stack_secrets_against_docker() {
+    let (live, _) = start().await;
+    let stack = format!("fleetops-it-secrets-{}", std::process::id());
+    // `check` logs in over TCP with the secret, so the deploy (which waits
+    // for it to exit 0) succeeds only if postgres took the password from
+    // its file.
+    let compose = r#"
+services:
+  db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_PASSWORD_FILE: /run/secrets/db_password }
+    secrets: [db_password]
+    configs: [{ source: app_conf, target: /etc/app.conf }]
+    healthcheck: { test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"], interval: 1s, retries: 60 }
+  check:
+    image: postgres:16-alpine
+    command: ["sh", "-c", "PGPASSWORD=$$(cat /run/secrets/db_password) psql -h db -U postgres -tAc 'select 1'"]
+    secrets: [db_password]
+    restart: "no"
+    depends_on: { db: { condition: service_healthy } }
+  done:
+    image: postgres:16-alpine
+    command: ["true"]
+    restart: "no"
+    depends_on: { check: { condition: service_completed_successfully } }
+secrets:
+  db_password: { file: ./pw.txt }
+configs:
+  app_conf: { content: "hello" }
+"#;
+    let (status, body) = live
+        .call(
+            "POST",
+            "/api/v1/envs/local/stacks",
+            Some(json!({"name": stack, "compose": compose})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let base = format!("/api/v1/envs/local/stacks/{stack}");
+    let (status, body) = live
+        .call(
+            "PUT",
+            &format!("{base}/files/secret/db_password"),
+            Some(json!({"value": "Pg-s3cret-it"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    deploy_stack(&live, &stack, json!({"source": "draft"})).await;
+
+    let db = format!("{stack}-db-1");
+    let (status, text) = container_file(&live, "local", &db, "/etc/app.conf").await;
+    assert_eq!((status, text.as_str()), (StatusCode::OK, "hello"));
+    let (_, etc) = live
+        .call(
+            "GET",
+            &format!("/api/v1/envs/local/containers/{db}/files?path=/etc"),
+            None,
+        )
+        .await;
+    let conf = etc["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "app.conf")
+        .unwrap_or_else(|| panic!("no app.conf: {etc}"));
+    assert_eq!(conf["mode"].as_u64().unwrap() & 0o777, 0o444, "{conf}");
+    let (status, text) = container_file(&live, "local", &db, "/run/secrets/db_password").await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{text}");
+    assert!(!text.contains("Pg-s3cret-it"));
+
+    let (status, _) = live
+        .call("DELETE", &format!("{base}?volumes=true"), None)
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn stack_configs_through_an_agent() {
+    let (live, addr) = start().await;
+    let session = connect_agent(&live, addr).await;
+    let stack = format!("fleetops-it-agent-conf-{}", std::process::id());
+    let compose = r#"
+services:
+  app:
+    image: alpine:3.20
+    command: sleep 300
+    restart: unless-stopped
+    configs: [{ source: app_conf, target: /etc/app.conf }]
+configs:
+  app_conf: { content: "through the agent" }
+"#;
+    let (status, body) = live
+        .call(
+            "POST",
+            "/api/v1/envs/remote/stacks",
+            Some(json!({"name": stack, "compose": compose})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    deploy_stack_in(&live, "remote", &stack, json!({"source": "draft"})).await;
+    let (status, text) =
+        container_file(&live, "remote", &format!("{stack}-app-1"), "/etc/app.conf").await;
+    assert_eq!(
+        (status, text.as_str()),
+        (StatusCode::OK, "through the agent")
+    );
+    let (status, _) = live
+        .call(
+            "DELETE",
+            &format!("/api/v1/envs/remote/stacks/{stack}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    session.close().await;
 }
