@@ -69,6 +69,7 @@ pub enum SyncOutcome {
 const AUTO_DEPLOY_FAILED: &str = "auto-deploy of ";
 pub const UNREACHABLE: &str = "the environment is not reachable; the update is pending";
 pub const BUSY: &str = "a deploy of this stack is running; the update is pending";
+const DETACHED: &str = "the stack was detached from git during the sync";
 
 /// `<data_dir>/git/<stack id>`.
 pub fn cache_dir(s: &AppState, stack_id: i64) -> Result<PathBuf> {
@@ -128,6 +129,11 @@ pub async fn sync_stack(
             .map(std::mem::take)
             .unwrap_or(false);
         if !again {
+            // Detached or removed meanwhile: the route's cache removal may
+            // have come before this fetch wrote it.
+            if matches!(s.store.stack_git(stack.id).await, Ok(None)) {
+                remove_cache(s, stack.id);
+            }
             return outcome;
         }
         // A rerun is for whatever was pushed meanwhile; a resume already
@@ -190,9 +196,15 @@ async fn sync_fetched(
         || draft.as_ref().map(|d| d.compose.as_str()) != Some(fetched.content.as_str())
         || matches!(trigger, SyncTrigger::Resume(_))
         || deferred;
-    s.store
+    if !s
+        .store
         .record_git_fetch(stack.id, &commit, &fetched.content, now_unix())
-        .await?;
+        .await?
+    {
+        return Ok(SyncOutcome::Failed {
+            error: DETACHED.into(),
+        });
+    }
     let deployed = match stack.deployed_revision {
         Some(n) => Some(s.store.revision(stack.id, n).await?.compose),
         None => None,

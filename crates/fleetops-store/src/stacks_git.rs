@@ -240,16 +240,16 @@ impl Store {
     }
 
     /// Records a successful fetch, and puts the fetched file in the draft
-    /// (its variables stay).
+    /// (its variables stay). False when the stack no longer has a git source.
     pub async fn record_git_fetch(
         &self,
         stack_id: i64,
         commit: &str,
         compose: &str,
         now: i64,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let mut tx = self.pool.begin().await.map_err(db_err)?;
-        sqlx::query(
+        let git = sqlx::query(
             "UPDATE stack_git SET last_fetched_commit = ?, last_sync_at = ?, last_sync_error = NULL
              WHERE stack_id = ?",
         )
@@ -259,6 +259,10 @@ impl Store {
         .execute(&mut *tx)
         .await
         .map_err(db_err)?;
+        if git.rows_affected() == 0 {
+            // Detached or removed while the fetch ran.
+            return Ok(false);
+        }
         sqlx::query("UPDATE stack_drafts SET compose = ?, updated_at = ? WHERE stack_id = ?")
             .bind(compose)
             .bind(now)
@@ -266,7 +270,8 @@ impl Store {
             .execute(&mut *tx)
             .await
             .map_err(db_err)?;
-        tx.commit().await.map_err(db_err)
+        tx.commit().await.map_err(db_err)?;
+        Ok(true)
     }
 
     pub async fn record_git_error(&self, stack_id: i64, error: &str, now: i64) -> Result<()> {

@@ -270,3 +270,66 @@ async fn cascade_on_stack_delete() {
     assert!(s.stack_git(id).await.unwrap().is_none());
     assert!(s.stack_by_id(id).await.is_err());
 }
+
+#[tokio::test]
+async fn fetch_after_detach_leaves_draft_alone() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.save_draft(id, "mine\n", &[], None, 2).await.unwrap();
+    s.detach_stack_git(id).await.unwrap();
+    assert!(!s.record_git_fetch(id, "c1", "theirs\n", 3).await.unwrap());
+    assert_eq!(s.draft(id).await.unwrap().unwrap().compose, "mine\n");
+}
+
+#[tokio::test]
+async fn git_draft_reads_file_and_commit_together() {
+    let (s, id) = setup().await;
+    assert_eq!(s.git_draft(id).await.unwrap().unwrap().1, None);
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.record_git_fetch(id, "c1", "one\n", 2).await.unwrap();
+    let (d, commit) = s.git_draft(id).await.unwrap().unwrap();
+    assert_eq!(d.compose, "one\n");
+    assert_eq!(d.variables, vec!["A=1".to_string()]);
+    assert_eq!(commit.as_deref(), Some("c1"));
+}
+
+#[tokio::test]
+async fn saving_variables_keeps_the_fetched_file() {
+    let (s, id) = setup().await;
+    s.set_stack_git(
+        id,
+        &settings("manual"),
+        TokenChange::Keep,
+        Some("sec"),
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+    s.record_git_fetch(id, "c2", "new\n", 2).await.unwrap();
+    s.save_draft_variables(id, &["A=2".to_string()], None, 3)
+        .await
+        .unwrap();
+    let d = s.draft(id).await.unwrap().unwrap();
+    assert_eq!(d.compose, "new\n");
+    assert_eq!(d.variables, vec!["A=2".to_string()]);
+    assert_eq!(d.updated_at, 3);
+}

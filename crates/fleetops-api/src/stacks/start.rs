@@ -85,25 +85,42 @@ pub(crate) fn issues_message(issues: &[ComposeIssue]) -> String {
         .join("; ")
 }
 
-/// The compose and variables `from` names, and the revision it rolls back to.
-async fn source(
-    s: &AppState,
-    stack: &StackRecord,
-    from: DeploySource,
-) -> Result<(String, Vec<String>, Option<i64>)> {
+/// What a plan or deploy of `from` is made of.
+pub(crate) struct Source {
+    compose: String,
+    variables: Vec<String>,
+    rollback_of: Option<i64>,
+    /// The git commit the file came from, on a git stack.
+    commit: Option<String>,
+}
+
+async fn source(s: &AppState, stack: &StackRecord, from: DeploySource) -> Result<Source> {
+    let git = stack.source == "git";
     match from {
         DeploySource::Draft => {
-            let d = s
+            // The file and its commit are read together, so a sync landing
+            // meanwhile cannot label one with the other's commit.
+            let (d, commit) = s
                 .store
-                .draft(stack.id)
+                .git_draft(stack.id)
                 .await?
                 .ok_or_else(|| Error::NotFound(format!("draft of stack '{}'", stack.name)))?;
-            Ok((d.compose, d.variables, None))
+            Ok(Source {
+                compose: d.compose,
+                variables: d.variables,
+                rollback_of: None,
+                commit: commit.filter(|_| git),
+            })
         }
         DeploySource::Revision { revision } => {
             let r = s.store.revision(stack.id, revision).await?;
             let v = s.store.revision_variables(stack.id, revision).await?;
-            Ok((r.compose, v, Some(revision)))
+            Ok(Source {
+                compose: r.compose,
+                variables: v,
+                rollback_of: Some(revision),
+                commit: r.git_commit.filter(|_| git),
+            })
         }
     }
 }
@@ -161,14 +178,9 @@ fn variables_changed(before: &[String], after: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// The plan of `from` for `stack`, with what was planned, the variables
-/// and the revision it rolls back to. Issues mean the file does not parse.
-pub(crate) type Planned = (
-    PlanResponse,
-    Option<(Project, Plan)>,
-    Vec<String>,
-    Option<i64>,
-);
+/// The plan of `from` for `stack`, with what was planned and what it was
+/// made from. Issues mean the file does not parse.
+pub(crate) type Planned = (PlanResponse, Option<(Project, Plan)>, Source);
 
 pub(crate) async fn make_plan(
     s: &AppState,
@@ -177,26 +189,25 @@ pub(crate) async fn make_plan(
     from: DeploySource,
 ) -> Result<Planned> {
     recover_stack(s, ops, stack).await?;
-    let (compose, variables, rollback_of) = source(s, stack, from).await?;
+    let src = source(s, stack, from).await?;
     let dep = deployed(s, stack).await?;
     let compose_before = dep.as_ref().map(|(r, _, _)| r.compose.clone());
     let changed = variables_changed(
         dep.as_ref().map(|(_, v, _)| v.as_slice()).unwrap_or(&[]),
-        &variables,
+        &src.variables,
     );
-    match parse(&compose, &variables, &stack.name) {
+    match parse(&src.compose, &src.variables, &stack.name) {
         Err(issues) => Ok((
             PlanResponse {
                 issues,
                 warnings: vec![],
                 plan: None,
                 compose_before,
-                compose_after: compose.clone(),
+                compose_after: src.compose.clone(),
                 variables_changed: changed,
             },
             None,
-            variables,
-            rollback_of,
+            src,
         )),
         Ok(parsed) => {
             let live = live(ops, &stack.name).await?;
@@ -210,36 +221,14 @@ pub(crate) async fn make_plan(
                     warnings: parsed.warnings,
                     plan: Some(p.clone()),
                     compose_before,
-                    compose_after: compose.clone(),
+                    compose_after: src.compose.clone(),
                     variables_changed: changed,
                 },
                 Some((parsed.project, p)),
-                variables,
-                rollback_of,
+                src,
             ))
         }
     }
-}
-
-/// The commit a deploy of `from` records on a git stack.
-async fn git_commit(
-    s: &AppState,
-    stack: &StackRecord,
-    from: DeploySource,
-) -> Result<Option<String>> {
-    if stack.source != "git" {
-        return Ok(None);
-    }
-    Ok(match from {
-        DeploySource::Draft => s
-            .store
-            .stack_git(stack.id)
-            .await?
-            .and_then(|g| g.last_fetched_commit),
-        DeploySource::Revision { revision } => {
-            s.store.revision(stack.id, revision).await?.git_commit
-        }
-    })
 }
 
 /// Plans `from` again and deploys it in the background. `plan_token` is the
@@ -253,7 +242,13 @@ pub async fn start_deploy(
     plan_token: Option<&str>,
     actor: Actor,
 ) -> Result<DeployStarted> {
-    let (resp, planned, variables, rollback_of) = make_plan(s, ops.as_ref(), stack, from).await?;
+    let (resp, planned, src) = make_plan(s, ops.as_ref(), stack, from).await?;
+    let Source {
+        variables,
+        rollback_of,
+        commit,
+        ..
+    } = src;
     let Some((project, p)) = planned else {
         return Err(Error::Invalid(issues_message(&resp.issues)));
     };
@@ -265,7 +260,6 @@ pub async fn start_deploy(
     if !p.blocking.is_empty() {
         return Err(Error::Invalid(p.blocking.join("; ")));
     }
-    let commit = git_commit(s, stack, from).await?;
     if !s.stack_locks.lock().unwrap().insert(stack.id) {
         return Err(Error::Conflict(
             "a deploy of this stack is already running".into(),

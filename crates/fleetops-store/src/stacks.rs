@@ -197,6 +197,55 @@ impl Store {
         .transpose()
     }
 
+    /// Replaces only the draft's variables, so a git stack's fetched file is
+    /// never written back.
+    pub async fn save_draft_variables(
+        &self,
+        stack_id: i64,
+        variables: &[String],
+        user: Option<i64>,
+        now: i64,
+    ) -> Result<()> {
+        let done = sqlx::query(
+            "UPDATE stack_drafts SET variables = ?, updated_at = ?, updated_by = ? WHERE stack_id = ?",
+        )
+        .bind(self.seal_vars(&draft_aad(stack_id), variables))
+        .bind(now)
+        .bind(user)
+        .bind(stack_id)
+        .execute(&self.pool)
+        .await
+        .map_err(db_err)?;
+        if done.rows_affected() == 0 {
+            return Err(Error::NotFound(format!("draft of stack {stack_id}")));
+        }
+        Ok(())
+    }
+
+    /// The draft and the git commit its file came from, read together.
+    pub async fn git_draft(&self, stack_id: i64) -> Result<Option<(Draft, Option<String>)>> {
+        let row: Option<(String, String, i64, Option<String>)> = sqlx::query_as(
+            "SELECT d.compose, d.variables, d.updated_at, g.last_fetched_commit
+             FROM stack_drafts d LEFT JOIN stack_git g ON g.stack_id = d.stack_id
+             WHERE d.stack_id = ?",
+        )
+        .bind(stack_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(db_err)?;
+        row.map(|(compose, sealed, updated_at, commit)| {
+            Ok((
+                Draft {
+                    compose,
+                    variables: self.open_vars(&draft_aad(stack_id), &sealed)?,
+                    updated_at,
+                },
+                commit,
+            ))
+        })
+        .transpose()
+    }
+
     /// Records a new revision, numbered after the newest, as `deploying`.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_revision(

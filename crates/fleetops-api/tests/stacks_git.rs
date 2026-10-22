@@ -3,7 +3,9 @@ mod common;
 use axum::http::StatusCode;
 use common::git::*;
 use common::*;
-use fleetops_api::stacks::git::{sync_stack, SyncOutcome, SyncTrigger, BUSY, UNREACHABLE};
+use fleetops_api::stacks::git::{
+    cache_dir, sync_stack, SyncOutcome, SyncTrigger, BUSY, UNREACHABLE,
+};
 use fleetops_git::testing::ServerOpts;
 use fleetops_store::TokenChange;
 use serde_json::json;
@@ -321,4 +323,32 @@ async fn auto_deploy_retried_after_a_running_deploy() {
     g.state.stack_locks.lock().unwrap().remove(&g.stack.id);
     let (_, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
     assert_eq!(task["status"], "succeeded", "{task:?}");
+}
+
+#[tokio::test]
+async fn detach_during_a_sync_keeps_the_draft_and_drops_the_cache() {
+    let g = git_app(
+        Some(("manual", false)),
+        ServerOpts {
+            delay: Duration::from_millis(300),
+            ..Default::default()
+        },
+    )
+    .await;
+    g.repo.commit(&[("compose.yaml", WEB_A)], "one");
+    let running = tokio::spawn({
+        let (state, stack) = (g.state.clone(), g.stack.clone());
+        async move { sync_stack(&state, &stack, SyncTrigger::Manual(1)).await }
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    // The route removes the cache too, but that can land before the
+    // fetch writes it.
+    g.store.detach_stack_git(g.stack.id).await.unwrap();
+    let out = running.await.unwrap().unwrap();
+    assert!(matches!(out, SyncOutcome::Failed { .. }), "{out:?}");
+    assert_eq!(
+        g.store.draft(g.stack.id).await.unwrap().unwrap().compose,
+        ""
+    );
+    assert!(!cache_dir(&g.state, g.stack.id).unwrap().exists());
 }

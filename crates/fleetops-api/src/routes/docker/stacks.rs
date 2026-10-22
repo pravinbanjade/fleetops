@@ -379,16 +379,23 @@ pub async fn save_draft(
     }
     let stored = stored.map(|d| d.variables).unwrap_or_default();
     unmask_variables(&mut body.variables, &stored)?;
-    let res = s
-        .store
-        .save_draft(
-            stack.id,
-            &body.compose,
-            &body.variables,
-            Some(c.user.user.id),
-            now_unix(),
-        )
-        .await;
+    // A git stack's file is never written back: a sync may have replaced
+    // it since the check above.
+    let res = if stack.source == "git" {
+        s.store
+            .save_draft_variables(stack.id, &body.variables, Some(c.user.user.id), now_unix())
+            .await
+    } else {
+        s.store
+            .save_draft(
+                stack.id,
+                &body.compose,
+                &body.variables,
+                Some(c.user.user.id),
+                now_unix(),
+            )
+            .await
+    };
     audit(&s, &c, "stack.save", &name, &res, None).await;
     res?;
     Ok(StatusCode::NO_CONTENT)
