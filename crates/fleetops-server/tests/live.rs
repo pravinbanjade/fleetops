@@ -65,10 +65,14 @@ impl Live {
 }
 
 async fn start() -> (Live, SocketAddr) {
+    start_with(ApiConfig::default()).await
+}
+
+async fn start_with(config: ApiConfig) -> (Live, SocketAddr) {
     let host = std::env::var("DOCKER_HOST").expect("DOCKER_HOST (make test-docker sets it)");
     let store = Store::in_memory().await.unwrap();
     // The server's own wiring: one agent registry for factory and state.
-    let state = fleetops_server::build_state(store.clone(), ApiConfig::default());
+    let state = fleetops_server::build_state(store.clone(), config);
     bootstrap_local(&store, &state.envs, &host)
         .await
         .unwrap()
@@ -621,4 +625,147 @@ configs:
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     session.close().await;
+}
+
+/// Removes an image the test built, through the API.
+async fn remove_image(live: &Live, env: &str, tag: &str) {
+    let (status, body) = live
+        .call(
+            "DELETE",
+            &format!("/api/v1/envs/{env}/images/{tag}?force=true"),
+            None,
+        )
+        .await;
+    assert!(status.is_success(), "{tag}: {status} {body}");
+}
+
+/// The image the stack's `service` container runs.
+async fn container_image(live: &Live, env: &str, container: &str) -> String {
+    let (_, inspect) = live
+        .call(
+            "GET",
+            &format!("/api/v1/envs/{env}/containers/{container}"),
+            None,
+        )
+        .await;
+    inspect["Config"]["Image"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[tokio::test]
+async fn stack_builds_against_docker() {
+    use fleetops_git::testing::{GitServer, ServerOpts, TestRepo};
+    let data = tempfile::tempdir().unwrap();
+    let (live, _) = start_with(ApiConfig {
+        data_dir: Some(data.path().to_path_buf()),
+        git_allow_http: true,
+        ..Default::default()
+    })
+    .await;
+    let repo = TestRepo::new("main");
+    let server = GitServer::start(&repo.root(), ServerOpts::default()).await;
+    repo.commit(
+        &[
+            (
+                "compose.yaml",
+                "services:\n  api:\n    build: ./app\n    command: sleep 300\n    restart: unless-stopped\n",
+            ),
+            ("app/Dockerfile", "FROM alpine:3.20\nCOPY msg /msg\n"),
+            ("app/msg", "one"),
+        ],
+        "one",
+    );
+    let stack = format!("fleetops-it-build-{}", std::process::id());
+    let base = format!("/api/v1/envs/local/stacks/{stack}");
+    let (status, body) = live
+        .call(
+            "POST",
+            "/api/v1/envs/local/stacks",
+            Some(json!({"name": stack, "compose": ""})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let (status, body) = live
+        .call(
+            "PUT",
+            &format!("{base}/git"),
+            Some(json!({"url": server.url("repo.git"), "branch": "main", "sync": "manual"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    git_sync(&live, &base).await;
+    deploy_stack(&live, &stack, json!({"source": "draft"})).await;
+    let api = format!("{stack}-api-1");
+    let (status, text) = container_file(&live, "local", &api, "/msg").await;
+    assert_eq!((status, text.as_str()), (StatusCode::OK, "one"));
+    let first = container_image(&live, "local", &api).await;
+
+    repo.commit(&[("app/msg", "two")], "two");
+    git_sync(&live, &base).await;
+    deploy_stack(&live, &stack, json!({"source": "draft"})).await;
+    let (_, text) = container_file(&live, "local", &api, "/msg").await;
+    assert_eq!(text, "two");
+    let second = container_image(&live, "local", &api).await;
+    assert_ne!(first, second);
+
+    let (status, _) = live.call("DELETE", &base, None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    for tag in [first, second] {
+        remove_image(&live, "local", &tag).await;
+    }
+}
+
+#[tokio::test]
+async fn inline_dockerfile_builds_through_an_agent() {
+    let (live, addr) = start().await;
+    let session = connect_agent(&live, addr).await;
+    let stack = format!("fleetops-it-inline-build-{}", std::process::id());
+    let compose = r#"
+services:
+  web:
+    build:
+      dockerfile_inline: "FROM alpine:3.20\nRUN echo hi > /hi"
+    command: sleep 300
+    restart: unless-stopped
+"#;
+    let (status, body) = live
+        .call(
+            "POST",
+            "/api/v1/envs/remote/stacks",
+            Some(json!({"name": stack, "compose": compose})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    deploy_stack_in(&live, "remote", &stack, json!({"source": "draft"})).await;
+    let web = format!("{stack}-web-1");
+    let (status, text) = container_file(&live, "remote", &web, "/hi").await;
+    assert_eq!((status, text.as_str()), (StatusCode::OK, "hi\n"));
+    let image = container_image(&live, "remote", &web).await;
+    let (status, _) = live
+        .call(
+            "DELETE",
+            &format!("/api/v1/envs/remote/stacks/{stack}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    remove_image(&live, "remote", &image).await;
+    session.close().await;
+}
+
+/// Syncs the stack's repo, waiting out a sync already running (attaching
+/// git starts one).
+async fn git_sync(live: &Live, base: &str) {
+    for _ in 0..100 {
+        let (status, out) = live.call("POST", &format!("{base}/git/sync"), None).await;
+        assert_eq!(status, StatusCode::OK, "{out}");
+        if out["outcome"] != "queued" {
+            assert_ne!(out["outcome"], "failed", "{out}");
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("the sync stayed queued");
 }

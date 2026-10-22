@@ -1504,6 +1504,7 @@ dependencies = [
  "fleetops-core",
  "fleetops-docker",
  "fleetops-ee",
+ "fleetops-git",
  "fleetops-kube",
  "fleetops-store",
  "fleetops-tunnel",
