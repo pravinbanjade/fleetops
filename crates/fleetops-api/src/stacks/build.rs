@@ -115,12 +115,27 @@ pub(crate) async fn draft_inputs(
                 continue;
             }
         };
-        match fleetops_git::tree_ids(&cache, commit, &[dir]).await {
-            Ok(ids) => {
-                trees.insert(name.clone(), ids[0].clone());
+        let tree = match fleetops_git::tree_ids(&cache, commit, &[dir]).await {
+            Ok(mut ids) => ids.remove(0),
+            Err(e) => {
+                issues.push(ComposeIssue::new(path, e.detail()));
+                continue;
             }
-            Err(e) => issues.push(ComposeIssue::new(path, e.detail())),
+        };
+        if b.dockerfile_inline.is_none() {
+            let file = b.dockerfile.clone().unwrap_or_else(|| "Dockerfile".into());
+            if !fleetops_git::tree_has_file(&cache, &tree, &file).await? {
+                issues.push(ComposeIssue::new(
+                    format!("services.{name}.build.dockerfile"),
+                    format!(
+                        "{file} not found in {} at {}",
+                        b.context,
+                        &commit[..commit.len().min(7)]
+                    ),
+                ));
+            }
         }
+        trees.insert(name.clone(), tree);
     }
     Ok((
         BuildInputs {
@@ -275,13 +290,16 @@ pub(crate) async fn prepare(
                 .clone()
                 .ok_or_else(|| Error::Invalid("the build has no commit".into()))?;
             ensure_commit(s, stack, &git, &commit).await?;
-            let dir = context_dir(&git.path, &b.context).map_err(Error::Invalid)?;
             let limits = fleetops_git::TarLimits {
                 max_bytes: MAX_CONTEXT,
                 max_entries: MAX_ENTRIES,
             };
+            // By tree id, not by path: the content is exactly what was
+            // hashed, whatever the stack's path setting says now.
+            let keep = vec![b.dockerfile.clone().unwrap_or_else(|| "Dockerfile".into())];
             let out =
-                fleetops_git::tar_dir(&cache_dir(s, stack.id)?, &commit, &dir, limits).await?;
+                fleetops_git::tar_tree(&cache_dir(s, stack.id)?, &tree, &b.context, &keep, limits)
+                    .await?;
             notes.extend(
                 out.skipped
                     .iter()

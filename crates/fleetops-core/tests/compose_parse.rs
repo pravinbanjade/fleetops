@@ -633,3 +633,28 @@ services:
     assert!(has(&i, "services.g.pull_policy", "build"), "{i:?}");
     assert!(has(&i, "services.h.image", "image is required"), "{i:?}");
 }
+
+#[test]
+fn dockerfile_must_stay_in_the_context() {
+    let i = issues("services:\n  a:\n    build: { context: ./app, dockerfile: ../Dockerfile }\n  b:\n    build: { dockerfile: /abs/Dockerfile }\n");
+    assert!(
+        has(
+            &i,
+            "services.a.build.dockerfile",
+            "inside the build context"
+        ),
+        "{i:?}"
+    );
+    assert!(
+        has(
+            &i,
+            "services.b.build.dockerfile",
+            "inside the build context"
+        ),
+        "{i:?}"
+    );
+    let p = ok(
+        "services:\n  a:\n    build: { context: ./app, dockerfile: docker/../Dockerfile.prod }\n",
+    );
+    assert!(p.services["a"].build.is_some());
+}

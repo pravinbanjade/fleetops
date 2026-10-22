@@ -1,6 +1,7 @@
 use fleetops_git::testing::{GitServer, ServerOpts, TestRepo};
 use fleetops_git::{
-    fetch_commit, fetch_file, has_commit, read_at, tar_dir, tree_ids, Limits, Source, TarLimits,
+    fetch_commit, fetch_file, has_commit, read_at, tar_dir, tar_tree, tree_has_file, tree_ids,
+    Limits, Source, TarLimits,
 };
 use std::time::Duration;
 
@@ -630,4 +631,39 @@ async fn fetch_commit_refused_names_the_commit() {
         .await
         .unwrap_err();
     assert_eq!(message(e), format!("commit {} cannot be fetched", &c1[..7]));
+}
+
+#[tokio::test]
+async fn allow_list_dockerignore_keeps_the_dockerfile() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(
+        &[
+            ("compose.yaml", COMPOSE),
+            ("app/Dockerfile", "FROM alpine\n"),
+            ("app/.dockerignore", "*\n!src\n"),
+            ("app/src/main.c", "int main;"),
+            ("app/notes.txt", "n"),
+        ],
+        "one",
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let c = fetched(&server, &dir).await;
+    let tree = tree_ids(&dir, &c, &["app".into()]).await.unwrap().remove(0);
+    let out = tar_tree(&dir, &tree, "app", &["Dockerfile".into()], BIG)
+        .await
+        .unwrap();
+    let got = entries(&out.tar);
+    let files: Vec<&str> = got
+        .iter()
+        .filter(|e| e.2 != 'd')
+        .map(|e| e.0.as_str())
+        .collect();
+    assert_eq!(
+        files,
+        vec![".dockerignore", "Dockerfile", "src/main.c"],
+        "{got:?}"
+    );
+    assert!(tree_has_file(&dir, &tree, "Dockerfile").await.unwrap());
+    assert!(!tree_has_file(&dir, &tree, "Nope").await.unwrap());
 }

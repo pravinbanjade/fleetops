@@ -419,3 +419,66 @@ async fn cleanup_refusal_is_logged_not_fatal() {
     );
     assert!(g.fake.state.lock().unwrap().images.contains_key(&one));
 }
+
+#[tokio::test]
+async fn missing_dockerfile_blocks_the_plan() {
+    let g = git_app(Some(("manual", false)), ServerOpts::default()).await;
+    let head = g.repo.commit(
+        &[
+            ("compose.yaml", "services:\n  api:\n    build: ./app\n"),
+            ("app/main.txt", "x"),
+        ],
+        "one",
+    );
+    g.sync(SyncTrigger::Manual(1)).await;
+    let p = plan(&g, draft()).await;
+    assert!(p["plan"].is_null(), "{p}");
+    assert_eq!(
+        p["issues"],
+        json!([{"path": "services.api.build.dockerfile", "message": format!("Dockerfile not found in ./app at {}", &head[..7])}])
+    );
+}
+
+#[tokio::test]
+async fn rollback_builds_the_recorded_tree_after_a_path_change() {
+    let g = git_build_app(ServerOpts::default(), "one").await;
+    deploy(&g, draft()).await;
+    let one = image_of(&g, "api");
+    // The stack now takes its file from b/, whose app differs.
+    g.repo.commit(
+        &[
+            ("b/compose.yaml", BUILD),
+            ("b/app/Dockerfile", "FROM alpine AS prod\n"),
+            ("b/app/main.txt", "from-b"),
+        ],
+        "b",
+    );
+    let mut s = settings(&g.server, "manual", false);
+    s.path = "b/compose.yaml".into();
+    g.store
+        .set_stack_git(
+            g.stack.id,
+            &s,
+            fleetops_store::TokenChange::Keep,
+            None,
+            None,
+            2,
+        )
+        .await
+        .unwrap();
+    g.sync(SyncTrigger::Manual(1)).await;
+    deploy(&g, draft()).await;
+    forget_image(&g, &one);
+    let t = deploy(&g, json!({"source": "revision", "revision": 1})).await;
+    assert_eq!(t["status"], "succeeded", "{t}");
+    let last = builds(&g).pop().unwrap();
+    assert_eq!(last.tag.as_deref(), Some(one.as_str()));
+    let BuildContext::Tar(tar) = &last.context else {
+        panic!()
+    };
+    let text = String::from_utf8_lossy(tar).into_owned();
+    assert!(
+        text.contains("one") && !text.contains("from-b"),
+        "built the wrong tree"
+    );
+}

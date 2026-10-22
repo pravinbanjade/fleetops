@@ -479,29 +479,69 @@ pub struct DirTar {
 /// paths relative to `dir`, in tree order, mtime 0, owner 0, mode 644 or
 /// 755, symlinks kept. The same tree always gives the same bytes.
 pub async fn tar_dir(cache: &Path, commit: &str, dir: &str, limits: TarLimits) -> Result<DirTar> {
-    let (commit, dir) = (commit.to_string(), dir.to_string());
+    let tree = tree_ids(cache, commit, &[dir.to_string()]).await?.remove(0);
+    let label = if dir.is_empty() { "." } else { dir };
+    tar_tree(cache, &tree, label, &[], limits).await
+}
+
+fn find_tree<'r>(
+    repo: &'r gix::Repository,
+    tree: &str,
+) -> std::result::Result<gix::Tree<'r>, Fail> {
+    let id = gix::ObjectId::from_hex(tree.as_bytes()).map_err(|e| read_fail(&e))?;
+    repo.find_object(id)
+        .map_err(|e| read_fail(&e))?
+        .try_into_tree()
+        .map_err(|e| read_fail(&e))
+}
+
+/// Whether tree `tree` holds a file at `path`.
+pub async fn tree_has_file(cache: &Path, tree: &str, path: &str) -> Result<bool> {
+    let (tree, path) = (tree.to_string(), path.to_string());
     with_cache(cache, move |repo| {
-        let short = &commit[..commit.len().min(7)];
-        let tree = dir_tree(commit_tree(repo, &commit)?, &dir, short)?;
-        let ignore = match tree
+        let t = find_tree(repo, &tree)?;
+        Ok(t.lookup_entry_by_path(&path)
+            .map_err(|e| read_fail(&e))?
+            .is_some_and(|e| e.mode().is_blob() || e.mode().is_link()))
+    })
+    .await
+}
+
+/// A tar of tree `tree` (by its git id, so the content is exactly what was
+/// hashed), as `tar_dir` makes it. `label` names it in errors. `keep` are
+/// paths `.dockerignore` never leaves out: like the Docker CLI, the
+/// Dockerfile and the ignore file itself are always sent.
+pub async fn tar_tree(
+    cache: &Path,
+    tree: &str,
+    label: &str,
+    keep: &[String],
+    limits: TarLimits,
+) -> Result<DirTar> {
+    let (tree_id, dir, keep) = (tree.to_string(), label.to_string(), keep.to_vec());
+    with_cache(cache, move |repo| {
+        let tree = find_tree(repo, &tree_id)?;
+        let mut text = match tree
             .lookup_entry_by_path(".dockerignore")
             .map_err(|e| read_fail(&e))?
         {
             Some(e) if e.mode().is_blob() => {
                 let blob = e.object().map_err(|e| read_fail(&e))?;
-                dockerignore::Matcher::new(&String::from_utf8_lossy(&blob.data))
+                String::from_utf8_lossy(&blob.data).into_owned()
             }
-            _ => dockerignore::Matcher::new(""),
+            _ => String::new(),
         };
+        if !text.is_empty() {
+            text.push_str("\n!.dockerignore\n");
+            for k in &keep {
+                text.push_str(&format!("!{k}\n"));
+            }
+        }
         let mut w = TarWriter {
             b: tar::Builder::new(Vec::new()),
-            ignore,
+            ignore: dockerignore::Matcher::new(&text),
             limits,
-            dir: if dir.is_empty() {
-                ".".into()
-            } else {
-                dir.clone()
-            },
+            dir,
             bytes: 0,
             entries: 0,
             skipped: vec![],

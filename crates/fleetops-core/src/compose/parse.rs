@@ -1161,6 +1161,20 @@ const REFUSED_BUILD_KEYS: &[&str] = &[
     "entitlements",
 ];
 
+/// Whether a path is absolute or climbs above where it starts.
+fn escapes_context(p: &str) -> bool {
+    let mut depth = 0i32;
+    p.starts_with('/')
+        || p.split('/').any(|seg| {
+            match seg {
+                ".." => depth -= 1,
+                "" | "." => {}
+                _ => depth += 1,
+            }
+            depth < 0
+        })
+}
+
 /// A service's `build:`: a context path, or a mapping.
 fn build(cx: &mut Cx, v: &Value, path: &str) -> Option<Build> {
     let mut b = Build {
@@ -1193,6 +1207,12 @@ fn build(cx: &mut Cx, v: &Value, path: &str) -> Option<Build> {
                 b.context = c;
             }
             b.dockerfile = cx.opt_string(m, "dockerfile", path);
+            if b.dockerfile.as_deref().is_some_and(escapes_context) {
+                cx.err(
+                    &join(path, "dockerfile"),
+                    "the dockerfile must be a path inside the build context",
+                );
+            }
             b.dockerfile_inline = cx.opt_string(m, "dockerfile_inline", path);
             if b.dockerfile.is_some() && b.dockerfile_inline.is_some() {
                 cx.err(path, "set only one of dockerfile and dockerfile_inline");
