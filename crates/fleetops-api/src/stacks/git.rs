@@ -180,10 +180,14 @@ async fn sync_fetched(
     };
     let commit = fetched.commit.clone();
     let short = &commit[..7];
-    // An auto-deploy that could not start yet (environment down, another
-    // deploy running) is tried again on the next sync of the same commit.
+    // A new file, not a new commit, is what auto-deploys: a commit that
+    // leaves the file alone never retries a failed auto-deploy. One that
+    // could not start yet (environment down, another deploy running) is
+    // tried again on the next sync.
+    let draft = s.store.draft(stack.id).await?;
     let deferred = matches!(git.last_sync_error.as_deref(), Some(UNREACHABLE | BUSY));
-    let fresh = git.last_fetched_commit.as_deref() != Some(commit.as_str())
+    let fresh = git.last_fetched_commit.is_none()
+        || draft.as_ref().map(|d| d.compose.as_str()) != Some(fetched.content.as_str())
         || matches!(trigger, SyncTrigger::Resume(_))
         || deferred;
     s.store
@@ -206,12 +210,7 @@ async fn sync_fetched(
     };
     // The file is checked even when nothing deploys it, so a broken commit
     // shows on the stack straight away.
-    let variables = s
-        .store
-        .draft(stack.id)
-        .await?
-        .map(|d| d.variables)
-        .unwrap_or_default();
+    let variables = draft.map(|d| d.variables).unwrap_or_default();
     if let Err(issues) = parse(&fetched.content, &variables, &stack.name) {
         let msg = super::start::issues_message(&issues);
         return fail(format!("{} at {short} has problems: {msg}", git.path)).await;

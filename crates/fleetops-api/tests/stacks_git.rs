@@ -96,6 +96,51 @@ async fn failed_auto_deploy_not_retried_for_same_commit() {
 }
 
 #[tokio::test]
+async fn failed_auto_deploy_not_retried_by_a_commit_that_keeps_the_file() {
+    let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
+    g.repo.commit(&[("compose.yaml", WEB_A)], "one");
+    *g.fake.fail_on.lock().unwrap() = Some("create_raw".into());
+    let (_, task) = g.sync_and_deploy(SyncTrigger::Poll).await;
+    assert_eq!(task["status"], "failed", "{task:?}");
+    let error = g.git().await.last_sync_error.unwrap();
+    *g.fake.fail_on.lock().unwrap() = None;
+    let readme = g.repo.commit(&[("README.md", "hello\n")], "docs");
+    assert_eq!(
+        g.sync(SyncTrigger::Poll).await,
+        SyncOutcome::Pending {
+            commit: readme.clone()
+        }
+    );
+    assert_eq!(g.revisions().await.len(), 1);
+    let git = g.git().await;
+    assert_eq!(git.pending_commit.as_deref(), Some(readme.as_str()));
+    assert_eq!(git.last_sync_error.as_deref(), Some(error.as_str()));
+}
+
+#[tokio::test]
+async fn attaching_auto_deploys_a_draft_that_matches_the_repo() {
+    let g = git_app(None, ServerOpts::default()).await;
+    g.store
+        .save_draft(g.stack.id, WEB_A, &[], Some(1), 1)
+        .await
+        .unwrap();
+    g.store
+        .set_stack_git(
+            g.stack.id,
+            &settings(&g.server, "poll", true),
+            TokenChange::Keep,
+            Some("s"),
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    g.repo.commit(&[("compose.yaml", WEB_A)], "one");
+    let (_, task) = g.sync_and_deploy(SyncTrigger::Settings(1)).await;
+    assert_eq!(task["status"], "succeeded", "{task:?}");
+}
+
+#[tokio::test]
 async fn rollback_pauses_and_resume_deploys() {
     let g = git_app(Some(("poll", true)), ServerOpts::default()).await;
     g.repo.commit(&[("compose.yaml", WEB_A)], "a");
