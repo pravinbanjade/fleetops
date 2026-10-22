@@ -164,7 +164,14 @@ async fn git_stack_refuses_config_values() {
         .await
         .unwrap();
     app.store
-        .record_git_fetch(id, "c1", COMPOSE, &[("app".into(), "from repo".into())], 2)
+        .record_git_fetch(
+            id,
+            "c1",
+            COMPOSE,
+            &[("app".into(), "from repo".into())],
+            &Default::default(),
+            2,
+        )
         .await
         .unwrap();
     let r = put(&app, &s, "config", "app", "x").await;
