@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { errorMessage } from "@/lib/errors";
 import { FormError } from "@/pages/AuthLayout";
+import { isSshUrl } from "./GitSettingsForm";
 import { IssueLine } from "./SecretsTab";
 
 const CodeMirrorField = lazy(() => import("@/components/yaml-editor/CodeMirrorField"));
@@ -25,7 +26,7 @@ const toRows = (vars: string[]): Row[] =>
 export function repoFileLink(url: string, branch: string, path: string): string | null {
   let u: URL;
   try {
-    u = new URL(url);
+    u = new URL(httpsPage(url));
   } catch {
     return null;
   }
@@ -33,6 +34,21 @@ export function repoFileLink(url: string, branch: string, path: string): string 
   if (u.hostname === "github.com") return `${base}/blob/${branch}/${path}`;
   if (u.hostname === "gitlab.com") return `${base}/-/blob/${branch}/${path}`;
   return null;
+}
+
+/** An ssh URL's https page on the same host; other URLs as they are. */
+function httpsPage(url: string): string {
+  if (url.startsWith("ssh://")) {
+    const [authority, ...rest] = url.slice(6).split("/");
+    const host = authority.split("@").pop()!.split(":")[0];
+    return `https://${host}/${rest.join("/")}`;
+  }
+  if (isSshUrl(url)) {
+    const colon = url.indexOf(":");
+    const host = url.slice(0, colon).split("@").pop()!;
+    return `https://${host}/${url.slice(colon + 1).replace(/^\/+/, "")}`;
+  }
+  return url;
 }
 
 const toLines = (rows: Row[]) => rows.filter((r) => r.key.trim()).map((r) => `${r.key.trim()}=${r.value}`);

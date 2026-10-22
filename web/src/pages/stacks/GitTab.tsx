@@ -1,7 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { detachStackGit, resumeStackGit, rotateStackGitSecret, setStackGit, syncStackGit } from "@/api/gen/sdk.gen";
+import {
+  detachStackGit,
+  resetStackGitHostKey,
+  resumeStackGit,
+  rotateStackGitSecret,
+  setStackGit,
+  syncStackGit,
+} from "@/api/gen/sdk.gen";
 import type { DeploySource, SyncOutcome } from "@/api/gen/types.gen";
 import { keys, stackGitQuery } from "@/api/queries";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -16,6 +23,19 @@ export const short = (sha: string | null | undefined) => (sha ? sha.slice(0, 7) 
 
 /** The webhook URL as the git host must call it. */
 export const absoluteUrl = (url: string) => (url.startsWith("/") ? `${window.location.origin}${url}` : url);
+
+/** Hosts whose published SSH host keys FleetOps ships. */
+const PUBLISHED_HOST_KEYS = ["github.com", "gitlab.com", "bitbucket.org"];
+
+/** The host of an ssh URL (`ssh://…` or `[user@]host:path`). */
+export function sshHost(url: string): string {
+  const rest = url.startsWith("ssh://") ? url.slice(6).split("/")[0] : url.split(":")[0];
+  return rest.split("@").pop()!.split(":")[0].toLowerCase();
+}
+
+/** A sync that failed on a changed host key, which an editor may accept. */
+const hostKeyChanged = (error: string | null) =>
+  !!error && error.startsWith("the host key of ") && error.includes(" changed (now ");
 
 /** Where a freshly created secret waits for the stack page to show it. */
 export const secretKey = (env: string, stack: string) => ["stack-git-secret", env, stack] as const;
@@ -126,6 +146,15 @@ export function GitTab({
       await refresh();
     },
   });
+  const acceptHostKey = useMutation({
+    mutationFn: async () => {
+      await resetStackGitHostKey({ path });
+      const { data } = await syncStackGit({ path });
+      await refresh();
+      if (data.outcome === "failed") toast.error(outcomeText(data));
+      else toast.success(outcomeText(data));
+    },
+  });
   const rotate = useMutation({
     mutationFn: async () => {
       const { data } = await rotateStackGitSecret({ path });
@@ -159,11 +188,31 @@ export function GitTab({
           <dd className="font-ident">{g.last_fetched_commit ? short(g.last_fetched_commit) : "not yet"}</dd>
           <dt className="text-muted-foreground">Last sync</dt>
           <dd>{g.last_sync_at ? formatAgo(g.last_sync_at) : "never"}</dd>
+          {g.ssh_host_key && (
+            <>
+              <dt className="text-muted-foreground">Host key</dt>
+              <dd className="font-ident break-all">
+                {`${g.ssh_host_key} (${PUBLISHED_HOST_KEYS.includes(sshHost(g.url)) ? "published key" : "trusted on first sync"})`}
+              </dd>
+            </>
+          )}
         </dl>
         {g.last_sync_error && (
-          <p role="alert" className="text-sm text-destructive">
-            {g.last_sync_error}
-          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <p role="alert" className="text-sm text-destructive">
+              {g.last_sync_error}
+            </p>
+            {canEdit && hostKeyChanged(g.last_sync_error) && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={acceptHostKey.isPending}
+                onClick={() => acceptHostKey.mutate()}
+              >
+                Accept new key
+              </Button>
+            )}
+          </div>
         )}
         {g.pending_commit && (
           <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -205,7 +254,13 @@ export function GitTab({
       )}
       <section aria-label="Source" className="grid max-w-2xl gap-3">
         <h2 className="text-base font-semibold">Source</h2>
-        <GitSettingsForm value={editing} onChange={setForm} hasToken={g.has_token} disabled={!canEdit} />
+        <GitSettingsForm
+          value={editing}
+          onChange={setForm}
+          hasToken={g.has_token}
+          publicKey={g.ssh_public_key}
+          disabled={!canEdit}
+        />
         <FormError message={save.error ? errorMessage(save.error) : null} />
         {canEdit && (
           <div className="flex flex-wrap gap-2">

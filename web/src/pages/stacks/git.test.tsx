@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { mockFetch } from "@/test/fetch";
 import { ENVS, loggedIn, renderApp } from "@/test/app";
+import { repoFileLink } from "./StackEditor";
 
 const COMPOSE = "services:\n  web:\n    image: nginx:1.27\n";
 const SHA = "0123456789abcdef0123456789abcdef01234567";
@@ -17,6 +18,9 @@ const gitRecord = {
   auto_deploy: false,
   paused: false,
   has_token: true,
+  has_key: false,
+  ssh_public_key: null as string | null,
+  ssh_host_key: null as string | null,
   last_fetched_commit: SHA,
   pending_commit: null as string | null,
   last_sync_at: 10,
@@ -181,5 +185,104 @@ describe("git-backed stacks", () => {
     const table = await screen.findByRole("table", { name: "Revisions" });
     expect(within(table).getByRole("columnheader", { name: "Commit" })).toBeInTheDocument();
     expect(within(table).getByText("0123456")).toBeInTheDocument();
+  });
+
+  it("swaps the token for a generated deploy key on an ssh URL", async () => {
+    const calls = mockFetch({
+      ...routes(),
+      "PUT /api/v1/envs/local/stacks/shop/git": { json: { status: status(), webhook_secret: null } },
+    });
+    const { screen } = renderApp("/envs/local/stacks/shop");
+    await openGitTab(screen);
+    const url = await screen.findByLabelText("Repository URL");
+    await userEvent.clear(url);
+    await userEvent.type(url, "git@git.acme:ops/shop.git");
+    expect(screen.queryByText("Token saved")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Access token")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Deploy key")).toHaveValue("generate");
+    expect(screen.getByText("Add the public key to the repository as a read-only deploy key.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.path.endsWith("/shop/git"))).toBe(true));
+    const put = calls.find((c) => c.method === "PUT" && c.path.endsWith("/shop/git"));
+    expect(put?.body).toMatchObject({ url: "git@git.acme:ops/shop.git", generate_key: true, ssh_key: null, token: null });
+  });
+
+  it("sends a pasted private key", async () => {
+    const calls = mockFetch({
+      ...routes(status({ url: "git@git.acme:ops/shop.git", has_token: false })),
+      "PUT /api/v1/envs/local/stacks/shop/git": { json: { status: status(), webhook_secret: null } },
+    });
+    const { screen } = renderApp("/envs/local/stacks/shop");
+    await openGitTab(screen);
+    await userEvent.selectOptions(await screen.findByLabelText("Deploy key"), "paste");
+    await userEvent.type(screen.getByLabelText("Private key"), "-----BEGIN OPENSSH PRIVATE KEY-----");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT" && c.path.endsWith("/shop/git"))).toBe(true));
+    const put = calls.find((c) => c.method === "PUT" && c.path.endsWith("/shop/git"));
+    expect(put?.body).toMatchObject({ generate_key: false, ssh_key: "-----BEGIN OPENSSH PRIVATE KEY-----" });
+  });
+
+  it("shows a stored key's public key and the pinned host key", async () => {
+    mockFetch(
+      routes(
+        status({
+          url: "git@git.acme:ops/shop.git",
+          has_token: false,
+          has_key: true,
+          ssh_public_key: "ssh-ed25519 AAAAC3 fleetops:shop",
+          ssh_host_key: "ssh-ed25519 SHA256:abc",
+        }),
+      ),
+    );
+    const { screen } = renderApp("/envs/local/stacks/shop");
+    await openGitTab(screen);
+    expect(await screen.findByLabelText("Public key")).toHaveTextContent("ssh-ed25519 AAAAC3 fleetops:shop");
+    expect(screen.getByRole("button", { name: "Copy public key" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove key" })).toBeInTheDocument();
+    expect(screen.getByText("ssh-ed25519 SHA256:abc (trusted on first sync)")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Accept new key" })).not.toBeInTheDocument();
+  });
+
+  it("accepts a changed host key, then syncs", async () => {
+    const calls = mockFetch({
+      ...routes(
+        status({
+          url: "ssh://git@git.acme/ops/shop.git",
+          has_key: true,
+          ssh_public_key: "ssh-ed25519 AAAAC3 fleetops:shop",
+          ssh_host_key: "ssh-ed25519 SHA256:abc",
+          last_sync_error:
+            "the host key of git.acme changed (now SHA256:new); if that is expected, accept the new key in the Git tab",
+        }),
+      ),
+      "DELETE /api/v1/envs/local/stacks/shop/git/host-key": { status: 204 },
+    });
+    const { screen } = renderApp("/envs/local/stacks/shop");
+    await openGitTab(screen);
+    await userEvent.click(await screen.findByRole("button", { name: "Accept new key" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path.endsWith("/git/sync"))).toBe(true));
+    const del = calls.findIndex((c) => c.method === "DELETE" && c.path.endsWith("/git/host-key"));
+    const sync = calls.findIndex((c) => c.method === "POST" && c.path.endsWith("/git/sync"));
+    expect(del).toBeGreaterThanOrEqual(0);
+    expect(del).toBeLessThan(sync);
+  });
+
+  it("offers no accept for other sync errors", async () => {
+    mockFetch(routes(status({ url: "git@git.acme:ops/shop.git", last_sync_error: "the repository refused the SSH key" })));
+    const { screen } = renderApp("/envs/local/stacks/shop");
+    await openGitTab(screen);
+    expect(await screen.findByText("the repository refused the SSH key")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Accept new key" })).not.toBeInTheDocument();
+  });
+
+  it("links ssh URLs of known hosts to their file pages", () => {
+    expect(repoFileLink("git@github.com:acme/ops.git", "main", "c.yaml")).toBe("https://github.com/acme/ops/blob/main/c.yaml");
+    expect(repoFileLink("ssh://git@gitlab.com/acme/ops.git", "main", "c.yaml")).toBe(
+      "https://gitlab.com/acme/ops/-/blob/main/c.yaml",
+    );
+    expect(repoFileLink("ssh://git@github.com:22/acme/ops.git", "dev", "a/b.yml")).toBe(
+      "https://github.com/acme/ops/blob/dev/a/b.yml",
+    );
+    expect(repoFileLink("git@git.acme:ops.git", "main", "c.yaml")).toBeNull();
   });
 });
