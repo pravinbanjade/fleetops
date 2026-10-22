@@ -187,6 +187,12 @@ pub async fn fetch_file(cache: &Path, src: &Source, limits: Limits) -> Result<Fe
     // gix's HTTP client uses rustls without a built-in provider.
     let _ = rustls::crypto::ring::default_provider().install_default();
     let guard = dir_lock(cache).lock_owned().await;
+    // Each fetch adds a pack: past the cap the cache starts again. Done
+    // before the fetch, so the cache always holds the commit it returns,
+    // for [`read_at`].
+    if packs(cache) >= MAX_PACKS {
+        let _ = std::fs::remove_dir_all(cache);
+    }
     let interrupt = Arc::new(AtomicBool::new(false));
     let mut job = tokio::task::spawn_blocking({
         let (cache, src, interrupt) = (cache.to_path_buf(), src.clone(), interrupt.clone());
@@ -231,12 +237,7 @@ pub async fn fetch_file(cache: &Path, src: &Source, limits: Limits) -> Result<Fe
     };
     let scrub = |m: String| scrub(m, src.token.as_deref());
     match joined.map_err(|e| Error::Internal(format!("git fetch stopped: {e}")))? {
-        Ok(f) => {
-            if packs(cache) > MAX_PACKS {
-                let _ = std::fs::remove_dir_all(cache);
-            }
-            Ok(f)
-        }
+        Ok(f) => Ok(f),
         Err(Fail::NeedsToken) => Err(Error::Invalid(
             "the repository needs an access token".into(),
         )),
@@ -371,13 +372,30 @@ fn read_file(
     path: &str,
     max_file: u64,
 ) -> std::result::Result<Fetched, Fail> {
-    let internal =
-        |e: &dyn std::fmt::Display| Fail::Network(format!("reading the fetched commit: {e}"));
-    let mut head = repo.find_reference(tracking).map_err(|e| internal(&e))?;
-    let commit = head.peel_to_commit().map_err(|e| internal(&e))?;
+    let mut head = repo.find_reference(tracking).map_err(|e| read_fail(&e))?;
+    let commit = head.peel_to_commit().map_err(|e| read_fail(&e))?;
     let id = commit.id().to_string();
-    let short = &id[..7];
-    let tree = commit.tree().map_err(|e| internal(&e))?;
+    let tree = commit.tree().map_err(|e| read_fail(&e))?;
+    let content = read_blob(repo, &tree, path, &id[..7], max_file)?;
+    Ok(Fetched {
+        commit: id,
+        content,
+    })
+}
+
+fn read_fail(e: &dyn std::fmt::Display) -> Fail {
+    Fail::Network(format!("reading the fetched commit: {e}"))
+}
+
+/// The UTF-8 text of the file at `path` in `tree`.
+fn read_blob(
+    repo: &gix::Repository,
+    tree: &gix::Tree<'_>,
+    path: &str,
+    short: &str,
+    max_file: u64,
+) -> std::result::Result<String, Fail> {
+    let internal = |e: &dyn std::fmt::Display| read_fail(e);
     let entry = tree
         .lookup_entry_by_path(path)
         .map_err(|e| internal(&e))?
@@ -395,11 +413,40 @@ fn read_file(
         )));
     }
     let blob = entry.object().map_err(|e| internal(&e))?;
-    let content = String::from_utf8(blob.data.clone())
-        .map_err(|_| Fail::Invalid(format!("{path} is not UTF-8")))?;
-    Ok(Fetched {
-        commit: id,
-        content,
+    String::from_utf8(blob.data.clone()).map_err(|_| Fail::Invalid(format!("{path} is not UTF-8")))
+}
+
+/// Reads `paths` at `commit` from a cache [`fetch_file`] just filled (a git
+/// stack's config files, read at the Compose file's commit). Errors match
+/// `fetch_file`'s: `<path> not found at <short>`, and so on.
+pub async fn read_at(
+    cache: &Path,
+    commit: &str,
+    paths: &[String],
+    max_file: u64,
+) -> Result<Vec<String>> {
+    let _guard = dir_lock(cache).lock_owned().await;
+    let (cache, commit, paths) = (cache.to_path_buf(), commit.to_string(), paths.to_vec());
+    let read = tokio::task::spawn_blocking(move || -> std::result::Result<Vec<String>, Fail> {
+        let repo = gix::open(&cache).map_err(|e| read_fail(&e))?;
+        let id = gix::ObjectId::from_hex(commit.as_bytes()).map_err(|e| read_fail(&e))?;
+        let tree = repo
+            .find_commit(id)
+            .map_err(|e| read_fail(&e))?
+            .tree()
+            .map_err(|e| read_fail(&e))?;
+        let short = &commit[..commit.len().min(7)];
+        paths
+            .iter()
+            .map(|p| read_blob(&repo, &tree, p, short, max_file))
+            .collect()
+    })
+    .await
+    .map_err(|e| Error::Internal(format!("git read stopped: {e}")))?;
+    read.map_err(|f| match f {
+        Fail::Invalid(m) => Error::Invalid(m),
+        Fail::Network(m) => Error::Internal(m),
+        _ => Error::Internal("reading the fetched commit failed".into()),
     })
 }
 

@@ -1,5 +1,5 @@
 use fleetops_git::testing::{GitServer, ServerOpts, TestRepo};
-use fleetops_git::{fetch_file, Limits, Source};
+use fleetops_git::{fetch_file, read_at, Limits, Source};
 use std::time::Duration;
 
 const TOKEN: &str = "s3cret-token";
@@ -344,5 +344,81 @@ async fn cache_packs_stay_bounded() {
             "{} packs",
             packs(&dir)
         );
+    }
+}
+
+#[tokio::test]
+async fn read_at_reads_paths_at_the_commit() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    repo.commit(
+        &[
+            ("deploy/compose.yaml", COMPOSE),
+            ("deploy/conf/a.conf", "a=1\n"),
+            ("b.txt", "b"),
+        ],
+        "one",
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let f = fetch_file(
+        &dir,
+        &source(&server, "main", "deploy/compose.yaml", None),
+        Limits::default(),
+    )
+    .await
+    .unwrap();
+    let got = read_at(
+        &dir,
+        &f.commit,
+        &["deploy/conf/a.conf".into(), "b.txt".into()],
+        1024,
+    )
+    .await
+    .unwrap();
+    assert_eq!(got, vec!["a=1\n".to_string(), "b".to_string()]);
+    let e = read_at(&dir, &f.commit, &["b.txt".into()], 0)
+        .await
+        .unwrap_err();
+    assert!(message(e).contains("b.txt is larger than"));
+}
+
+#[tokio::test]
+async fn read_at_reports_missing_path() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    let head = repo.commit(&[("compose.yaml", COMPOSE)], "one");
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    fetch_file(
+        &dir,
+        &source(&server, "main", "compose.yaml", None),
+        Limits::default(),
+    )
+    .await
+    .unwrap();
+    let e = read_at(&dir, &head, &["nginx.conf".into()], 1024)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        message(e),
+        format!("nginx.conf not found at {}", &head[..7])
+    );
+}
+
+#[tokio::test]
+async fn read_at_works_right_after_the_fetch_that_hits_the_pack_cap() {
+    let (repo, server) = served(ServerOpts::default()).await;
+    let cache = tempfile::tempdir().unwrap();
+    let dir = cache.path().join("1");
+    let src = source(&server, "main", "compose.yaml", None);
+    for i in 0..(fleetops_git::MAX_PACKS + 2) {
+        repo.commit(
+            &[("compose.yaml", COMPOSE), ("a.conf", &format!("{i}"))],
+            "next",
+        );
+        let f = fetch_file(&dir, &src, Limits::default()).await.unwrap();
+        let got = read_at(&dir, &f.commit, &["a.conf".into()], 1024)
+            .await
+            .unwrap();
+        assert_eq!(got, vec![i.to_string()]);
     }
 }
