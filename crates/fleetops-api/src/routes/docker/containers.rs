@@ -12,18 +12,20 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use fleetops_core::compose::files::secret_paths;
 use fleetops_core::docker::{mask_env, unmask_env};
 use fleetops_core::docker::{
-    ContainerAction, ContainerSpec, ContainerSummary, DirListing, PruneReport,
+    ContainerAction, ContainerSpec, ContainerSummary, DirListing, DockerOps, PruneReport,
 };
 use fleetops_core::kube::MASK;
 use fleetops_core::perm::{Permission, Row, Verb};
 
 const REVEAL: Permission = Permission::new(Row::Containers, Verb::Reveal);
 use fleetops_core::recreate::recreate;
-use fleetops_core::{now_unix, Error};
+use fleetops_core::{now_unix, Error, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use utoipa::{IntoParams, ToSchema};
 
 /// Largest file the browser will download through the API.
@@ -358,7 +360,45 @@ pub async fn list_files(
     ApiQuery(q): ApiQuery<PathQuery>,
 ) -> ApiResult<Json<DirListing>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Reveal)).await?;
-    Ok(Json(c.ops.list_dir(&id, &q.path).await?))
+    let secrets = refuse_secret(c.ops.as_ref(), &id, &q.path).await?;
+    let mut listing = c.ops.list_dir(&id, &q.path).await?;
+    if !secrets.is_empty() {
+        let dir = normalise(&q.path);
+        listing.entries.retain(|e| {
+            let full = normalise(&format!("{dir}/{}", e.name));
+            !secrets.contains(&full)
+        });
+    }
+    Ok(Json(listing))
+}
+
+/// `path` with `//`, `.`, `..` and a trailing `/` resolved, absolute.
+fn normalise(path: &str) -> String {
+    let mut parts: Vec<&str> = vec![];
+    for p in path.split('/') {
+        match p {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            p => parts.push(p),
+        }
+    }
+    format!("/{}", parts.join("/"))
+}
+
+/// Refuses a stack secret's path, for every role (stack secrets spec §4);
+/// returns the container's secret targets, normalised. They come from the
+/// label the deploy set, so containers of older revisions are covered too.
+async fn refuse_secret(ops: &dyn DockerOps, id: &str, path: &str) -> Result<Vec<String>> {
+    let inspect = ops.inspect_container(id).await?;
+    let labels: BTreeMap<String, String> =
+        serde_json::from_value(inspect["Config"]["Labels"].clone()).unwrap_or_default();
+    let secrets: Vec<String> = secret_paths(&labels).iter().map(|p| normalise(p)).collect();
+    if secrets.contains(&normalise(path)) {
+        return Err(Error::Forbidden("this is a stack secret".into()));
+    }
+    Ok(secrets)
 }
 
 #[utoipa::path(
@@ -377,6 +417,7 @@ pub async fn download_file(
     ApiQuery(q): ApiQuery<PathQuery>,
 ) -> ApiResult<Response> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Reveal)).await?;
+    refuse_secret(c.ops.as_ref(), &id, &q.path).await?;
     let data = c.ops.read_file(&id, &q.path, MAX_DOWNLOAD_BYTES).await?;
     let file_name: String = q
         .path

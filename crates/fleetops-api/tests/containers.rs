@@ -358,3 +358,99 @@ async fn unknown_environment_is_404() {
     assert_eq!(r.status, StatusCode::NOT_FOUND);
     assert!(r.json["message"].as_str().unwrap().contains("nope"));
 }
+
+/// A stack container whose secret targets are `/run/secrets/pw` and
+/// `/run/secrets/hosts`.
+fn secret_container(app: &TestApp) {
+    let mut c = summary("c1", "shop-db-1", "running", Some("shop"));
+    c.labels.insert(
+        "io.fleetops.stack.secrets".into(),
+        r#"["/run/secrets/pw","/run/secrets/hosts"]"#.into(),
+    );
+    app.fake.add(c);
+}
+
+#[tokio::test]
+async fn download_of_secret_path_is_refused_for_admin() {
+    let app = app().await;
+    let s = app.with_local().await;
+    secret_container(&app);
+    for path in [
+        "/run/secrets/pw",
+        "/run/secrets//pw",
+        "/run/secrets/./pw",
+        "/run/secrets/pw/",
+        "/run/x/../secrets/pw",
+        "//run/secrets/pw",
+    ] {
+        let r = app
+            .send(req(
+                "GET",
+                &format!("/api/v1/envs/local/containers/c1/files/download?path={path}"),
+                None,
+                Some(&s),
+            ))
+            .await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{path}");
+        assert!(
+            r.json.to_string().contains("this is a stack secret"),
+            "{path}: {:?}",
+            r.json
+        );
+    }
+}
+
+#[tokio::test]
+async fn listing_hides_secret_entries() {
+    let app = app().await;
+    let s = app.with_local().await;
+    secret_container(&app);
+    for (path, shown) in [
+        ("/run/secrets", false),
+        ("/run/secrets/", false),
+        ("/etc", true),
+    ] {
+        let r = app
+            .send(req(
+                "GET",
+                &format!("/api/v1/envs/local/containers/c1/files?path={path}"),
+                None,
+                Some(&s),
+            ))
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{path}");
+        let names: Vec<&str> = r.json["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names.contains(&"hosts"), shown, "{path}: {names:?}");
+    }
+    // Listing the secret itself is refused too.
+    let r = app
+        .send(req(
+            "GET",
+            "/api/v1/envs/local/containers/c1/files?path=/run/secrets/pw",
+            None,
+            Some(&s),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn config_path_still_downloads() {
+    let app = app().await;
+    let s = app.with_local().await;
+    secret_container(&app);
+    let r = app
+        .send(req(
+            "GET",
+            "/api/v1/envs/local/containers/c1/files/download?path=/etc/app.conf",
+            None,
+            Some(&s),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+}
