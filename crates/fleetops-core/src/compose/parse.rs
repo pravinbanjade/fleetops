@@ -69,13 +69,13 @@ const SERVICE_KEYS: &[&str] = &[
     "deploy",
     "secrets",
     "configs",
+    "build",
 ];
 
 /// Why a well-known Compose key is refused, for a clearer message than
 /// "unknown key".
 fn unsupported_reason(key: &str) -> Option<&'static str> {
     Some(match key {
-        "build" => "images must come from a registry",
         "env_file" => "use stack variables instead",
         "extends" | "include" => "a stack is a single file",
         "profiles" => "every service in a stack is deployed",
@@ -800,7 +800,11 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
     let m = cx.map(v, &path)?;
     cx.keys(m, SERVICE_KEYS, &path);
     let image = cx.opt_string(m, "image", &path).unwrap_or_default();
-    if image.trim().is_empty() {
+    let build = m
+        .get("build")
+        .filter(|v| !v.is_null())
+        .and_then(|v| build(cx, v, &join(&path, "build")));
+    if image.trim().is_empty() && build.is_none() && !m.get("build").is_some_and(|v| !v.is_null()) {
         cx.err(&join(&path, "image"), "image is required");
     } else if image.ends_with(':') {
         cx.err(
@@ -990,6 +994,7 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
         None | Some("missing") | Some("if_not_present") => PullPolicy::Missing,
         Some("always") => PullPolicy::Always,
         Some("never") => PullPolicy::Never,
+        Some("build") => PullPolicy::Build,
         Some(p) => {
             cx.err(
                 &join(&path, "pull_policy"),
@@ -998,6 +1003,17 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
             PullPolicy::Missing
         }
     };
+    match (&build, pull_policy) {
+        (Some(_), PullPolicy::Always | PullPolicy::Never) => cx.err(
+            &join(&path, "pull_policy"),
+            "pull_policy always and never cannot be used with build: use missing or build",
+        ),
+        (None, PullPolicy::Build) => cx.err(
+            &join(&path, "pull_policy"),
+            "pull_policy build needs a build section",
+        ),
+        _ => {}
+    }
     let mut memory_bytes = cx.size(m, "mem_limit", &path);
     let mut nano_cpus = cx
         .opt_string(m, "cpus", &path)
@@ -1120,7 +1136,80 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
         pull_policy,
         replicas,
         files: files.into_iter().map(|(_, f)| f).collect(),
+        build,
     })
+}
+
+/// Build keys FleetOps does not support, for a clearer message.
+const REFUSED_BUILD_KEYS: &[&str] = &[
+    "ssh",
+    "secrets",
+    "cache_from",
+    "cache_to",
+    "additional_contexts",
+    "platforms",
+    "network",
+    "extra_hosts",
+    "shm_size",
+    "privileged",
+    "tags",
+    "labels",
+    "isolation",
+    "no_cache",
+    "pull",
+    "ulimits",
+    "entitlements",
+];
+
+/// A service's `build:`: a context path, or a mapping.
+fn build(cx: &mut Cx, v: &Value, path: &str) -> Option<Build> {
+    let mut b = Build {
+        context: ".".into(),
+        ..Default::default()
+    };
+    match v {
+        Value::Object(m) => {
+            for k in m
+                .keys()
+                .filter(|k| REFUSED_BUILD_KEYS.contains(&k.as_str()))
+            {
+                cx.err(
+                    &join(path, k),
+                    format!("'{k}' is not supported in a stack build"),
+                );
+            }
+            let allowed: Vec<&str> = [
+                "context",
+                "dockerfile",
+                "dockerfile_inline",
+                "args",
+                "target",
+            ]
+            .into_iter()
+            .chain(REFUSED_BUILD_KEYS.iter().copied())
+            .collect();
+            cx.keys(m, &allowed, path);
+            if let Some(c) = cx.opt_string(m, "context", path) {
+                b.context = c;
+            }
+            b.dockerfile = cx.opt_string(m, "dockerfile", path);
+            b.dockerfile_inline = cx.opt_string(m, "dockerfile_inline", path);
+            if b.dockerfile.is_some() && b.dockerfile_inline.is_some() {
+                cx.err(path, "set only one of dockerfile and dockerfile_inline");
+            }
+            b.args = cx.string_map(m.get("args"), &join(path, "args"));
+            b.target = cx.opt_string(m, "target", path);
+        }
+        other => b.context = cx.string(other, path)?,
+    }
+    if b.context.starts_with('/') || b.context.contains("://") {
+        cx.err(
+            path,
+            "the build context must be a relative path in the stack's repository",
+        );
+        return None;
+    }
+    Some(b)
 }
 
 fn cpus(cx: &mut Cx, s: &str, path: &str) -> Option<i64> {

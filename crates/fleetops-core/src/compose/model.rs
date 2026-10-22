@@ -60,6 +60,28 @@ pub struct Service {
     /// Skipped when empty, so a service without any hashes as before.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<FileMount>,
+    /// How the image is built, for a service with `build:`. Skipped when
+    /// absent, so a service without one hashes as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<Build>,
+}
+
+/// A service's `build:`. `image` is set from its hash once the context is
+/// known (`compose::build::apply`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Build {
+    /// As written, relative to the Compose file; `.` by default.
+    pub context: String,
+    pub dockerfile: Option<String>,
+    pub dockerfile_inline: Option<String>,
+    /// Never serialised: the config-hash label is unkeyed, and `hash`
+    /// already covers the args.
+    #[serde(skip_serializing, default)]
+    pub args: BTreeMap<String, String>,
+    pub target: Option<String>,
+    /// Keyed hash of everything the image is built from; empty after
+    /// parsing.
+    pub hash: String,
 }
 
 #[derive(
@@ -139,6 +161,8 @@ pub enum PullPolicy {
     #[default]
     Missing,
     Never,
+    /// Compose's "always build"; only with `build:`.
+    Build,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

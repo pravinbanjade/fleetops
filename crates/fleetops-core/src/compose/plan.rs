@@ -352,7 +352,7 @@ pub fn plan(new: &Project, deployed: Option<(&Project, i64)>, live: &Live) -> Pl
         let present = local.contains(&normalise_image(&svc.image));
         let pull = match svc.pull_policy {
             PullPolicy::Always => true,
-            PullPolicy::Missing => !present,
+            PullPolicy::Missing | PullPolicy::Build => !present,
             PullPolicy::Never => {
                 if !present {
                     blocking.push(format!(

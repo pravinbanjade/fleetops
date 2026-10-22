@@ -138,6 +138,7 @@ volumes:
         pull_policy: PullPolicy::Always,
         replicas: 1,
         files: vec![],
+        build: None,
     };
     assert_eq!(web, &expected);
 }
@@ -219,7 +220,7 @@ fn rejects_unknown_and_unsupported_keys() {
 services:
   web:
     image: nginx
-    build: .
+    build: { context: ., ssh: [default] }
     env_file: .env
     imgae: typo
     deploy:
@@ -228,7 +229,7 @@ secrets:
   s: {}
 "#,
     );
-    assert!(has(&i, "services.web.build", "not supported"), "{i:?}");
+    assert!(has(&i, "services.web.build.ssh", "not supported"), "{i:?}");
     assert!(has(&i, "services.web.env_file", "not supported"), "{i:?}");
     assert!(has(&i, "services.web.imgae", "unknown"), "{i:?}");
     assert!(has(&i, "services.web.deploy.placement", "unknown"), "{i:?}");
@@ -526,4 +527,109 @@ configs:
 "#);
     assert_eq!(p.services["web"].files.len(), 1);
     assert!(p.configs.contains_key("b"));
+}
+
+#[test]
+fn build_string_and_mapping_forms() {
+    let p = parse(
+        r#"
+services:
+  api:
+    build: ./api
+  web:
+    build:
+      context: ./web
+      dockerfile: docker/Dockerfile
+      args: { A: "${X}" }
+      target: prod
+  job:
+    build:
+      args: ["B=2"]
+"#,
+        &["X=1".into()],
+        "shop",
+    )
+    .expect("valid")
+    .project;
+    let api = p.services["api"].build.clone().unwrap();
+    assert_eq!(api.context, "./api");
+    assert_eq!(p.services["api"].image, "");
+    let web = p.services["web"].build.clone().unwrap();
+    assert_eq!(
+        (
+            web.context.as_str(),
+            web.dockerfile.as_deref(),
+            web.target.as_deref()
+        ),
+        ("./web", Some("docker/Dockerfile"), Some("prod"))
+    );
+    assert_eq!(web.args["A"], "1");
+    let job = p.services["job"].build.clone().unwrap();
+    assert_eq!((job.context.as_str(), job.args["B"].as_str()), (".", "2"));
+    assert_eq!(job.hash, "");
+}
+
+#[test]
+fn dockerfile_inline_parses() {
+    let p = ok("services:\n  web:\n    build:\n      dockerfile_inline: |\n        FROM alpine\n    pull_policy: build\n");
+    let b = p.services["web"].build.clone().unwrap();
+    assert_eq!(b.context, ".");
+    assert_eq!(b.dockerfile_inline.as_deref(), Some("FROM alpine\n"));
+    assert_eq!(p.services["web"].pull_policy, PullPolicy::Build);
+}
+
+#[test]
+fn refused_build_forms() {
+    let i = issues(
+        r#"
+services:
+  a:
+    build:
+      ssh: [default]
+      secrets: [x]
+      cache_from: [y]
+      additional_contexts: { c: ./c }
+      platforms: [linux/arm64]
+      network: host
+      tags: [z]
+  b:
+    build: { dockerfile: D, dockerfile_inline: "FROM x" }
+  c:
+    build: /abs/path
+  d:
+    build: https://example.com/r.git
+  e:
+    build: .
+    pull_policy: always
+  f:
+    build: .
+    pull_policy: never
+  g:
+    image: x
+    pull_policy: build
+  h:
+    restart: always
+"#,
+    );
+    for k in [
+        "ssh",
+        "secrets",
+        "cache_from",
+        "additional_contexts",
+        "platforms",
+        "network",
+        "tags",
+    ] {
+        assert!(
+            has(&i, &format!("services.a.build.{k}"), "not supported"),
+            "{k}: {i:?}"
+        );
+    }
+    assert!(has(&i, "services.b.build", "only one of"), "{i:?}");
+    assert!(has(&i, "services.c.build", "relative path"), "{i:?}");
+    assert!(has(&i, "services.d.build", "relative path"), "{i:?}");
+    assert!(has(&i, "services.e.pull_policy", "pull_policy"), "{i:?}");
+    assert!(has(&i, "services.f.pull_policy", "pull_policy"), "{i:?}");
+    assert!(has(&i, "services.g.pull_policy", "build"), "{i:?}");
+    assert!(has(&i, "services.h.image", "image is required"), "{i:?}");
 }
