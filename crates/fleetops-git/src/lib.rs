@@ -7,8 +7,10 @@ pub mod testing;
 
 mod dockerignore;
 mod keys;
+mod ssh;
 
 pub use keys::{generate_key, parse_key, KeyPair};
+pub use ssh::is_ssh_url;
 
 use fleetops_core::{Error, Result};
 use std::path::{Path, PathBuf};
@@ -113,7 +115,10 @@ fn packs(cache: &Path) -> usize {
 }
 
 pub fn validate_url(url: &str, allow_http: bool) -> std::result::Result<(), String> {
-    const HTTPS_ONLY: &str = "only https git URLs are supported";
+    const HTTPS_ONLY: &str = "only https and ssh git URLs are supported";
+    if ssh::is_ssh_url(url) {
+        return ssh::ssh_target(url).map(|_| ());
+    }
     let u = url::Url::parse(url).map_err(|_| HTTPS_ONLY.to_string())?;
     match u.scheme() {
         "https" => {}
@@ -827,8 +832,19 @@ mod tests {
             ("https://h/r.git", false, true),
             ("http://h/r", false, false),
             ("http://h/r", true, true),
-            ("ssh://h/r", true, false),
-            ("git@h:r.git", true, false),
+            ("ssh://h/r", false, true),
+            ("git@h:r.git", false, true),
+            ("ssh://git@h:2222/r", false, true),
+            ("ssh://u:p@h/r", false, false),
+            ("ssh://h/r?x", false, false),
+            ("ssh://h/r#x", false, false),
+            ("ssh://h", false, false),
+            ("ssh://h/", false, false),
+            ("h:", false, false),
+            (":r", false, false),
+            ("-oProxyCommand=x:r", false, false),
+            ("ssh://-oProxyCommand=x/r", false, false),
+            ("ext::sh -c x", true, false),
             ("file:///r", true, false),
             ("https://h/r?x=1", false, false),
         ];
@@ -840,8 +856,12 @@ mod tests {
             "put the access token in the token field, not in the URL"
         );
         assert_eq!(
-            validate_url("ssh://h/r", false).unwrap_err(),
-            "only https git URLs are supported"
+            validate_url("ftp://h/r", false).unwrap_err(),
+            "only https and ssh git URLs are supported"
+        );
+        assert_eq!(
+            validate_url("ssh://u:p@h/r", false).unwrap_err(),
+            "an ssh URL must not hold a password; use an SSH key"
         );
     }
 

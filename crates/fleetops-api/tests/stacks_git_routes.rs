@@ -72,8 +72,8 @@ async fn validation_messages() {
     let g = git_app(None, ServerOpts::default()).await;
     let cases = [
         (
-            json!({"url": "ssh://git.example/r.git"}),
-            "only https git URLs are supported",
+            json!({"url": "ftp://git.example/r.git"}),
+            "only https and ssh git URLs are supported",
         ),
         (
             json!({"url": "https://u:p@git.example/r.git"}),
