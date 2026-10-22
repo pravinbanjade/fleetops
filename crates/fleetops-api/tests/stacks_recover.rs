@@ -19,7 +19,18 @@ async fn interrupted(app: &TestApp) -> i64 {
         .unwrap();
     for n in 1..=3 {
         app.store
-            .create_revision(st.id, COMPOSE, &[], "deploy", None, None, None, n, &[])
+            .create_revision(
+                st.id,
+                COMPOSE,
+                &[],
+                "deploy",
+                None,
+                None,
+                None,
+                n,
+                &[],
+                &Default::default(),
+            )
             .await
             .unwrap();
         match n {
