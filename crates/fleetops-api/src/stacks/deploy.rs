@@ -422,6 +422,7 @@ async fn wait_for(
 /// for the task manager. On failure the stack is restored, the revision is marked
 /// failed, and the last message carries `error` so the task fails. The
 /// stack's deploy lock is released either way.
+#[allow(clippy::too_many_arguments)]
 pub fn deploy_stream(
     state: AppState,
     ops: Arc<dyn DockerOps>,

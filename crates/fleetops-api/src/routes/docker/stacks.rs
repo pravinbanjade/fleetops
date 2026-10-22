@@ -220,7 +220,7 @@ async fn files_differ(
     let ran = revision_values(s, stack, deployed).await?;
     Ok(used
         .iter()
-        .any(|key| chosen.get(key).is_none() || chosen.get(key) != ran.get(key)))
+        .any(|key| !chosen.contains_key(key) || chosen.get(key) != ran.get(key)))
 }
 
 async fn summary(s: &AppState, stack: StackRecord) -> Result<StackSummary> {
