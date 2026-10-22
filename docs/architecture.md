@@ -8,7 +8,7 @@ fleetops/
 │  ├─ fleetops-core/     domain types, the Environment and DockerOps traits, errors, recreate planning, Compose parsing and stack plans; no I/O
 │  ├─ fleetops-docker/   bollard-backed implementation of the core traits (LocalDocker, AgentDockerEnv)
 │  ├─ fleetops-kube/     kube-rs implementation of KubeOps: lists, watches, apply, Helm, metrics
-│  ├─ fleetops-git/      gitoxide: a shallow fetch of one branch, reads of files and tree ids at a commit, build-context tars and fetching one commit, for git-backed stacks
+│  ├─ fleetops-git/      gitoxide: a shallow fetch of one branch, reads of files and tree ids at a commit, build-context tars and fetching one commit, for git-backed stacks; over HTTPS, or over SSH with an in-process russh client (ring only) that runs `git-upload-pack` and checks host keys (published keys for GitHub/GitLab/Bitbucket, else pinned per stack on first use)
 │  ├─ fleetops-tunnel/   yamux over a WebSocket, the agent control protocol, the live-session registry
 │  ├─ fleetops-agent/    bin `fleetops-agent`: dial-out, key storage, byte pipe to the host's Docker socket
 │  └─ fleetops-store/    sqlx + SQLite: migrations and repositories (users, sessions, environments, settings, audit), backup files and restores
