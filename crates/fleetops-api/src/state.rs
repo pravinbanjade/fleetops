@@ -14,6 +14,13 @@ use std::{
 pub const LOGIN_MAX_FAILURES: u32 = 5;
 pub const LOGIN_WINDOW: Duration = Duration::from_secs(300);
 
+/// Builds Swarm cluster calls that travel over one agent session.
+pub type SwarmThrough = Arc<
+    dyn Fn(fleetops_tunnel::Session) -> fleetops_core::Result<Arc<dyn fleetops_core::swarm::SwarmOps>>
+        + Send
+        + Sync,
+>;
+
 #[derive(Debug, Clone)]
 pub struct ApiConfig {
     /// How long after process start first-run setup stays open.
@@ -88,7 +95,13 @@ pub struct AppState {
     pub agents: Arc<fleetops_tunnel::registry::Registry>,
     /// When each environment's last `agent.disconnect` was audited, so a
     /// flapping agent writes one row per five minutes.
-    pub agent_disconnects: Arc<std::sync::Mutex<std::collections::HashMap<i64, Instant>>>,
+    /// Keyed by environment and Swarm node id (`""` for other agents).
+    pub agent_disconnects:
+        Arc<std::sync::Mutex<std::collections::HashMap<(i64, String), Instant>>>,
+    /// Swarm calls through one agent session: the handshake checks a node
+    /// before it is registered. The server supplies fleetops-docker's; `None`
+    /// refuses Swarm agents.
+    pub swarm_through: Option<SwarmThrough>,
     /// The edition and license in effect; Community unless an Enterprise
     /// build replaces it (editions spec §3.1).
     pub entitlements: Arc<dyn fleetops_core::edition::Entitlements>,
@@ -130,6 +143,7 @@ impl AppState {
             tasks: Arc::new(TaskManager::default()),
             agents: Arc::default(),
             agent_disconnects: Arc::default(),
+            swarm_through: None,
             entitlements: Arc::new(fleetops_core::edition::Community),
             extra_grants: Arc::new(fleetops_core::access::NoExtraGrants),
             custom_roles: Arc::new(fleetops_core::access::NoCustomRoles),
@@ -178,6 +192,11 @@ impl AppState {
 
     pub fn with_restart(mut self, r: Arc<dyn crate::backup::Restart>) -> Self {
         self.restart = r;
+        self
+    }
+
+    pub fn with_swarm_through(mut self, f: SwarmThrough) -> Self {
+        self.swarm_through = Some(f);
         self
     }
 

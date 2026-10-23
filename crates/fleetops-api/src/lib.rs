@@ -28,7 +28,7 @@ pub use error::{ApiError, ApiResult};
 pub use routes::access::{AccessEntry, SetAccess, Wanted};
 pub use routes::audit_detail;
 pub use routes::backup::write_to_tmp as write_backup_to_tmp;
-pub use state::{ApiConfig, AppState};
+pub use state::{ApiConfig, AppState, SwarmThrough};
 
 /// Request extension telling handlers whether the connection is TLS.
 /// Controls the cookie `Secure` flag and (when enabled) HSTS.

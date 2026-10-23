@@ -4,6 +4,7 @@
 mod axum_io;
 pub mod connect;
 pub mod manifest;
+mod swarm_connect;
 
 use crate::{auth::token::generate_token, ws::hub::StatusChange, AppState};
 use fleetops_store::{AgentRecord, EnvironmentRecord};

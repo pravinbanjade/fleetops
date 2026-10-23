@@ -18,6 +18,30 @@ pub struct TestAgent {
 impl TestAgent {
     /// `base` is `http://127.0.0.1:port`. Err carries the HTTP status of a refused upgrade.
     pub async fn connect(base: &str, bearer: &str) -> Result<TestAgent, u16> {
+        Self::connect_with(base, bearer, |s| {
+            tokio::spawn(async move {
+                let (mut r, mut w) = tokio::io::split(s);
+                let _ = tokio::io::copy(&mut r, &mut w).await;
+                let _ = w.shutdown().await;
+            });
+        })
+        .await
+    }
+
+    /// Like `connect`, but the server's data streams go to `daemon`.
+    pub async fn connect_swarm(
+        base: &str,
+        bearer: &str,
+        daemon: std::sync::Arc<super::fake_swarm::FakeSwarm>,
+    ) -> Result<TestAgent, u16> {
+        Self::connect_with(base, bearer, move |s| daemon.serve(s)).await
+    }
+
+    async fn connect_with(
+        base: &str,
+        bearer: &str,
+        on_stream: impl FnMut(StreamHandle) + Send + 'static,
+    ) -> Result<TestAgent, u16> {
         let url = format!("{}/api/v1/agent/connect", base.replacen("http", "ws", 1));
         let mut req = url.into_client_request().unwrap();
         req.headers_mut()
@@ -27,13 +51,7 @@ impl TestAgent {
             Err(WsError::Http(resp)) => return Err(resp.status().as_u16()),
             Err(e) => panic!("connect: {e}"),
         };
-        let session = Session::spawn(tungstenite_io(ws), Role::Client, |s| {
-            tokio::spawn(async move {
-                let (mut r, mut w) = tokio::io::split(s);
-                let _ = tokio::io::copy(&mut r, &mut w).await;
-                let _ = w.shutdown().await;
-            });
-        });
+        let session = Session::spawn(tungstenite_io(ws), Role::Client, on_stream);
         let control = session.open_stream().await.unwrap();
         let (rx, tx) = tokio::io::split(control);
         Ok(TestAgent { session, rx, tx })
@@ -63,6 +81,50 @@ impl TestAgent {
         )
         .await
         .unwrap();
+    }
+
+    /// A Swarm agent's hello for `claim`.
+    pub async fn hello_swarm(&mut self, claim: fleetops_tunnel::control::SwarmClaim) {
+        let host = HostInfo {
+            hostname: format!("host-{}", claim.node_id),
+            os: "linux".into(),
+            arch: "x86_64".into(),
+            docker: "unix:///var/run/docker.sock".into(),
+            serves: fleetops_tunnel::control::Serves::Swarm,
+            swarm: Some(claim),
+        };
+        write_msg(
+            &mut self.tx,
+            &Msg::Hello {
+                proto: fleetops_tunnel::PROTO_MAJOR,
+                agent_version: "0.7.0-test".into(),
+                host,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    /// Reads the challenge and answers it with `cert`, signing for `claim`.
+    pub async fn answer_challenge(
+        &mut self,
+        cert: &super::fake_swarm::NodeCert,
+        claim: &fleetops_tunnel::control::SwarmClaim,
+    ) {
+        let Some(Msg::Challenge { nonce }) = self.next().await else {
+            panic!("expected a challenge")
+        };
+        let msg = fleetops_tunnel::swarm_proof::proof_message(&nonce, claim);
+        let proof = Msg::Proof {
+            cert_chain_pem: cert.chain.clone(),
+            signature: fleetops_tunnel::swarm_proof::sign(&cert.key, &msg).unwrap(),
+        };
+        write_msg(&mut self.tx, &proof).await.unwrap();
+    }
+
+    /// Sends a raw message, e.g. a forged proof.
+    pub async fn send(&mut self, m: &Msg) {
+        write_msg(&mut self.tx, m).await.unwrap();
     }
 
     pub async fn next(&mut self) -> Option<Msg> {

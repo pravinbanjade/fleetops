@@ -4,6 +4,7 @@ pub mod agent;
 pub mod contract;
 pub mod fake_docker;
 pub mod fake_kube;
+pub mod fake_swarm;
 pub mod git;
 
 use axum::{
@@ -52,7 +53,9 @@ pub async fn app() -> TestApp {
 pub async fn app_with(config: ApiConfig) -> TestApp {
     let store = Store::in_memory().await.unwrap();
     let fake = FakeDocker::new();
-    let state = AppState::new(store.clone(), config, Arc::new(FakeFactory(fake.clone())));
+    let state = AppState::new(store.clone(), config, Arc::new(FakeFactory(fake.clone())))
+        .with_agents(fake.agents.clone())
+        .with_swarm_through(swarm_through());
     let router = fleetops_api::app(state.clone(), Router::new());
     TestApp {
         router,
@@ -83,6 +86,14 @@ pub async fn app_with_extra_and(
         state,
         fake,
     }
+}
+
+/// Swarm calls through a tunnel session, as the server wires them.
+pub fn swarm_through() -> fleetops_api::SwarmThrough {
+    Arc::new(|session| {
+        let d = fleetops_docker::LocalDocker::through(Arc::new(session))?;
+        Ok(Arc::new(d) as Arc<dyn fleetops_core::swarm::SwarmOps>)
+    })
 }
 
 /// Counts restarts instead of restarting.

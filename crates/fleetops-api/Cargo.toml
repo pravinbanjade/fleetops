@@ -34,6 +34,8 @@ utoipa-axum.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+fleetops-docker.workspace = true
+rcgen.workspace = true
 fleetops-git = { workspace = true, features = ["testing"] }
 async-trait.workspace = true
 futures-util.workspace = true

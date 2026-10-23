@@ -30,7 +30,7 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 
-const HANDSHAKE: Duration = Duration::from_secs(10);
+pub(super) const HANDSHAKE: Duration = Duration::from_secs(10);
 /// At most one last-seen write per this long while a session is up.
 const SEEN_EVERY: Duration = Duration::from_secs(60);
 /// At most one `agent.disconnect` audit row per environment per this long.
@@ -67,6 +67,13 @@ async fn authenticate(s: &AppState, headers: &HeaderMap) -> Result<Credential, E
         }
     } else if bearer.starts_with("fk_") {
         if let Some(env_id) = s.store.agent_by_key(&hash).await? {
+            return Ok(Credential::Key {
+                env_id,
+                key_hash: hash,
+            });
+        }
+        // A Swarm environment's previous key, during a rotation.
+        if let Some((env_id, _)) = s.store.swarm_by_key(&hash, now_unix()).await? {
             return Ok(Credential::Key {
                 env_id,
                 key_hash: hash,
@@ -117,9 +124,9 @@ pub async fn handler(
 }
 
 /// The agent's control stream, split.
-struct Control {
-    rx: ReadHalf<StreamHandle>,
-    tx: WriteHalf<StreamHandle>,
+pub(super) struct Control {
+    pub(super) rx: ReadHalf<StreamHandle>,
+    pub(super) tx: WriteHalf<StreamHandle>,
 }
 
 async fn run(s: AppState, cred: Credential, socket: WebSocket) {
@@ -206,6 +213,13 @@ async fn serve(
         s.agents.set_offline_reason(env_id, &reason);
         audit(s, None, "agent.reject", "environment", &env.name, "failure").await;
         return reason;
+    }
+
+    if env.kind.parse::<EnvKind>().is_ok_and(EnvKind::is_swarm) {
+        let Some(key_hash) = key_hash else {
+            return "a swarm environment has no join token".into();
+        };
+        return super::swarm_connect::serve(s, &env, key_hash, &mut c, session, info).await;
     }
 
     let expects = match env.kind.parse::<EnvKind>() {
@@ -304,7 +318,7 @@ async fn serve(
         .store
         .record_agent_seen(env_id, now_unix(), None, None, None)
         .await;
-    if disconnect_audit_due(s, env_id) {
+    if disconnect_audit_due(s, env_id, "") {
         audit(
             s,
             None,
@@ -321,26 +335,28 @@ async fn serve(
 /// Sends a bye and gives it time to leave: closing the session drops it at
 /// once (which wakes every stream) and would discard unsent frames. The
 /// agent hangs up when it reads the bye; a peer that doesn't gets a second.
-async fn say_bye(c: &mut Control, session: &Session, reason: ByeReason) {
+pub(super) async fn say_bye(c: &mut Control, session: &Session, reason: ByeReason) {
     if write_msg(&mut c.tx, &Msg::Bye { reason }).await.is_ok() {
         let _ = tokio::time::timeout(BYE_GRACE, session.closed()).await;
     }
 }
 
-fn disconnect_audit_due(s: &AppState, env_id: i64) -> bool {
+/// `node` is the Swarm node id, `""` for other agents.
+pub(super) fn disconnect_audit_due(s: &AppState, env_id: i64, node: &str) -> bool {
     let mut last = s.agent_disconnects.lock().unwrap();
     let now = Instant::now();
-    match last.get(&env_id) {
+    let key = (env_id, node.to_string());
+    match last.get(&key) {
         Some(t) if now.duration_since(*t) < DISCONNECT_AUDIT_EVERY => false,
         _ => {
-            last.insert(env_id, now);
+            last.insert(key, now);
             true
         }
     }
 }
 
 /// Runs until the session ends; returns why, for the environment's status.
-async fn control_loop(
+pub(super) async fn control_loop(
     s: &AppState,
     env_id: i64,
     c: &mut Control,

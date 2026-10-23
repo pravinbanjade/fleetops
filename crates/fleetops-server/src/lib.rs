@@ -99,6 +99,10 @@ pub fn build_state(store: Store, config: ApiConfig) -> AppState {
         Arc::new(factory::Factory::new(agents.clone(), exec)),
     )
     .with_agents(agents)
+    .with_swarm_through(Arc::new(|session| {
+        let d = fleetops_docker::LocalDocker::through(Arc::new(session))?;
+        Ok(Arc::new(d) as Arc<dyn fleetops_core::swarm::SwarmOps>)
+    }))
 }
 
 /// Opens the database with the secret key from FLEETOPS_SECRET_KEY, or

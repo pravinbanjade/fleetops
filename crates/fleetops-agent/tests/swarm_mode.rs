@@ -118,7 +118,11 @@ async fn server(store: Store) -> Server {
         ApiConfig::default(),
         Arc::new(DockerEnvFactory::new(agents.clone())),
     )
-    .with_agents(agents);
+    .with_agents(agents)
+    .with_swarm_through(Arc::new(|session| {
+        let d = fleetops_docker::LocalDocker::through(Arc::new(session))?;
+        Ok(Arc::new(d) as Arc<dyn fleetops_core::swarm::SwarmOps>)
+    }));
     state.envs.load(&store).await.unwrap();
     let app = fleetops_api::app(state.clone(), axum::Router::new());
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
