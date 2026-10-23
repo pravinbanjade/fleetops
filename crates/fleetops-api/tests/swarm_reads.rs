@@ -45,7 +45,14 @@ async fn a_missing_service_is_404() {
     let sw = swarm().await;
     let r = get(&sw, "/api/v1/envs/prod/swarm/services/zz").await;
     assert_eq!(r.status, 404);
-    assert_eq!(r.json["message"], "no such service 'zz'");
+    assert!(
+        r.json["message"]
+            .as_str()
+            .unwrap()
+            .ends_with("no such service 'zz'"),
+        "{:?}",
+        r.json
+    );
     let r = get(&sw, "/api/v1/envs/prod/swarm/nodes/zz").await;
     assert_eq!(r.status, 404);
 }
@@ -60,7 +67,12 @@ async fn without_a_manager_agent_reads_are_503() {
         .unwrap();
     t.state.envs.load(&t.store).await.unwrap();
     let r = t
-        .send(req("GET", "/api/v1/envs/prod/swarm/services", None, Some(&admin)))
+        .send(req(
+            "GET",
+            "/api/v1/envs/prod/swarm/services",
+            None,
+            Some(&admin),
+        ))
         .await;
     assert_eq!(r.status, 503, "{:?}", r.json);
     assert!(r.json.to_string().contains("no manager agent is connected"));
@@ -78,12 +90,17 @@ async fn docker_environments_get_wrong_kind() {
 #[tokio::test]
 async fn viewers_may_read() {
     let sw = swarm().await;
-    sw.t.create_user(&sw.admin, "bob", "bob-password", "user").await;
+    sw.t.create_user(&sw.admin, "bob", "bob-password", "user")
+        .await;
     sw.t.grant("bob", "prod", "viewer", None).await;
     let bob = session_from(&sw.t.login("bob", "bob-password").await);
-    let r = sw
-        .t
-        .send(req("GET", "/api/v1/envs/prod/swarm/tasks", None, Some(&bob)))
+    let r =
+        sw.t.send(req(
+            "GET",
+            "/api/v1/envs/prod/swarm/tasks",
+            None,
+            Some(&bob),
+        ))
         .await;
     assert_eq!(r.status, 200, "{:?}", r.json);
 }

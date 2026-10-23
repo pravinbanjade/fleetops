@@ -3,7 +3,13 @@ mod common;
 use common::{fake_swarm::connected_swarm as swarm, *};
 use serde_json::json;
 
-fn sub(n: u32, topic: &str, env: &str, id: Option<&str>, opts: serde_json::Value) -> serde_json::Value {
+fn sub(
+    n: u32,
+    topic: &str,
+    env: &str,
+    id: Option<&str>,
+    opts: serde_json::Value,
+) -> serde_json::Value {
     json!({"op": "sub", "sub": n, "topic": topic, "env": env, "id": id, "opts": opts})
 }
 
@@ -16,7 +22,11 @@ async fn swarm_events_reach_subscribers_filtered() {
     assert_eq!(ev["data"]["kind"], "service");
     assert_eq!(ev["data"]["action"], "update");
     // The container start that followed is the manager's own: not passed on.
-    let more = tokio::time::timeout(std::time::Duration::from_millis(500), ws.until(|v| is(v, 1, "data"))).await;
+    let more = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        ws.until(|v| is(v, 1, "data")),
+    )
+    .await;
     assert!(more.is_err(), "{more:?}");
 }
 
@@ -24,7 +34,14 @@ async fn swarm_events_reach_subscribers_filtered() {
 async fn service_logs_stream_over_the_websocket() {
     let sw = swarm().await;
     let mut ws = Ws::open(sw.t.serve().await, &sw.admin).await;
-    ws.send(sub(1, "logs", "prod", Some("service/s1"), json!({"follow": false}))).await;
+    ws.send(sub(
+        1,
+        "logs",
+        "prod",
+        Some("service/s1"),
+        json!({"follow": false}),
+    ))
+    .await;
     let batch = ws.until(|v| is(v, 1, "data")).await;
     assert_eq!(batch["data"][0]["text"], "hello from blog_web.1");
 }
@@ -33,7 +50,14 @@ async fn service_logs_stream_over_the_websocket() {
 async fn container_logs_on_a_node_view_work() {
     let sw = swarm().await;
     let mut ws = Ws::open(sw.t.serve().await, &sw.admin).await;
-    ws.send(sub(1, "logs", "prod@n2", Some("c0ffee"), json!({"follow": false}))).await;
+    ws.send(sub(
+        1,
+        "logs",
+        "prod@n2",
+        Some("c0ffee"),
+        json!({"follow": false}),
+    ))
+    .await;
     let batch = ws.until(|v| is(v, 1, "data")).await;
     assert_eq!(batch["data"][0]["text"], "hello from blog_web.1");
 }
@@ -42,9 +66,13 @@ async fn container_logs_on_a_node_view_work() {
 async fn a_bad_swarm_logs_id_is_rejected() {
     let sw = swarm().await;
     let mut ws = Ws::open(sw.t.serve().await, &sw.admin).await;
-    ws.send(sub(1, "logs", "prod", Some("c0ffee"), json!({}))).await;
+    ws.send(sub(1, "logs", "prod", Some("c0ffee"), json!({})))
+        .await;
     let err = ws.until(|v| v["type"] == "error").await;
-    assert!(err.to_string().contains("a swarm logs id is service/<id>"), "{err}");
+    assert!(
+        err.to_string().contains("a swarm logs id is service/<id>"),
+        "{err}"
+    );
 }
 
 fn fast() -> fleetops_api::ApiConfig {
@@ -68,7 +96,8 @@ fn task_polls(sw: &common::fake_swarm::Swarm) -> usize {
 async fn the_feed_sends_a_snapshot_then_only_changes() {
     let sw = common::fake_swarm::connected_swarm_with(fast()).await;
     let mut ws = Ws::open(sw.t.serve().await, &sw.admin).await;
-    ws.send(sub(1, "swarm-tasks", "prod", None, json!({}))).await;
+    ws.send(sub(1, "swarm-tasks", "prod", None, json!({})))
+        .await;
     let first = ws.until(|v| is(v, 1, "data")).await;
     assert_eq!(first["data"]["type"], "snapshot");
     assert_eq!(first["data"]["tasks"].as_array().unwrap().len(), 2);
@@ -84,7 +113,11 @@ async fn the_feed_sends_a_snapshot_then_only_changes() {
     assert_eq!(next["data"]["upsert"][0]["state"], "shutdown");
     assert_eq!(next["data"]["remove"], json!(["t2"]));
     // Nothing changes: nothing is sent.
-    let quiet = tokio::time::timeout(std::time::Duration::from_millis(400), ws.until(|v| is(v, 1, "data"))).await;
+    let quiet = tokio::time::timeout(
+        std::time::Duration::from_millis(400),
+        ws.until(|v| is(v, 1, "data")),
+    )
+    .await;
     assert!(quiet.is_err(), "{quiet:?}");
 }
 
@@ -114,13 +147,21 @@ async fn one_feed_per_swarm_and_it_stops_without_subscribers() {
 async fn a_poll_error_pauses_and_recovers() {
     let sw = common::fake_swarm::connected_swarm_with(fast()).await;
     let mut ws = Ws::open(sw.t.serve().await, &sw.admin).await;
-    ws.send(sub(1, "swarm-tasks", "prod", None, json!({}))).await;
+    ws.send(sub(1, "swarm-tasks", "prod", None, json!({})))
+        .await;
     ws.until(|v| is(v, 1, "data")).await;
-    sw.daemon.fail_tasks.store(true, std::sync::atomic::Ordering::SeqCst);
+    sw.daemon
+        .fail_tasks
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     let paused = ws.until(|v| is(v, 1, "data")).await;
     assert_eq!(paused["data"]["type"], "paused");
-    assert!(paused["data"]["reason"].as_str().unwrap().contains("manager unavailable"));
-    sw.daemon.fail_tasks.store(false, std::sync::atomic::Ordering::SeqCst);
+    assert!(paused["data"]["reason"]
+        .as_str()
+        .unwrap()
+        .contains("manager unavailable"));
+    sw.daemon
+        .fail_tasks
+        .store(false, std::sync::atomic::Ordering::SeqCst);
     let back = ws.until(|v| is(v, 1, "data")).await;
     assert_eq!(back["data"]["type"], "snapshot");
 }

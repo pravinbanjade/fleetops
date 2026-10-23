@@ -177,7 +177,8 @@ pub fn node_view_name(env: &str, node: &str) -> String {
 
 /// `(env, node)` for a node view's name.
 pub fn split_node_view(name: &str) -> Option<(&str, &str)> {
-    name.split_once('@').filter(|(e, n)| !e.is_empty() && !n.is_empty())
+    name.split_once('@')
+        .filter(|(e, n)| !e.is_empty() && !n.is_empty())
 }
 
 /// The URL of an agent environment: made by the server, never typed.

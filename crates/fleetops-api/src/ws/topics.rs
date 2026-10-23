@@ -153,8 +153,8 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
     // own kinds go on, not that one node's containers.
     let swarm_env = is_swarm_env(s, &env);
     let env = if swarm_env {
-        let (env, _) = crate::routes::swarm::swarm_for(s, cu, required(&env, "env")?, Need::AnyGrant)
-            .await?;
+        let (env, _) =
+            crate::routes::swarm::swarm_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?;
         env
     } else {
         docker_for(s, cu, &env, Need::AnyGrant).await?.0
@@ -674,10 +674,7 @@ pub(super) async fn swarm_tasks(c: &Ctx<'_>, env: Option<String>) -> Result<Sub>
     let (s, cu, sub) = (c.s, c.cu, c.sub);
     let (env, _) =
         crate::routes::swarm::swarm_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?;
-    let (snapshot, mut rx) = s
-        .hubs
-        .swarm_tasks
-        .subscribe(env, s.config.swarm_task_poll);
+    let (snapshot, mut rx) = s.hubs.swarm_tasks.subscribe(env, s.config.swarm_task_poll);
     let q = c.queue(Policy::Block);
     let qq = q.clone();
     let task = tokio::spawn(async move {

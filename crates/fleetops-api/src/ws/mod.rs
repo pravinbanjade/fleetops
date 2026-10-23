@@ -7,8 +7,8 @@ pub const ACCESS_CHANGED: &str = "your access changed";
 pub mod hub;
 pub mod protocol;
 pub mod queue;
-pub mod topics;
 pub mod swarm_tasks;
+pub mod topics;
 pub mod watches;
 
 use crate::{

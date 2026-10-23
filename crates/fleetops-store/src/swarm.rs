@@ -51,9 +51,7 @@ impl From<ClusterRow> for SwarmCluster {
             confirmed_at: r.confirmed_at,
             pinned_by: r.pinned_by,
             pinned_node: r.pinned_node,
-            known_managers: r
-                .known_managers
-                .and_then(|j| serde_json::from_str(&j).ok()),
+            known_managers: r.known_managers.and_then(|j| serde_json::from_str(&j).ok()),
         }
     }
 }
@@ -235,8 +233,8 @@ impl Store {
         managers: &[String],
         now: i64,
     ) -> Result<bool> {
-        let known = (!managers.is_empty())
-            .then(|| serde_json::to_string(managers).unwrap_or_default());
+        let known =
+            (!managers.is_empty()).then(|| serde_json::to_string(managers).unwrap_or_default());
         let done = sqlx::query(
             "UPDATE swarm_clusters SET confirmed_at = ?, known_managers = ?
              WHERE environment_id = ? AND cluster_id = ? AND trust_root = ?",

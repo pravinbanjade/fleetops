@@ -65,7 +65,14 @@ async fn a_pending_swarm_registers_no_agent() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
-    let (_a, reply) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (_a, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     assert_eq!(reply, bye(ByeReason::NotYet));
     assert!(t.state.agents.nodes(env_id).is_empty());
     let pinned = t.store.get_swarm_cluster(env_id).await.unwrap().unwrap();
@@ -88,8 +95,22 @@ async fn confirming_lets_the_manager_in() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
-    let (_pending, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
-    let r = t.send(req("GET", "/api/v1/envs/prod/swarm/trust", None, Some(&admin))).await;
+    let (_pending, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/prod/swarm/trust",
+            None,
+            Some(&admin),
+        ))
+        .await;
     assert_eq!(r.status, 200, "{:?}", r.json);
     assert_eq!(r.json["confirmed"], false);
     assert_eq!(r.json["cluster_id"], "c1");
@@ -111,19 +132,55 @@ async fn confirming_lets_the_manager_in() {
     let pinned = t.store.get_swarm_cluster(env_id).await.unwrap().unwrap();
     assert!(pinned.confirmed_at.is_some());
     assert!(t.audit_actions().await.contains(&"swarm.trust".to_string()));
-    let (_m, reply) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
-    assert!(matches!(reply, Some(Msg::Welcome { agent_key: None, .. })), "{reply:?}");
+    let (_m, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    assert!(
+        matches!(
+            reply,
+            Some(Msg::Welcome {
+                agent_key: None,
+                ..
+            })
+        ),
+        "{reply:?}"
+    );
     eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
-    // The first manager after confirmation fills the known managers.
-    let known = t.store.get_swarm_cluster(env_id).await.unwrap().unwrap().known_managers;
-    assert_eq!(known, Some(vec!["n1".to_string()]));
+    // The first manager after confirmation fills the known managers, just
+    // after it is registered.
     for _ in 0..100 {
-        if t.audit_actions().await.contains(&"agent.connect".to_string()) {
+        let p = t.store.get_swarm_cluster(env_id).await.unwrap().unwrap();
+        if p.known_managers.is_some() {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert!(t.audit_actions().await.contains(&"agent.connect".to_string()));
+    let known = t
+        .store
+        .get_swarm_cluster(env_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .known_managers;
+    assert_eq!(known, Some(vec!["n1".to_string()]));
+    for _ in 0..100 {
+        if t.audit_actions()
+            .await
+            .contains(&"agent.connect".to_string())
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(t
+        .audit_actions()
+        .await
+        .contains(&"agent.connect".to_string()));
     let env = t.state.envs.get("prod").unwrap();
     assert!(matches!(
         env.status().await,
@@ -138,7 +195,14 @@ async fn only_admins_confirm() {
     let (env_id, _key) = swarm_env(&t).await;
     let pki = SwarmPki::new("c1");
     t.store
-        .pin_swarm_cluster(env_id, "c1", &pki.root, "n1", "host-n1", fleetops_core::now_unix())
+        .pin_swarm_cluster(
+            env_id,
+            "c1",
+            &pki.root,
+            "n1",
+            "host-n1",
+            fleetops_core::now_unix(),
+        )
         .await
         .unwrap();
     t.create_user(&admin, "bob", "bob-password", "user").await;
@@ -154,7 +218,14 @@ async fn only_admins_confirm() {
         ))
         .await;
     assert_eq!(r.status, 403, "{:?}", r.json);
-    let r = t.send(req("GET", "/api/v1/envs/prod/swarm/trust", None, Some(&bob))).await;
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/prod/swarm/trust",
+            None,
+            Some(&bob),
+        ))
+        .await;
     assert_eq!(r.status, 200, "operators may read it");
 }
 
@@ -165,7 +236,14 @@ async fn confirming_a_stale_fingerprint_is_409() {
     let (env_id, _key) = swarm_env(&t).await;
     let pki = SwarmPki::new("c1");
     t.store
-        .pin_swarm_cluster(env_id, "c1", &pki.root, "n1", "host-n1", fleetops_core::now_unix())
+        .pin_swarm_cluster(
+            env_id,
+            "c1",
+            &pki.root,
+            "n1",
+            "host-n1",
+            fleetops_core::now_unix(),
+        )
         .await
         .unwrap();
     let r = t
@@ -187,15 +265,34 @@ async fn rejecting_clears_the_pending_pin() {
     let (env_id, _key) = swarm_env(&t).await;
     let pki = SwarmPki::new("c1");
     t.store
-        .pin_swarm_cluster(env_id, "c1", &pki.root, "n1", "host-n1", fleetops_core::now_unix())
+        .pin_swarm_cluster(
+            env_id,
+            "c1",
+            &pki.root,
+            "n1",
+            "host-n1",
+            fleetops_core::now_unix(),
+        )
         .await
         .unwrap();
     let r = t
-        .send(req("POST", "/api/v1/envs/prod/swarm/retrust", None, Some(&admin)))
+        .send(req(
+            "POST",
+            "/api/v1/envs/prod/swarm/retrust",
+            None,
+            Some(&admin),
+        ))
         .await;
     assert_eq!(r.status, 204);
     assert!(t.store.get_swarm_cluster(env_id).await.unwrap().is_none());
-    let r = t.send(req("GET", "/api/v1/envs/prod/swarm/trust", None, Some(&admin))).await;
+    let r = t
+        .send(req(
+            "GET",
+            "/api/v1/envs/prod/swarm/trust",
+            None,
+            Some(&admin),
+        ))
+        .await;
     assert_eq!(r.status, 404);
 }
 
@@ -214,6 +311,7 @@ async fn a_worker_before_any_manager_is_told_not_yet() {
     assert_eq!(w.next().await, bye(ByeReason::NotYet));
     assert!(t.state.agents.nodes(env_id).is_empty());
 
+    trust(&t, env_id, &pki, &daemon).await;
     let (_m, _) = join(
         &base,
         &key,
@@ -221,6 +319,11 @@ async fn a_worker_before_any_manager_is_told_not_yet() {
         claim(&pki, "n1", true),
         &pki.node("n1", true),
     )
+    .await;
+    // Registered just after its welcome.
+    eventually("manager registered", || {
+        t.state.agents.nodes(env_id).len() == 1
+    })
     .await;
     let (_w, reply) = join(
         &base,
@@ -521,12 +624,26 @@ async fn a_removed_former_manager_is_refused_after_restart() {
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", true), ("n3", false)]);
     trust(&t, env_id, &pki, &daemon).await;
-    let (m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     // n2 leaves the swarm; n1's next registration notices.
     daemon.remove("n2");
     drop(m);
     eventually("n1 gone", || t.state.agents.nodes(env_id).is_empty()).await;
-    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (_m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     for _ in 0..100 {
         if known(&t, env_id).await == ["n1"] {
             break;
@@ -540,11 +657,21 @@ async fn a_removed_former_manager_is_refused_after_restart() {
     let t2 = app_on(t.store.clone()).await;
     let base2 = format!("http://{}", t2.serve().await);
     let liar = FakeSwarm::new(&pki, &[("n1", true), ("n2", true)]);
-    let (_r, reply) = join(&base2, &key, &liar, claim(&pki, "n2", true), &pki.node("n2", true)).await;
+    let (_r, reply) = join(
+        &base2,
+        &key,
+        &liar,
+        claim(&pki, "n2", true),
+        &pki.node("n2", true),
+    )
+    .await;
     assert_eq!(reply, bye(ByeReason::NotYet));
     assert!(t2.state.agents.nodes(env_id).is_empty());
     let reason = t2.state.agents.node_offline_reason(env_id, "n2").unwrap();
-    assert_eq!(reason, "waiting for a known manager to confirm new manager n2");
+    assert_eq!(
+        reason,
+        "waiting for a known manager to confirm new manager n2"
+    );
 }
 
 #[tokio::test]
@@ -556,7 +683,14 @@ async fn a_lone_known_manager_checks_itself_after_restart() {
     trust(&t, env_id, &pki, &daemon).await;
     let t2 = app_on(t.store.clone()).await;
     let base2 = format!("http://{}", t2.serve().await);
-    let (_m, reply) = join(&base2, &key, &daemon, claim(&pki, "n2", true), &pki.node("n2", true)).await;
+    let (_m, reply) = join(
+        &base2,
+        &key,
+        &daemon,
+        claim(&pki, "n2", true),
+        &pki.node("n2", true),
+    )
+    .await;
     assert!(matches!(reply, Some(Msg::Welcome { .. })), "{reply:?}");
 }
 
@@ -568,9 +702,23 @@ async fn a_promoted_manager_is_confirmed_by_a_known_one() {
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n4", false)]);
     trust(&t, env_id, &pki, &daemon).await;
-    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (_m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     daemon.set_role("n4", true);
-    let (_p, reply) = join(&base, &key, &daemon, claim(&pki, "n4", true), &pki.node("n4", true)).await;
+    let (_p, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n4", true),
+        &pki.node("n4", true),
+    )
+    .await;
     assert!(matches!(reply, Some(Msg::Welcome { .. })), "{reply:?}");
     for _ in 0..100 {
         if known(&t, env_id).await.contains(&"n4".to_string()) {
@@ -589,13 +737,34 @@ async fn a_demoted_manager_session_is_revoked_when_a_known_manager_refreshes() {
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", true)]);
     trust(&t, env_id, &pki, &daemon).await;
-    let (m1, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
-    let (mut m2, _) = join(&base, &key, &daemon, claim(&pki, "n2", true), &pki.node("n2", true)).await;
+    let (m1, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    let (mut m2, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n2", true),
+        &pki.node("n2", true),
+    )
+    .await;
     eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
     daemon.set_role("n2", false);
     drop(m1);
     eventually("n1 gone", || t.state.agents.nodes(env_id).len() == 1).await;
-    let (_m1, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (_m1, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     loop {
         match m2.next().await {
             Some(Msg::Ping { n }) => m2.pong(n).await,
@@ -618,7 +787,14 @@ async fn a_swarm_counts_each_node() {
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false), ("n3", false)]);
     trust(&t, env_id, &pki, &daemon).await;
-    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (_m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
     assert_eq!(t.state.envs.count_nodes().await, 3);
 }

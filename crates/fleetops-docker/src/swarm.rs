@@ -9,8 +9,8 @@ use bollard::query_parameters::{
 };
 use fleetops_core::streams::{BoxStream, DockerEvent, LogLine, LogOptions, StreamOps};
 use fleetops_core::swarm::{
-    ConfigSummary, NodeDetail, NodeRole, NodeSummary, SecretSummary, ServiceDetail,
-    ServiceSummary, SwarmInfo, SwarmNetwork, SwarmOps, TaskSummary, STACK_LABEL,
+    ConfigSummary, NodeDetail, NodeRole, NodeSummary, SecretSummary, ServiceDetail, ServiceSummary,
+    SwarmInfo, SwarmNetwork, SwarmOps, TaskSummary, STACK_LABEL,
 };
 use fleetops_core::{Error, Result};
 use futures_util::StreamExt;
@@ -173,10 +173,7 @@ fn summary(n: Node) -> NodeSummary {
 impl LocalDocker {
     async fn list_services(&self) -> Result<Vec<Service>> {
         let opts = ListServicesOptionsBuilder::new().status(true).build();
-        self.client
-            .list_services(Some(opts))
-            .await
-            .map_err(map_err)
+        self.client.list_services(Some(opts)).await.map_err(map_err)
     }
 }
 
@@ -243,7 +240,12 @@ impl SwarmOps for LocalDocker {
     }
 
     async fn services(&self) -> Result<Vec<ServiceSummary>> {
-        Ok(self.list_services().await?.iter().map(service_summary).collect())
+        Ok(self
+            .list_services()
+            .await?
+            .iter()
+            .map(service_summary)
+            .collect())
     }
 
     async fn service(&self, id: &str) -> Result<Option<ServiceDetail>> {
@@ -255,7 +257,12 @@ impl SwarmOps for LocalDocker {
         let spec = svc.spec.clone().unwrap_or_default();
         Ok(Some(ServiceDetail {
             summary: service_summary(&svc),
-            labels: spec.labels.clone().unwrap_or_default().into_iter().collect(),
+            labels: spec
+                .labels
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .collect(),
             spec: serde_json::to_value(&spec).map_err(|e| Error::Internal(e.to_string()))?,
             update_status: svc
                 .update_status

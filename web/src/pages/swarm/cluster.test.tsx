@@ -75,7 +75,7 @@ describe("Swarm cluster pages", () => {
     await feedTasks();
     const table = await screen.findByRole("table", { name: "Tasks" });
     const link = await within(table).findByRole("link", { name: "c-t1" });
-    expect(link).toHaveAttribute("href", "/envs/prod@n1/containers/c-t1");
+    expect(link).toHaveAttribute("href", "/envs/prod%40n1/containers/c-t1");
   });
 
   it("service page shows tasks and streams logs", async () => {

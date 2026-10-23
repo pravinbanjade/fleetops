@@ -174,7 +174,7 @@ describe("Swarm trust and node views", () => {
     const { screen } = renderApp("/envs/prod/swarm/nodes");
     const table = await screen.findByRole("table", { name: "Nodes" });
     const link = await within(table).findByRole("link", { name: "wrk-1" });
-    expect(link).toHaveAttribute("href", "/envs/prod@n2");
+    expect(link).toHaveAttribute("href", "/envs/prod%40n2");
   });
 
   it("docker pages are allowed on a node view, without stacks", async () => {

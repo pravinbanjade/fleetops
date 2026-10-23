@@ -80,7 +80,12 @@ fn tasks_json() -> serde_json::Value {
 fn answer(path: &str) -> (u16, String) {
     if let Some(rest) = path.split("/services/").nth(1) {
         let id = rest.split(['?', '/']).next().unwrap();
-        return match services_json().as_array().unwrap().iter().find(|s| s["ID"] == id) {
+        return match services_json()
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["ID"] == id)
+        {
             Some(s) => (200, s.to_string()),
             None => (404, format!(r#"{{"message":"service {id} not found"}}"#)),
         };
@@ -267,7 +272,14 @@ async fn a_node_view_reaches_that_nodes_engine() {
     let env = SwarmEnv::new(9, "prod", agents.clone());
     let (bye, rx) = mpsc::channel(1);
     std::mem::forget(rx);
-    agents.insert_node(9, "n3", "k", loopback(Target::Unix(sock)), info("n3", false), bye);
+    agents.insert_node(
+        9,
+        "n3",
+        "k",
+        loopback(Target::Unix(sock)),
+        info("n3", false),
+        bye,
+    );
     let view = env.node_env("n3").expect("a node view");
     assert_eq!(view.name(), "prod@n3");
     assert_eq!(view.id(), 9);
@@ -289,7 +301,14 @@ async fn a_node_without_an_agent_is_down() {
     let env = SwarmEnv::new(9, "prod", agents.clone());
     let (bye, rx) = mpsc::channel(1);
     std::mem::forget(rx);
-    agents.insert_node(9, "n1", "k", loopback(Target::Unix(sock)), info("n1", true), bye);
+    agents.insert_node(
+        9,
+        "n1",
+        "k",
+        loopback(Target::Unix(sock)),
+        info("n1", true),
+        bye,
+    );
     // n3 is in the swarm (a manager reports it) but has no agent.
     env.status().await;
     let view = env.node_env("n3").expect("a known node");

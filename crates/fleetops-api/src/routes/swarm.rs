@@ -4,11 +4,8 @@
 
 use crate::openapi::EnvParam;
 use crate::{
-    auth::extract::CurrentUser,
-    authz::Need,
-    extract::ApiPath,
-    routes::kube::wrong_kind,
-    ApiResult, AppState,
+    auth::extract::CurrentUser, authz::Need, extract::ApiPath, routes::kube::wrong_kind, ApiResult,
+    AppState,
 };
 use axum::{
     extract::{Query, State},
@@ -131,7 +128,11 @@ pub async fn tasks(
         .await?
         .into_iter()
         .filter(|t| f.service.as_ref().is_none_or(|s| *s == t.service_id))
-        .filter(|t| f.node.as_ref().is_none_or(|n| t.node_id.as_ref() == Some(n)))
+        .filter(|t| {
+            f.node
+                .as_ref()
+                .is_none_or(|n| t.node_id.as_ref() == Some(n))
+        })
         .collect();
     Ok(Json(tasks))
 }

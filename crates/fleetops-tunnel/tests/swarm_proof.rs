@@ -1,5 +1,7 @@
 use fleetops_tunnel::control::SwarmClaim;
-use fleetops_tunnel::swarm_proof::{fingerprint, is_encrypted_key, proof_message, sign, verify, ProofError};
+use fleetops_tunnel::swarm_proof::{
+    fingerprint, is_encrypted_key, proof_message, sign, verify, ProofError,
+};
 use rcgen::{
     BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair, PKCS_ECDSA_P256_SHA256,
 };

@@ -87,7 +87,9 @@ impl SwarmEnv {
                 continue;
             };
             if let Ok(Ok(nodes)) = tokio::time::timeout(STATUS_TIMEOUT, c.nodes()).await {
-                *self.leader.lock().unwrap() = nodes.into_iter().find(|n| n.leader).map(|n| n.id);
+                *self.leader.lock().unwrap() =
+                    nodes.iter().find(|n| n.leader).map(|n| n.id.clone());
+                *self.members.lock().unwrap() = nodes.into_iter().map(|n| n.id).collect();
                 break;
             }
         }

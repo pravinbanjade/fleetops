@@ -75,7 +75,10 @@ impl Environment for NodeEnv {
                 reason: format!("agent connected, Docker unreachable: {e}"),
             },
             Err(_) => EnvStatus::Down {
-                reason: format!("no response from node {} within {STATUS_TIMEOUT:?}", self.node),
+                reason: format!(
+                    "no response from node {} within {STATUS_TIMEOUT:?}",
+                    self.node
+                ),
             },
         }
     }

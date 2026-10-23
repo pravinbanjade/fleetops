@@ -153,13 +153,20 @@ pub(super) async fn serve(
     let claim: SwarmClaim = match (&info.host.serves, &info.host.swarm) {
         (Serves::Swarm, Some(claim)) => claim.clone(),
         (serves, _) => no!(
-            format!("agent serves {}; this environment expects swarm", serves.as_str()),
+            format!(
+                "agent serves {}; this environment expects swarm",
+                serves.as_str()
+            ),
             Incompatible,
             false
         ),
     };
     let Some(through) = s.swarm_through.clone() else {
-        no!("this server cannot reach Swarm agents".into(), Incompatible, false)
+        no!(
+            "this server cannot reach Swarm agents".into(),
+            Incompatible,
+            false
+        )
     };
     let pinned = match s.store.get_swarm_cluster(env.id).await {
         Ok(p) => p,
@@ -172,7 +179,11 @@ pub(super) async fn serve(
     // Workers wait for a manager: it proposes the swarm, an admin trusts
     // it, and a manager checks membership.
     if !claim.manager && (!confirmed || checker.is_none()) {
-        no!("waiting for a manager's agent to connect".into(), NotYet, false)
+        no!(
+            "waiting for a manager's agent to connect".into(),
+            NotYet,
+            false
+        )
     }
     if let Some(p) = &pinned {
         if p.cluster_id != claim.cluster_id {
@@ -218,7 +229,11 @@ pub(super) async fn serve(
                 Incompatible,
                 false
             ),
-            Err(e) => no!(format!("cannot read the swarm's root CA: {e}"), NotYet, false),
+            Err(e) => no!(
+                format!("cannot read the swarm's root CA: {e}"),
+                NotYet,
+                false
+            ),
         },
     };
     let msg = swarm_proof::proof_message(&nonce, &claim);
@@ -267,11 +282,7 @@ pub(super) async fn serve(
     // itself only when it is known (or right after confirmation, when none
     // is known yet) and no other known manager is connected.
     let self_check = checker.is_none();
-    if self_check
-        && known
-            .as_ref()
-            .is_some_and(|k| !k.contains(&claim.node_id))
-    {
+    if self_check && known.as_ref().is_some_and(|k| !k.contains(&claim.node_id)) {
         no!(
             format!(
                 "waiting for a known manager to confirm new manager {}",

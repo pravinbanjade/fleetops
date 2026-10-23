@@ -64,7 +64,10 @@ async fn pinning_keeps_the_first_cluster() {
     let s = Store::in_memory().await.unwrap();
     let id = swarm(&s).await;
     assert!(s.get_swarm_cluster(id).await.unwrap().is_none());
-    let first = s.pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0).await.unwrap();
+    let first = s
+        .pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0)
+        .await
+        .unwrap();
     assert_eq!(first.cluster_id, "c1");
     let again = s
         .pin_swarm_cluster(id, "c2", "ROOT2", "n2", "mgr-2", T0 + 1)
@@ -79,7 +82,9 @@ async fn pinning_keeps_the_first_cluster() {
 async fn clearing_allows_a_new_pin() {
     let s = Store::in_memory().await.unwrap();
     let id = swarm(&s).await;
-    s.pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0).await.unwrap();
+    s.pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0)
+        .await
+        .unwrap();
     s.clear_swarm_cluster(id).await.unwrap();
     let pinned = s
         .pin_swarm_cluster(id, "c2", "ROOT2", "n2", "mgr-2", T0 + 1)
@@ -124,7 +129,9 @@ async fn swarm_agents_upsert_per_node() {
 async fn deleting_the_environment_removes_its_rows() {
     let s = Store::in_memory().await.unwrap();
     let id = swarm(&s).await;
-    s.pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0).await.unwrap();
+    s.pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0)
+        .await
+        .unwrap();
     s.record_swarm_agent(
         id,
         &SwarmAgentRecord {
@@ -166,7 +173,11 @@ async fn a_pin_is_pending_until_confirmed_with_the_matching_fingerprint() {
     assert_eq!(p.known_managers, Some(managers));
     s.set_known_managers(id, &["n1".to_string()]).await.unwrap();
     assert_eq!(
-        s.get_swarm_cluster(id).await.unwrap().unwrap().known_managers,
+        s.get_swarm_cluster(id)
+            .await
+            .unwrap()
+            .unwrap()
+            .known_managers,
         Some(vec!["n1".to_string()])
     );
 }
@@ -179,7 +190,16 @@ async fn a_changed_pin_does_not_confirm() {
         .await
         .unwrap();
     // Compare-and-set on what the admin was shown.
-    assert!(!s.confirm_swarm_cluster(id, "c1", "OTHER", &[], T0).await.unwrap());
-    assert!(!s.confirm_swarm_cluster(id, "c2", "ROOT1", &[], T0).await.unwrap());
-    assert_eq!(s.get_swarm_cluster(id).await.unwrap().unwrap().confirmed_at, None);
+    assert!(!s
+        .confirm_swarm_cluster(id, "c1", "OTHER", &[], T0)
+        .await
+        .unwrap());
+    assert!(!s
+        .confirm_swarm_cluster(id, "c2", "ROOT1", &[], T0)
+        .await
+        .unwrap());
+    assert_eq!(
+        s.get_swarm_cluster(id).await.unwrap().unwrap().confirmed_at,
+        None
+    );
 }
