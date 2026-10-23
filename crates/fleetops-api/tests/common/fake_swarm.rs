@@ -58,6 +58,56 @@ impl SwarmPki {
     }
 }
 
+pub fn services_json() -> serde_json::Value {
+    json!([
+        {
+            "ID": "s1", "Version": {"Index": 10},
+            "CreatedAt": "2026-10-20T10:00:00Z", "UpdatedAt": "2026-10-21T10:00:00Z",
+            "Spec": {
+                "Name": "blog_web",
+                "Labels": {"com.docker.stack.namespace": "blog"},
+                "TaskTemplate": {
+                    "ContainerSpec": {
+                        "Image": "nginx:1.27@sha256:abc",
+                        "Secrets": [{"SecretID": "sec1", "SecretName": "blog_db"}],
+                        "Configs": [{"ConfigID": "cfg1", "ConfigName": "blog_nginx"}]
+                    },
+                    "Networks": [{"Target": "net1"}]
+                },
+                "Mode": {"Replicated": {"Replicas": 3}},
+                "EndpointSpec": {"Ports": [{"Protocol": "tcp", "TargetPort": 80, "PublishedPort": 8080}]}
+            },
+            "Endpoint": {"Ports": [{"Protocol": "tcp", "TargetPort": 80, "PublishedPort": 8080}]},
+            "ServiceStatus": {"RunningTasks": 2, "DesiredTasks": 3},
+            "UpdateStatus": {"State": "updating", "Message": "update in progress"}
+        },
+        {
+            "ID": "s2", "Version": {"Index": 4},
+            "Spec": {
+                "Name": "agent",
+                "TaskTemplate": {"ContainerSpec": {"Image": "fleets/fleetops-agent:0.7.0"}},
+                "Mode": {"Global": {}}
+            },
+            "ServiceStatus": {"RunningTasks": 3, "DesiredTasks": 3}
+        }
+    ])
+}
+
+pub fn tasks_json() -> serde_json::Value {
+    json!([
+        {
+            "ID": "t1", "Version": {"Index": 20}, "ServiceID": "s1", "Slot": 1, "NodeID": "n1",
+            "UpdatedAt": "2026-10-21T10:00:00Z", "DesiredState": "running",
+            "Status": {"State": "running", "Message": "started", "ContainerStatus": {"ContainerID": "c1"}}
+        },
+        {
+            "ID": "t2", "Version": {"Index": 21}, "ServiceID": "s1", "Slot": 2, "NodeID": "n3",
+            "UpdatedAt": "2026-10-21T10:01:00Z", "DesiredState": "shutdown",
+            "Status": {"State": "rejected", "Message": "preparing", "Err": "No such image: nginx:9"}
+        }
+    ])
+}
+
 /// What a manager's daemon reports. Tests edit `nodes` to add or remove
 /// members.
 pub struct FakeSwarm {
@@ -101,6 +151,48 @@ impl FakeSwarm {
     }
 
     fn answer(&self, path: &str) -> (u16, String) {
+    if let Some(rest) = path.split("/services/").nth(1) {
+        let id = rest.split(['?', '/']).next().unwrap();
+        return match services_json().as_array().unwrap().iter().find(|s| s["ID"] == id) {
+            Some(s) => (200, s.to_string()),
+            None => (404, format!(r#"{{"message":"service {id} not found"}}"#)),
+        };
+    }
+    if path.contains("/services") {
+        return (200, services_json().to_string());
+    }
+    if path.contains("/tasks") {
+        return (200, tasks_json().to_string());
+    }
+    if path.contains("/secrets") {
+        return (
+            200,
+            json!([{"ID": "sec1", "CreatedAt": "2026-10-20T10:00:00Z", "UpdatedAt": "2026-10-20T10:00:00Z",
+                "Spec": {"Name": "blog_db", "Labels": {"com.docker.stack.namespace": "blog"}}}])
+            .to_string(),
+        );
+    }
+    if path.contains("/configs") {
+        return (
+            200,
+            json!([{"ID": "cfg1", "Spec": {"Name": "blog_nginx"}},
+                               {"ID": "cfg2", "Spec": {"Name": "unused"}}])
+            .to_string(),
+        );
+    }
+    if path.contains("/networks") {
+        return (
+            200,
+            json!([
+                {"Name": "blog_default", "Id": "net1", "Scope": "swarm", "Driver": "overlay",
+                 "Attachable": false, "Internal": false, "Options": {"encrypted": ""},
+                 "IPAM": {"Config": [{"Subnet": "10.0.1.0/24"}]},
+                 "Labels": {"com.docker.stack.namespace": "blog"}},
+                {"Name": "bridge", "Id": "b", "Scope": "local", "Driver": "bridge"}
+            ])
+            .to_string(),
+        );
+    }
         let nodes = self.nodes.lock().unwrap().clone();
         if let Some(id) = path.split("/nodes/").nth(1) {
             let id = id.split('?').next().unwrap_or_default();
@@ -189,3 +281,51 @@ pub async fn trust(t: &super::TestApp, env_id: i64, pki: &SwarmPki, daemon: &Fak
         .await
         .unwrap());
 }
+
+pub struct Swarm {
+    pub t: super::TestApp,
+    pub admin: super::Session,
+    pub env_id: i64,
+    pub _agents: Vec<super::agent::TestAgent>,
+}
+
+/// A trusted swarm "prod" with n1 (manager) and n2 (worker) connected.
+pub async fn connected_swarm() -> Swarm {
+    let t = super::app().await;
+    let admin = t.setup_admin().await;
+    let key = fleetops_api::agents::new_agent_key();
+    let env_id = t
+        .store
+        .create_swarm_environment("prod", &fleetops_api::auth_token_hash(&key), fleetops_core::now_unix())
+        .await
+        .unwrap()
+        .id;
+    t.state.envs.load(&t.store).await.unwrap();
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let base = format!("http://{}", t.serve().await);
+    let mut agents = vec![];
+    for (node, manager) in [("n1", true), ("n2", false)] {
+        let c = fleetops_tunnel::control::SwarmClaim {
+            node_id: node.into(),
+            cluster_id: "c1".into(),
+            manager,
+        };
+        let mut a = super::agent::TestAgent::connect_swarm(&base, &key, daemon.clone() as Arc<FakeSwarm>)
+            .await
+            .unwrap();
+        a.hello_swarm(c.clone()).await;
+        a.answer_challenge(&pki.node(node, manager), &c).await;
+        assert!(matches!(a.next().await, Some(fleetops_tunnel::control::Msg::Welcome { .. })));
+        agents.push(a);
+    }
+    super::eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
+    Swarm {
+        t,
+        admin,
+        env_id,
+        _agents: agents,
+    }
+}
+

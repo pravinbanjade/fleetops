@@ -6728,6 +6728,212 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/swarm/configs": {
+      "get": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "The swarm's configs",
+        "operationId": "listSwarmConfigs",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConfigSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/networks": {
+      "get": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "The swarm's swarm-scoped networks",
+        "operationId": "listSwarmNetworks",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every swarm network",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SwarmNetwork"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/nodes": {
+      "get": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "The swarm's nodes",
+        "operationId": "listSwarmNodes",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NodeSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/nodes/{id}": {
+      "get": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "One node",
+        "operationId": "getSwarmNode",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/swarm/retrust": {
       "post": {
         "tags": [
@@ -6853,6 +7059,230 @@
         "security": [
           {
             "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/secrets": {
+      "get": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "The swarm's secrets (metadata only)",
+        "operationId": "listSwarmSecrets",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SecretSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/services": {
+      "get": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "The swarm's services",
+        "operationId": "listSwarmServices",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ServiceSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/services/{id}": {
+      "get": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "One service, with its spec",
+        "operationId": "getSwarmService",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The service",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/tasks": {
+      "get": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "The swarm's tasks",
+        "operationId": "listSwarmTasks",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "service",
+            "in": "query",
+            "description": "Only this service's tasks (id).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "node",
+            "in": "query",
+            "description": "Only tasks on this node (id).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
             "session": []
           }
         ]
@@ -8650,6 +9080,45 @@
           "status": {
             "type": "string",
             "description": "running | partial | stopped"
+          }
+        }
+      },
+      "ConfigSummary": {
+        "type": "object",
+        "description": "A config's metadata; its content is read separately.",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at",
+          "used_by"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stack": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "used_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -11033,12 +11502,109 @@
           }
         }
       },
+      "NodeDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NodeSummary"
+          },
+          {
+            "type": "object",
+            "required": [
+              "labels",
+              "engine",
+              "os",
+              "arch",
+              "nano_cpus",
+              "memory_bytes",
+              "addr"
+            ],
+            "properties": {
+              "addr": {
+                "type": "string"
+              },
+              "arch": {
+                "type": "string"
+              },
+              "engine": {
+                "type": "string",
+                "description": "The node's engine version."
+              },
+              "labels": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              },
+              "manager_addr": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Managers only."
+              },
+              "memory_bytes": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "nano_cpus": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "os": {
+                "type": "string"
+              },
+              "reachability": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "NodeRole": {
         "type": "string",
         "enum": [
           "manager",
           "worker"
         ]
+      },
+      "NodeSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "hostname",
+          "role",
+          "state",
+          "availability",
+          "leader"
+        ],
+        "properties": {
+          "availability": {
+            "type": "string",
+            "description": "`active`, `pause` or `drain`."
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "leader": {
+            "type": "boolean"
+          },
+          "role": {
+            "$ref": "#/components/schemas/NodeRole"
+          },
+          "state": {
+            "type": "string",
+            "description": "`ready`, `down`, `unknown` or `disconnected`."
+          }
+        }
       },
       "Plan": {
         "type": "object",
@@ -11543,6 +12109,46 @@
           }
         }
       },
+      "SecretSummary": {
+        "type": "object",
+        "description": "A secret's metadata. Swarm never returns secret values.",
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "updated_at",
+          "used_by"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stack": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "used_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Names of the services that mount it."
+          }
+        }
+      },
       "SecretValue": {
         "type": "object",
         "description": "One key of a Secret, for a role with Reveal on Secrets.",
@@ -11747,6 +12353,41 @@
           "remove"
         ]
       },
+      "ServiceDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ServiceSummary"
+          },
+          {
+            "type": "object",
+            "required": [
+              "labels",
+              "spec"
+            ],
+            "properties": {
+              "labels": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              },
+              "spec": {
+                "type": "object",
+                "description": "Docker's ServiceSpec, verbatim. It never holds secret values: Swarm\nkeeps those in secrets."
+              },
+              "update_status": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "ServicePlan": {
         "type": "object",
         "required": [
@@ -11778,6 +12419,80 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "ServiceSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "mode",
+          "tasks_running",
+          "tasks_desired",
+          "image",
+          "ports",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string",
+            "description": "Without the digest Docker pins it to."
+          },
+          "mode": {
+            "type": "string",
+            "description": "`replicated`, `global`, `replicated-job` or `global-job`."
+          },
+          "name": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`published:target/protocol`."
+          },
+          "replicas_desired": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Replicated services only.",
+            "minimum": 0
+          },
+          "stack": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From the stack label, when a stack owns it."
+          },
+          "tasks_desired": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "tasks_running": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "update_state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`updating`, `paused`, `completed`, `rollback_started`, ..."
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds."
           }
         }
       },
@@ -12292,6 +13007,57 @@
           }
         }
       },
+      "SwarmNetwork": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "driver",
+          "attachable",
+          "internal",
+          "encrypted",
+          "subnets",
+          "used_by"
+        ],
+        "properties": {
+          "attachable": {
+            "type": "boolean"
+          },
+          "driver": {
+            "type": "string"
+          },
+          "encrypted": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "internal": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stack": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subnets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "used_by": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "SwarmStack": {
         "type": "object",
         "required": [
@@ -12563,6 +13329,76 @@
           "succeeded",
           "failed"
         ]
+      },
+      "TaskSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "service_id",
+          "service_name",
+          "desired_state",
+          "state",
+          "message",
+          "updated_at",
+          "version"
+        ],
+        "properties": {
+          "container_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "desired_state": {
+            "type": "string"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_id": {
+            "type": "string"
+          },
+          "service_name": {
+            "type": "string"
+          },
+          "slot": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "state": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix seconds."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Swarm's object version: it grows with every change.",
+            "minimum": 0
+          }
+        }
       },
       "Topic": {
         "type": "string",

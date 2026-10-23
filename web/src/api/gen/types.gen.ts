@@ -338,6 +338,18 @@ export type ComposeProject = {
     status: string;
 };
 
+/**
+ * A config's metadata; its content is read separately.
+ */
+export type ConfigSummary = {
+    created_at: number;
+    id: string;
+    name: string;
+    stack?: string | null;
+    updated_at: number;
+    used_by: Array<string>;
+};
+
 export type ConfirmRestore = {
     /**
      * Must be `RESTORE`.
@@ -1252,7 +1264,42 @@ export type NetworkSummary = {
     subnet?: string | null;
 };
 
+export type NodeDetail = NodeSummary & {
+    addr: string;
+    arch: string;
+    /**
+     * The node's engine version.
+     */
+    engine: string;
+    labels: {
+        [key: string]: string;
+    };
+    /**
+     * Managers only.
+     */
+    manager_addr?: string | null;
+    memory_bytes: number;
+    nano_cpus: number;
+    os: string;
+    reachability?: string | null;
+};
+
 export type NodeRole = 'manager' | 'worker';
+
+export type NodeSummary = {
+    /**
+     * `active`, `pause` or `drain`.
+     */
+    availability: string;
+    hostname: string;
+    id: string;
+    leader: boolean;
+    role: NodeRole;
+    /**
+     * `ready`, `down`, `unknown` or `disconnected`.
+     */
+    state: string;
+};
 
 export type Plan = {
     /**
@@ -1442,6 +1489,21 @@ export type SecretRotated = {
 };
 
 /**
+ * A secret's metadata. Swarm never returns secret values.
+ */
+export type SecretSummary = {
+    created_at: number;
+    id: string;
+    name: string;
+    stack?: string | null;
+    updated_at: number;
+    /**
+     * Names of the services that mount it.
+     */
+    used_by: Array<string>;
+};
+
+/**
  * One key of a Secret, for a role with Reveal on Secrets.
  */
 export type SecretValue = {
@@ -1491,12 +1553,63 @@ export type ServerMsg = {
 
 export type ServiceAction = 'create' | 'recreate' | 'scale' | 'unchanged' | 'remove';
 
+export type ServiceDetail = ServiceSummary & {
+    labels: {
+        [key: string]: string;
+    };
+    /**
+     * Docker's ServiceSpec, verbatim. It never holds secret values: Swarm
+     * keeps those in secrets.
+     */
+    spec: {
+        [key: string]: unknown;
+    };
+    update_status?: {
+        [key: string]: unknown;
+    } | null;
+};
+
 export type ServicePlan = {
     action: ServiceAction;
     name: string;
     reasons: Array<string>;
     replicas_after: number;
     replicas_before: number;
+};
+
+export type ServiceSummary = {
+    id: string;
+    /**
+     * Without the digest Docker pins it to.
+     */
+    image: string;
+    /**
+     * `replicated`, `global`, `replicated-job` or `global-job`.
+     */
+    mode: string;
+    name: string;
+    /**
+     * `published:target/protocol`.
+     */
+    ports: Array<string>;
+    /**
+     * Replicated services only.
+     */
+    replicas_desired?: number | null;
+    /**
+     * From the stack label, when a stack owns it.
+     */
+    stack?: string | null;
+    tasks_desired: number;
+    tasks_running: number;
+    /**
+     * `updating`, `paused`, `completed`, `rollback_started`, ...
+     */
+    update_state?: string | null;
+    /**
+     * Unix seconds.
+     */
+    updated_at: number;
 };
 
 export type SessionInfo = {
@@ -1702,6 +1815,18 @@ export type SwarmEnrollment = {
     secret_name: string;
 };
 
+export type SwarmNetwork = {
+    attachable: boolean;
+    driver: string;
+    encrypted: boolean;
+    id: string;
+    internal: boolean;
+    name: string;
+    stack?: string | null;
+    subnets: Array<string>;
+    used_by: Array<string>;
+};
+
 export type SwarmStack = {
     deploy_command: string;
     /**
@@ -1796,6 +1921,27 @@ export type TaskStarted = {
 };
 
 export type TaskStatus = 'running' | 'succeeded' | 'failed';
+
+export type TaskSummary = {
+    container_id?: string | null;
+    desired_state: string;
+    error?: string | null;
+    id: string;
+    message: string;
+    node_id?: string | null;
+    service_id: string;
+    service_name: string;
+    slot?: number | null;
+    state: string;
+    /**
+     * Unix seconds.
+     */
+    updated_at: number;
+    /**
+     * Swarm's object version: it grows with every change.
+     */
+    version: number;
+};
 
 export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch';
 
@@ -5645,6 +5791,130 @@ export type ListSwarmAgentsResponses = {
 
 export type ListSwarmAgentsResponse = ListSwarmAgentsResponses[keyof ListSwarmAgentsResponses];
 
+export type ListSwarmConfigsData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/configs';
+};
+
+export type ListSwarmConfigsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSwarmConfigsError = ListSwarmConfigsErrors[keyof ListSwarmConfigsErrors];
+
+export type ListSwarmConfigsResponses = {
+    /**
+     * Every config
+     */
+    200: Array<ConfigSummary>;
+};
+
+export type ListSwarmConfigsResponse = ListSwarmConfigsResponses[keyof ListSwarmConfigsResponses];
+
+export type ListSwarmNetworksData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/networks';
+};
+
+export type ListSwarmNetworksErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSwarmNetworksError = ListSwarmNetworksErrors[keyof ListSwarmNetworksErrors];
+
+export type ListSwarmNetworksResponses = {
+    /**
+     * Every swarm network
+     */
+    200: Array<SwarmNetwork>;
+};
+
+export type ListSwarmNetworksResponse = ListSwarmNetworksResponses[keyof ListSwarmNetworksResponses];
+
+export type ListSwarmNodesData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/nodes';
+};
+
+export type ListSwarmNodesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSwarmNodesError = ListSwarmNodesErrors[keyof ListSwarmNodesErrors];
+
+export type ListSwarmNodesResponses = {
+    /**
+     * Every node
+     */
+    200: Array<NodeSummary>;
+};
+
+export type ListSwarmNodesResponse = ListSwarmNodesResponses[keyof ListSwarmNodesResponses];
+
+export type GetSwarmNodeData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/nodes/{id}';
+};
+
+export type GetSwarmNodeErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetSwarmNodeError = GetSwarmNodeErrors[keyof GetSwarmNodeErrors];
+
+export type GetSwarmNodeResponses = {
+    /**
+     * The node
+     */
+    200: NodeDetail;
+};
+
+export type GetSwarmNodeResponse = GetSwarmNodeResponses[keyof GetSwarmNodeResponses];
+
 export type RetrustSwarmData = {
     body?: never;
     path: {
@@ -5734,6 +6004,139 @@ export type FinishSwarmRotationResponses = {
 };
 
 export type FinishSwarmRotationResponse = FinishSwarmRotationResponses[keyof FinishSwarmRotationResponses];
+
+export type ListSwarmSecretsData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/secrets';
+};
+
+export type ListSwarmSecretsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSwarmSecretsError = ListSwarmSecretsErrors[keyof ListSwarmSecretsErrors];
+
+export type ListSwarmSecretsResponses = {
+    /**
+     * Every secret
+     */
+    200: Array<SecretSummary>;
+};
+
+export type ListSwarmSecretsResponse = ListSwarmSecretsResponses[keyof ListSwarmSecretsResponses];
+
+export type ListSwarmServicesData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/services';
+};
+
+export type ListSwarmServicesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSwarmServicesError = ListSwarmServicesErrors[keyof ListSwarmServicesErrors];
+
+export type ListSwarmServicesResponses = {
+    /**
+     * Every service
+     */
+    200: Array<ServiceSummary>;
+};
+
+export type ListSwarmServicesResponse = ListSwarmServicesResponses[keyof ListSwarmServicesResponses];
+
+export type GetSwarmServiceData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/services/{id}';
+};
+
+export type GetSwarmServiceErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetSwarmServiceError = GetSwarmServiceErrors[keyof GetSwarmServiceErrors];
+
+export type GetSwarmServiceResponses = {
+    /**
+     * The service
+     */
+    200: ServiceDetail;
+};
+
+export type GetSwarmServiceResponse = GetSwarmServiceResponses[keyof GetSwarmServiceResponses];
+
+export type ListSwarmTasksData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: {
+        /**
+         * Only this service's tasks (id).
+         */
+        service?: string;
+        /**
+         * Only tasks on this node (id).
+         */
+        node?: string;
+    };
+    url: '/api/v1/envs/{env}/swarm/tasks';
+};
+
+export type ListSwarmTasksErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSwarmTasksError = ListSwarmTasksErrors[keyof ListSwarmTasksErrors];
+
+export type ListSwarmTasksResponses = {
+    /**
+     * Matching tasks
+     */
+    200: Array<TaskSummary>;
+};
+
+export type ListSwarmTasksResponse = ListSwarmTasksResponses[keyof ListSwarmTasksResponses];
 
 export type GetSwarmTrustData = {
     body?: never;

@@ -1,60 +1,7 @@
 mod common;
 
-use common::{
-    agent::TestAgent,
-    fake_swarm::{trust, FakeSwarm, SwarmPki},
-    *,
-};
-use fleetops_tunnel::control::{Msg, SwarmClaim};
+use common::{fake_swarm::connected_swarm as swarm, *};
 use serde_json::json;
-use std::sync::Arc;
-
-struct Swarm {
-    t: TestApp,
-    admin: Session,
-    env_id: i64,
-    _agents: Vec<TestAgent>,
-}
-
-/// A trusted swarm "prod" with n1 (manager) and n2 (worker) connected.
-async fn swarm() -> Swarm {
-    let t = app().await;
-    let admin = t.setup_admin().await;
-    let key = fleetops_api::agents::new_agent_key();
-    let env_id = t
-        .store
-        .create_swarm_environment("prod", &fleetops_api::auth_token_hash(&key), fleetops_core::now_unix())
-        .await
-        .unwrap()
-        .id;
-    t.state.envs.load(&t.store).await.unwrap();
-    let pki = SwarmPki::new("c1");
-    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
-    trust(&t, env_id, &pki, &daemon).await;
-    let base = format!("http://{}", t.serve().await);
-    let mut agents = vec![];
-    for (node, manager) in [("n1", true), ("n2", false)] {
-        let c = SwarmClaim {
-            node_id: node.into(),
-            cluster_id: "c1".into(),
-            manager,
-        };
-        let mut a = TestAgent::connect_swarm(&base, &key, daemon.clone() as Arc<FakeSwarm>)
-            .await
-            .unwrap();
-        a.hello_swarm(c.clone()).await;
-        a.answer_challenge(&pki.node(node, manager), &c).await;
-        assert!(matches!(a.next().await, Some(Msg::Welcome { .. })));
-        agents.push(a);
-    }
-    eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
-    Swarm {
-        t,
-        admin,
-        env_id,
-        _agents: agents,
-    }
-}
 
 #[tokio::test]
 async fn node_views_list_that_nodes_containers() {
