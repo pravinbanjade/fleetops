@@ -114,6 +114,9 @@ async fn confirming_lets_the_manager_in() {
     let (_m, reply) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
     assert!(matches!(reply, Some(Msg::Welcome { agent_key: None, .. })), "{reply:?}");
     eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
+    // The first manager after confirmation fills the known managers.
+    let known = t.store.get_swarm_cluster(env_id).await.unwrap().unwrap().known_managers;
+    assert_eq!(known, Some(vec!["n1".to_string()]));
     for _ in 0..100 {
         if t.audit_actions().await.contains(&"agent.connect".to_string()) {
             break;
@@ -498,4 +501,109 @@ async fn a_bad_signature_is_refused_and_audited() {
         .audit_actions()
         .await
         .contains(&"agent.reject".to_string()));
+}
+
+async fn known(t: &TestApp, env_id: i64) -> Vec<String> {
+    t.store
+        .get_swarm_cluster(env_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .known_managers
+        .unwrap_or_default()
+}
+
+#[tokio::test]
+async fn a_removed_former_manager_is_refused_after_restart() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", true), ("n3", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let (m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    // n2 leaves the swarm; n1's next registration notices.
+    daemon.remove("n2");
+    drop(m);
+    eventually("n1 gone", || t.state.agents.nodes(env_id).is_empty()).await;
+    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    for _ in 0..100 {
+        if known(&t, env_id).await == ["n1"] {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(known(&t, env_id).await, ["n1"]);
+
+    // A restart: n2's agent, still holding a valid manager certificate and
+    // a daemon that says it is a manager, is first and alone.
+    let t2 = app_on(t.store.clone()).await;
+    let base2 = format!("http://{}", t2.serve().await);
+    let liar = FakeSwarm::new(&pki, &[("n1", true), ("n2", true)]);
+    let (_r, reply) = join(&base2, &key, &liar, claim(&pki, "n2", true), &pki.node("n2", true)).await;
+    assert_eq!(reply, bye(ByeReason::NotYet));
+    assert!(t2.state.agents.nodes(env_id).is_empty());
+    let reason = t2.state.agents.node_offline_reason(env_id, "n2").unwrap();
+    assert_eq!(reason, "waiting for a known manager to confirm new manager n2");
+}
+
+#[tokio::test]
+async fn a_lone_known_manager_checks_itself_after_restart() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", true)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let t2 = app_on(t.store.clone()).await;
+    let base2 = format!("http://{}", t2.serve().await);
+    let (_m, reply) = join(&base2, &key, &daemon, claim(&pki, "n2", true), &pki.node("n2", true)).await;
+    assert!(matches!(reply, Some(Msg::Welcome { .. })), "{reply:?}");
+}
+
+#[tokio::test]
+async fn a_promoted_manager_is_confirmed_by_a_known_one() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n4", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    daemon.set_role("n4", true);
+    let (_p, reply) = join(&base, &key, &daemon, claim(&pki, "n4", true), &pki.node("n4", true)).await;
+    assert!(matches!(reply, Some(Msg::Welcome { .. })), "{reply:?}");
+    for _ in 0..100 {
+        if known(&t, env_id).await.contains(&"n4".to_string()) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(known(&t, env_id).await, ["n1", "n4"]);
+}
+
+#[tokio::test]
+async fn a_demoted_manager_session_is_revoked_when_a_known_manager_refreshes() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", true)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let (m1, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (mut m2, _) = join(&base, &key, &daemon, claim(&pki, "n2", true), &pki.node("n2", true)).await;
+    eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
+    daemon.set_role("n2", false);
+    drop(m1);
+    eventually("n1 gone", || t.state.agents.nodes(env_id).len() == 1).await;
+    let (_m1, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    loop {
+        match m2.next().await {
+            Some(Msg::Ping { n }) => m2.pong(n).await,
+            Some(Msg::Bye { reason }) => {
+                assert_eq!(reason, ByeReason::Revoked);
+                break;
+            }
+            other => panic!("{other:?}"),
+        }
+    }
 }

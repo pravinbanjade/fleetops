@@ -88,6 +88,14 @@ impl FakeSwarm {
         })
     }
 
+    /// Promotes or demotes node `id`.
+    pub fn set_role(&self, id: &str, manager: bool) {
+        let mut nodes = self.nodes.lock().unwrap();
+        if let Some(n) = nodes.iter_mut().find(|n| n["ID"] == id) {
+            *n = node_json(id, manager);
+        }
+    }
+
     pub fn remove(&self, id: &str) {
         self.nodes.lock().unwrap().retain(|n| n["ID"] != id);
     }

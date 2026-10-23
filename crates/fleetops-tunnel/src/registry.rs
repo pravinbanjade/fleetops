@@ -137,6 +137,13 @@ impl Registry {
         }
     }
 
+    /// Revokes Swarm node `node`'s session, if it has one.
+    pub fn revoke_node(&self, env_id: i64, node: &str) {
+        if let Some(e) = self.live.lock().unwrap().get(&key(env_id, node)) {
+            let _ = e.bye.try_send(ByeReason::Revoked);
+        }
+    }
+
     /// Revokes only the sessions that authenticated with `key_tag`.
     pub fn revoke_tag(&self, env_id: i64, key_tag: &str) {
         for (k, e) in self.live.lock().unwrap().iter() {

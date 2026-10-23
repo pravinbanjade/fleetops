@@ -51,7 +51,18 @@ pub async fn app() -> TestApp {
 }
 
 pub async fn app_with(config: ApiConfig) -> TestApp {
-    let store = Store::in_memory().await.unwrap();
+    app_on_with(Store::in_memory().await.unwrap(), config).await
+}
+
+/// A new server process on an existing database: environments are loaded
+/// from `store`, and no agent is connected.
+pub async fn app_on(store: Store) -> TestApp {
+    let t = app_on_with(store, ApiConfig::default()).await;
+    t.state.envs.load(&t.store).await.unwrap();
+    t
+}
+
+async fn app_on_with(store: Store, config: ApiConfig) -> TestApp {
     let fake = FakeDocker::new();
     let state = AppState::new(store.clone(), config, Arc::new(FakeFactory(fake.clone())))
         .with_agents(fake.agents.clone())

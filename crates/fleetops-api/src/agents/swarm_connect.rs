@@ -84,13 +84,46 @@ async fn refuse(
     reason
 }
 
-/// A registered manager's session other than `except`'s, for checks.
-fn manager_session(s: &AppState, env_id: i64, except: &str) -> Option<Session> {
+/// A registered known manager's session other than `except`'s: the only
+/// sessions whose word on membership counts.
+fn known_manager_session(
+    s: &AppState,
+    env_id: i64,
+    known: Option<&[String]>,
+    except: &str,
+) -> Option<Session> {
+    let known = known?;
     s.agents
         .nodes(env_id)
         .into_iter()
-        .find(|(n, l)| n != except && l.info.host.swarm.as_ref().is_some_and(|c| c.manager))
+        .find(|(n, l)| {
+            n != except
+                && known.contains(n)
+                && l.info.host.swarm.as_ref().is_some_and(|c| c.manager)
+        })
         .map(|(_, l)| l.session)
+}
+
+/// Records the swarm's managers as `ops` reports them, and revokes any
+/// registered manager session whose node is a manager no longer.
+async fn refresh_known_managers(s: &AppState, env_id: i64, ops: &dyn SwarmOps) {
+    let Ok(nodes) = call(ops.nodes()).await else {
+        return;
+    };
+    let managers: Vec<String> = nodes
+        .into_iter()
+        .filter(|n| n.role == NodeRole::Manager)
+        .map(|n| n.id)
+        .collect();
+    if s.store.set_known_managers(env_id, &managers).await.is_err() {
+        return;
+    }
+    for (node, live) in s.agents.nodes(env_id) {
+        let claims_manager = live.info.host.swarm.as_ref().is_some_and(|c| c.manager);
+        if claims_manager && !managers.contains(&node) {
+            s.agents.revoke_node(env_id, &node);
+        }
+    }
 }
 
 async fn call<T>(
@@ -133,7 +166,8 @@ pub(super) async fn serve(
         Err(e) => return e.to_string(),
     };
     let confirmed = pinned.as_ref().is_some_and(|p| p.confirmed_at.is_some());
-    let checker = manager_session(s, env.id, &claim.node_id);
+    let known = pinned.as_ref().and_then(|p| p.known_managers.clone());
+    let checker = known_manager_session(s, env.id, known.as_deref(), &claim.node_id);
 
     // Workers wait for a manager: it proposes the swarm, an admin trusts
     // it, and a manager checks membership.
@@ -228,11 +262,29 @@ pub(super) async fn serve(
         )
     }
 
-    // Membership: a removed node's certificate stays valid until it expires.
+    // Membership: a removed node's certificate stays valid until it
+    // expires, so a known manager must vouch for the node. A manager checks
+    // itself only when it is known (or right after confirmation, when none
+    // is known yet) and no other known manager is connected.
+    let self_check = checker.is_none();
+    if self_check
+        && known
+            .as_ref()
+            .is_some_and(|k| !k.contains(&claim.node_id))
+    {
+        no!(
+            format!(
+                "waiting for a known manager to confirm new manager {}",
+                claim.node_id
+            ),
+            NotYet,
+            true
+        )
+    }
     let checker: Arc<dyn SwarmOps> = match checker.map(|sess| through(sess)) {
         Some(Ok(o)) => o,
         Some(Err(e)) => return e.to_string(),
-        None => own,
+        None => own.clone(),
     };
     match call(checker.node(&claim.node_id)).await {
         Ok(Some(n)) if (n.role == NodeRole::Manager) == claim.manager => {}
@@ -302,6 +354,11 @@ pub(super) async fn serve(
         .await;
     let target = format!("{}/{}", env.name, info.host.hostname);
     audit(s, None, "agent.connect", "environment", &target, "success").await;
+    // A manager vouched for (or a known one checking itself) refreshes the
+    // known managers.
+    if claim.manager {
+        refresh_known_managers(s, env.id, checker.as_ref()).await;
+    }
     publish_status(s, env.id).await;
 
     let reason = control_loop(s, env.id, c, session, &mut bye_rx, Some(&key_hash)).await;
