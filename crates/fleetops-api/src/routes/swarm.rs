@@ -12,6 +12,7 @@ use axum::{
     Json,
 };
 use fleetops_core::env::Environment;
+use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::swarm::{
     ConfigSummary, NodeDetail, NodeSummary, SecretSummary, ServiceDetail, ServiceSummary,
     SwarmNetwork, SwarmOps, TaskSummary,
@@ -20,6 +21,26 @@ use fleetops_core::{Error, Result};
 use serde::Deserialize;
 use std::sync::Arc;
 use utoipa::IntoParams;
+
+/// A swarm environment the caller may use, reachable or not: for live
+/// feeds, which say themselves when no manager answers and recover.
+pub(crate) async fn swarm_env_for(
+    s: &AppState,
+    cu: &CurrentUser,
+    name: &str,
+    need: Need,
+) -> Result<Arc<dyn Environment>> {
+    let (env, _) = crate::authz::env_access(s, cu, name, need).await?;
+    if !env.kind().is_swarm() {
+        return Err(wrong_kind(name, env.kind()));
+    }
+    Ok(env)
+}
+
+fn swarm_ops(env: &Arc<dyn Environment>) -> Result<Arc<dyn SwarmOps>> {
+    env.swarm()
+        .ok_or_else(|| Error::EnvUnavailable("no manager agent is connected".into()))
+}
 
 /// The swarm's cluster calls, through its serving manager.
 pub(crate) async fn swarm_for(
@@ -105,11 +126,28 @@ pub async fn service(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<ServiceDetail>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::AnyGrant).await?;
-    let svc = ops
+    let (env, grants) = crate::authz::env_access(&s, &cu, &env, Need::AnyGrant).await?;
+    let ops = swarm_ops(&env)?;
+    let mut svc = ops
         .service(&id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("no such service '{id}'")))?;
+    // As for containers: env values are secret material without Reveal.
+    let reveal = Permission::new(Row::Containers, Verb::Reveal);
+    if !grants.allows(reveal, None) {
+        if let Some(vars) = svc
+            .spec
+            .pointer_mut("/TaskTemplate/ContainerSpec/Env")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            let mut text: Vec<String> = vars
+                .iter()
+                .filter_map(|e| e.as_str().map(str::to_string))
+                .collect();
+            fleetops_core::docker::mask_env(&mut text);
+            *vars = text.into_iter().map(serde_json::Value::String).collect();
+        }
+    }
     Ok(Json(svc))
 }
 

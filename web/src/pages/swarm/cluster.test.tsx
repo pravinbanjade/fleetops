@@ -107,3 +107,17 @@ describe("Swarm cluster pages", () => {
     await waitFor(() => expect(calls.filter((c) => c.path === "/api/v1/envs/prod/swarm/services").length).toBeGreaterThan(before));
   });
 });
+
+describe("Swarm task feed", () => {
+  it("starts over after falling behind", async () => {
+    mockFetch(routes);
+    renderApp("/envs/prod/swarm/tasks");
+    const { sock, sub } = await feedTasks();
+    act(() => sock.receive({ sub, type: "end", reason: "lagged" }));
+    await vi.waitFor(() => {
+      const again = sock.frames().filter((f) => f.topic === "swarm-tasks" && f.op === "sub");
+      expect(again.length).toBeGreaterThan(1);
+    });
+    expect(screen.queryByText(/Live updates paused/)).not.toBeInTheDocument();
+  });
+});

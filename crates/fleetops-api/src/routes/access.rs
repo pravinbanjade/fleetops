@@ -263,7 +263,7 @@ pub async fn list_env(
     _a: AdminUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<EnvAccessEntry>>> {
-    let env = s.envs.get(&env)?;
+    let env = s.envs.get_stored(&env)?;
     let mut out: Vec<EnvAccessEntry> = s
         .store
         .env_bindings(env.id())

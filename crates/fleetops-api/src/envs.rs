@@ -113,6 +113,18 @@ impl EnvRegistry {
             .sum()
     }
 
+    /// A stored environment by name, never a Swarm node's view: for the
+    /// routes that change or administer the environment itself, where
+    /// `<env>@<node>` must not reach the whole swarm.
+    pub fn get_stored(&self, name: &str) -> Result<Arc<dyn Environment>> {
+        self.envs
+            .read()
+            .unwrap()
+            .get(name)
+            .cloned()
+            .ok_or_else(|| Error::NotFound(format!("environment '{name}'")))
+    }
+
     /// An environment by name, or a Swarm node's view by `<env>@<node>`.
     pub fn get(&self, name: &str) -> Result<Arc<dyn Environment>> {
         let not_found = || Error::NotFound(format!("environment '{name}'"));

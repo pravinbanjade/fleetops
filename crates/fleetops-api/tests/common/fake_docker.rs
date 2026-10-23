@@ -633,6 +633,7 @@ pub fn event(id: &str, action: &str) -> DockerEvent {
         name: Some(format!("{id}-name")),
         attributes: Default::default(),
         time: 1,
+        scope: None,
     }
 }
 

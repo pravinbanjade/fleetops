@@ -114,6 +114,7 @@ fn to_event(m: bollard::models::EventMessage) -> DockerEvent {
         name: attributes_name(&attributes),
         attributes,
         time: m.time.unwrap_or_default(),
+        scope: m.scope.map(|s| s.to_string()).filter(|s| !s.is_empty()),
     }
 }
 

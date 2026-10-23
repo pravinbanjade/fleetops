@@ -224,7 +224,8 @@ impl Store {
     }
 
     /// Trusts the pinned swarm, only if it is still the `cluster_id` and
-    /// `trust_root` the admin was shown. Returns whether it did.
+    /// `trust_root` the admin was shown and nobody trusted it yet. Returns
+    /// whether it did.
     pub async fn confirm_swarm_cluster(
         &self,
         env_id: i64,
@@ -237,7 +238,8 @@ impl Store {
             (!managers.is_empty()).then(|| serde_json::to_string(managers).unwrap_or_default());
         let done = sqlx::query(
             "UPDATE swarm_clusters SET confirmed_at = ?, known_managers = ?
-             WHERE environment_id = ? AND cluster_id = ? AND trust_root = ?",
+             WHERE environment_id = ? AND cluster_id = ? AND trust_root = ?
+               AND confirmed_at IS NULL",
         )
         .bind(now)
         .bind(known)

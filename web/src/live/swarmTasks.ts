@@ -31,8 +31,10 @@ export function applyFeed(tasks: TaskSummary[] | undefined, msg: FeedMsg): TaskS
 export function useSwarmTasks(env: string) {
   const [state, setState] = useState<{ env: string; tasks?: TaskSummary[]; paused: string | null }>({ env, paused: null });
   const current = state.env === env ? state : { env, paused: null };
+  // Bumped to subscribe again: the server ends a feed the page fell behind on.
+  const [attempt, setAttempt] = useState(0);
   useSubscription(
-    { topic: "swarm-tasks", env },
+    { topic: "swarm-tasks", env, ...(attempt ? { opts: { attempt } } : {}) },
     {
       onData: (d) => {
         const msg = d as FeedMsg;
@@ -41,7 +43,11 @@ export function useSwarmTasks(env: string) {
           return { env, tasks: applyFeed(base.tasks, msg), paused: msg.type === "paused" ? msg.reason : null };
         });
       },
-      onEnd: () => setState((s) => ({ ...s, paused: "live updates ended" })),
+      onEnd: (m) => {
+        // Fell behind: start over from a fresh snapshot.
+        if ((m as { reason?: string }).reason === "lagged") return setAttempt((a) => a + 1);
+        setState((s) => ({ ...s, paused: "live updates ended" }));
+      },
       onError: (m) => setState((s) => ({ ...s, paused: m.message })),
     },
   );

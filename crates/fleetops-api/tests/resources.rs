@@ -91,6 +91,7 @@ fn fake_event(action: &str, id: &str, time: i64) -> fleetops_core::streams::Dock
         name: Some(format!("{id}-name")),
         attributes: Default::default(),
         time,
+        scope: None,
     }
 }
 

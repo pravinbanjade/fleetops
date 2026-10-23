@@ -126,6 +126,13 @@ async fn refresh_known_managers(s: &AppState, env_id: i64, ops: &dyn SwarmOps) {
     }
 }
 
+/// How often a connected manager refreshes the known managers, so a node
+/// removed or demoted while FleetOps runs drops off without anyone
+/// reconnecting.
+fn refresh_every(s: &AppState) -> std::time::Duration {
+    s.config.agent_ping_interval * 4
+}
+
 async fn call<T>(
     f: impl std::future::Future<Output = fleetops_core::Result<T>>,
 ) -> Result<T, String> {
@@ -292,6 +299,22 @@ pub(super) async fn serve(
             true
         )
     }
+    // Right after an admin trusted the swarm no manager is known yet: only
+    // the manager that proposed it may vouch for itself.
+    let proposer = pinned.as_ref().and_then(|p| p.pinned_node.as_deref());
+    if self_check && known.is_none() && proposer != Some(claim.node_id.as_str()) {
+        no!(
+            format!(
+                "waiting for the manager that proposed this swarm ({}) to connect",
+                pinned
+                    .as_ref()
+                    .and_then(|p| p.pinned_by.as_deref())
+                    .unwrap_or("unknown")
+            ),
+            NotYet,
+            true
+        )
+    }
     let checker: Arc<dyn SwarmOps> = match checker.map(|sess| through(sess)) {
         Some(Ok(o)) => o,
         Some(Err(e)) => return e.to_string(),
@@ -372,7 +395,22 @@ pub(super) async fn serve(
     }
     publish_status(s, env.id).await;
 
+    // A manager keeps the known managers current while it stays connected.
+    let refresher = claim.manager.then(|| {
+        let (s, env_id, ops, every) = (s.clone(), env.id, own.clone(), refresh_every(s));
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(every);
+            tick.tick().await;
+            loop {
+                tick.tick().await;
+                refresh_known_managers(&s, env_id, ops.as_ref()).await;
+            }
+        })
+    });
     let reason = control_loop(s, env.id, c, session, &mut bye_rx, Some(&key_hash)).await;
+    if let Some(r) = refresher {
+        r.abort();
+    }
 
     s.agents.remove_node(env.id, &node, id, &reason);
     let _ = s.store.record_swarm_agent(env.id, &record(None)).await;

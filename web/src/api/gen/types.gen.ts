@@ -556,6 +556,10 @@ export type DockerEvent = {
      */
     name?: string | null;
     /**
+     * `local` or `swarm`: whether the event is one engine's or the swarm's.
+     */
+    scope?: string | null;
+    /**
      * Unix seconds.
      */
     time: number;

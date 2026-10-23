@@ -798,3 +798,122 @@ async fn a_swarm_counts_each_node() {
     eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
     assert_eq!(t.state.envs.count_nodes().await, 3);
 }
+
+#[tokio::test]
+async fn confirming_twice_keeps_the_known_managers() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let (_m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
+    // trust() seeded n1; the registration's refresh agrees.
+    assert_eq!(known(&t, env_id).await, ["n1"]);
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let fp = fleetops_tunnel::swarm_proof::fingerprint(&pki.root).unwrap();
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/prod/swarm/trust",
+            Some(serde_json::json!({"cluster_id": "c1", "fingerprint": fp})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 204, "{:?}", r.json);
+    assert_eq!(
+        known(&t, env_id).await,
+        ["n1"],
+        "a second confirm changes nothing"
+    );
+}
+
+#[tokio::test]
+async fn a_removed_manager_drops_off_while_fleetops_runs() {
+    let t = app_with(fleetops_api::ApiConfig {
+        agent_ping_interval: std::time::Duration::from_millis(250),
+        ..fleetops_api::ApiConfig::default()
+    })
+    .await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", true)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let (mut m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    // Let the registration's own refresh finish while n2 is still a manager.
+    eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
+    for _ in 0..4 {
+        tokio::select! {
+            Some(Msg::Ping { n }) = m.next() => m.pong(n).await,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
+        }
+    }
+    assert_eq!(known(&t, env_id).await, ["n1", "n2"]);
+    daemon.remove("n2");
+    // n1 stays connected (answering pings); nobody reconnects.
+    for _ in 0..200 {
+        if known(&t, env_id).await == ["n1"] {
+            break;
+        }
+        tokio::select! {
+            Some(Msg::Ping { n }) = m.next() => m.pong(n).await,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
+        }
+    }
+    assert_eq!(known(&t, env_id).await, ["n1"]);
+}
+
+#[tokio::test]
+async fn right_after_trust_only_the_proposing_manager_checks_itself() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", true)]);
+    let now = fleetops_core::now_unix();
+    t.store
+        .pin_swarm_cluster(env_id, "c1", &pki.root, "n1", "host-n1", now)
+        .await
+        .unwrap();
+    // Trusted with no managers known yet, as the API does.
+    assert!(t
+        .store
+        .confirm_swarm_cluster(env_id, "c1", &pki.root, &[], now)
+        .await
+        .unwrap());
+    let (_o, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n2", true),
+        &pki.node("n2", true),
+    )
+    .await;
+    assert_eq!(reply, bye(ByeReason::NotYet));
+    let (_m, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    assert!(matches!(reply, Some(Msg::Welcome { .. })), "{reply:?}");
+}

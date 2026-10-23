@@ -116,3 +116,28 @@ async fn a_viewer_of_the_swarm_can_read_a_node() {
         .await;
     assert_eq!(r.status, 200, "{:?}", r.json);
 }
+
+#[tokio::test]
+async fn admin_routes_do_not_take_a_node_view_name() {
+    let sw = swarm().await;
+    for (method, path) in [
+        ("DELETE", "/api/v1/envs/prod@n1"),
+        ("POST", "/api/v1/envs/prod@n1/swarm/retrust"),
+        ("POST", "/api/v1/envs/prod@n1/swarm/rotate/finish"),
+        ("GET", "/api/v1/envs/prod@n1/access"),
+    ] {
+        let r = sw.t.send(req(method, path, None, Some(&sw.admin))).await;
+        assert_eq!(r.status, 404, "{method} {path}: {:?}", r.json);
+    }
+    assert!(
+        sw.t.state.envs.get("prod").is_ok(),
+        "the swarm is still there"
+    );
+    assert!(sw
+        .t
+        .store
+        .get_swarm_cluster(sw.env_id)
+        .await
+        .unwrap()
+        .is_some());
+}

@@ -130,13 +130,10 @@ fn is_swarm_env(s: &AppState, env: &Option<String>) -> bool {
         .is_some_and(|e| e.kind().is_swarm())
 }
 
-/// Swarm's own event kinds, as cluster pages need them (swarm spec §7).
+/// The swarm's own events, as cluster pages need them (swarm spec §7): not
+/// the serving manager's local ones (its containers, local networks).
 fn is_swarm_event(e: &fleetops_core::streams::DockerEvent) -> bool {
-    match e.kind.as_str() {
-        "service" | "node" | "secret" | "config" => true,
-        "network" => e.attributes.get("scope").is_some_and(|s| s == "swarm"),
-        _ => false,
-    }
+    e.scope.as_deref() == Some("swarm")
 }
 
 fn is_kube_env(s: &AppState, env: &Option<String>) -> bool {
@@ -153,9 +150,8 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
     // own kinds go on, not that one node's containers.
     let swarm_env = is_swarm_env(s, &env);
     let env = if swarm_env {
-        let (env, _) =
-            crate::routes::swarm::swarm_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?;
-        env
+        // The hub waits out a manager outage and says so (status down/up).
+        crate::routes::swarm::swarm_env_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?
     } else {
         docker_for(s, cu, &env, Need::AnyGrant).await?.0
     };
@@ -272,8 +268,14 @@ pub(super) async fn logs(
             .strip_prefix("service/")
             .filter(|i| !i.is_empty())
             .ok_or_else(|| Error::Invalid("a swarm logs id is service/<id>".into()))?;
-        let (_, ops) =
-            crate::routes::swarm::swarm_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?;
+        // Logs are read as container logs are: they need Containers.View.
+        let (_, ops) = crate::routes::swarm::swarm_for(
+            s,
+            cu,
+            required(&env, "env")?,
+            Need::of(Row::Containers, Verb::View),
+        )
+        .await?;
         ops.service_logs(service, &o)
     } else {
         let (_, ops) = docker_for(s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
@@ -672,27 +674,28 @@ async fn audit_exec(
 /// A swarm's shared task feed: the snapshot, then changes.
 pub(super) async fn swarm_tasks(c: &Ctx<'_>, env: Option<String>) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, _) =
-        crate::routes::swarm::swarm_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?;
+    // The feed itself reports a manager outage, and recovers.
+    let env =
+        crate::routes::swarm::swarm_env_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?;
     let (snapshot, mut rx) = s.hubs.swarm_tasks.subscribe(env, s.config.swarm_task_poll);
     let q = c.queue(Policy::Block);
     let qq = q.clone();
     let task = tokio::spawn(async move {
-        let send = |m: &crate::ws::swarm_tasks::FeedMsg| {
-            qq.push(
-                protocol::data(sub, serde_json::to_value(m).unwrap_or(Value::Null)),
-                1,
-            )
+        // Waits for room rather than dropping: changes only make sense on
+        // top of every message before them. A client too slow for that
+        // lags the broadcast, and is told to start over.
+        let data = |m: &crate::ws::swarm_tasks::FeedMsg| {
+            protocol::data(sub, serde_json::to_value(m).unwrap_or(Value::Null))
         };
         if let Some(m) = &snapshot {
-            if !send(m) {
+            if !qq.push_wait(data(m)).await {
                 return;
             }
         }
         loop {
             match rx.recv().await {
                 Ok(m) => {
-                    if !send(&m) {
+                    if !qq.push_wait(data(&m)).await {
                         return;
                     }
                 }

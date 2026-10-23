@@ -69,6 +69,7 @@ pub fn services_json() -> serde_json::Value {
                 "TaskTemplate": {
                     "ContainerSpec": {
                         "Image": "nginx:1.27@sha256:abc",
+                        "Env": ["DB_PASSWORD=hunter2", "MODE=prod"],
                         "Secrets": [{"SecretID": "sec1", "SecretName": "blog_db"}],
                         "Configs": [{"ConfigID": "cfg1", "ConfigName": "blog_nginx"}]
                     },
@@ -259,14 +260,17 @@ impl FakeSwarm {
             let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
             me.requests.lock().unwrap().push(path.clone());
             if path.contains("/events") {
-                // A service update, then a container start, then silence.
+                // A service update, a container start (the manager's own),
+                // a swarm network's creation, then silence.
                 let mut body = String::new();
-                for (kind, action, id) in
-                    [("service", "update", "s1"), ("container", "start", "c1")]
-                {
+                for (kind, action, id, scope) in [
+                    ("service", "update", "s1", "swarm"),
+                    ("container", "start", "c1", "local"),
+                    ("network", "create", "net1", "swarm"),
+                ] {
                     body.push_str(
                         &json!({"Type": kind, "Action": action, "Actor": {"ID": id, "Attributes": {"name": id}},
-                                "time": 1_792_576_800, "timeNano": 1_792_576_800_000_000_000i64})
+                                "scope": scope, "time": 1_792_576_800, "timeNano": 1_792_576_800_000_000_000i64})
                         .to_string(),
                     );
                     body.push('\n');
@@ -355,7 +359,11 @@ pub async fn connected_swarm() -> Swarm {
 
 /// [`connected_swarm`] on a server with `config`.
 pub async fn connected_swarm_with(config: fleetops_api::ApiConfig) -> Swarm {
-    let t = super::app_with(config).await;
+    connected_swarm_on(super::app_with(config).await).await
+}
+
+/// [`connected_swarm`] on `t`.
+pub async fn connected_swarm_on(t: super::TestApp) -> Swarm {
     let admin = t.setup_admin().await;
     let key = fleetops_api::agents::new_agent_key();
     let env_id = t

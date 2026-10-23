@@ -351,8 +351,9 @@ pub async fn create(
     ))
 }
 
+/// The stored record of `name`; a node view's name is not one.
 pub(crate) async fn find(s: &AppState, name: &str) -> ApiResult<EnvironmentRecord> {
-    let env = s.envs.get(name)?;
+    let env = s.envs.get_stored(name)?;
     Ok(s.store.get_environment(env.id()).await?)
 }
 

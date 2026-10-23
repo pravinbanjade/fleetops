@@ -104,3 +104,85 @@ async fn viewers_may_read() {
         .await;
     assert_eq!(r.status, 200, "{:?}", r.json);
 }
+
+/// Grants set by the test, by user id: Bob's custom role.
+#[derive(Default)]
+struct Fixed(std::sync::Mutex<Vec<fleetops_core::access::Grant>>);
+
+#[async_trait::async_trait]
+impl fleetops_core::access::ExtraGrants for Fixed {
+    async fn env_grants(
+        &self,
+        _: i64,
+        _: i64,
+    ) -> fleetops_core::Result<Vec<fleetops_core::access::Grant>> {
+        Ok(self.0.lock().unwrap().clone())
+    }
+    async fn user_grants(
+        &self,
+        _: i64,
+    ) -> fleetops_core::Result<std::collections::HashMap<i64, Vec<fleetops_core::access::Grant>>>
+    {
+        Ok(std::collections::HashMap::from([(
+            1,
+            self.0.lock().unwrap().clone(),
+        )]))
+    }
+}
+
+/// A swarm, and Bob with a custom role holding exactly `perms` on it.
+async fn with_custom(
+    perms: &[(fleetops_core::perm::Row, fleetops_core::perm::Verb)],
+) -> (common::fake_swarm::Swarm, Session) {
+    use fleetops_core::perm::{PermSet, Permission};
+    let extra = std::sync::Arc::new(Fixed::default());
+    let t = app_with_extra_and(extra.clone(), fleetops_api::ApiConfig::default()).await;
+    let sw = common::fake_swarm::connected_swarm_on(t).await;
+    sw.t.create_user(&sw.admin, "bob", "bob-password", "user")
+        .await;
+    let set: PermSet = perms.iter().map(|(r, v)| Permission::new(*r, *v)).collect();
+    *extra.0.lock().unwrap() = vec![fleetops_core::access::Grant::custom(
+        fleetops_core::access::CustomRef {
+            id: 1,
+            name: "test".into(),
+        },
+        set,
+        None,
+    )];
+    let bob = session_from(&sw.t.login("bob", "bob-password").await);
+    (sw, bob)
+}
+
+#[tokio::test]
+async fn a_service_spec_masks_env_without_reveal() {
+    use fleetops_core::perm::{Row, Verb};
+    let (sw, bob) = with_custom(&[(Row::Containers, Verb::View)]).await;
+    let r =
+        sw.t.send(req(
+            "GET",
+            "/api/v1/envs/prod/swarm/services/s1",
+            None,
+            Some(&bob),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    let env = r.json["spec"]["TaskTemplate"]["ContainerSpec"]["Env"].to_string();
+    assert!(!env.contains("hunter2"), "{env}");
+    assert!(env.contains("DB_PASSWORD="), "{env}");
+    // Admins have every permission, Reveal included.
+    let r = get(&sw, "/api/v1/envs/prod/swarm/services/s1").await;
+    assert!(r.json["spec"]["TaskTemplate"]["ContainerSpec"]["Env"]
+        .to_string()
+        .contains("hunter2"));
+}
+
+#[tokio::test]
+async fn service_logs_need_containers_view() {
+    use fleetops_core::perm::{Row, Verb};
+    let (sw, bob) = with_custom(&[(Row::Images, Verb::View)]).await;
+    let mut ws = Ws::open(sw.t.serve().await, &bob).await;
+    ws.send(serde_json::json!({"op": "sub", "sub": 1, "topic": "logs", "env": "prod", "id": "service/s1", "opts": {}}))
+        .await;
+    let err = ws.until(|v| v["type"] == "error").await;
+    assert_eq!(err["code"], "forbidden", "{err}");
+}

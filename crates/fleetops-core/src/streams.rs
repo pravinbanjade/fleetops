@@ -25,6 +25,9 @@ pub struct DockerEvent {
     pub attributes: BTreeMap<String, String>,
     /// Unix seconds.
     pub time: i64,
+    /// `local` or `swarm`: whether the event is one engine's or the swarm's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 /// One stats sample for a container, with CPU already turned into a

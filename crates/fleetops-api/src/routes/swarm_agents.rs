@@ -328,6 +328,11 @@ pub async fn trust_swarm(
     if p.cluster_id != body.cluster_id || fp != body.fingerprint {
         return Err(stale().into());
     }
+    // Trusted already (a second click, another tab): nothing to do, and the
+    // known managers must not be reset.
+    if p.confirmed_at.is_some() {
+        return Ok(StatusCode::NO_CONTENT);
+    }
     // The managers are learnt from the first manager that registers.
     if !s
         .store

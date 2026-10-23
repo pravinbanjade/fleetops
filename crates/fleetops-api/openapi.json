@@ -9714,6 +9714,13 @@
             ],
             "description": "The actor's `name` attribute when Docker sends one."
           },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`local` or `swarm`: whether the event is one engine's or the swarm's."
+          },
           "time": {
             "type": "integer",
             "format": "int64",

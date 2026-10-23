@@ -31,8 +31,22 @@ pub enum FeedMsg {
 
 struct Feed {
     tx: broadcast::Sender<FeedMsg>,
-    /// The last tasks read, `None` while paused or before the first read.
-    current: Mutex<Option<Vec<TaskSummary>>>,
+    /// The last tasks read, or why there are none: `Ok(None)` before the
+    /// first read, `Err(reason)` while paused.
+    current: Mutex<std::result::Result<Option<Vec<TaskSummary>>, String>>,
+}
+
+/// What a new subscriber is told first, if anything.
+fn first(current: &std::result::Result<Option<Vec<TaskSummary>>, String>) -> Option<FeedMsg> {
+    match current {
+        Ok(Some(tasks)) => Some(FeedMsg::Snapshot {
+            tasks: tasks.clone(),
+        }),
+        Ok(None) => None,
+        Err(reason) => Some(FeedMsg::Paused {
+            reason: reason.clone(),
+        }),
+    }
 }
 
 /// Feeds by environment instance.
@@ -58,12 +72,12 @@ impl SwarmTasks {
             // is missed or seen twice between the snapshot and the receiver.
             let current = feed.current.lock().unwrap();
             let rx = feed.tx.subscribe();
-            return (current.clone().map(|tasks| FeedMsg::Snapshot { tasks }), rx);
+            return (first(&current), rx);
         }
         let (tx, rx) = broadcast::channel(CAPACITY);
         let feed = Arc::new(Feed {
             tx,
-            current: Mutex::new(None),
+            current: Mutex::new(Ok(None)),
         });
         feeds.insert(key, feed.clone());
         // Spawned with its first receiver already in place.
@@ -92,7 +106,6 @@ fn diff(prev: &[TaskSummary], next: &[TaskSummary]) -> Option<FeedMsg> {
 async fn run(env: Arc<dyn Environment>, feed: Arc<Feed>, poll: Duration) {
     let mut tick = tokio::time::interval(poll);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut paused = false;
     loop {
         tick.tick().await;
         if feed.tx.receiver_count() == 0 {
@@ -109,22 +122,20 @@ async fn run(env: Arc<dyn Environment>, feed: Arc<Feed>, poll: Duration) {
         let mut current = feed.current.lock().unwrap();
         match read {
             Ok(tasks) => {
-                let msg = match current.as_deref() {
-                    Some(prev) if !paused => diff(prev, &tasks),
+                let msg = match &*current {
+                    Ok(Some(prev)) => diff(prev, &tasks),
                     _ => Some(FeedMsg::Snapshot {
                         tasks: tasks.clone(),
                     }),
                 };
-                paused = false;
-                *current = Some(tasks);
+                *current = Ok(Some(tasks));
                 if let Some(msg) = msg {
                     let _ = feed.tx.send(msg);
                 }
             }
             Err(reason) => {
-                if !paused {
-                    paused = true;
-                    *current = None;
+                if current.is_ok() {
+                    *current = Err(reason.clone());
                     let _ = feed.tx.send(FeedMsg::Paused { reason });
                 }
             }

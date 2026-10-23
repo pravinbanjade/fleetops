@@ -89,7 +89,9 @@ pub async fn app_with_extra_and(
     let store = Store::in_memory().await.unwrap();
     let fake = FakeDocker::new();
     let state = AppState::new(store.clone(), config, Arc::new(FakeFactory(fake.clone())))
-        .with_extra_grants(g);
+        .with_extra_grants(g)
+        .with_agents(fake.agents.clone())
+        .with_swarm_through(swarm_through());
     let router = fleetops_api::app(state.clone(), Router::new());
     TestApp {
         router,

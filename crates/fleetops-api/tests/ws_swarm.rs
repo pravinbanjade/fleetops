@@ -21,7 +21,10 @@ async fn swarm_events_reach_subscribers_filtered() {
     let ev = ws.until(|v| is(v, 1, "data")).await;
     assert_eq!(ev["data"]["kind"], "service");
     assert_eq!(ev["data"]["action"], "update");
-    // The container start that followed is the manager's own: not passed on.
+    // The container start that followed is the manager's own: not passed
+    // on. The swarm network's creation is.
+    let ev = ws.until(|v| is(v, 1, "data")).await;
+    assert_eq!(ev["data"]["kind"], "network", "{ev}");
     let more = tokio::time::timeout(
         std::time::Duration::from_millis(500),
         ws.until(|v| is(v, 1, "data")),
@@ -164,4 +167,45 @@ async fn a_poll_error_pauses_and_recovers() {
         .store(false, std::sync::atomic::Ordering::SeqCst);
     let back = ws.until(|v| is(v, 1, "data")).await;
     assert_eq!(back["data"]["type"], "snapshot");
+}
+
+/// A trusted swarm "prod" with no agent connected.
+async fn swarm_without_agents() -> (TestApp, Session) {
+    let t = app_with(fast()).await;
+    let admin = t.setup_admin().await;
+    t.store
+        .create_swarm_environment("prod", "h", fleetops_core::now_unix())
+        .await
+        .unwrap();
+    t.state.envs.load(&t.store).await.unwrap();
+    (t, admin)
+}
+
+#[tokio::test]
+async fn the_task_feed_starts_paused_without_a_manager() {
+    let (t, admin) = swarm_without_agents().await;
+    let addr = t.serve().await;
+    let mut a = Ws::open(addr, &admin).await;
+    a.send(sub(1, "swarm-tasks", "prod", None, json!({}))).await;
+    let first = a.until(|v| v["sub"] == 1).await;
+    assert_eq!(first["type"], "data", "{first}");
+    assert_eq!(first["data"]["type"], "paused");
+    // A second subscriber to the paused feed is told so too.
+    let mut b = Ws::open(addr, &admin).await;
+    b.send(sub(1, "swarm-tasks", "prod", None, json!({}))).await;
+    let first = b.until(|v| v["sub"] == 1).await;
+    assert_eq!(first["data"]["type"], "paused", "{first}");
+}
+
+#[tokio::test]
+async fn swarm_events_subscribe_without_a_manager() {
+    let (t, admin) = swarm_without_agents().await;
+    let mut ws = Ws::open(t.serve().await, &admin).await;
+    ws.send(sub(1, "events", "prod", None, json!({}))).await;
+    let err = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        ws.until(|v| v["type"] == "error"),
+    )
+    .await;
+    assert!(err.is_err(), "refused: {err:?}");
 }
