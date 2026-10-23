@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
-import { Boxes, Check, ChevronRight, ChevronsUpDown, LogOut, Menu, Monitor, Moon, RefreshCw, Settings2, Sun, X } from "lucide-react";
+import { Boxes, Check, ChevronRight, ChevronsUpDown, LogOut, Menu, Monitor, Moon, Network, RefreshCw, Settings2, Sun, X } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { accessOf } from "@/api/access";
@@ -17,11 +17,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { envHue, envInitials, isKube } from "@/lib/env";
+import { envFamily, envHue, envInitials, isKube, isSwarm, type EnvFamily } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { CommandPalette, typing } from "./CommandPalette";
-import { ADMIN_NAV, KUBE_NAV, KUBE_SIDEBAR, NAV, isGroup, kubeGroupOf, navHref, type NavItem } from "./nav";
+import { ADMIN_NAV, KUBE_SIDEBAR, NAV, SWARM_NAV, isGroup, kubeGroupOf, navHref, navOf, type NavItem } from "./nav";
 import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
 import { CustomResourcesNav } from "@/pages/kube/generic/CustomResourcesNav";
@@ -37,13 +37,13 @@ export function Shell() {
   const drawer = drawerOn === pathname;
   const setDrawer = (open: boolean) => setDrawerOn(open ? pathname : null);
   const { data: envs = [] } = useQuery(envsQuery);
-  const kube = isKube(envs.find((e) => e.name === env)?.kind);
+  const family = envFamily(envs.find((e) => e.name === env)?.kind);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
-  useGoKeys(env, kube);
+  useGoKeys(env, family);
   return (
     <div data-edition={ee.id} className="min-h-svh md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
       <aside className="sticky top-0 hidden h-svh border-r bg-rail md:block">
-        <Rail env={env} kube={kube} />
+        <Rail env={env} family={family} />
       </aside>
       <DialogPrimitive.Root open={drawer} onOpenChange={setDrawer}>
         <DialogPrimitive.Portal>
@@ -56,15 +56,15 @@ export function Shell() {
                 <X />
               </Button>
             </DialogPrimitive.Close>
-            <Rail env={env} kube={kube} />
+            <Rail env={env} family={family} />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
       <main className="min-w-0">
-        <TopBar env={env} kube={kube} onMenu={() => setDrawer(true)} slotRef={setSlot} />
+        <TopBar env={env} family={family} onMenu={() => setDrawer(true)} slotRef={setSlot} />
         <ConnectionBanner />
         <Slot name="shell.banner" />
-        {env && !kube && <EnvLive env={env} />}
+        {env && family === "docker" && <EnvLive env={env} />}
         <TopBarSlot.Provider value={slot}>
           <Outlet />
         </TopBarSlot.Provider>
@@ -79,7 +79,7 @@ function navParams(item: NavItem, env: string) {
   return ("kind" in item ? { env, kind: item.kind } : { env }) as never;
 }
 
-function Rail({ env, kube }: { env?: string; kube: boolean }) {
+function Rail({ env, family }: { env?: string; family: EnvFamily }) {
   return (
     <div className="relative flex h-full flex-col gap-5 overflow-y-auto p-3 pt-4">
       <EnvBand env={env} />
@@ -87,10 +87,14 @@ function Rail({ env, kube }: { env?: string; kube: boolean }) {
         <Mark />
         <span className="font-callsign text-[15px] font-semibold">FleetOps</span>
       </Link>
-      <EnvSwitcher current={env} kube={kube} />
+      <EnvSwitcher current={env} family={family} />
       {env && (
         <nav className="grid gap-0.5" aria-label="Environment">
-          {kube ? <KubeSidebar env={env} /> : NAV.map((item) => <NavRow key={item.label} item={item} env={env} />)}
+          {family === "kube" ? (
+            <KubeSidebar env={env} />
+          ) : (
+            (family === "swarm" ? SWARM_NAV : NAV).map((item) => <NavRow key={item.label} item={item} env={env} />)
+          )}
         </nav>
       )}
       <AdminNav />
@@ -208,7 +212,7 @@ function AdminNav() {
 }
 
 /** `g` then a page's key jumps to that page of the current environment. */
-function useGoKeys(env: string | undefined, kube: boolean) {
+function useGoKeys(env: string | undefined, family: EnvFamily) {
   const navigate = useNavigate();
   useEffect(() => {
     if (!env) return;
@@ -218,7 +222,7 @@ function useGoKeys(env: string | undefined, kube: boolean) {
       const k = e.key.toLowerCase();
       if (armed && Date.now() - armed < 1200) {
         armed = 0;
-        const items: readonly NavItem[] = kube ? KUBE_NAV : NAV;
+        const items = navOf(family);
         const hit = items.find((n) => n.key === k);
         if (hit) {
           e.preventDefault();
@@ -230,7 +234,7 @@ function useGoKeys(env: string | undefined, kube: boolean) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [env, kube, navigate]);
+  }, [env, family, navigate]);
 }
 
 /** Where the operator is, whether the screen is live, and the palette. */
@@ -248,22 +252,22 @@ function EnvBand({ env }: { env?: string }) {
 
 function TopBar({
   env,
-  kube,
+  family,
   onMenu,
   slotRef,
 }: {
   env?: string;
-  kube: boolean;
+  family: EnvFamily;
   onMenu: () => void;
   slotRef: (el: HTMLElement | null) => void;
 }) {
   const { pathname } = useLocation();
-  const items: readonly NavItem[] = kube ? KUBE_NAV : NAV;
+  const items = navOf(family);
   const section =
     [...items].reverse().find((n) => env && pathname.startsWith(navHref(n, env))) ??
     ADMIN_NAV.find((n) => pathname.startsWith(n.to));
   const SectionIcon = section?.icon;
-  const group = kube && section && "kind" in section ? kubeGroupOf(section) : undefined;
+  const group = family === "kube" && section && "kind" in section ? kubeGroupOf(section) : undefined;
   return (
     <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur-md md:px-6">
       <EnvBand env={env} />
@@ -360,7 +364,7 @@ export function EnvTag({ name, size = "md" }: { name: string; size?: "sm" | "md"
   );
 }
 
-function EnvSwitcher({ current, kube }: { current?: string; kube: boolean }) {
+function EnvSwitcher({ current, family }: { current?: string; family: EnvFamily }) {
   const { data: envs = [] } = useQuery(envsQuery);
   const navigate = useNavigate();
   return (
@@ -382,7 +386,7 @@ function EnvSwitcher({ current, kube }: { current?: string; kube: boolean }) {
               {current ?? "Choose environment"}
             </span>
           </span>
-          {current && <EnvStatusBadge env={current} kube={kube} />}
+          {current && <EnvStatusBadge env={current} kube={family !== "docker"} />}
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -393,6 +397,7 @@ function EnvSwitcher({ current, kube }: { current?: string; kube: boolean }) {
             <EnvTag name={e.name} size="sm" />
             {e.name}
             {isKube(e.kind) && <Boxes aria-label="Kubernetes" className="size-3.5 text-muted-foreground" />}
+            {isSwarm(e.kind) && <Network aria-label="Docker Swarm" className="size-3.5 text-muted-foreground" />}
             {(() => {
               const a = accessOf(e);
               const badge = a.roleName ?? (a.role === "viewer" ? "Viewer" : null);

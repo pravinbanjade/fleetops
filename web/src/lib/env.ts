@@ -19,3 +19,15 @@ export function envInitials(name: string): string {
 export function isKube(kind: string | undefined): boolean {
   return !!kind && kind.startsWith("kube-");
 }
+
+/** Swarm environment kinds start with "swarm-". */
+export function isSwarm(kind: string | undefined): boolean {
+  return !!kind && kind.startsWith("swarm-");
+}
+
+/** Which set of pages an environment has. */
+export type EnvFamily = "docker" | "kube" | "swarm";
+
+export function envFamily(kind: string | undefined): EnvFamily {
+  return isKube(kind) ? "kube" : isSwarm(kind) ? "swarm" : "docker";
+}

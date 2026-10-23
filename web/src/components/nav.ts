@@ -43,6 +43,9 @@ export const NAV = [
   { to: "/envs/$env/stacks", label: "Stacks", icon: FileStack, key: "p" },
 ] as const;
 
+/** A Swarm environment's pages, in sidebar order. */
+export const SWARM_NAV = [{ to: "/envs/$env", label: "Nodes", icon: Server, key: "d" }] as const;
+
 /** Administration pages, shown to admins. */
 export const ADMIN_NAV = [
   { to: "/admin/users", label: "Users", icon: Users },
@@ -154,7 +157,12 @@ export function kubeGroupOf(item: KubeLink): KubeGroup | undefined {
   return KUBE_SIDEBAR.find((e): e is KubeGroup => isGroup(e) && e.items.includes(item));
 }
 
-export type NavItem = (typeof NAV)[number] | KubeLink;
+export type NavItem = (typeof NAV)[number] | (typeof SWARM_NAV)[number] | KubeLink;
+
+/** The flat page list of an environment family, for go-keys and breadcrumbs. */
+export function navOf(family: "docker" | "kube" | "swarm"): readonly NavItem[] {
+  return family === "kube" ? KUBE_NAV : family === "swarm" ? SWARM_NAV : NAV;
+}
 
 /** The href a nav item points at in `env`. */
 export function navHref(item: NavItem, env: string): string {

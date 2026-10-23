@@ -20,9 +20,9 @@ import {
 import { errorMessage } from "@/lib/errors";
 import { shortId } from "@/lib/format";
 import { ACTIONS, actionsFor } from "@/pages/containers/actions";
-import { ADMIN_NAV, KUBE_NAV, NAV, kubeGroupOf, navHref } from "./nav";
+import { ADMIN_NAV, KUBE_NAV, NAV, SWARM_NAV, kubeGroupOf, navHref } from "./nav";
 import { refOf } from "@/pages/kube/generic/ref";
-import { isKube } from "@/lib/env";
+import { envFamily } from "@/lib/env";
 
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 
@@ -87,9 +87,11 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
   const envs = useQuery(envsQuery);
   const on = !!env;
   const e = env ?? "";
-  const kube = on && isKube(envs.data?.find((x) => x.name === e)?.kind);
-  // A Kubernetes environment has no Docker resources to search.
-  const docker = on && !!envs.data && !kube;
+  const family = envFamily(envs.data?.find((x) => x.name === e)?.kind);
+  const kube = on && family === "kube";
+  const swarm = on && family === "swarm";
+  // Kubernetes and Swarm environments have no Docker resources to search.
+  const docker = on && !!envs.data && family === "docker";
   const containers = useQuery({ ...containersQuery(e), enabled: docker });
   const images = useQuery({ ...imagesQuery(e), enabled: docker });
   const volumes = useQuery({ ...volumesQuery(e), enabled: docker });
@@ -145,6 +147,13 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
                 </CommandItem>
               );
             })}
+          {swarm &&
+            SWARM_NAV.map((n) => (
+              <CommandItem key={n.to} value={`page ${n.label}`} onSelect={() => go(() => navigate({ to: n.to, params: { env: e } }))}>
+                <n.icon />
+                {n.label}
+              </CommandItem>
+            ))}
           {docker &&
             NAV.map((n) => (
               <CommandItem key={n.to} value={`page ${n.label}`} onSelect={() => go(() => navigate({ to: n.to, params: { env: e } }))}>
