@@ -166,9 +166,15 @@ pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<
         .into_iter()
         .filter_map(|env| {
             let access = crate::agents::CallerAccess::of(grants.get(&env.id)?);
+            let swarm = env.kind == EnvKind::SwarmAgent.as_str();
+            let nodes = swarm.then(|| s.agents.nodes(env.id).len() as u32);
+            let connected = match nodes {
+                Some(n) => n > 0,
+                None => s.agents.get(env.id).is_some(),
+            };
             let agent = agents
                 .remove(&env.id)
-                .map(|a| AgentView::new(a, s.agents.get(env.id).is_some()));
+                .map(|a| AgentView::new(a, connected));
             let kube = summaries
                 .get(&env.id)
                 .and_then(|v| serde_json::from_value(v.clone()).ok());
@@ -177,6 +183,7 @@ pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<
                 agent,
                 kube,
                 access: Some(access),
+                swarm_nodes_connected: nodes,
             })
         })
         .collect();
@@ -237,6 +244,7 @@ pub async fn create(
             return Err(Error::NodeLimit(max).into());
         }
     }
+    let mut swarm_enrollment = None;
     let (rec, enrollment, credential) = match body.kind {
         EnvKind::DockerLocal => {
             let url = body
@@ -283,7 +291,23 @@ pub async fn create(
             (rec, Some(enrollment), None)
         }
         EnvKind::SwarmAgent => {
-            return Err(Error::Invalid("Swarm environments are not available yet".into()).into());
+            if body.url.is_some() {
+                return Err(Error::Invalid("an agent environment takes no URL".into()).into());
+            }
+            let server = server_url(&headers)?;
+            let key = agents::new_agent_key();
+            let rec = s
+                .store
+                .create_swarm_environment(&body.name, &hash_token(&key), now_unix())
+                .await?;
+            let e = agents::swarm_manifest::enrollment(
+                key,
+                1,
+                &server,
+                s.config.agent_ca_pem.as_deref(),
+            );
+            swarm_enrollment = Some(e);
+            (rec, None, None)
         }
         EnvKind::KubeConfig => {
             let p = prepared.expect("checked above");
@@ -318,11 +342,12 @@ pub async fn create(
         Json(CreatedEnv {
             env: rec,
             enrollment,
+            swarm_enrollment,
         }),
     ))
 }
 
-async fn find(s: &AppState, name: &str) -> ApiResult<EnvironmentRecord> {
+pub(crate) async fn find(s: &AppState, name: &str) -> ApiResult<EnvironmentRecord> {
     let env = s.envs.get(name)?;
     Ok(s.store.get_environment(env.id()).await?)
 }
@@ -345,7 +370,7 @@ pub async fn update(
 ) -> ApiResult<Json<EnvironmentRecord>> {
     require_admin(&cu.user)?;
     let kind: EnvKind = find(&s, &name).await?.kind.parse()?;
-    if body.url.is_some() && kind == EnvKind::DockerAgent {
+    if body.url.is_some() && matches!(kind, EnvKind::DockerAgent | EnvKind::SwarmAgent) {
         return Err(Error::Invalid("an agent environment's URL cannot be changed".into()).into());
     }
     if body.url.is_some() && kind.is_kube() {
@@ -479,6 +504,12 @@ pub async fn rotate_agent(
     let _guard = s.envs.lock_mutations().await;
     let current = find(&s, &name).await?;
     let kind: EnvKind = current.kind.parse()?;
+    if kind == EnvKind::SwarmAgent {
+        return Err(Error::Invalid(format!(
+            "'{name}' is a Swarm environment: rotate its key with /envs/{name}/swarm/rotate"
+        ))
+        .into());
+    }
     if !matches!(kind, EnvKind::DockerAgent | EnvKind::KubeAgent) {
         return Err(Error::Invalid(format!("'{name}' is not an agent environment")).into());
     }

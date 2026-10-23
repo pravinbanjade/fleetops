@@ -63,6 +63,8 @@ const DESCRIPTIONS: Record<EnvKind, string> = {
   "kube-config":
     "Paste a kubeconfig with a ServiceAccount token or client certificate. It is stored encrypted and never shown again. exec plugins (aws, gcloud) are not supported: use the in-cluster agent instead.",
   "kube-agent": "You'll get a kubectl command that installs the agent in the cluster. The cluster needs no inbound access.",
+  "swarm-agent":
+    "A Docker Swarm. You'll get a key and a stack file that runs the agent on every node; each node's agent connects out to this server.",
 };
 
 /** What an in-cluster agent may do, from least to most. */

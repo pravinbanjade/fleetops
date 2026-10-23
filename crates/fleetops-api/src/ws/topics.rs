@@ -66,7 +66,7 @@ async fn docker_for(
 ) -> Result<(Arc<dyn Environment>, Arc<dyn DockerOps>)> {
     let name = required(env, "env")?;
     let (env, _) = crate::authz::env_access(s, cu, name, need).await?;
-    if env.kind().is_kube() {
+    if env.kind().is_kube() || env.kind().is_swarm() {
         return Err(crate::routes::kube::wrong_kind(name, env.kind()));
     }
     let ops = env

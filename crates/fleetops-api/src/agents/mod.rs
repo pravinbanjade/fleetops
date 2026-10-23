@@ -5,6 +5,7 @@ mod axum_io;
 pub mod connect;
 pub mod manifest;
 mod swarm_connect;
+pub mod swarm_manifest;
 
 use crate::{auth::token::generate_token, ws::hub::StatusChange, AppState};
 use fleetops_store::{AgentRecord, EnvironmentRecord};
@@ -124,6 +125,8 @@ pub struct EnvView {
     pub kube: Option<fleetops_core::env::KubeconfigSummary>,
     /// The caller's access here (admins: everything on the whole environment).
     pub access: Option<CallerAccess>,
+    /// swarm-agent: how many nodes' agents are connected.
+    pub swarm_nodes_connected: Option<u32>,
 }
 
 /// The caller's grants on one environment, for the UI to offer only what
@@ -191,6 +194,8 @@ pub struct CreatedEnv {
     #[serde(flatten)]
     pub env: EnvironmentRecord,
     pub enrollment: Option<Enrollment>,
+    /// swarm-agent: the shared key, shown once, and the agent stack.
+    pub swarm_enrollment: Option<swarm_manifest::SwarmEnrollment>,
 }
 
 /// The enrollment command for an agent environment of `kind`.

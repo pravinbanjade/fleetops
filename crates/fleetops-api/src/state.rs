@@ -58,6 +58,9 @@ pub struct ApiConfig {
     pub git_allow_http: bool,
     /// Caps on one git fetch (stacks spec §8).
     pub git_limits: fleetops_git::Limits,
+    /// The certificate FleetOps generated for its HTTPS listener (PEM), when
+    /// it serves one: Swarm agents inside the swarm trust it (swarm spec §3).
+    pub agent_ca_pem: Option<String>,
 }
 
 impl Default for ApiConfig {
@@ -78,6 +81,7 @@ impl Default for ApiConfig {
             stack_timing: Default::default(),
             git_allow_http: false,
             git_limits: Default::default(),
+            agent_ca_pem: None,
         }
     }
 }

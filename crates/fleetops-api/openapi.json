@@ -6678,6 +6678,186 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/swarm/agents": {
+      "get": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "A Swarm environment's nodes and their agents",
+        "operationId": "listSwarmAgents",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every node a manager reports, and every node that has had an agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SwarmAgentView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/retrust": {
+      "post": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Forget the pinned swarm and root CA; the next manager agent pins them again",
+        "operationId": "retrustSwarm",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Unpinned; every agent of the environment is disconnected"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/rotate": {
+      "post": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Issue a new Swarm agent key; the old one works for 24 hours or until the rotation is finished",
+        "operationId": "rotateSwarmKey",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new key, shown once, and the agent stack that uses it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwarmEnrollment"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/rotate/finish": {
+      "post": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Stop accepting the Swarm agent key from before the last rotation",
+        "operationId": "finishSwarmRotation",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The old key no longer works; agents still using it are disconnected"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/volumes": {
       "get": {
         "tags": [
@@ -8712,6 +8892,17 @@
                     "type": "null"
                   }
                 ]
+              },
+              "swarm_enrollment": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SwarmEnrollment",
+                    "description": "swarm-agent: the shared key, shown once, and the agent stack."
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
           }
@@ -9131,7 +9322,8 @@
           "docker-local",
           "docker-agent",
           "kube-config",
-          "kube-agent"
+          "kube-agent",
+          "swarm-agent"
         ]
       },
       "EnvRole": {
@@ -9224,6 +9416,27 @@
                 }
               }
             ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SwarmVersion"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "swarm"
+                    ]
+                  }
+                }
+              }
+            ]
           }
         ],
         "description": "What an up environment reports about itself."
@@ -9267,6 +9480,15 @@
                     "type": "null"
                   }
                 ]
+              },
+              "swarm_nodes_connected": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int32",
+                "description": "swarm-agent: how many nodes' agents are connected.",
+                "minimum": 0
               }
             }
           }
@@ -10694,6 +10916,13 @@
           }
         }
       },
+      "NodeRole": {
+        "type": "string",
+        "enum": [
+          "manager",
+          "worker"
+        ]
+      },
       "Plan": {
         "type": "object",
         "required": [
@@ -11833,6 +12062,166 @@
             "type": "integer",
             "format": "int64",
             "description": "Unix milliseconds."
+          }
+        }
+      },
+      "SwarmAgentView": {
+        "type": "object",
+        "description": "One node of the swarm and its agent.",
+        "required": [
+          "node_id",
+          "connected"
+        ],
+        "properties": {
+          "agent_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the agent was refused or went offline."
+          },
+          "last_seen_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "role": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NodeRole",
+                "description": "Null when no manager answered."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`ready`, `down`, ...; null when no manager answered."
+          }
+        }
+      },
+      "SwarmEnrollment": {
+        "type": "object",
+        "description": "What an admin needs to start (or re-key) a swarm's agents.",
+        "required": [
+          "agent_key",
+          "key_generation",
+          "secret_name",
+          "secret_command",
+          "outside"
+        ],
+        "properties": {
+          "agent_key": {
+            "type": "string",
+            "description": "Shown once. Paste it into `secret_command` on a manager."
+          },
+          "inside": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SwarmStack",
+                "description": "FleetOps runs inside the swarm; null when it is not offered."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inside_unavailable": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why `inside` is not offered."
+          },
+          "key_generation": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "outside": {
+            "$ref": "#/components/schemas/SwarmStack",
+            "description": "FleetOps runs outside the swarm: agents dial its public URL."
+          },
+          "secret_command": {
+            "type": "string",
+            "description": "Run on a manager, paste the key, then press Ctrl-D."
+          },
+          "secret_name": {
+            "type": "string"
+          }
+        }
+      },
+      "SwarmStack": {
+        "type": "object",
+        "required": [
+          "stack_yaml",
+          "deploy_command"
+        ],
+        "properties": {
+          "deploy_command": {
+            "type": "string"
+          },
+          "stack_yaml": {
+            "type": "string",
+            "description": "Save as fleetops-agent.yml."
+          }
+        }
+      },
+      "SwarmVersion": {
+        "type": "object",
+        "description": "What an up Swarm environment reports about itself.",
+        "required": [
+          "engine",
+          "cluster_id",
+          "managers",
+          "workers",
+          "serving_node"
+        ],
+        "properties": {
+          "cluster_id": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string",
+            "description": "The serving manager's engine version."
+          },
+          "managers": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "serving_node": {
+            "type": "string",
+            "description": "The manager whose agent answers cluster calls."
+          },
+          "workers": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },

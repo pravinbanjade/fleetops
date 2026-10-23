@@ -40,6 +40,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                 }) as Arc<dyn fleetops_kube::helm::render::ChartRenderer>
             }),
             data_dir: Some(config.data.clone()),
+            agent_ca_pem: tls::generated_cert_pem(&config)?,
             ..ApiConfig::default()
         },
     )

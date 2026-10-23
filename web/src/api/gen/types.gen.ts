@@ -462,6 +462,7 @@ export type Created = {
  */
 export type CreatedEnv = EnvironmentRecord & {
     enrollment?: Enrollment | null;
+    swarm_enrollment?: SwarmEnrollment | null;
 };
 
 export type CreatedNetwork = {
@@ -614,7 +615,7 @@ export type EnvAccessEntry = {
     username: string;
 };
 
-export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent';
+export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent' | 'swarm-agent';
 
 export type EnvRole = 'viewer' | 'operator';
 
@@ -633,6 +634,8 @@ export type EnvVersion = (EngineVersion & {
     kind: 'docker';
 }) | (KubeVersion & {
     kind: 'kube';
+}) | (SwarmVersion & {
+    kind: 'swarm';
 });
 
 /**
@@ -642,6 +645,10 @@ export type EnvView = EnvironmentRecord & {
     access?: CallerAccess | null;
     agent?: AgentView | null;
     kube?: KubeconfigSummary | null;
+    /**
+     * swarm-agent: how many nodes' agents are connected.
+     */
+    swarm_nodes_connected?: number | null;
 };
 
 export type EnvironmentRecord = {
@@ -1245,6 +1252,8 @@ export type NetworkSummary = {
     subnet?: string | null;
 };
 
+export type NodeRole = 'manager' | 'worker';
+
 export type Plan = {
     /**
      * Problems that stop this plan from being deployed.
@@ -1646,6 +1655,76 @@ export type StatsSample = {
      * Unix milliseconds.
      */
     time: number;
+};
+
+/**
+ * One node of the swarm and its agent.
+ */
+export type SwarmAgentView = {
+    agent_version?: string | null;
+    connected: boolean;
+    hostname?: string | null;
+    /**
+     * Why the agent was refused or went offline.
+     */
+    last_error?: string | null;
+    last_seen_at?: number | null;
+    node_id: string;
+    role?: NodeRole | null;
+    /**
+     * `ready`, `down`, ...; null when no manager answered.
+     */
+    state?: string | null;
+};
+
+/**
+ * What an admin needs to start (or re-key) a swarm's agents.
+ */
+export type SwarmEnrollment = {
+    /**
+     * Shown once. Paste it into `secret_command` on a manager.
+     */
+    agent_key: string;
+    inside?: SwarmStack | null;
+    /**
+     * Why `inside` is not offered.
+     */
+    inside_unavailable?: string | null;
+    key_generation: number;
+    /**
+     * FleetOps runs outside the swarm: agents dial its public URL.
+     */
+    outside: SwarmStack;
+    /**
+     * Run on a manager, paste the key, then press Ctrl-D.
+     */
+    secret_command: string;
+    secret_name: string;
+};
+
+export type SwarmStack = {
+    deploy_command: string;
+    /**
+     * Save as fleetops-agent.yml.
+     */
+    stack_yaml: string;
+};
+
+/**
+ * What an up Swarm environment reports about itself.
+ */
+export type SwarmVersion = {
+    cluster_id: string;
+    /**
+     * The serving manager's engine version.
+     */
+    engine: string;
+    managers: number;
+    /**
+     * The manager whose agent answers cluster calls.
+     */
+    serving_node: string;
+    workers: number;
 };
 
 export type SyncOutcome = {
@@ -5506,6 +5585,126 @@ export type GetEnvStatusResponses = {
 };
 
 export type GetEnvStatusResponse = GetEnvStatusResponses[keyof GetEnvStatusResponses];
+
+export type ListSwarmAgentsData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/agents';
+};
+
+export type ListSwarmAgentsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSwarmAgentsError = ListSwarmAgentsErrors[keyof ListSwarmAgentsErrors];
+
+export type ListSwarmAgentsResponses = {
+    /**
+     * Every node a manager reports, and every node that has had an agent
+     */
+    200: Array<SwarmAgentView>;
+};
+
+export type ListSwarmAgentsResponse = ListSwarmAgentsResponses[keyof ListSwarmAgentsResponses];
+
+export type RetrustSwarmData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/retrust';
+};
+
+export type RetrustSwarmErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RetrustSwarmError = RetrustSwarmErrors[keyof RetrustSwarmErrors];
+
+export type RetrustSwarmResponses = {
+    /**
+     * Unpinned; every agent of the environment is disconnected
+     */
+    204: void;
+};
+
+export type RetrustSwarmResponse = RetrustSwarmResponses[keyof RetrustSwarmResponses];
+
+export type RotateSwarmKeyData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/rotate';
+};
+
+export type RotateSwarmKeyErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RotateSwarmKeyError = RotateSwarmKeyErrors[keyof RotateSwarmKeyErrors];
+
+export type RotateSwarmKeyResponses = {
+    /**
+     * The new key, shown once, and the agent stack that uses it
+     */
+    200: SwarmEnrollment;
+};
+
+export type RotateSwarmKeyResponse = RotateSwarmKeyResponses[keyof RotateSwarmKeyResponses];
+
+export type FinishSwarmRotationData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/rotate/finish';
+};
+
+export type FinishSwarmRotationErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type FinishSwarmRotationError = FinishSwarmRotationErrors[keyof FinishSwarmRotationErrors];
+
+export type FinishSwarmRotationResponses = {
+    /**
+     * The old key no longer works; agents still using it are disconnected
+     */
+    204: void;
+};
+
+export type FinishSwarmRotationResponse = FinishSwarmRotationResponses[keyof FinishSwarmRotationResponses];
 
 export type ListVolumesData = {
     body?: never;

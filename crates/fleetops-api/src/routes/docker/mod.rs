@@ -34,7 +34,7 @@ pub struct EnvCtx {
 
 pub async fn ctx(s: &AppState, user: CurrentUser, env_name: &str, need: Need) -> ApiResult<EnvCtx> {
     let (env, grants) = crate::authz::env_access(s, &user, env_name, need).await?;
-    if env.kind().is_kube() {
+    if env.kind().is_kube() || env.kind().is_swarm() {
         return Err(crate::routes::kube::wrong_kind(env_name, env.kind()).into());
     }
     let ops = env

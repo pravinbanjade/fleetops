@@ -9,6 +9,7 @@ pub(crate) mod helm;
 pub(crate) mod kube;
 pub(crate) mod kube_generic;
 pub mod stack_hooks;
+pub mod swarm_agents;
 pub mod tasks;
 pub mod users;
 
@@ -72,6 +73,10 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(envs::status))
         .routes(routes!(access::list_env))
         .routes(routes!(envs::rotate_agent))
+        .routes(routes!(swarm_agents::agents))
+        .routes(routes!(swarm_agents::rotate))
+        .routes(routes!(swarm_agents::finish_rotation))
+        .routes(routes!(swarm_agents::retrust))
         .routes(routes!(envs::kube_contexts))
         .routes(routes!(system::info))
         .routes(routes!(system::disk_usage))
