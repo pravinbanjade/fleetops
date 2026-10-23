@@ -1622,6 +1622,7 @@ dependencies = [
  "rustls",
  "serde_json",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",

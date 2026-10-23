@@ -7,6 +7,7 @@ pub mod creds;
 mod dial;
 pub mod kube_proxy;
 mod session;
+pub mod swarm;
 
 pub use config::Config;
 
@@ -48,12 +49,19 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             creds::Keys::Secret(creds::SecretKeys::new(proxy, ns, name.clone()))
         }
         (Some(_), None) => return Err(anyhow!("--key-secret needs --kube")),
-        (None, _) => creds::Keys::File(config.data.clone()),
+        (None, _) => match &config.key_file {
+            Some(file) => creds::Keys::ReadOnly(file.clone()),
+            None => creds::Keys::File(config.data.clone()),
+        },
     };
     keys.probe()
         .await
         .with_context(|| format!("{} must be writable", keys.describe()))?;
-    let tls = Arc::new(dial::tls_config(config.ca.as_deref())?);
+    let tls = Arc::new(dial::tls_config(
+        config.ca.as_deref(),
+        config.ca_pem.as_deref(),
+    )?);
+    let docker_target = fleetops_tunnel::Target::parse(&config.docker)?;
     let mut backoff = Backoff::new(Duration::from_secs(1), Duration::from_secs(30));
     // Set once the server rejects the stored key: a key rotated in the UI
     // stays in the data volume, and the new join command must still work.
@@ -71,13 +79,45 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             }
         };
         let started = Instant::now();
+        // Re-read every time: the node may have been promoted or demoted.
+        let node = if config.swarm {
+            match swarm::identity(&docker_target).await {
+                Ok(claim) => Some(session::SwarmNode {
+                    claim,
+                    certs: config.swarm_certs.clone(),
+                }),
+                Err(e @ swarm::IdentityError::NotInSwarm(_)) => return Err(e.into()),
+                Err(e) => {
+                    tracing::warn!(error = %e, "cannot read this node's swarm identity");
+                    tokio::time::sleep(backoff.next_delay()).await;
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
         match dial::dial(&config.server, &bearer, tls.clone()).await {
-            Ok(ws) => match session::run(ws, inbound.clone(), &desc, &keys, config.server_silence)
-                .await
+            Ok(ws) => match session::run(
+                ws,
+                inbound.clone(),
+                &desc,
+                &keys,
+                config.server_silence,
+                node.as_ref(),
+            )
+            .await
             {
                 session::Ended::Fatal(e) => return Err(e),
                 session::Ended::Dropped => tracing::warn!("disconnected from {}", config.server),
             },
+            Err(dial::DialError::Refused(401)) if config.key_file.is_some() => {
+                let file = config.key_file.as_deref().expect("checked");
+                return Err(anyhow!(
+                    "the server rejected the key in {}; update the fleetops-agent-key secret \
+                     (see the environment's Rotate page)",
+                    file.display()
+                ));
+            }
             Err(dial::DialError::Refused(401)) if key.is_some() => {
                 if config.join_token.is_none() {
                     return Err(anyhow!(

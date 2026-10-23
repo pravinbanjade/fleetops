@@ -40,10 +40,12 @@ pub fn probe_writable(dir: &Path) -> io::Result<()> {
     fs::remove_file(probe)
 }
 
-/// Where the agent keeps its key: a file in --data, or a Secret.
+/// Where the agent keeps its key: a file in --data, a Secret, or a
+/// read-only file (a Swarm agent's Docker secret).
 pub enum Keys {
     File(PathBuf),
     Secret(SecretKeys),
+    ReadOnly(PathBuf),
 }
 
 impl Keys {
@@ -51,6 +53,11 @@ impl Keys {
         match self {
             Keys::File(dir) => load_key(dir),
             Keys::Secret(s) => s.load().await,
+            Keys::ReadOnly(file) => match fs::read_to_string(file) {
+                Ok(k) => Ok(Some(k.trim().to_string()).filter(|k| !k.is_empty())),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+                Err(e) => Err(e),
+            },
         }
     }
 
@@ -58,6 +65,10 @@ impl Keys {
         match self {
             Keys::File(dir) => save_key(dir, key),
             Keys::Secret(s) => s.save(key).await,
+            Keys::ReadOnly(file) => Err(io::Error::other(format!(
+                "{} is read-only",
+                file.display()
+            ))),
         }
     }
 
@@ -67,6 +78,7 @@ impl Keys {
         match self {
             Keys::File(dir) => probe_writable(dir),
             Keys::Secret(s) => s.probe().await,
+            Keys::ReadOnly(file) => fs::metadata(file).map(|_| ()),
         }
     }
 
@@ -74,6 +86,7 @@ impl Keys {
         match self {
             Keys::File(dir) => format!("the data directory {}", dir.display()),
             Keys::Secret(s) => format!("the Secret {}/{}", s.namespace, s.name),
+            Keys::ReadOnly(file) => format!("the key file {}", file.display()),
         }
     }
 }

@@ -148,11 +148,15 @@ async fn a_kube_agent_brings_its_cluster_up_and_keeps_its_key_in_a_secret() {
         data: data.path().to_path_buf(),
         docker: "unix:///var/run/docker.sock".into(),
         ca: None,
+        ca_pem: None,
         log: "warn".into(),
         server_silence: std::time::Duration::from_secs(45),
         kube: true,
         key_secret: Some("fleetops-agent-key".into()),
         kube_upstream: Some(api.upstream.clone()),
+        swarm: false,
+        key_file: None,
+        swarm_certs: "/swarm-certs".into(),
     };
     tokio::spawn(fleetops_agent::run(config));
 

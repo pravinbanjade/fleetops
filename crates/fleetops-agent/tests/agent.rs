@@ -105,11 +105,15 @@ fn config(
         data: data.into(),
         docker: format!("unix://{}", docker.display()),
         ca: None,
+        ca_pem: None,
         log: "warn".into(),
         server_silence: Duration::from_secs(45),
         kube: false,
         key_secret: None,
         kube_upstream: None,
+        swarm: false,
+        key_file: None,
+        swarm_certs: "/swarm-certs".into(),
     }
 }
 

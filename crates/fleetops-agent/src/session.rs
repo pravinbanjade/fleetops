@@ -4,12 +4,12 @@
 use crate::{creds::Keys, kube_proxy::KubeProxy};
 use anyhow::anyhow;
 use fleetops_tunnel::{
-    control::{read_msg, write_msg, ByeReason, HostInfo, Msg, Serves, PROTO_MAJOR},
+    control::{read_msg, write_msg, ByeReason, HostInfo, Msg, Serves, SwarmClaim, PROTO_MAJOR},
     forward,
     ws::tungstenite_io,
     Role, Session, Target,
 };
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
@@ -27,7 +27,14 @@ pub enum Inbound {
     Kube(Arc<KubeProxy>),
 }
 
-fn host_info(docker: &str, serves: Serves) -> HostInfo {
+/// A Swarm agent's node, and where its certificates are.
+#[derive(Clone)]
+pub struct SwarmNode {
+    pub claim: SwarmClaim,
+    pub certs: PathBuf,
+}
+
+fn host_info(docker: &str, serves: Serves, swarm: Option<SwarmClaim>) -> HostInfo {
     HostInfo {
         hostname: std::fs::read_to_string("/etc/hostname")
             .map(|s| s.trim().to_string())
@@ -36,7 +43,7 @@ fn host_info(docker: &str, serves: Serves) -> HostInfo {
         arch: std::env::consts::ARCH.into(),
         docker: docker.into(),
         serves,
-        swarm: None,
+        swarm,
     }
 }
 
@@ -46,10 +53,12 @@ pub async fn run(
     target_desc: &str,
     keys: &Keys,
     silence: Duration,
+    swarm: Option<&SwarmNode>,
 ) -> Ended {
-    let serves = match &inbound {
-        Inbound::Docker(_) => Serves::Docker,
-        Inbound::Kube(_) => Serves::Kube,
+    let serves = match (&inbound, swarm) {
+        (Inbound::Docker(_), Some(_)) => Serves::Swarm,
+        (Inbound::Docker(_), None) => Serves::Docker,
+        (Inbound::Kube(_), _) => Serves::Kube,
     };
     let session = Session::spawn(
         tungstenite_io(ws),
@@ -71,12 +80,19 @@ pub async fn run(
             }
         },
     );
-    let ended = control(&session, host_info(target_desc, serves), keys, silence).await;
+    let host = host_info(target_desc, serves, swarm.map(|n| n.claim.clone()));
+    let ended = control(&session, host, keys, silence, swarm).await;
     session.close().await;
     ended
 }
 
-async fn control(session: &Session, host: HostInfo, keys: &Keys, silence: Duration) -> Ended {
+async fn control(
+    session: &Session,
+    host: HostInfo,
+    keys: &Keys,
+    silence: Duration,
+    swarm: Option<&SwarmNode>,
+) -> Ended {
     let Ok(stream) = session.open_stream().await else {
         return Ended::Dropped;
     };
@@ -89,7 +105,24 @@ async fn control(session: &Session, host: HostInfo, keys: &Keys, silence: Durati
     if write_msg(&mut tx, &hello).await.is_err() {
         return Ended::Dropped;
     }
-    match tokio::time::timeout(Duration::from_secs(10), read_msg(&mut rx)).await {
+    let mut reply = tokio::time::timeout(Duration::from_secs(10), read_msg(&mut rx)).await;
+    // A Swarm agent proves its node before the welcome.
+    if let (Some(node), Ok(Ok(Some(Msg::Challenge { nonce })))) = (swarm, &reply) {
+        let (cert_chain_pem, signature) =
+            match crate::swarm::prove(&node.certs, nonce, &node.claim) {
+                Ok(p) => p,
+                Err(e) => return Ended::Fatal(e.context("cannot prove this node's identity")),
+            };
+        let proof = Msg::Proof {
+            cert_chain_pem,
+            signature,
+        };
+        if write_msg(&mut tx, &proof).await.is_err() {
+            return Ended::Dropped;
+        }
+        reply = tokio::time::timeout(Duration::from_secs(10), read_msg(&mut rx)).await;
+    }
+    match reply {
         Ok(Ok(Some(Msg::Welcome {
             env_name,
             agent_key,
@@ -133,7 +166,11 @@ async fn control(session: &Session, host: HostInfo, keys: &Keys, silence: Durati
 
 fn bye(reason: ByeReason) -> Ended {
     match reason {
-        ByeReason::Shutdown | ByeReason::NotYet => Ended::Dropped,
+        ByeReason::Shutdown => Ended::Dropped,
+        ByeReason::NotYet => {
+            tracing::info!("the server is not ready for this node yet; retrying");
+            Ended::Dropped
+        }
         ByeReason::Revoked => Ended::Fatal(anyhow!(
             "the server revoked this agent's key; re-enroll with a new join command"
         )),

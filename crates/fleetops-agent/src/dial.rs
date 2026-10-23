@@ -15,15 +15,20 @@ pub enum DialError {
     Other(anyhow::Error),
 }
 
-pub fn tls_config(ca: Option<&Path>) -> anyhow::Result<rustls::ClientConfig> {
+pub fn tls_config(ca: Option<&Path>, ca_pem: Option<&str>) -> anyhow::Result<rustls::ClientConfig> {
+    use rustls::pki_types::{pem::PemObject, CertificateDer};
     let mut roots = rustls::RootCertStore::empty();
     roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     if let Some(path) = ca {
-        use rustls::pki_types::{pem::PemObject, CertificateDer};
         for cert in CertificateDer::pem_file_iter(path)
             .with_context(|| format!("reading {}", path.display()))?
         {
             roots.add(cert?)?;
+        }
+    }
+    if let Some(pem) = ca_pem {
+        for cert in CertificateDer::pem_slice_iter(pem.as_bytes()) {
+            roots.add(cert.context("reading --ca-pem")?)?;
         }
     }
     Ok(rustls::ClientConfig::builder()
