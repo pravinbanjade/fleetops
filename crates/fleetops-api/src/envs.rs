@@ -89,11 +89,18 @@ impl EnvRegistry {
     }
 
     /// The nodes the license counts: each Docker or Podman host is one, and
-    /// each Kubernetes cluster is its node count. A cluster that cannot say
-    /// (down, or not allowed to list nodes) counts as one.
+    /// each Kubernetes cluster or Docker Swarm is its node count. A cluster
+    /// or swarm that cannot say (down, or not allowed to list nodes) counts
+    /// as one.
     pub async fn count_nodes(&self) -> u64 {
         let envs: Vec<_> = self.envs.read().unwrap().values().cloned().collect();
         let counts = envs.into_iter().map(|env| async move {
+            if let Some(swarm) = env.swarm() {
+                return match tokio::time::timeout(NODE_COUNT_TIMEOUT, swarm.nodes()).await {
+                    Ok(Ok(nodes)) => (nodes.len() as u64).max(1),
+                    _ => 1,
+                };
+            }
             let Some(kube) = env.kube() else { return 1 };
             match tokio::time::timeout(NODE_COUNT_TIMEOUT, kube.version()).await {
                 Ok(Ok(v)) => u64::from(v.nodes.unwrap_or(1).max(1)),

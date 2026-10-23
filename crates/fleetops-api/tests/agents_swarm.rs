@@ -607,3 +607,18 @@ async fn a_demoted_manager_session_is_revoked_when_a_known_manager_refreshes() {
         }
     }
 }
+
+#[tokio::test]
+async fn a_swarm_counts_each_node() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    // No manager connected: the swarm counts as one.
+    assert_eq!(t.state.envs.count_nodes().await, 1);
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false), ("n3", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
+    assert_eq!(t.state.envs.count_nodes().await, 3);
+}
