@@ -311,7 +311,7 @@ async fn serve(
     .await;
     publish_status(s, env_id).await;
 
-    let reason = control_loop(s, env_id, &mut c, session, &mut bye_rx).await;
+    let reason = control_loop(s, env_id, &mut c, session, &mut bye_rx, None).await;
 
     s.agents.remove(env_id, id, &reason);
     let _ = s
@@ -356,12 +356,15 @@ pub(super) fn disconnect_audit_due(s: &AppState, env_id: i64, node: &str) -> boo
 }
 
 /// Runs until the session ends; returns why, for the environment's status.
+/// `swarm_key` is a Swarm agent's key hash: it is checked at every ping, so
+/// a session on a previous key ends when that key's grace period does.
 pub(super) async fn control_loop(
     s: &AppState,
     env_id: i64,
     c: &mut Control,
     session: &Session,
     bye_rx: &mut mpsc::Receiver<ByeReason>,
+    swarm_key: Option<&str>,
 ) -> String {
     let mut ping = tokio::time::interval(s.config.agent_ping_interval);
     ping.tick().await; // the first tick is immediate
@@ -374,6 +377,13 @@ pub(super) async fn control_loop(
             _ = ping.tick() => {
                 if unanswered >= 2 {
                     return "no answer to two pings".into();
+                }
+                if let Some(key) = swarm_key {
+                    let live = s.store.swarm_by_key(key, now_unix()).await;
+                    if matches!(live, Ok(None)) {
+                        say_bye(c, session, ByeReason::Revoked).await;
+                        return "key expired".into();
+                    }
                 }
                 n += 1;
                 unanswered += 1;

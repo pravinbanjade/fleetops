@@ -141,15 +141,28 @@ mod tests {
 
     #[test]
     fn the_outside_stack_is_a_global_service_with_the_certs_and_secret() {
-        let v = parse(&swarm_stack("https://fleet.example.com", "fleetops-agent-key-3", None));
+        let v = parse(&swarm_stack(
+            "https://fleet.example.com",
+            "fleetops-agent-key-3",
+            None,
+        ));
         let agent = &v["services"]["agent"];
         assert_eq!(agent["deploy"]["mode"], "global");
         assert_eq!(agent["user"], "0");
         assert_eq!(
             agent["command"],
-            serde_json::json!(["--server", "https://fleet.example.com", "--swarm", "--key-file", "/run/secrets/fleetops-agent-key"])
+            serde_json::json!([
+                "--server",
+                "https://fleet.example.com",
+                "--swarm",
+                "--key-file",
+                "/run/secrets/fleetops-agent-key"
+            ])
         );
-        assert_eq!(agent["volumes"][1], "/var/lib/docker/swarm/certificates:/swarm-certs:ro");
+        assert_eq!(
+            agent["volumes"][1],
+            "/var/lib/docker/swarm/certificates:/swarm-certs:ro"
+        );
         assert_eq!(agent["secrets"][0]["source"], "fleetops-agent-key-3");
         assert_eq!(agent["secrets"][0]["target"], "fleetops-agent-key");
         assert_eq!(v["secrets"]["fleetops-agent-key-3"]["external"], true);

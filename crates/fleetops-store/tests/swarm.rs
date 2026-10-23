@@ -33,8 +33,9 @@ async fn a_swarm_environment_is_enrolled_from_creation() {
 async fn the_previous_key_works_until_it_expires_or_is_finished() {
     let s = Store::in_memory().await.unwrap();
     let id = swarm(&s).await;
-    let generation = s.rotate_swarm_key(id, "key-2", T0 + DAY).await.unwrap();
+    let (generation, dropped) = s.rotate_swarm_key(id, "key-2", T0 + DAY).await.unwrap();
     assert_eq!(generation, 2);
+    assert_eq!(dropped, None);
     assert_eq!(
         s.swarm_by_key("key-2", T0).await.unwrap(),
         Some((id, KeyMatch::Current))
@@ -46,7 +47,10 @@ async fn the_previous_key_works_until_it_expires_or_is_finished() {
     assert_eq!(s.swarm_by_key("key-1", T0 + DAY).await.unwrap(), None);
     assert_eq!(s.agent_by_key("key-1").await.unwrap(), None);
 
-    s.rotate_swarm_key(id, "key-3", T0 + DAY).await.unwrap();
+    // Rotating again while one is pending drops key-1 for good.
+    let (_, dropped) = s.rotate_swarm_key(id, "key-3", T0 + DAY).await.unwrap();
+    assert_eq!(dropped.as_deref(), Some("key-1"));
+    assert_eq!(s.swarm_by_key("key-1", T0).await.unwrap(), None);
     assert_eq!(
         s.finish_swarm_rotation(id).await.unwrap().as_deref(),
         Some("key-2")
@@ -62,7 +66,10 @@ async fn pinning_keeps_the_first_cluster() {
     assert!(s.get_swarm_cluster(id).await.unwrap().is_none());
     let first = s.pin_swarm_cluster(id, "c1", "ROOT1", T0).await.unwrap();
     assert_eq!(first.cluster_id, "c1");
-    let again = s.pin_swarm_cluster(id, "c2", "ROOT2", T0 + 1).await.unwrap();
+    let again = s
+        .pin_swarm_cluster(id, "c2", "ROOT2", T0 + 1)
+        .await
+        .unwrap();
     assert_eq!(again.cluster_id, "c1");
     assert_eq!(again.trust_root, "ROOT1");
     assert_eq!(again.pinned_at, T0);
@@ -74,7 +81,10 @@ async fn clearing_allows_a_new_pin() {
     let id = swarm(&s).await;
     s.pin_swarm_cluster(id, "c1", "ROOT1", T0).await.unwrap();
     s.clear_swarm_cluster(id).await.unwrap();
-    let pinned = s.pin_swarm_cluster(id, "c2", "ROOT2", T0 + 1).await.unwrap();
+    let pinned = s
+        .pin_swarm_cluster(id, "c2", "ROOT2", T0 + 1)
+        .await
+        .unwrap();
     assert_eq!(pinned.cluster_id, "c2");
 }
 

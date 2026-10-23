@@ -49,7 +49,8 @@ impl SwarmPki {
         } else {
             "swarm-worker"
         };
-        p.distinguished_name.push(DnType::OrganizationalUnitName, ou);
+        p.distinguished_name
+            .push(DnType::OrganizationalUnitName, ou);
         NodeCert {
             chain: p.signed_by(&key, &self.ca).unwrap().pem(),
             key: key.serialize_pem(),
@@ -97,7 +98,10 @@ impl FakeSwarm {
             let id = id.split('?').next().unwrap_or_default();
             return match nodes.iter().find(|n| n["ID"] == id) {
                 Some(n) => (200, n.to_string()),
-                None => (404, json!({"message": format!("node {id} not found")}).to_string()),
+                None => (
+                    404,
+                    json!({"message": format!("node {id} not found")}).to_string(),
+                ),
             };
         }
         if path.contains("/nodes") {
@@ -121,7 +125,9 @@ impl FakeSwarm {
         let me = self.clone();
         tokio::spawn(async move {
             let mut buf = vec![0u8; 8192];
-            let Ok(n) = s.read(&mut buf).await else { return };
+            let Ok(n) = s.read(&mut buf).await else {
+                return;
+            };
             let req = String::from_utf8_lossy(&buf[..n]).to_string();
             let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
             let (status, body) = me.answer(&path);

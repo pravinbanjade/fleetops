@@ -70,7 +70,10 @@ async fn creating_a_swarm_environment_returns_the_key_once() {
     assert!(key.starts_with("fk_"));
     assert_eq!(e["key_generation"], 1);
     assert_eq!(e["secret_name"], "fleetops-agent-key");
-    assert_eq!(e["secret_command"], "docker secret create fleetops-agent-key -");
+    assert_eq!(
+        e["secret_command"],
+        "docker secret create fleetops-agent-key -"
+    );
     let yaml = e["outside"]["stack_yaml"].as_str().unwrap();
     assert!(yaml.contains("mode: global"), "{yaml}");
     assert!(yaml.contains("/var/lib/docker/swarm/certificates:/swarm-certs:ro"));
@@ -96,7 +99,10 @@ async fn inside_is_offered_only_with_a_generated_cert() {
     let admin = t.setup_admin().await;
     let e = create(&t, &admin).await.json["swarm_enrollment"].clone();
     assert!(e["inside"].is_null());
-    assert!(e["inside_unavailable"].as_str().unwrap().contains("--tls-bind"));
+    assert!(e["inside_unavailable"]
+        .as_str()
+        .unwrap()
+        .contains("--tls-bind"));
 
     let t = app_with(ApiConfig {
         agent_ca_pem: Some(CA.into()),
@@ -141,13 +147,30 @@ async fn rotate_names_a_new_secret_and_keeps_the_old_key_for_24h() {
     let now = fleetops_core::now_unix();
     let id = env_id(&t);
     let hash = fleetops_api::auth_token_hash;
-    assert!(t.store.swarm_by_key(&hash(&old), now).await.unwrap().is_some());
-    assert!(t.store.swarm_by_key(&hash(&old), now + 86_401).await.unwrap().is_none());
+    assert!(t
+        .store
+        .swarm_by_key(&hash(&old), now)
+        .await
+        .unwrap()
+        .is_some());
+    assert!(t
+        .store
+        .swarm_by_key(&hash(&old), now + 86_401)
+        .await
+        .unwrap()
+        .is_none());
     assert_eq!(
-        t.store.swarm_by_key(&hash(new), now).await.unwrap().map(|x| x.0),
+        t.store
+            .swarm_by_key(&hash(new), now)
+            .await
+            .unwrap()
+            .map(|x| x.0),
         Some(id)
     );
-    assert!(t.audit_actions().await.contains(&"agent.rotate".to_string()));
+    assert!(t
+        .audit_actions()
+        .await
+        .contains(&"agent.rotate".to_string()));
 }
 
 #[tokio::test]
@@ -191,7 +214,10 @@ async fn finish_rotation_revokes_sessions_on_the_old_key() {
         }
     }
     let id = env_id(&t);
-    eventually("old session gone", || t.state.agents.get_node(id, "n1").is_none()).await;
+    eventually("old session gone", || {
+        t.state.agents.get_node(id, "n1").is_none()
+    })
+    .await;
     assert!(t.state.agents.get_node(id, "n2").is_some());
     assert_eq!(
         TestAgent::connect(&format!("http://{}", t.serve().await), &old)
@@ -215,12 +241,20 @@ async fn retrust_clears_the_pin_and_drops_sessions() {
     let id = env_id(&t);
     assert!(t.store.get_swarm_cluster(id).await.unwrap().is_some());
     let r = t
-        .send(req("POST", "/api/v1/envs/prod/swarm/retrust", None, Some(&admin)))
+        .send(req(
+            "POST",
+            "/api/v1/envs/prod/swarm/retrust",
+            None,
+            Some(&admin),
+        ))
         .await;
     assert_eq!(r.status, 204, "{:?}", r.json);
     assert!(t.store.get_swarm_cluster(id).await.unwrap().is_none());
     eventually("dropped", || t.state.agents.nodes(id).is_empty()).await;
-    assert!(t.audit_actions().await.contains(&"swarm.retrust".to_string()));
+    assert!(t
+        .audit_actions()
+        .await
+        .contains(&"swarm.retrust".to_string()));
 }
 
 #[tokio::test]
@@ -229,7 +263,12 @@ async fn docker_routes_refuse_a_swarm_environment() {
     let admin = t.setup_admin().await;
     create(&t, &admin).await;
     let r = t
-        .send(req("GET", "/api/v1/envs/prod/containers", None, Some(&admin)))
+        .send(req(
+            "GET",
+            "/api/v1/envs/prod/containers",
+            None,
+            Some(&admin),
+        ))
         .await;
     assert_eq!(r.status, 409, "{:?}", r.json);
     assert!(r.json.to_string().contains("wrong environment kind"));
@@ -248,7 +287,12 @@ async fn agents_list_merges_nodes_without_agents() {
     let _m = join(&t, &key, &pki, &daemon, "n1", true).await;
     let _w = join(&t, &key, &pki, &daemon, "n2", false).await;
     let r = t
-        .send(req("GET", "/api/v1/envs/prod/swarm/agents", None, Some(&admin)))
+        .send(req(
+            "GET",
+            "/api/v1/envs/prod/swarm/agents",
+            None,
+            Some(&admin),
+        ))
         .await;
     assert_eq!(r.status, 200, "{:?}", r.json);
     let rows = r.json.as_array().unwrap();
@@ -279,12 +323,19 @@ async fn only_admins_rotate_or_retrust() {
         "/api/v1/envs/prod/swarm/rotate/finish",
         "/api/v1/envs/prod/swarm/retrust",
     ] {
-        let r = t.send(with_origin(req("POST", path, None, Some(&bob)))).await;
+        let r = t
+            .send(with_origin(req("POST", path, None, Some(&bob))))
+            .await;
         assert_eq!(r.status, 403, "{path}: {:?}", r.json);
     }
     // Operators may read the agents list.
     let r = t
-        .send(req("GET", "/api/v1/envs/prod/swarm/agents", None, Some(&bob)))
+        .send(req(
+            "GET",
+            "/api/v1/envs/prod/swarm/agents",
+            None,
+            Some(&bob),
+        ))
         .await;
     assert_eq!(r.status, 200, "{:?}", r.json);
 }
@@ -299,8 +350,83 @@ async fn a_swarm_environment_takes_no_url_or_kube_options() {
         json!({"name": "s3", "kind": "swarm-agent", "custom_resources": true}),
     ] {
         let r = t
-            .send(with_origin(req("POST", "/api/v1/envs", Some(body.clone()), Some(&admin))))
+            .send(with_origin(req(
+                "POST",
+                "/api/v1/envs",
+                Some(body.clone()),
+                Some(&admin),
+            )))
             .await;
         assert_eq!(r.status, 400, "{body}: {:?}", r.json);
     }
+}
+
+async fn rotate(t: &TestApp, admin: &Session) -> String {
+    let r = t
+        .send(with_origin(req(
+            "POST",
+            "/api/v1/envs/prod/swarm/rotate",
+            None,
+            Some(admin),
+        )))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    r.json["agent_key"].as_str().unwrap().to_string()
+}
+
+/// Reads control messages, answering pings, until a bye.
+async fn until_bye(a: &mut TestAgent) -> ByeReason {
+    loop {
+        match a.next().await {
+            Some(Msg::Ping { n }) => a.pong(n).await,
+            Some(Msg::Bye { reason }) => return reason,
+            other => panic!("{other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_second_rotation_revokes_sessions_on_the_first_key() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let first = create(&t, &admin).await.json["swarm_enrollment"]["agent_key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true)]);
+    let mut m = join(&t, &first, &pki, &daemon, "n1", true).await;
+    rotate(&t, &admin).await;
+    rotate(&t, &admin).await;
+    assert_eq!(until_bye(&mut m).await, ByeReason::Revoked);
+}
+
+#[tokio::test]
+async fn sessions_on_the_previous_key_end_when_its_grace_ends() {
+    let t = app_with(ApiConfig {
+        agent_ping_interval: std::time::Duration::from_millis(200),
+        ..ApiConfig::default()
+    })
+    .await;
+    let admin = t.setup_admin().await;
+    let old = create(&t, &admin).await.json["swarm_enrollment"]["agent_key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true)]);
+    let mut m = join(&t, &old, &pki, &daemon, "n1", true).await;
+    // A grace period that ends a second from now.
+    t.store
+        .rotate_swarm_key(
+            env_id(&t),
+            &fleetops_api::auth_token_hash("fk_next"),
+            fleetops_core::now_unix() + 1,
+        )
+        .await
+        .unwrap();
+    let reason = tokio::time::timeout(std::time::Duration::from_secs(10), until_bye(&mut m))
+        .await
+        .expect("ended within 10 s");
+    assert_eq!(reason, ByeReason::Revoked);
 }

@@ -6,12 +6,18 @@ use serde_json::Value;
 
 #[test]
 fn shipped_swarm_stack_matches_the_inside_variant() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../deploy/swarm/fleetops.yml");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../deploy/swarm/fleetops.yml"
+    );
     let text = std::fs::read_to_string(path).unwrap();
     let v: Value = serde_saphyr::from_str(&text).unwrap();
 
     let net = &v["networks"][INSIDE_NETWORK];
-    assert_eq!(net["name"], INSIDE_NETWORK, "not prefixed by the stack name");
+    assert_eq!(
+        net["name"], INSIDE_NETWORK,
+        "not prefixed by the stack name"
+    );
     assert_eq!(net["driver"], "overlay");
     assert_eq!(net["attachable"], true);
 

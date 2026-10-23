@@ -76,10 +76,11 @@ impl SwarmEnv {
     /// leads, so the answer is fresh.
     pub async fn managers(&self) -> Vec<String> {
         for node in self.connected_managers() {
-            let Some(c) = self.client(&node) else { continue };
+            let Some(c) = self.client(&node) else {
+                continue;
+            };
             if let Ok(Ok(nodes)) = tokio::time::timeout(STATUS_TIMEOUT, c.nodes()).await {
-                *self.leader.lock().unwrap() =
-                    nodes.into_iter().find(|n| n.leader).map(|n| n.id);
+                *self.leader.lock().unwrap() = nodes.into_iter().find(|n| n.leader).map(|n| n.id);
                 break;
             }
         }
@@ -125,10 +126,7 @@ impl Environment for SwarmEnv {
         };
         match tokio::time::timeout(STATUS_TIMEOUT, probe).await {
             Ok(Ok((version, info, nodes))) => {
-                let managers = nodes
-                    .iter()
-                    .filter(|n| n.role == NodeRole::Manager)
-                    .count() as u32;
+                let managers = nodes.iter().filter(|n| n.role == NodeRole::Manager).count() as u32;
                 EnvStatus::Up {
                     version: EnvVersion::Swarm(SwarmVersion {
                         engine: version.version,
@@ -224,7 +222,10 @@ mod tests {
         let env = SwarmEnv::new(5, "prod", agents);
         assert!(matches!(env.status().await, EnvStatus::Down { .. }));
         assert!(env.swarm().is_none());
-        assert!(env.node("w1").is_some(), "node calls still reach the worker");
+        assert!(
+            env.node("w1").is_some(),
+            "node calls still reach the worker"
+        );
     }
 
     #[tokio::test]

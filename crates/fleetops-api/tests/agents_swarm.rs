@@ -65,8 +65,24 @@ async fn a_manager_pins_the_cluster_and_comes_up() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
-    let (_a, reply) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
-    assert!(matches!(reply, Some(Msg::Welcome { agent_key: None, .. })), "{reply:?}");
+    let (_a, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    assert!(
+        matches!(
+            reply,
+            Some(Msg::Welcome {
+                agent_key: None,
+                ..
+            })
+        ),
+        "{reply:?}"
+    );
     eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
     let pinned = t.store.get_swarm_cluster(env_id).await.unwrap().unwrap();
     assert_eq!(pinned.cluster_id, "c1");
@@ -76,12 +92,18 @@ async fn a_manager_pins_the_cluster_and_comes_up() {
     assert!(agents[0].manager);
     // Audited just after the session is registered.
     for _ in 0..100 {
-        if t.audit_actions().await.contains(&"agent.connect".to_string()) {
+        if t.audit_actions()
+            .await
+            .contains(&"agent.connect".to_string())
+        {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert!(t.audit_actions().await.contains(&"agent.connect".to_string()));
+    assert!(t
+        .audit_actions()
+        .await
+        .contains(&"agent.connect".to_string()));
     let env = t.state.envs.get("prod").unwrap();
     assert!(matches!(
         env.status().await,
@@ -104,8 +126,22 @@ async fn a_worker_before_any_manager_is_told_not_yet() {
     assert_eq!(w.next().await, bye(ByeReason::NotYet));
     assert!(t.state.agents.nodes(env_id).is_empty());
 
-    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
-    let (_w, reply) = join(&base, &key, &daemon, claim(&pki, "n2", false), &pki.node("n2", false)).await;
+    let (_m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    let (_w, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n2", false),
+        &pki.node("n2", false),
+    )
+    .await;
     assert!(matches!(reply, Some(Msg::Welcome { .. })), "{reply:?}");
     eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
 }
@@ -119,7 +155,14 @@ async fn two_nodes_stay_connected() {
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
     let m_cert = pki.node("n1", true);
     let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &m_cert).await;
-    let (_w, _) = join(&base, &key, &daemon, claim(&pki, "n2", false), &pki.node("n2", false)).await;
+    let (_w, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n2", false),
+        &pki.node("n2", false),
+    )
+    .await;
     eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
     // The manager's agent restarts: only its own old session goes.
     let (_m2, reply) = join(&base, &key, &daemon, claim(&pki, "n1", true), &m_cert).await;
@@ -135,10 +178,24 @@ async fn a_removed_node_is_refused() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
-    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (_m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     daemon.remove("n2");
     // Its certificate is still valid; membership is what refuses it.
-    let (_w, reply) = join(&base, &key, &daemon, claim(&pki, "n2", false), &pki.node("n2", false)).await;
+    let (_w, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n2", false),
+        &pki.node("n2", false),
+    )
+    .await;
     assert_eq!(reply, bye(ByeReason::Incompatible));
     let reason = t.state.agents.node_offline_reason(env_id, "n2").unwrap();
     assert!(reason.contains("not a member of this swarm"), "{reason}");
@@ -152,12 +209,29 @@ async fn a_worker_claiming_manager_is_refused() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
-    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (_m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     // A worker's certificate cannot back a manager claim.
-    let (_w, reply) = join(&base, &key, &daemon, claim(&pki, "n2", true), &pki.node("n2", false)).await;
+    let (_w, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n2", true),
+        &pki.node("n2", false),
+    )
+    .await;
     assert_eq!(reply, bye(ByeReason::Incompatible));
     assert_eq!(t.state.agents.nodes(env_id).len(), 1);
-    assert!(t.audit_actions().await.contains(&"agent.reject".to_string()));
+    assert!(t
+        .audit_actions()
+        .await
+        .contains(&"agent.reject".to_string()));
 }
 
 #[tokio::test]
@@ -167,13 +241,64 @@ async fn a_proof_from_another_swarm_is_refused() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
-    let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (_m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     // Same ids, another CA.
     let rogue = SwarmPki::new("c1");
-    let (_w, reply) = join(&base, &key, &daemon, claim(&pki, "n2", false), &rogue.node("n2", false)).await;
+    let (_w, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n2", false),
+        &rogue.node("n2", false),
+    )
+    .await;
     assert_eq!(reply, bye(ByeReason::Incompatible));
-    let reason = t.state.agents.node_offline_reason(env_id, "n2").unwrap();
+    // Unproven: the reason is the environment's, not the claimed node's.
+    let reason = t.state.agents.offline_reason(env_id).unwrap();
     assert!(reason.contains("root CA"), "{reason}");
+}
+
+#[tokio::test]
+async fn a_failed_proof_writes_no_node_state() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    let (_m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    // A key holder claims manager n1 with a certificate that cannot back it.
+    let rogue = SwarmPki::new("c1");
+    let (_r, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &rogue.node("n1", true),
+    )
+    .await;
+    assert_eq!(reply, bye(ByeReason::Incompatible));
+    assert_eq!(t.state.agents.node_offline_reason(env_id, "n1"), None);
+    let rows = t.store.list_swarm_agents(env_id).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].last_error, None, "the real n1's row is untouched");
+    assert!(
+        t.state.agents.get_node(env_id, "n1").is_some(),
+        "the real n1 stays"
+    );
 }
 
 #[tokio::test]
@@ -207,7 +332,9 @@ async fn a_swarm_agent_on_a_docker_environment_is_refused() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true)]);
-    let mut a = TestAgent::connect_swarm(&base, &token, daemon).await.unwrap();
+    let mut a = TestAgent::connect_swarm(&base, &token, daemon)
+        .await
+        .unwrap();
     a.hello_swarm(claim(&pki, "n1", true)).await;
     assert_eq!(a.next().await, bye(ByeReason::Incompatible));
 }
@@ -228,9 +355,23 @@ async fn the_previous_key_connects_during_rotation_grace() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
-    let (_m, reply) = join(&base, &old, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let (_m, reply) = join(
+        &base,
+        &old,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
     assert!(matches!(reply, Some(Msg::Welcome { .. })), "{reply:?}");
-    let (_w, reply) = join(&base, &new, &daemon, claim(&pki, "n2", false), &pki.node("n2", false)).await;
+    let (_w, reply) = join(
+        &base,
+        &new,
+        &daemon,
+        claim(&pki, "n2", false),
+        &pki.node("n2", false),
+    )
+    .await;
     assert!(matches!(reply, Some(Msg::Welcome { .. })), "{reply:?}");
     eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
 }
@@ -258,6 +399,12 @@ async fn a_bad_signature_is_refused_and_audited() {
     .await;
     assert_eq!(a.next().await, bye(ByeReason::Incompatible));
     assert!(t.state.agents.nodes(env_id).is_empty());
-    assert!(t.store.get_swarm_cluster(env_id).await.unwrap().is_none(), "nothing pinned");
-    assert!(t.audit_actions().await.contains(&"agent.reject".to_string()));
+    assert!(
+        t.store.get_swarm_cluster(env_id).await.unwrap().is_none(),
+        "nothing pinned"
+    );
+    assert!(t
+        .audit_actions()
+        .await
+        .contains(&"agent.reject".to_string()));
 }

@@ -34,8 +34,13 @@ impl Pki {
         let mut p = CertificateParams::new(Vec::<String>::new()).unwrap();
         p.distinguished_name.push(DnType::CommonName, node);
         p.distinguished_name.push(DnType::OrganizationName, "c1");
-        let ou = if manager { "swarm-manager" } else { "swarm-worker" };
-        p.distinguished_name.push(DnType::OrganizationalUnitName, ou);
+        let ou = if manager {
+            "swarm-manager"
+        } else {
+            "swarm-worker"
+        };
+        p.distinguished_name
+            .push(DnType::OrganizationalUnitName, ou);
         let cert = p.signed_by(&key, &self.ca).unwrap().pem();
         let certs = dir.join(format!("certs-{node}"));
         std::fs::create_dir_all(&certs).unwrap();
@@ -75,14 +80,20 @@ fn fake_node(
             let root = root.clone();
             tokio::spawn(async move {
                 let mut buf = vec![0u8; 8192];
-                let Ok(n) = c.read(&mut buf).await else { return };
+                let Ok(n) = c.read(&mut buf).await else {
+                    return;
+                };
                 let req = String::from_utf8_lossy(&buf[..n]).to_string();
                 let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
                 let nodes = serde_json::json!([node_json("n1", true), node_json("n2", false)]);
                 let (status, body) = if path.contains("/info") {
-                    (200, serde_json::json!({"Swarm": {
+                    (
+                        200,
+                        serde_json::json!({"Swarm": {
                         "NodeID": node, "LocalNodeState": local_state,
-                        "ControlAvailable": manager, "Cluster": {"ID": "c1"}}}).to_string())
+                        "ControlAvailable": manager, "Cluster": {"ID": "c1"}}})
+                        .to_string(),
+                    )
                 } else if let Some(id) = path.split("/nodes/").nth(1) {
                     match nodes.as_array().unwrap().iter().find(|n| n["ID"] == id) {
                         Some(n) => (200, n.to_string()),
@@ -91,9 +102,16 @@ fn fake_node(
                 } else if path.contains("/nodes") {
                     (200, nodes.to_string())
                 } else if path.contains("/swarm") {
-                    (200, serde_json::json!({"ID": "c1", "TLSInfo": {"TrustRoot": root}}).to_string())
+                    (
+                        200,
+                        serde_json::json!({"ID": "c1", "TLSInfo": {"TrustRoot": root}}).to_string(),
+                    )
                 } else {
-                    (200, r#"{"Version":"27.3.1","ApiVersion":"1.47","Os":"linux","Arch":"x86_64"}"#.into())
+                    (
+                        200,
+                        r#"{"Version":"27.3.1","ApiVersion":"1.47","Os":"linux","Arch":"x86_64"}"#
+                            .into(),
+                    )
                 };
                 let resp = format!(
                     "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
@@ -125,7 +143,9 @@ async fn server(store: Store) -> Server {
     }));
     state.envs.load(&store).await.unwrap();
     let app = fleetops_api::app(state.clone(), axum::Router::new());
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move {
         axum::serve(
@@ -164,7 +184,12 @@ async fn swarm_env(store: &Store, dir: &std::path::Path) -> (i64, PathBuf) {
     (env.id, file)
 }
 
-fn config(base: &str, docker: &std::path::Path, key: &std::path::Path, certs: &std::path::Path) -> Config {
+fn config(
+    base: &str,
+    docker: &std::path::Path,
+    key: &std::path::Path,
+    certs: &std::path::Path,
+) -> Config {
     Config {
         server: base.into(),
         join_token: None,
@@ -192,7 +217,9 @@ async fn a_swarm_agent_proves_its_node_and_connects() {
     let srv = server(store.clone()).await;
     let docker = fake_node(dir.path(), "n1", true, "active", pki.root.clone());
     let certs = pki.node_certs(dir.path(), "n1", true);
-    tokio::spawn(fleetops_agent::run(config(&srv.base, &docker, &key, &certs)));
+    tokio::spawn(fleetops_agent::run(config(
+        &srv.base, &docker, &key, &certs,
+    )));
 
     eventually("registered", || srv.state.agents.nodes(env_id).len() == 1).await;
     let env = srv.state.envs.get("prod").unwrap();
@@ -203,7 +230,12 @@ async fn a_swarm_agent_proves_its_node_and_connects() {
         other => panic!("{other:?}"),
     }
     assert_eq!(
-        store.get_swarm_cluster(env_id).await.unwrap().unwrap().cluster_id,
+        store
+            .get_swarm_cluster(env_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .cluster_id,
         "c1"
     );
 }
@@ -239,13 +271,23 @@ async fn not_yet_backs_off_and_retries() {
     let srv = server(store.clone()).await;
     let worker = fake_node(dir.path(), "n2", false, "active", pki.root.clone());
     let worker_certs = pki.node_certs(dir.path(), "n2", false);
-    let w = tokio::spawn(fleetops_agent::run(config(&srv.base, &worker, &key, &worker_certs)));
+    let w = tokio::spawn(fleetops_agent::run(config(
+        &srv.base,
+        &worker,
+        &key,
+        &worker_certs,
+    )));
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(srv.state.agents.nodes(env_id).is_empty(), "no manager yet");
     assert!(!w.is_finished(), "the worker keeps retrying");
 
     let manager = fake_node(dir.path(), "n1", true, "active", pki.root.clone());
     let manager_certs = pki.node_certs(dir.path(), "n1", true);
-    tokio::spawn(fleetops_agent::run(config(&srv.base, &manager, &key, &manager_certs)));
+    tokio::spawn(fleetops_agent::run(config(
+        &srv.base,
+        &manager,
+        &key,
+        &manager_certs,
+    )));
     eventually("both nodes", || srv.state.agents.nodes(env_id).len() == 2).await;
 }

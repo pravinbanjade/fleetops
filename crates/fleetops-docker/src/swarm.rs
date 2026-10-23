@@ -11,10 +11,7 @@ fn summary(n: Node) -> NodeSummary {
     let spec = n.spec.unwrap_or_default();
     NodeSummary {
         id: n.id.unwrap_or_default(),
-        hostname: n
-            .description
-            .and_then(|d| d.hostname)
-            .unwrap_or_default(),
+        hostname: n.description.and_then(|d| d.hostname).unwrap_or_default(),
         role: match spec.role {
             Some(NodeSpecRoleEnum::MANAGER) => NodeRole::Manager,
             _ => NodeRole::Worker,
@@ -24,10 +21,7 @@ fn summary(n: Node) -> NodeSummary {
             .and_then(|s| s.state)
             .map(|s| s.to_string())
             .unwrap_or_else(|| "unknown".into()),
-        availability: spec
-            .availability
-            .map(|a| a.to_string())
-            .unwrap_or_default(),
+        availability: spec.availability.map(|a| a.to_string()).unwrap_or_default(),
         leader: n.manager_status.and_then(|m| m.leader).unwrap_or(false),
     }
 }

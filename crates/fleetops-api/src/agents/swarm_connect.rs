@@ -19,9 +19,12 @@ use tokio::sync::mpsc;
 /// How long the server waits on a swarm call during the handshake.
 const SWARM_CALL: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// Refuses the agent: says bye, remembers why (per node once the node is
-/// known), and audits it. `NotYet` is routine while a swarm starts, so it
-/// is neither audited nor stored as an error.
+/// Refuses the agent: says bye, remembers why, and audits it. The reason
+/// is kept per node only once the agent has `proven` it runs on that node;
+/// before that the node id is only a claim, so it goes on the environment.
+/// `NotYet` is routine while a swarm starts, so it is neither audited nor
+/// stored as an error.
+#[allow(clippy::too_many_arguments)]
 async fn refuse(
     s: &AppState,
     env: &EnvironmentRecord,
@@ -30,8 +33,14 @@ async fn refuse(
     info: &AgentInfo,
     reason: String,
     bye: ByeReason,
+    proven: bool,
 ) -> String {
-    let node = info.host.swarm.as_ref().map(|n| n.node_id.as_str());
+    let node = info
+        .host
+        .swarm
+        .as_ref()
+        .filter(|_| proven)
+        .map(|n| n.node_id.as_str());
     match node {
         Some(node) => s.agents.set_node_offline_reason(env.id, node, &reason),
         None => s.agents.set_offline_reason(env.id, &reason),
@@ -109,12 +118,32 @@ pub(super) async fn serve(
                 "agent serves {}; this environment expects swarm",
                 serves.as_str()
             );
-            return refuse(s, env, c, session, &info, reason, ByeReason::Incompatible).await;
+            return refuse(
+                s,
+                env,
+                c,
+                session,
+                &info,
+                reason,
+                ByeReason::Incompatible,
+                false,
+            )
+            .await;
         }
     };
     let Some(through) = s.swarm_through.clone() else {
         let reason = "this server cannot reach Swarm agents".to_string();
-        return refuse(s, env, c, session, &info, reason, ByeReason::Incompatible).await;
+        return refuse(
+            s,
+            env,
+            c,
+            session,
+            &info,
+            reason,
+            ByeReason::Incompatible,
+            false,
+        )
+        .await;
     };
     let pinned = match s.store.get_swarm_cluster(env.id).await {
         Ok(p) => p,
@@ -125,7 +154,7 @@ pub(super) async fn serve(
     // Workers wait for a manager: it pins the swarm and checks membership.
     if !claim.manager && (pinned.is_none() || checker.is_none()) {
         let reason = "waiting for a manager's agent to connect".to_string();
-        return refuse(s, env, c, session, &info, reason, ByeReason::NotYet).await;
+        return refuse(s, env, c, session, &info, reason, ByeReason::NotYet, false).await;
     }
     if let Some(p) = &pinned {
         if p.cluster_id != claim.cluster_id {
@@ -133,13 +162,30 @@ pub(super) async fn serve(
                 "this agent belongs to swarm {}; the environment is pinned to {}",
                 claim.cluster_id, p.cluster_id
             );
-            return refuse(s, env, c, session, &info, reason, ByeReason::Incompatible).await;
+            return refuse(
+                s,
+                env,
+                c,
+                session,
+                &info,
+                reason,
+                ByeReason::Incompatible,
+                false,
+            )
+            .await;
         }
     }
 
     // The proof.
     let nonce = generate_token();
-    if let Err(e) = write_msg(&mut c.tx, &Msg::Challenge { nonce: nonce.clone() }).await {
+    if let Err(e) = write_msg(
+        &mut c.tx,
+        &Msg::Challenge {
+            nonce: nonce.clone(),
+        },
+    )
+    .await
+    {
         return e.to_string();
     }
     let (chain, signature) = match tokio::time::timeout(HANDSHAKE, read_msg(&mut c.rx)).await {
@@ -162,17 +208,37 @@ pub(super) async fn serve(
                     "the node reports swarm {} but claims {}",
                     si.cluster_id, claim.cluster_id
                 );
-                return refuse(s, env, c, session, &info, reason, ByeReason::Incompatible).await;
+                return refuse(
+                    s,
+                    env,
+                    c,
+                    session,
+                    &info,
+                    reason,
+                    ByeReason::Incompatible,
+                    false,
+                )
+                .await;
             }
             Err(e) => {
                 let reason = format!("cannot read the swarm's root CA: {e}");
-                return refuse(s, env, c, session, &info, reason, ByeReason::NotYet).await;
+                return refuse(s, env, c, session, &info, reason, ByeReason::NotYet, false).await;
             }
         },
     };
     let msg = swarm_proof::proof_message(&nonce, &claim);
     if let Err(e) = swarm_proof::verify(&root, &chain, &claim, &msg, &signature, now_unix()) {
-        return refuse(s, env, c, session, &info, e.to_string(), ByeReason::Incompatible).await;
+        return refuse(
+            s,
+            env,
+            c,
+            session,
+            &info,
+            e.to_string(),
+            ByeReason::Incompatible,
+            false,
+        )
+        .await;
     }
     if pinned.is_none() {
         match s
@@ -183,7 +249,17 @@ pub(super) async fn serve(
             // Another manager pinned first; it must be the same swarm.
             Ok(p) if p.cluster_id != claim.cluster_id || p.trust_root != root => {
                 let reason = format!("the environment is pinned to swarm {}", p.cluster_id);
-                return refuse(s, env, c, session, &info, reason, ByeReason::Incompatible).await;
+                return refuse(
+                    s,
+                    env,
+                    c,
+                    session,
+                    &info,
+                    reason,
+                    ByeReason::Incompatible,
+                    true,
+                )
+                .await;
             }
             Ok(_) => audit(s, None, "swarm.pin", "environment", &env.name, "success").await,
             Err(e) => return e.to_string(),
@@ -204,15 +280,35 @@ pub(super) async fn serve(
                 NodeRole::Worker => "worker",
             };
             let reason = format!("node {} is a {role} in this swarm", claim.node_id);
-            return refuse(s, env, c, session, &info, reason, ByeReason::Incompatible).await;
+            return refuse(
+                s,
+                env,
+                c,
+                session,
+                &info,
+                reason,
+                ByeReason::Incompatible,
+                true,
+            )
+            .await;
         }
         Ok(None) => {
             let reason = format!("node {} is not a member of this swarm", claim.node_id);
-            return refuse(s, env, c, session, &info, reason, ByeReason::Incompatible).await;
+            return refuse(
+                s,
+                env,
+                c,
+                session,
+                &info,
+                reason,
+                ByeReason::Incompatible,
+                true,
+            )
+            .await;
         }
         Err(e) => {
             let reason = format!("cannot check swarm membership: {e}");
-            return refuse(s, env, c, session, &info, reason, ByeReason::NotYet).await;
+            return refuse(s, env, c, session, &info, reason, ByeReason::NotYet, true).await;
         }
     }
 
@@ -226,9 +322,14 @@ pub(super) async fn serve(
     }
     let node = claim.node_id.clone();
     let (bye_tx, mut bye_rx) = mpsc::channel(1);
-    let id = s
-        .agents
-        .insert_node(env.id, &node, &key_hash, session.clone(), info.clone(), bye_tx);
+    let id = s.agents.insert_node(
+        env.id,
+        &node,
+        &key_hash,
+        session.clone(),
+        info.clone(),
+        bye_tx,
+    );
     // As for Docker agents: a rotation or delete during the handshake found
     // no session to revoke.
     if s.store
@@ -260,12 +361,20 @@ pub(super) async fn serve(
     audit(s, None, "agent.connect", "environment", &target, "success").await;
     publish_status(s, env.id).await;
 
-    let reason = control_loop(s, env.id, c, session, &mut bye_rx).await;
+    let reason = control_loop(s, env.id, c, session, &mut bye_rx, Some(&key_hash)).await;
 
     s.agents.remove_node(env.id, &node, id, &reason);
     let _ = s.store.record_swarm_agent(env.id, &record(None)).await;
     if disconnect_audit_due(s, env.id, &node) {
-        audit(s, None, "agent.disconnect", "environment", &target, "success").await;
+        audit(
+            s,
+            None,
+            "agent.disconnect",
+            "environment",
+            &target,
+            "success",
+        )
+        .await;
     }
     reason
 }

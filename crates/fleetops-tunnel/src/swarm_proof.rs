@@ -10,7 +10,9 @@ use x509_parser::{certificate::X509Certificate, pem::Pem, time::ASN1Time};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProofError {
-    #[error("swarm autolock is on: this manager's node key is encrypted, so FleetOps cannot verify it")]
+    #[error(
+        "swarm autolock is on: this manager's node key is encrypted, so FleetOps cannot verify it"
+    )]
     Autolocked,
     #[error("unusable node key: {0}")]
     BadKey(String),
@@ -65,6 +67,26 @@ fn pems(pem: &str) -> Result<Vec<Pem>, ProofError> {
     Ok(certs)
 }
 
+/// Swarm's own CA signs node certificates directly; an external CA may
+/// add an intermediate or two.
+const MAX_CHAIN: usize = 4;
+
+/// A CA by basicConstraints, allowed to sign certificates by keyUsage when
+/// it has one.
+fn is_ca(cert: &X509Certificate) -> bool {
+    let ca = cert
+        .basic_constraints()
+        .ok()
+        .flatten()
+        .is_some_and(|b| b.value.ca);
+    let signs = match cert.key_usage() {
+        Ok(Some(ku)) => ku.value.key_cert_sign(),
+        Ok(None) => true,
+        Err(_) => false,
+    };
+    ca && signs
+}
+
 fn parse(p: &Pem) -> Result<X509Certificate<'_>, ProofError> {
     p.parse_x509()
         .map_err(|e| ProofError::BadChain(e.to_string()))
@@ -88,17 +110,49 @@ pub fn verify(
 ) -> Result<(), ProofError> {
     let roots = pems(root_pem)?;
     let chain = pems(chain_pem)?;
+    if chain.len() > MAX_CHAIN {
+        return Err(ProofError::BadChain(format!(
+            "{} certificates; at most {MAX_CHAIN}",
+            chain.len()
+        )));
+    }
     let root = parse(&roots[0])?;
     let certs: Vec<X509Certificate> = chain.iter().map(parse).collect::<Result<_, _>>()?;
+    let now =
+        ASN1Time::from_timestamp(now_unix).map_err(|e| ProofError::BadChain(e.to_string()))?;
 
-    // Each certificate is signed by the next; the last by the root.
+    // Each certificate is signed by the next, the last by the root, and
+    // every issuer must be a CA: otherwise a node could sign a certificate
+    // for any other node with its own node key.
     for (i, cert) in certs.iter().enumerate() {
         let issuer = certs.get(i + 1).unwrap_or(&root);
         cert.verify_signature(Some(issuer.public_key()))
             .map_err(|e| ProofError::BadChain(e.to_string()))?;
+        if cert.issuer().as_raw() != issuer.subject().as_raw() {
+            return Err(ProofError::BadChain(format!(
+                "certificate {i} names an issuer other than the certificate after it"
+            )));
+        }
+        if !is_ca(issuer) {
+            return Err(ProofError::BadChain(format!(
+                "certificate {i} is signed by a certificate that is not a CA"
+            )));
+        }
+        if i > 0 && !cert.validity().is_valid_at(now) {
+            return Err(ProofError::BadChain(format!(
+                "intermediate certificate {i} has expired or is not yet valid"
+            )));
+        }
     }
     let leaf = &certs[0];
-    let now = ASN1Time::from_timestamp(now_unix).map_err(|e| ProofError::BadChain(e.to_string()))?;
+    if leaf
+        .basic_constraints()
+        .ok()
+        .flatten()
+        .is_some_and(|b| b.value.ca)
+    {
+        return Err(ProofError::BadChain("the node certificate is a CA".into()));
+    }
     if !leaf.validity().is_valid_at(now) {
         return Err(ProofError::Expired);
     }

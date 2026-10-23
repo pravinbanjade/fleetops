@@ -209,3 +209,53 @@ fn signs_sec1_and_pkcs8_keys() {
         verify(&pki.root, &pki.chain, &c, &msg, &sig, NOW).unwrap();
     }
 }
+
+/// A worker signs a "manager" certificate with its own node key and sends
+/// it with its real certificate as the issuer.
+#[test]
+fn rejects_a_node_cert_used_as_an_issuer() {
+    let (ca_params, ca_key, root) = ca("swarm-ca");
+    let ca = Issuer::new(ca_params, ca_key);
+    let worker_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let worker_params = leaf_params("c1", "w1", "swarm-worker");
+    let worker_pem = worker_params.signed_by(&worker_key, &ca).unwrap().pem();
+    let forged_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let forged = leaf_params("c1", "n1", "swarm-manager")
+        .signed_by(&forged_key, &Issuer::new(worker_params, worker_key))
+        .unwrap()
+        .pem();
+    let pki = Pki {
+        root,
+        chain: format!("{forged}{worker_pem}"),
+        key: forged_key.serialize_pem(),
+    };
+    let c = claim(true);
+    let (msg, sig) = signed(&pki, &c);
+    assert!(matches!(
+        verify(&pki.root, &pki.chain, &c, &msg, &sig, NOW),
+        Err(ProofError::BadChain(_))
+    ));
+}
+
+#[test]
+fn rejects_a_ca_as_the_node_certificate() {
+    let (ca_params, ca_key, root) = ca("swarm-ca");
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let mut p = leaf_params("c1", "n1", "swarm-manager");
+    p.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    let chain = p
+        .signed_by(&key, &Issuer::new(ca_params, ca_key))
+        .unwrap()
+        .pem();
+    let pki = Pki {
+        root,
+        chain,
+        key: key.serialize_pem(),
+    };
+    let c = claim(true);
+    let (msg, sig) = signed(&pki, &c);
+    assert!(matches!(
+        verify(&pki.root, &pki.chain, &c, &msg, &sig, NOW),
+        Err(ProofError::BadChain(_))
+    ));
+}

@@ -150,11 +150,23 @@ pub async fn rotate(
     let _guard = s.envs.lock_mutations().await;
     let env = swarm_env(&s, &name).await?;
     let key = crate::agents::new_agent_key();
-    let generation = s
+    let (generation, dropped) = s
         .store
         .rotate_swarm_key(env.id, &hash_token(&key), now_unix() + SWARM_KEY_GRACE_SECS)
         .await?;
-    audit(&s, Some(cu.user.id), "agent.rotate", "environment", &env.name, "success").await;
+    // A rotation still pending: its old key is gone now.
+    if let Some(dropped) = dropped {
+        s.agents.revoke_tag(env.id, &dropped);
+    }
+    audit(
+        &s,
+        Some(cu.user.id),
+        "agent.rotate",
+        "environment",
+        &env.name,
+        "success",
+    )
+    .await;
     Ok(Json(swarm_manifest::enrollment(
         key,
         generation,
@@ -183,7 +195,15 @@ pub async fn finish_rotation(
     if let Some(prev) = s.store.finish_swarm_rotation(env.id).await? {
         s.agents.revoke_tag(env.id, &prev);
     }
-    audit(&s, Some(cu.user.id), "agent.rotate.finish", "environment", &env.name, "success").await;
+    audit(
+        &s,
+        Some(cu.user.id),
+        "agent.rotate.finish",
+        "environment",
+        &env.name,
+        "success",
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -206,6 +226,14 @@ pub async fn retrust(
     let env = swarm_env(&s, &name).await?;
     s.store.clear_swarm_cluster(env.id).await?;
     s.agents.revoke(env.id);
-    audit(&s, Some(cu.user.id), "swarm.retrust", "environment", &env.name, "success").await;
+    audit(
+        &s,
+        Some(cu.user.id),
+        "swarm.retrust",
+        "environment",
+        &env.name,
+        "success",
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }

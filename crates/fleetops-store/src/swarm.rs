@@ -101,14 +101,27 @@ impl Store {
     }
 
     /// Makes `new_hash` the key and keeps the old one until
-    /// `prev_expires_at`; returns the new key generation.
+    /// `prev_expires_at`. Returns the new key generation and the hash of
+    /// the key a rotation still pending had kept, which stops working now,
+    /// so its sessions can be revoked.
     pub async fn rotate_swarm_key(
         &self,
         env_id: i64,
         new_hash: &str,
         prev_expires_at: i64,
-    ) -> Result<i64> {
-        sqlx::query_scalar(
+    ) -> Result<(i64, Option<String>)> {
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
+        let dropped: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT prev_key_hash FROM agent_credentials WHERE environment_id = ?",
+        )
+        .bind(env_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(db_err)?;
+        let Some(dropped) = dropped else {
+            return Err(Error::NotFound(format!("agent environment {env_id}")));
+        };
+        let generation: i64 = sqlx::query_scalar(
             "UPDATE agent_credentials
              SET prev_key_hash = key_hash, prev_key_expires_at = ?,
                  key_hash = ?, key_generation = key_generation + 1
@@ -117,10 +130,11 @@ impl Store {
         .bind(prev_expires_at)
         .bind(new_hash)
         .bind(env_id)
-        .fetch_optional(&self.pool)
+        .fetch_one(&mut *tx)
         .await
-        .map_err(db_err)?
-        .ok_or_else(|| Error::NotFound(format!("agent environment {env_id}")))
+        .map_err(db_err)?;
+        tx.commit().await.map_err(db_err)?;
+        Ok((generation, dropped))
     }
 
     /// Ends the grace period now; returns the previous key's hash, if one

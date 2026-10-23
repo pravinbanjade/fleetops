@@ -65,10 +65,9 @@ impl Keys {
         match self {
             Keys::File(dir) => save_key(dir, key),
             Keys::Secret(s) => s.save(key).await,
-            Keys::ReadOnly(file) => Err(io::Error::other(format!(
-                "{} is read-only",
-                file.display()
-            ))),
+            Keys::ReadOnly(file) => {
+                Err(io::Error::other(format!("{} is read-only", file.display())))
+            }
         }
     }
 

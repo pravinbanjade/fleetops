@@ -16,7 +16,9 @@ pub const LOGIN_WINDOW: Duration = Duration::from_secs(300);
 
 /// Builds Swarm cluster calls that travel over one agent session.
 pub type SwarmThrough = Arc<
-    dyn Fn(fleetops_tunnel::Session) -> fleetops_core::Result<Arc<dyn fleetops_core::swarm::SwarmOps>>
+    dyn Fn(
+            fleetops_tunnel::Session,
+        ) -> fleetops_core::Result<Arc<dyn fleetops_core::swarm::SwarmOps>>
         + Send
         + Sync,
 >;
@@ -100,8 +102,7 @@ pub struct AppState {
     /// When each environment's last `agent.disconnect` was audited, so a
     /// flapping agent writes one row per five minutes.
     /// Keyed by environment and Swarm node id (`""` for other agents).
-    pub agent_disconnects:
-        Arc<std::sync::Mutex<std::collections::HashMap<(i64, String), Instant>>>,
+    pub agent_disconnects: Arc<std::sync::Mutex<std::collections::HashMap<(i64, String), Instant>>>,
     /// Swarm calls through one agent session: the handshake checks a node
     /// before it is registered. The server supplies fleetops-docker's; `None`
     /// refuses Swarm agents.

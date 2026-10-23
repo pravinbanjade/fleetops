@@ -108,11 +108,11 @@ async fn control(
     let mut reply = tokio::time::timeout(Duration::from_secs(10), read_msg(&mut rx)).await;
     // A Swarm agent proves its node before the welcome.
     if let (Some(node), Ok(Ok(Some(Msg::Challenge { nonce })))) = (swarm, &reply) {
-        let (cert_chain_pem, signature) =
-            match crate::swarm::prove(&node.certs, nonce, &node.claim) {
-                Ok(p) => p,
-                Err(e) => return Ended::Fatal(e.context("cannot prove this node's identity")),
-            };
+        let (cert_chain_pem, signature) = match crate::swarm::prove(&node.certs, nonce, &node.claim)
+        {
+            Ok(p) => p,
+            Err(e) => return Ended::Fatal(e.context("cannot prove this node's identity")),
+        };
         let proof = Msg::Proof {
             cert_chain_pem,
             signature,

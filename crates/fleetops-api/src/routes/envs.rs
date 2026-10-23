@@ -172,9 +172,7 @@ pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<
                 Some(n) => n > 0,
                 None => s.agents.get(env.id).is_some(),
             };
-            let agent = agents
-                .remove(&env.id)
-                .map(|a| AgentView::new(a, connected));
+            let agent = agents.remove(&env.id).map(|a| AgentView::new(a, connected));
             let kube = summaries
                 .get(&env.id)
                 .and_then(|v| serde_json::from_value(v.clone()).ok());
