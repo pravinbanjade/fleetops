@@ -1868,18 +1868,23 @@ name = "fleetops-tunnel"
 version = "0.6.0"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "bytes",
  "futures-util",
  "hyper",
  "hyper-util",
+ "p256 0.13.2",
+ "rcgen",
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
  "tower-service",
  "tracing",
+ "x509-parser",
  "yamux",
 ]
 

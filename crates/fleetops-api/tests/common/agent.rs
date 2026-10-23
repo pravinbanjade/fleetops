@@ -51,6 +51,7 @@ impl TestAgent {
             arch: "x86_64".into(),
             docker: "unix:///var/run/docker.sock".into(),
             serves,
+            swarm: None,
         };
         write_msg(
             &mut self.tx,

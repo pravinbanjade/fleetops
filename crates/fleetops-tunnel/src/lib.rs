@@ -8,6 +8,7 @@ pub mod forward;
 pub mod http;
 pub mod registry;
 pub mod session;
+pub mod swarm_proof;
 pub mod testing;
 pub mod ws;
 

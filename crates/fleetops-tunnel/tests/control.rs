@@ -71,3 +71,53 @@ fn a_hello_from_an_older_agent_serves_docker() {
     };
     assert_eq!(serde_json::to_value(&kube).unwrap()["serves"], "kube");
 }
+
+#[tokio::test]
+async fn challenge_and_proof_round_trip() {
+    use fleetops_tunnel::control::{Serves, SwarmClaim};
+    let (mut a, mut b) = duplex(16 * 1024);
+    let sent = vec![
+        Msg::Hello {
+            proto: PROTO_MAJOR,
+            agent_version: "0.7.0".into(),
+            host: HostInfo {
+                hostname: "mgr-1".into(),
+                serves: Serves::Swarm,
+                swarm: Some(SwarmClaim {
+                    node_id: "n1".into(),
+                    cluster_id: "c1".into(),
+                    manager: true,
+                }),
+                ..Default::default()
+            },
+        },
+        Msg::Challenge {
+            nonce: "ab".repeat(32),
+        },
+        Msg::Proof {
+            cert_chain_pem: "-----BEGIN CERTIFICATE-----".into(),
+            signature: "c2ln".into(),
+        },
+        Msg::Bye {
+            reason: ByeReason::NotYet,
+        },
+    ];
+    for m in &sent {
+        write_msg(&mut a, m).await.unwrap();
+    }
+    drop(a);
+    for m in &sent {
+        assert_eq!(&read_msg(&mut b).await.unwrap().unwrap(), m);
+    }
+}
+
+#[test]
+fn a_hello_without_swarm_omits_the_field() {
+    let hello = Msg::Hello {
+        proto: PROTO_MAJOR,
+        agent_version: "0.2.0".into(),
+        host: HostInfo::default(),
+    };
+    let v = serde_json::to_value(&hello).unwrap();
+    assert!(v["host"].get("swarm").is_none(), "{v}");
+}

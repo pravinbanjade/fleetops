@@ -36,6 +36,7 @@ fn host_info(docker: &str, serves: Serves) -> HostInfo {
         arch: std::env::consts::ARCH.into(),
         docker: docker.into(),
         serves,
+        swarm: None,
     }
 }
 
@@ -132,7 +133,7 @@ async fn control(session: &Session, host: HostInfo, keys: &Keys, silence: Durati
 
 fn bye(reason: ByeReason) -> Ended {
     match reason {
-        ByeReason::Shutdown => Ended::Dropped,
+        ByeReason::Shutdown | ByeReason::NotYet => Ended::Dropped,
         ByeReason::Revoked => Ended::Fatal(anyhow!(
             "the server revoked this agent's key; re-enroll with a new join command"
         )),
