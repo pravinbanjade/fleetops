@@ -63,6 +63,8 @@ pub struct ApiConfig {
     /// The certificate FleetOps generated for its HTTPS listener (PEM), when
     /// it serves one: Swarm agents inside the swarm trust it (swarm spec §3).
     pub agent_ca_pem: Option<String>,
+    /// How often a watched swarm's tasks are read (swarm spec §7).
+    pub swarm_task_poll: Duration,
 }
 
 impl Default for ApiConfig {
@@ -84,6 +86,7 @@ impl Default for ApiConfig {
             git_allow_http: false,
             git_limits: Default::default(),
             agent_ca_pem: None,
+            swarm_task_poll: Duration::from_secs(3),
         }
     }
 }

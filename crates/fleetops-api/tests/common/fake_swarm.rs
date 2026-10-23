@@ -118,6 +118,8 @@ pub struct FakeSwarm {
     pub requests: Mutex<Vec<String>>,
     /// While set, listing tasks fails.
     pub fail_tasks: std::sync::atomic::AtomicBool,
+    /// What listing tasks returns; starts as `tasks_json()`.
+    pub tasks: Mutex<Value>,
 }
 
 pub fn node_json(id: &str, manager: bool) -> Value {
@@ -141,6 +143,7 @@ impl FakeSwarm {
             nodes: Mutex::new(nodes.iter().map(|(n, m)| node_json(n, *m)).collect()),
             requests: Mutex::default(),
             fail_tasks: Default::default(),
+            tasks: Mutex::new(tasks_json()),
         })
     }
 
@@ -168,7 +171,7 @@ impl FakeSwarm {
         return (200, services_json().to_string());
     }
     if path.contains("/tasks") {
-        return (200, tasks_json().to_string());
+        return (200, self.tasks.lock().unwrap().to_string());
     }
     if path.contains("/secrets") {
         return (
@@ -340,7 +343,12 @@ pub struct Swarm {
 
 /// A trusted swarm "prod" with n1 (manager) and n2 (worker) connected.
 pub async fn connected_swarm() -> Swarm {
-    let t = super::app().await;
+    connected_swarm_with(fleetops_api::ApiConfig::default()).await
+}
+
+/// [`connected_swarm`] on a server with `config`.
+pub async fn connected_swarm_with(config: fleetops_api::ApiConfig) -> Swarm {
+    let t = super::app_with(config).await;
     let admin = t.setup_admin().await;
     let key = fleetops_api::agents::new_agent_key();
     let env_id = t

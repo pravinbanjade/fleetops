@@ -8,6 +8,7 @@ pub mod hub;
 pub mod protocol;
 pub mod queue;
 pub mod topics;
+pub mod swarm_tasks;
 pub mod watches;
 
 use crate::{

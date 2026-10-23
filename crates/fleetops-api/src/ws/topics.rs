@@ -668,3 +668,53 @@ async fn audit_exec(
         tracing::error!(error = %e, "failed to write audit log");
     }
 }
+
+/// A swarm's shared task feed: the snapshot, then changes.
+pub(super) async fn swarm_tasks(c: &Ctx<'_>, env: Option<String>) -> Result<Sub> {
+    let (s, cu, sub) = (c.s, c.cu, c.sub);
+    let (env, _) =
+        crate::routes::swarm::swarm_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?;
+    let (snapshot, mut rx) = s
+        .hubs
+        .swarm_tasks
+        .subscribe(env, s.config.swarm_task_poll);
+    let q = c.queue(Policy::Block);
+    let qq = q.clone();
+    let task = tokio::spawn(async move {
+        let send = |m: &crate::ws::swarm_tasks::FeedMsg| {
+            qq.push(
+                protocol::data(sub, serde_json::to_value(m).unwrap_or(Value::Null)),
+                1,
+            )
+        };
+        if let Some(m) = &snapshot {
+            if !send(m) {
+                return;
+            }
+        }
+        loop {
+            match rx.recv().await {
+                Ok(m) => {
+                    if !send(&m) {
+                        return;
+                    }
+                }
+                // Too far behind to patch: start over from the next read.
+                Err(RecvError::Lagged(_)) => {
+                    qq.finish(protocol::end(sub, "lagged", Value::Null));
+                    return;
+                }
+                Err(RecvError::Closed) => {
+                    qq.finish(protocol::end(sub, "closed", Value::Null));
+                    return;
+                }
+            }
+        }
+    });
+    Ok(Sub {
+        queue: q,
+        task: task.abort_handle(),
+        keep_on_access: false,
+        exec: None,
+    })
+}

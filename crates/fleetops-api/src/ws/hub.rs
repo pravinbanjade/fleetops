@@ -223,9 +223,9 @@ impl StatsHub {
 /// Identifies one live environment instance. Re-creating an environment
 /// under the same name, or changing its URL, builds a new instance, so its
 /// subscribers get a fresh Docker connection rather than the old one.
-type EnvKey = (i64, usize);
+pub(crate) type EnvKey = (i64, usize);
 
-fn key(env: &Arc<dyn Environment>) -> EnvKey {
+pub(crate) fn key(env: &Arc<dyn Environment>) -> EnvKey {
     (env.id(), Arc::as_ptr(env) as *const () as usize)
 }
 
@@ -239,6 +239,8 @@ pub struct Hubs {
     access: Mutex<Option<broadcast::Sender<i64>>>,
     /// Shared Kubernetes watches (spec §2.4).
     pub kube_watches: Arc<crate::ws::watches::Watches>,
+    /// Shared Swarm task feeds (swarm spec §7).
+    pub swarm_tasks: crate::ws::swarm_tasks::SwarmTasks,
 }
 
 impl Hubs {

@@ -1943,7 +1943,7 @@ export type TaskSummary = {
     version: number;
 };
 
-export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch';
+export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch' | 'swarm-tasks';
 
 export type TriggerResult = {
     /**

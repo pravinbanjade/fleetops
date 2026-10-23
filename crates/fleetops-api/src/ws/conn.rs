@@ -385,5 +385,6 @@ async fn start(
         Topic::Exec => topics::exec(&c, env, id, opts).await,
         Topic::Task => topics::task(&c, id).await,
         Topic::KubeWatch => topics::kube_watch(&c, env, id).await,
+        Topic::SwarmTasks => topics::swarm_tasks(&c, env).await,
     }
 }

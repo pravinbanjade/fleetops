@@ -19,6 +19,9 @@ pub enum Topic {
     /// or `r/<group>/<version>/<resource>/<namespace or ->` for a discovered kind.
     #[serde(rename = "kube-watch")]
     KubeWatch,
+    /// A swarm's tasks: a snapshot, then changes (swarm spec §7).
+    #[serde(rename = "swarm-tasks")]
+    SwarmTasks,
 }
 
 /// A text frame from the client. Exec stdin may also arrive as a binary

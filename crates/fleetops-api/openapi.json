@@ -13408,7 +13408,8 @@
           "logs",
           "exec",
           "task",
-          "kube-watch"
+          "kube-watch",
+          "swarm-tasks"
         ]
       },
       "TriggerResult": {
@@ -13865,6 +13866,10 @@
     {
       "name": "helm",
       "description": "Helm releases in Kubernetes environments"
+    },
+    {
+      "name": "swarm",
+      "description": "A Docker Swarm's nodes, services, tasks, secrets, configs and networks"
     },
     {
       "name": "tasks",
