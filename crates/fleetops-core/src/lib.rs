@@ -12,6 +12,7 @@ pub mod kube;
 pub mod perm;
 pub mod recreate;
 pub mod streams;
+pub mod swarm;
 pub mod user;
 
 pub use access::{EnvRole, Grant};

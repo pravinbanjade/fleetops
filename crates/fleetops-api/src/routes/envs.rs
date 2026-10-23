@@ -282,6 +282,9 @@ pub async fn create(
             };
             (rec, Some(enrollment), None)
         }
+        EnvKind::SwarmAgent => {
+            return Err(Error::Invalid("Swarm environments are not available yet".into()).into());
+        }
         EnvKind::KubeConfig => {
             let p = prepared.expect("checked above");
             let rec = s

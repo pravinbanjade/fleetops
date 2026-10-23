@@ -1,7 +1,9 @@
-//! Environments are the things fleetops manages: a local Docker socket, or a
-//! remote host behind an agent. Kubernetes adds a kind later.
+//! Environments are the things fleetops manages: a local Docker socket, a
+//! remote host behind an agent, a Kubernetes cluster, or a Docker Swarm
+//! reached through one agent per node.
 
 use crate::kube::{KubeOps, KubeVersion};
+use crate::swarm::{SwarmOps, SwarmVersion};
 use crate::{docker::DockerOps, docker::EngineVersion, Error, Result};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -18,6 +20,8 @@ pub enum EnvKind {
     KubeConfig,
     /// A cluster reached through an in-cluster `fleetops-agent --kube`.
     KubeAgent,
+    /// A Docker Swarm reached through `fleetops-agent --swarm`, one per node.
+    SwarmAgent,
 }
 
 impl EnvKind {
@@ -27,11 +31,24 @@ impl EnvKind {
             EnvKind::DockerAgent => "docker-agent",
             EnvKind::KubeConfig => "kube-config",
             EnvKind::KubeAgent => "kube-agent",
+            EnvKind::SwarmAgent => "swarm-agent",
         }
     }
 
     pub fn is_kube(self) -> bool {
         matches!(self, EnvKind::KubeConfig | EnvKind::KubeAgent)
+    }
+
+    pub fn is_swarm(self) -> bool {
+        matches!(self, EnvKind::SwarmAgent)
+    }
+
+    /// Reached through `fleetops-agent` rather than a URL or kubeconfig.
+    pub fn is_agent(self) -> bool {
+        matches!(
+            self,
+            EnvKind::DockerAgent | EnvKind::KubeAgent | EnvKind::SwarmAgent
+        )
     }
 }
 
@@ -44,6 +61,7 @@ impl FromStr for EnvKind {
             "docker-agent" => Ok(EnvKind::DockerAgent),
             "kube-config" => Ok(EnvKind::KubeConfig),
             "kube-agent" => Ok(EnvKind::KubeAgent),
+            "swarm-agent" => Ok(EnvKind::SwarmAgent),
             other => Err(Error::Invalid(format!(
                 "unknown environment kind '{other}'"
             ))),
@@ -57,6 +75,7 @@ impl FromStr for EnvKind {
 pub enum EnvVersion {
     Docker(EngineVersion),
     Kube(KubeVersion),
+    Swarm(SwarmVersion),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -78,6 +97,15 @@ pub trait Environment: Send + Sync {
     /// Kubernetes operations, for Kubernetes-kind environments that can be
     /// reached.
     fn kube(&self) -> Option<Arc<dyn KubeOps>> {
+        None
+    }
+    /// Cluster operations, for Swarm environments with a manager's agent
+    /// connected.
+    fn swarm(&self) -> Option<Arc<dyn SwarmOps>> {
+        None
+    }
+    /// One Swarm node's Docker engine, while that node's agent is connected.
+    fn node(&self, _node_id: &str) -> Option<Arc<dyn DockerOps>> {
         None
     }
     /// Resolves when this environment's reachability may have changed, so
