@@ -23,11 +23,13 @@ pub struct AgentRecord {
     pub access: Option<String>,
     /// kube-agent: the manifest also reads every kind (custom resources).
     pub custom_resources: bool,
+    /// swarm-agent: 1 at creation, plus one per rotation.
+    pub key_generation: i64,
 }
 
 const AGENT_COLS: &str = "environment_id, key_hash IS NOT NULL AS enrolled, join_expires_at, \
                           last_seen_at, agent_version, host_info, last_error, access, \
-                          custom_resources";
+                          custom_resources, key_generation";
 
 impl Store {
     pub async fn create_agent_environment(
