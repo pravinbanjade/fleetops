@@ -2,11 +2,11 @@
 
 **A fast, live web UI for Docker hosts and Kubernetes clusters, in one small binary.**
 
-FleetOps is a self-hosted container management platform. It is a single Rust binary with the web UI and a SQLite database built in. Run it next to a Docker or Podman socket and your team can manage containers, images, volumes, networks and Compose projects from the browser. Add more Docker hosts through a dial-out agent, and Kubernetes clusters by kubeconfig or an in-cluster agent, all in the same UI.
+FleetOps is a self-hosted container management platform. It is a single Rust binary with the web UI and a SQLite database built in. Run it next to a Docker or Podman socket and your team can manage containers, images, volumes, networks and Compose projects from the browser. Add more Docker hosts through a dial-out agent, Docker Swarms through an agent on every node, and Kubernetes clusters by kubeconfig or an in-cluster agent, all in the same UI.
 
 It is an open-source alternative to Portainer: roles, Kubernetes namespace scoping and an audit log are free under Apache-2.0, on any number of nodes. See [FleetOps vs Portainer](https://fleetops.pravinb.com.np/portainer-alternative) and the [FAQ](https://fleetops.pravinb.com.np/faq).
 
-[Quick start](#quick-start) · [Features](#features) · [Editions](#editions) · [Kubernetes guide](docs/kubernetes.md) · [Security](#security) · [Contributing](CONTRIBUTING.md)
+[Quick start](#quick-start) · [Features](#features) · [Editions](#editions) · [Kubernetes guide](docs/kubernetes.md) · [Swarm guide](docs/swarm.md) · [Security](#security) · [Contributing](CONTRIBUTING.md)
 
 ![The FleetOps dashboard for a Docker host: containers that need attention, running containers with live CPU and memory, disk usage and recent events](docs/images/dashboard.png)
 
@@ -86,6 +86,10 @@ When the socket isn't at `/var/run/docker.sock` (Colima, rootless Docker, Podman
 
 The agent dials out to the server, so the remote host opens no port and never exposes its Docker socket. It must reach the server over HTTPS (start the server with `--tls-bind`); plain HTTP is accepted only from the same machine. For a self-signed certificate, mount it into the agent and pass `--ca /ca.pem`. Agent flags: `--server`, `--join-token` (first start only), `--data` (default `/data`), `--docker` (default `unix:///var/run/docker.sock`), `--ca` and `--log`, each with a `FLEETOPS_AGENT_*` variable.
 
+### Add a Docker Swarm
+
+In **Admin → Environments → Add environment**, choose **Docker Swarm**. You get a key to store as a Docker secret and a stack file that runs the agent on every node; deploy it from a manager. Each node's agent dials out and proves which node it runs on with the node's Swarm certificate. The [Swarm guide](docs/swarm.md) covers running FleetOps inside the swarm and key rotation.
+
 ### Add a Kubernetes cluster
 
 In **Admin → Environments → Add environment**, either paste a kubeconfig, or choose the in-cluster agent and run the `kubectl apply` command it gives you. The agent dials out too, so the cluster needs no inbound access and the server never holds its credentials. The [Kubernetes guide](docs/kubernetes.md) covers supported kubeconfigs (including EKS, GKE and AKS), agent access levels and Helm.
@@ -113,7 +117,7 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 - **Helm:** releases with history, values and manifest; rollback and uninstall after a reviewed diff; install and upgrade from repositories and OCI registries.
 
 **Multi-host and teams**
-- Dial-out agents for remote Docker hosts and clusters, with key rotation and live online/offline state.
+- Dial-out agents for remote Docker hosts, Docker Swarms (one per node, each proving its node with the node's Swarm certificate) and clusters, with key rotation and live online/offline state.
 - Users with per-environment **viewer** or **operator** roles, optionally limited to some namespaces. See [Access](#access).
 - An audit log of every change, every terminal session and every refused action, kept for 90 days by default.
 
@@ -225,6 +229,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 ## Documentation
 
 - [Kubernetes and Helm](docs/kubernetes.md)
+- [Docker Swarm](docs/swarm.md): adding a swarm, FleetOps inside or outside it, key rotation
 - [Single sign-on](docs/sso.md): connecting Microsoft, Google, GitHub and OpenID Connect providers
 - [Development](docs/development.md): toolchain, make targets, tests and CI
 - [Architecture](docs/architecture.md): crates, request pipeline, agent tunnel, REST API and websocket protocol

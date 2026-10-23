@@ -1,0 +1,45 @@
+# FleetOps running inside a Docker Swarm (docs/swarm.md).
+#
+#   docker node update --label-add fleetops=true <a manager>
+#   docker stack deploy -c fleetops.yml fleetops
+#
+# Pin a release with FLEETOPS_VERSION=0.7.0 in the environment of the
+# deploy command. Agents in the swarm reach FleetOps at https://fleetops:9443
+# over the encrypted `fleetops` overlay network, trusting the certificate
+# FleetOps generates on first start.
+version: "3.8"
+services:
+  fleetops:
+    image: docker.io/fleets/fleetops:${FLEETOPS_VERSION:-latest}
+    # Swarm services cannot add the socket's group, and the socket is root
+    # on the host anyway.
+    user: "0"
+    environment:
+      FLEETOPS_TLS_BIND: 0.0.0.0:9443
+    ports:
+      - "9000:9000"
+      - "9443:9443"
+    volumes:
+      - fleetops-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - fleetops
+    deploy:
+      # One server: its SQLite database lives in the local volume, so it stays
+      # on the labelled manager.
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+          - node.labels.fleetops == true
+      restart_policy:
+        condition: any
+volumes:
+  fleetops-data:
+networks:
+  fleetops:
+    name: fleetops
+    driver: overlay
+    attachable: true
+    driver_opts:
+      encrypted: "true"
