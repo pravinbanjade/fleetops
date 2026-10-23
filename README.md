@@ -116,6 +116,11 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 - CPU and memory from metrics-server.
 - **Helm:** releases with history, values and manifest; rollback and uninstall after a reviewed diff; install and upgrade from repositories and OCI registries.
 
+**Docker Swarm**
+- Add a swarm with one stack file: an agent on every node, each proving its node with the node's Swarm certificate, and an admin confirming the swarm's root CA before any agent is trusted.
+- An overview that leads with what needs attention, live nodes, services, tasks and a task visualizer, service logs across tasks, and secrets, configs and networks with who uses them.
+- Every node opens as a Docker host of its own: containers, logs, terminals, images and volumes on that node.
+
 **Multi-host and teams**
 - Dial-out agents for remote Docker hosts, Docker Swarms (one per node, each proving its node with the node's Swarm certificate) and clusters, with key rotation and live online/offline state.
 - Users with per-environment **viewer** or **operator** roles, optionally limited to some namespaces. See [Access](#access).
