@@ -74,6 +74,13 @@ async fn a_manager_pins_the_cluster_and_comes_up() {
     let agents = t.store.list_swarm_agents(env_id).await.unwrap();
     assert_eq!(agents[0].node_id, "n1");
     assert!(agents[0].manager);
+    // Audited just after the session is registered.
+    for _ in 0..100 {
+        if t.audit_actions().await.contains(&"agent.connect".to_string()) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
     assert!(t.audit_actions().await.contains(&"agent.connect".to_string()));
     let env = t.state.envs.get("prod").unwrap();
     assert!(matches!(

@@ -31,7 +31,6 @@ async fn refuse(
     reason: String,
     bye: ByeReason,
 ) -> String {
-    say_bye(c, session, bye).await;
     let node = info.host.swarm.as_ref().map(|n| n.node_id.as_str());
     match node {
         Some(node) => s.agents.set_node_offline_reason(env.id, node, &reason),
@@ -70,6 +69,9 @@ async fn refuse(
         }
         audit(s, None, "agent.reject", "environment", &env.name, "failure").await;
     }
+    // Last: the agent hangs up on reading it, and whoever watches the
+    // environment should already see why.
+    say_bye(c, session, bye).await;
     reason
 }
 

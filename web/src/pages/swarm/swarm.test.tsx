@@ -98,7 +98,11 @@ describe("Swarm environments", () => {
     });
     const { screen } = renderApp("/admin/envs");
     const table = await screen.findByRole("table", { name: "Environments" });
-    const row = await waitFor(() => within(table).getAllByRole("row").find((r) => r.textContent?.includes("prod"))!);
+    const row = await waitFor(() => {
+      const r = within(table).getAllByRole("row").find((x) => x.textContent?.includes("prod"));
+      expect(r).toBeTruthy();
+      return r!;
+    });
     expect(row).toHaveTextContent("2 nodes connected");
     await userEvent.click(within(row).getByRole("button", { name: "Rotate key" }));
     const confirm = await screen.findByRole("dialog");

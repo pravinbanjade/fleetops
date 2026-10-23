@@ -238,8 +238,8 @@ mod tests {
         assert!(!Arc::ptr_eq(&a, &env.client("n1").unwrap()));
     }
 
-    #[test]
-    fn docker_is_none() {
+    #[tokio::test]
+    async fn docker_is_none() {
         let agents = Arc::new(Registry::default());
         add(&agents, "n1", true);
         let env = SwarmEnv::new(5, "prod", agents);
