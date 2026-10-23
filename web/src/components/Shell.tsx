@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { listSwarmAgents } from "@/api/gen/sdk.gen";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { Boxes, Check, ChevronRight, ChevronsUpDown, LogOut, Menu, Monitor, Moon, Network, RefreshCw, Settings2, Sun, X } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
@@ -17,11 +18,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { envFamily, envHue, envInitials, isKube, isSwarm, type EnvFamily } from "@/lib/env";
+import { envFamily, envHue, envInitials, findEnv, isKube, isSwarm, splitNodeView, type EnvFamily } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { CommandPalette, typing } from "./CommandPalette";
-import { ADMIN_NAV, KUBE_SIDEBAR, NAV, SWARM_NAV, isGroup, kubeGroupOf, navHref, navOf, type NavItem } from "./nav";
+import { ADMIN_NAV, KUBE_SIDEBAR, NAV, NODE_NAV, SWARM_NAV, isGroup, kubeGroupOf, navHref, navOf, type NavItem } from "./nav";
 import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
 import { CustomResourcesNav } from "@/pages/kube/generic/CustomResourcesNav";
@@ -37,7 +38,7 @@ export function Shell() {
   const drawer = drawerOn === pathname;
   const setDrawer = (open: boolean) => setDrawerOn(open ? pathname : null);
   const { data: envs = [] } = useQuery(envsQuery);
-  const family = envFamily(envs.find((e) => e.name === env)?.kind);
+  const family = envFamily(findEnv(envs, env)?.kind);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useGoKeys(env, family);
   return (
@@ -64,7 +65,7 @@ export function Shell() {
         <TopBar env={env} family={family} onMenu={() => setDrawer(true)} slotRef={setSlot} />
         <ConnectionBanner />
         <Slot name="shell.banner" />
-        {env && family === "docker" && <EnvLive env={env} />}
+        {env && (family === "docker" || family === "node") && <EnvLive env={env} />}
         <TopBarSlot.Provider value={slot}>
           <Outlet />
         </TopBarSlot.Provider>
@@ -93,7 +94,9 @@ function Rail({ env, family }: { env?: string; family: EnvFamily }) {
           {family === "kube" ? (
             <KubeSidebar env={env} />
           ) : (
-            (family === "swarm" ? SWARM_NAV : NAV).map((item) => <NavRow key={item.label} item={item} env={env} />)
+            (family === "swarm" ? SWARM_NAV : family === "node" ? NODE_NAV : NAV).map((item) => (
+              <NavRow key={item.label} item={item} env={env} />
+            ))
           )}
         </nav>
       )}
@@ -275,11 +278,15 @@ function TopBar({
         <Menu />
       </Button>
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
-        {env && (
-          <>
-            <EnvTag name={env} size="sm" />
-            <span className="truncate font-medium">{env}</span>
-          </>
+        {env && family === "node" ? (
+          <NodeBreadcrumb env={env} />
+        ) : (
+          env && (
+            <>
+              <EnvTag name={env} size="sm" />
+              <span className="truncate font-medium">{env}</span>
+            </>
+          )
         )}
         {env && section && (
           <span aria-hidden className="text-muted-foreground/60">
@@ -386,7 +393,7 @@ function EnvSwitcher({ current, family }: { current?: string; family: EnvFamily 
               {current ?? "Choose environment"}
             </span>
           </span>
-          {current && <EnvStatusBadge env={current} kube={family !== "docker"} />}
+          {current && <EnvStatusBadge env={current} kube={family === "kube" || family === "swarm"} />}
           <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>
@@ -481,5 +488,33 @@ function UserMenuFor({ user }: { user: { username: string; role: string } }) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** `swarm / Nodes / host` for a swarm node's view, each part a link back. */
+function NodeBreadcrumb({ env }: { env: string }) {
+  const view = splitNodeView(env)!;
+  const agents = useQuery({
+    queryKey: ["env", view.swarm, "swarm", "agents"],
+    queryFn: async () => (await listSwarmAgents({ path: { env: view.swarm }, throwOnError: true })).data,
+  });
+  const host = agents.data?.find((n) => n.node_id === view.node)?.hostname ?? view.node;
+  return (
+    <>
+      <EnvTag name={view.swarm} size="sm" />
+      <Link to="/envs/$env" params={{ env: view.swarm }} className="truncate font-medium hover:underline">
+        {view.swarm}
+      </Link>
+      <span aria-hidden className="text-muted-foreground/60">
+        /
+      </span>
+      <Link to="/envs/$env" params={{ env: view.swarm }} className="text-muted-foreground hover:underline">
+        Nodes
+      </Link>
+      <span aria-hidden className="text-muted-foreground/60">
+        /
+      </span>
+      <span className="truncate font-medium">{host}</span>
+    </>
   );
 }

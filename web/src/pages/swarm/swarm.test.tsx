@@ -2,7 +2,7 @@ import { waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { mockFetch } from "@/test/fetch";
-import { ENVS, loggedIn, renderApp } from "@/test/app";
+import { ADMIN, ENVS, loggedIn, renderApp } from "@/test/app";
 
 const SWARM = {
   id: 7,
@@ -114,5 +114,76 @@ describe("Swarm environments", () => {
     expect(within(shown).getByText(/fleetops:9443/)).toBeInTheDocument();
     await userEvent.click(within(shown).getByRole("button", { name: "Finish rotation" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path.endsWith("/swarm/rotate/finish"))).toBe(true));
+  });
+});
+
+const TRUST = {
+  cluster_id: "c1",
+  fingerprint: "AB:CD:EF",
+  pinned_by: "mgr-1",
+  pinned_at: 1,
+  confirmed: false,
+  check_command: "docker swarm ca | openssl x509 -noout -fingerprint -sha256",
+};
+
+/** The client encodes `@` in path parameters. */
+const NODE = "prod%40n2";
+const nodeRoutes = {
+  ...routes,
+  [`GET /api/v1/envs/${NODE}/status`]: { json: { state: "up", version: { kind: "docker", version: "27.3.1", api_version: "1.47", os: "linux", arch: "amd64" } } },
+  [`GET /api/v1/envs/${NODE}/containers`]: { json: [] },
+  [`GET /api/v1/envs/${NODE}/info`]: { json: {} },
+  [`GET /api/v1/envs/${NODE}/df`]: { json: {} },
+  [`GET /api/v1/envs/${NODE}/volumes`]: { json: [] },
+  [`GET /api/v1/envs/${NODE}/networks`]: { json: [] },
+  [`GET /api/v1/envs/${NODE}/events`]: { json: [] },
+};
+
+describe("Swarm trust and node views", () => {
+  it("a pending swarm shows the fingerprint and trusts on click", async () => {
+    const calls = mockFetch({
+      ...routes,
+      "GET /api/v1/envs/prod/swarm/trust": { json: TRUST },
+      "POST /api/v1/envs/prod/swarm/trust": { status: 204 },
+    });
+    const { screen } = renderApp("/envs/prod");
+    const card = await screen.findByRole("region", { name: "Trust this swarm" });
+    expect(card).toHaveTextContent("mgr-1 reports swarm c1");
+    expect(within(card).getByText(TRUST.check_command)).toBeInTheDocument();
+    expect(within(card).getByText("AB:CD:EF")).toBeInTheDocument();
+    await userEvent.click(within(card).getByRole("button", { name: "Trust this swarm" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "POST" && c.path.endsWith("/swarm/trust"))?.body).toEqual({ cluster_id: "c1", fingerprint: "AB:CD:EF" }),
+    );
+  });
+
+  it("non admins see waiting", async () => {
+    mockFetch({
+      ...routes,
+      "GET /api/v1/auth/me": { json: { ...ADMIN, user: { ...ADMIN.user, role: "user" } } },
+      "GET /api/v1/envs/prod/swarm/trust": { json: TRUST },
+    });
+    const { screen } = renderApp("/envs/prod");
+    expect(await screen.findByText("Waiting for an admin to trust this swarm.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Trust this swarm" })).not.toBeInTheDocument();
+  });
+
+  it("a node row links to its node view", async () => {
+    mockFetch(routes);
+    const { screen } = renderApp("/envs/prod");
+    const table = await screen.findByRole("table", { name: "Nodes" });
+    const link = await within(table).findByRole("link", { name: "wrk-1" });
+    expect(link).toHaveAttribute("href", "/envs/prod@n2");
+  });
+
+  it("docker pages are allowed on a node view, without stacks", async () => {
+    mockFetch(nodeRoutes);
+    const { screen, history } = renderApp("/envs/prod@n2/containers");
+    const nav = await screen.findByRole("navigation", { name: "Environment" });
+    expect(within(nav).getByRole("link", { name: /Containers/ })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: /Stacks/ })).not.toBeInTheDocument();
+    const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(crumbs).getByRole("link", { name: "prod" })).toHaveAttribute("href", "/envs/prod");
+    expect(history.location.pathname).toBe("/envs/prod@n2/containers");
   });
 });

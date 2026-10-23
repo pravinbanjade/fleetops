@@ -25,9 +25,28 @@ export function isSwarm(kind: string | undefined): boolean {
   return !!kind && kind.startsWith("swarm-");
 }
 
-/** Which set of pages an environment has. */
-export type EnvFamily = "docker" | "kube" | "swarm";
+/** Which set of pages an environment has; a swarm node's view has the Docker pages, less stacks. */
+export type EnvFamily = "docker" | "kube" | "swarm" | "node";
 
 export function envFamily(kind: string | undefined): EnvFamily {
-  return isKube(kind) ? "kube" : isSwarm(kind) ? "swarm" : "docker";
+  return kind === "swarm-node" ? "node" : isKube(kind) ? "kube" : isSwarm(kind) ? "swarm" : "docker";
+}
+
+/** `<swarm>@<node>`: a Swarm node's view. */
+export function splitNodeView(name: string | undefined): { swarm: string; node: string } | null {
+  const at = name?.indexOf("@") ?? -1;
+  if (!name || at <= 0 || at === name.length - 1) return null;
+  return { swarm: name.slice(0, at), node: name.slice(at + 1) };
+}
+
+/**
+ * The environment `name` names: listed ones as listed, and a swarm node's
+ * view as its swarm (access included) under its own name and kind.
+ */
+export function findEnv<T extends { name: string; kind: string }>(envs: readonly T[] | undefined, name: string | undefined): T | undefined {
+  const direct = envs?.find((e) => e.name === name);
+  if (direct) return direct;
+  const view = splitNodeView(name);
+  const swarm = view && envs?.find((e) => e.name === view.swarm && isSwarm(e.kind));
+  return swarm ? { ...swarm, name: name!, kind: "swarm-node" } : undefined;
 }

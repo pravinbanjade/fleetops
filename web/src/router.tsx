@@ -11,7 +11,7 @@ import {
 import { ApiError } from "@/api/client";
 import { authStatusQuery, envsQuery, meQuery } from "@/api/queries";
 import { Shell } from "@/components/Shell";
-import { envFamily } from "@/lib/env";
+import { envFamily, findEnv } from "@/lib/env";
 import { LiveProvider } from "@/live/LiveProvider";
 import { TaskProvider } from "@/live/TaskProvider";
 import { LoginPage, SSO_ERRORS, type SsoError } from "@/pages/LoginPage";
@@ -119,12 +119,14 @@ export const envRoute = createRoute({
   // Swarm under /swarm/): an old link or a changed kind lands on the home page.
   beforeLoad: async ({ context, params, location }) => {
     const envs = await context.queryClient.ensureQueryData(envsQuery);
-    const env = envs.find((e) => e.name === params.env);
+    const env = findEnv(envs, params.env);
     if (!env) return;
     const rest = location.pathname.slice(`/envs/${encodeURIComponent(params.env)}`.length);
     const home = rest === "" || rest === "/";
     const page = rest.startsWith("/k8s/") ? "kube" : rest.startsWith("/swarm/") ? "swarm" : "docker";
-    if (!home && page !== envFamily(env.kind)) throw redirect({ to: "/envs/$env", params: { env: params.env } });
+    const family = envFamily(env.kind);
+    const allowed = family === "node" ? "docker" : family;
+    if (!home && page !== allowed) throw redirect({ to: "/envs/$env", params: { env: params.env } });
   },
   component: Outlet,
 });

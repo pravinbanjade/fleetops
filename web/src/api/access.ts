@@ -1,3 +1,4 @@
+import { findEnv } from "@/lib/env";
 import { useQuery } from "@tanstack/react-query";
 import type { EnvRole } from "@/api/gen/types.gen";
 import { envsQuery } from "./queries";
@@ -56,5 +57,5 @@ export function accessOf(env: { access?: AccessField } | undefined): EnvAccess {
 
 export function useEnvAccess(env?: string): EnvAccess {
   const { data } = useQuery(envsQuery);
-  return accessOf(data?.find((e) => e.name === env));
+  return accessOf(findEnv(data, env));
 }

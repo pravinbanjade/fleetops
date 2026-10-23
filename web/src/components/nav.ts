@@ -43,6 +43,9 @@ export const NAV = [
   { to: "/envs/$env/stacks", label: "Stacks", icon: FileStack, key: "p" },
 ] as const;
 
+/** A swarm node's pages: a Docker host's, without stacks (they belong to the swarm). */
+export const NODE_NAV = NAV.filter((n) => n.label !== "Stacks");
+
 /** A Swarm environment's pages, in sidebar order. */
 export const SWARM_NAV = [{ to: "/envs/$env", label: "Nodes", icon: Server, key: "d" }] as const;
 
@@ -160,8 +163,8 @@ export function kubeGroupOf(item: KubeLink): KubeGroup | undefined {
 export type NavItem = (typeof NAV)[number] | (typeof SWARM_NAV)[number] | KubeLink;
 
 /** The flat page list of an environment family, for go-keys and breadcrumbs. */
-export function navOf(family: "docker" | "kube" | "swarm"): readonly NavItem[] {
-  return family === "kube" ? KUBE_NAV : family === "swarm" ? SWARM_NAV : NAV;
+export function navOf(family: "docker" | "kube" | "swarm" | "node"): readonly NavItem[] {
+  return family === "kube" ? KUBE_NAV : family === "swarm" ? SWARM_NAV : family === "node" ? NODE_NAV : NAV;
 }
 
 /** The href a nav item points at in `env`. */

@@ -2,24 +2,34 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { envStatusQuery } from "@/api/queries";
-import { finishSwarmRotation, listSwarmAgents, retrustSwarm } from "@/api/gen/sdk.gen";
+import { Link } from "@tanstack/react-router";
+import { finishSwarmRotation, getSwarmTrust, listSwarmAgents, retrustSwarm, trustSwarm } from "@/api/gen/sdk.gen";
+import { ApiError } from "@/api/client";
 import type { SwarmAgentView } from "@/api/gen/types.gen";
 import { useSession } from "@/auth/session";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
+import { errorMessage } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 
 const col = columns<SwarmAgentView>();
 
-const COLUMNS: Column<SwarmAgentView>[] = [
+/** The node table's columns; a node's name opens its node view. */
+const nodeColumns = (env: string): Column<SwarmAgentView>[] => [
   col.accessor((n) => n.hostname ?? n.node_id, {
     id: "node",
     header: "Node",
     cell: (c) => (
       <span className="grid">
-        <span className="font-medium">{c.getValue()}</span>
+        <Link
+          to="/envs/$env"
+          params={{ env: `${env}@${c.row.original.node_id}` }}
+          className="font-medium hover:underline"
+        >
+          {c.getValue()}
+        </Link>
         <code className="text-xs text-muted-foreground">{c.row.original.node_id}</code>
       </span>
     ),
@@ -47,6 +57,78 @@ const COLUMNS: Column<SwarmAgentView>[] = [
   }),
 ];
 
+/** Shown while a manager has proposed the swarm and no admin has trusted it yet. */
+function TrustCard({ env, admin }: { env: string; admin: boolean }) {
+  const qc = useQueryClient();
+  const trust = useQuery({
+    queryKey: ["env", env, "swarm", "trust"],
+    queryFn: async () => {
+      try {
+        return (await getSwarmTrust({ path: { env }, throwOnError: true })).data;
+      } catch (e) {
+        // Nothing proposed yet.
+        if (e instanceof ApiError && e.status === 404) return null;
+        throw e;
+      }
+    },
+  });
+  const [reject, setReject] = useState(false);
+  const t = trust.data;
+  if (!t || t.confirmed) return null;
+  if (!admin) {
+    return (
+      <p role="status" className="mb-3 rounded-md border p-3 text-sm">
+        Waiting for an admin to trust this swarm.
+      </p>
+    );
+  }
+  const refresh = () => qc.invalidateQueries({ queryKey: ["env", env, "swarm"] });
+  return (
+    <section aria-label="Trust this swarm" className="mb-4 grid gap-3 rounded-md border border-primary/40 bg-cord-soft p-4 text-sm">
+      <p>
+        <strong>{t.pinned_by ?? "A manager"}</strong> reports swarm <strong>{t.cluster_id}</strong>. Before FleetOps trusts its agents, check the
+        root CA on a manager:
+      </p>
+      <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-xs">{t.check_command}</pre>
+      <p>
+        It should print this fingerprint:
+        <code className="mt-1 block font-mono text-xs break-all">{t.fingerprint}</code>
+      </p>
+      <div className="flex gap-2">
+        <Button
+          onClick={async () => {
+            try {
+              await trustSwarm({ path: { env }, body: { cluster_id: t.cluster_id, fingerprint: t.fingerprint }, throwOnError: true });
+              toast.success("Swarm trusted; its agents are let in as they reconnect");
+            } catch (e) {
+              toast.error(errorMessage(e));
+            }
+            await refresh();
+          }}
+        >
+          Trust this swarm
+        </Button>
+        <Button variant="outline" onClick={() => setReject(true)}>
+          Reject
+        </Button>
+      </div>
+      {reject && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && setReject(false)}
+          title="Reject this swarm?"
+          description="FleetOps forgets it, and the next manager agent to connect proposes a swarm again."
+          confirmLabel="Reject"
+          onConfirm={async () => {
+            await retrustSwarm({ path: { env }, throwOnError: true });
+            await refresh();
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
 /** `/envs/$env` for a Swarm: every node and whether its agent is connected. */
 export function SwarmHome({ env }: { env: string }) {
   const qc = useQueryClient();
@@ -63,6 +145,7 @@ export function SwarmHome({ env }: { env: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.dataUpdatedAt]);
   const [confirm, setConfirm] = useState<"finish" | "retrust" | null>(null);
+  const [cols] = useState(() => nodeColumns(env));
   const rows = agents.data ?? [];
   const covered = rows.filter((n) => n.connected).length;
   const down = status.data?.state === "down" ? status.data.reason : null;
@@ -83,12 +166,13 @@ export function SwarmHome({ env }: { env: string }) {
         )
       }
     >
+      <TrustCard env={env} admin={user.role === "admin"} />
       {down && (
         <p role="status" className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
           {down}
         </p>
       )}
-      <DataTable label="Nodes" data={agents.data} error={agents.error} columns={COLUMNS} getRowId={(n) => n.node_id} empty="No nodes yet." />
+      <DataTable label="Nodes" data={agents.data} error={agents.error} columns={cols} getRowId={(n) => n.node_id} empty="No nodes yet." />
       {confirm === "finish" && (
         <ConfirmDialog
           open
