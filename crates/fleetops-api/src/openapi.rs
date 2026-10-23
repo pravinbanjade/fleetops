@@ -81,6 +81,7 @@ pub const API_BASE: &str = "/api/v1";
         (name = "stacks", description = "Compose stacks FleetOps authors, plans and deploys"),
         (name = "kubernetes", description = "Objects in Kubernetes environments"),
         (name = "helm", description = "Helm releases in Kubernetes environments"),
+        (name = "swarm", description = "A Docker Swarm's nodes, services, tasks, secrets, configs and networks"),
         (name = "tasks", description = "Background image pulls and builds"),
         (name = "websocket", description = "Real-time events, stats, logs and exec"),
     )

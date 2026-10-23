@@ -96,8 +96,13 @@ async fn run_events(
     idle.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     while tx.receiver_count() > 0 {
         let current = env.status().await;
-        let ops = match (&current, env.docker()) {
-            (EnvStatus::Up { .. }, Some(ops)) => ops,
+        // A Docker host's own stream, or a swarm's serving manager's.
+        let source = env
+            .docker()
+            .map(|d| d.events())
+            .or_else(|| env.swarm().map(|s| s.events()));
+        let mut events = match (&current, source) {
+            (EnvStatus::Up { .. }, Some(events)) => events,
             _ => {
                 if up {
                     up = false;
@@ -114,7 +119,6 @@ async fn run_events(
         }
         // Connected again: the next drop backs off from the start.
         backoff = initial_backoff;
-        let mut events = ops.events();
         loop {
             tokio::select! {
                 item = events.next() => match item {

@@ -124,6 +124,21 @@ fn log_target(id: &Option<String>) -> Result<LogTarget> {
     }
 }
 
+fn is_swarm_env(s: &AppState, env: &Option<String>) -> bool {
+    env.as_deref()
+        .and_then(|n| s.envs.get(n).ok())
+        .is_some_and(|e| e.kind().is_swarm())
+}
+
+/// Swarm's own event kinds, as cluster pages need them (swarm spec §7).
+fn is_swarm_event(e: &fleetops_core::streams::DockerEvent) -> bool {
+    match e.kind.as_str() {
+        "service" | "node" | "secret" | "config" => true,
+        "network" => e.attributes.get("scope").is_some_and(|s| s == "swarm"),
+        _ => false,
+    }
+}
+
 fn is_kube_env(s: &AppState, env: &Option<String>) -> bool {
     env.as_deref()
         .and_then(|n| s.envs.get(n).ok())
@@ -134,7 +149,16 @@ fn is_kube_env(s: &AppState, env: &Option<String>) -> bool {
 /// or name is `id`. One shared Docker stream per environment.
 pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, _) = docker_for(s, cu, &env, Need::AnyGrant).await?;
+    // A swarm's events come from its serving manager: only the cluster's
+    // own kinds go on, not that one node's containers.
+    let swarm_env = is_swarm_env(s, &env);
+    let env = if swarm_env {
+        let (env, _) = crate::routes::swarm::swarm_for(s, cu, required(&env, "env")?, Need::AnyGrant)
+            .await?;
+        env
+    } else {
+        docker_for(s, cu, &env, Need::AnyGrant).await?.0
+    };
     let q = c.queue(Policy::DropOldest);
     let mut rx = s
         .hubs
@@ -146,6 +170,9 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
         loop {
             match rx.recv().await {
                 Ok(e) => {
+                    if swarm_env && !is_swarm_event(&e) {
+                        continue;
+                    }
                     if filter
                         .as_ref()
                         .is_some_and(|f| *f != e.id && e.name.as_ref() != Some(f))
@@ -239,6 +266,15 @@ pub(super) async fn logs(
             LogTarget::Pod(ns, pod) => ops.logs(&ns, &pod, &o),
             LogTarget::Workload(k, ns, name) => ops.workload_logs(k, &ns, &name, &o),
         }
+    } else if is_swarm_env(s, &env) {
+        let id = required(&id, "id")?;
+        let service = id
+            .strip_prefix("service/")
+            .filter(|i| !i.is_empty())
+            .ok_or_else(|| Error::Invalid("a swarm logs id is service/<id>".into()))?;
+        let (_, ops) =
+            crate::routes::swarm::swarm_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?;
+        ops.service_logs(service, &o)
     } else {
         let (_, ops) = docker_for(s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
         ops.logs(required(&id, "id")?, &o)

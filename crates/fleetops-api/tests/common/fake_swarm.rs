@@ -114,6 +114,10 @@ pub struct FakeSwarm {
     pub cluster_id: String,
     pub trust_root: String,
     pub nodes: Mutex<Vec<Value>>,
+    /// Every request path, oldest first.
+    pub requests: Mutex<Vec<String>>,
+    /// While set, listing tasks fails.
+    pub fail_tasks: std::sync::atomic::AtomicBool,
 }
 
 pub fn node_json(id: &str, manager: bool) -> Value {
@@ -135,6 +139,8 @@ impl FakeSwarm {
             cluster_id: pki.cluster_id.clone(),
             trust_root: pki.root.clone(),
             nodes: Mutex::new(nodes.iter().map(|(n, m)| node_json(n, *m)).collect()),
+            requests: Mutex::default(),
+            fail_tasks: Default::default(),
         })
     }
 
@@ -243,6 +249,48 @@ impl FakeSwarm {
             };
             let req = String::from_utf8_lossy(&buf[..n]).to_string();
             let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
+            me.requests.lock().unwrap().push(path.clone());
+            if path.contains("/events") {
+                // A service update, then a container start, then silence.
+                let mut body = String::new();
+                for (kind, action, id) in [("service", "update", "s1"), ("container", "start", "c1")] {
+                    body.push_str(
+                        &json!({"Type": kind, "Action": action, "Actor": {"ID": id, "Attributes": {"name": id}},
+                                "time": 1_792_576_800, "timeNano": 1_792_576_800_000_000_000i64})
+                        .to_string(),
+                    );
+                    body.push('\n');
+                }
+                let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n";
+                let _ = s.write_all(head.as_bytes()).await;
+                let _ = s.write_all(body.as_bytes()).await;
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                return;
+            }
+            if path.contains("/logs") {
+                let line = b"hello from blog_web.1\n";
+                let mut body = vec![1u8, 0, 0, 0];
+                body.extend_from_slice(&(line.len() as u32).to_be_bytes());
+                body.extend_from_slice(line);
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.docker.multiplexed-stream\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
+                    body.len()
+                );
+                let _ = s.write_all(head.as_bytes()).await;
+                let _ = s.write_all(&body).await;
+                let _ = s.shutdown().await;
+                return;
+            }
+            if path.contains("/tasks") && me.fail_tasks.load(std::sync::atomic::Ordering::SeqCst) {
+                let body = r#"{"message":"manager unavailable"}"#;
+                let resp = format!(
+                    "HTTP/1.1 500 X\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = s.write_all(resp.as_bytes()).await;
+                let _ = s.shutdown().await;
+                return;
+            }
             let (status, body) = me.answer(&path);
             let resp = format!(
                 "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
@@ -283,6 +331,7 @@ pub async fn trust(t: &super::TestApp, env_id: i64, pki: &SwarmPki, daemon: &Fak
 }
 
 pub struct Swarm {
+    pub daemon: Arc<FakeSwarm>,
     pub t: super::TestApp,
     pub admin: super::Session,
     pub env_id: i64,
@@ -322,6 +371,7 @@ pub async fn connected_swarm() -> Swarm {
     }
     super::eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
     Swarm {
+        daemon,
         t,
         admin,
         env_id,
