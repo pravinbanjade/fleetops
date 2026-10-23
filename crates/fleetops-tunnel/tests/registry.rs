@@ -64,3 +64,68 @@ async fn waiters_wake_on_every_change() {
         .expect("no wake")
         .unwrap();
 }
+
+#[tokio::test]
+async fn a_node_reconnect_replaces_only_that_node() {
+    let r = Registry::default();
+    let (bye1, mut rx1) = mpsc::channel(1);
+    let first = r.insert_node(7, "n1", "k", session(), info("0.7.0"), bye1);
+    let (bye2, mut rx2) = mpsc::channel(1);
+    r.insert_node(7, "n2", "k", session(), info("0.7.0"), bye2);
+    let (bye3, _rx3) = mpsc::channel(1);
+    let again = r.insert_node(7, "n1", "k", session(), info("0.7.1"), bye3);
+    assert_eq!(rx1.recv().await, Some(ByeReason::Replaced));
+    assert!(rx2.try_recv().is_err(), "n2 untouched");
+    let nodes = r.nodes(7);
+    assert_eq!(
+        nodes.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
+        ["n1", "n2"]
+    );
+    assert_eq!(r.get_node(7, "n1").unwrap().id, again);
+    // The replaced session's cleanup leaves its successor alone.
+    assert!(!r.remove_node(7, "n1", first, "dropped"));
+    assert!(r.remove_node(7, "n1", again, "connection lost"));
+    assert_eq!(
+        r.node_offline_reason(7, "n1").as_deref(),
+        Some("connection lost")
+    );
+    assert_eq!(r.connected(), 1);
+}
+
+#[tokio::test]
+async fn revoke_says_bye_to_every_node() {
+    let r = Registry::default();
+    let (b1, mut rx1) = mpsc::channel(1);
+    let (b2, mut rx2) = mpsc::channel(1);
+    r.insert_node(4, "n1", "k", session(), info("0.7.0"), b1);
+    r.insert_node(4, "n2", "k", session(), info("0.7.0"), b2);
+    r.revoke(4);
+    assert_eq!(rx1.recv().await, Some(ByeReason::Revoked));
+    assert_eq!(rx2.recv().await, Some(ByeReason::Revoked));
+}
+
+#[tokio::test]
+async fn revoke_tag_spares_sessions_on_the_new_key() {
+    let r = Registry::default();
+    let (b1, mut rx1) = mpsc::channel(1);
+    let (b2, mut rx2) = mpsc::channel(1);
+    r.insert_node(4, "n1", "old", session(), info("0.7.0"), b1);
+    r.insert_node(4, "n2", "new", session(), info("0.7.0"), b2);
+    r.revoke_tag(4, "old");
+    assert_eq!(rx1.recv().await, Some(ByeReason::Revoked));
+    assert!(rx2.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn get_ignores_swarm_nodes() {
+    let r = Registry::default();
+    let (b, _rx) = mpsc::channel(1);
+    r.insert_node(7, "n1", "k", session(), info("0.7.0"), b);
+    assert!(r.get(7).is_none());
+    r.set_node_offline_reason(7, "n2", "not a member");
+    assert_eq!(r.offline_reason(7), None);
+    assert_eq!(
+        r.node_offline_reason(7, "n2").as_deref(),
+        Some("not a member")
+    );
+}
