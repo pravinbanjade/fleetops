@@ -192,3 +192,17 @@ pub fn verify(
     let sig = Signature::from_der(&der).map_err(|_| ProofError::BadSignature)?;
     key.verify(msg, &sig).map_err(|_| ProofError::BadSignature)
 }
+
+/// The SHA-256 fingerprint of the first certificate in `root_pem`, as
+/// `openssl x509 -noout -fingerprint -sha256` prints it: uppercase hex
+/// bytes joined by colons. Admins compare it with `docker swarm ca`.
+pub fn fingerprint(root_pem: &str) -> Result<String, ProofError> {
+    use sha2::{Digest, Sha256};
+    let roots = pems(root_pem)?;
+    let digest = Sha256::digest(&roots[0].contents);
+    Ok(digest
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(":"))
+}

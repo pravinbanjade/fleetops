@@ -77,6 +77,7 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(swarm_agents::rotate))
         .routes(routes!(swarm_agents::finish_rotation))
         .routes(routes!(swarm_agents::retrust))
+        .routes(routes!(swarm_agents::trust, swarm_agents::trust_swarm))
         .routes(routes!(envs::kube_contexts))
         .routes(routes!(system::info))
         .routes(routes!(system::disk_usage))

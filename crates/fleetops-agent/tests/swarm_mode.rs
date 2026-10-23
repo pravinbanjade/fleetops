@@ -168,6 +168,19 @@ async fn eventually(what: &str, mut f: impl FnMut() -> bool) {
     panic!("timed out waiting for {what}");
 }
 
+/// Pins and confirms the swarm as an admin would.
+async fn trust(store: &Store, env_id: i64, pki: &Pki) {
+    let now = fleetops_core::now_unix();
+    store
+        .pin_swarm_cluster(env_id, "c1", &pki.root, "n1", "host-n1", now)
+        .await
+        .unwrap();
+    assert!(store
+        .confirm_swarm_cluster(env_id, "c1", &pki.root, &["n1".to_string()], now)
+        .await
+        .unwrap());
+}
+
 /// A swarm environment and its key, written where `--key-file` reads it.
 async fn swarm_env(store: &Store, dir: &std::path::Path) -> (i64, PathBuf) {
     let key = fleetops_api::agents::new_agent_key();
@@ -214,6 +227,7 @@ async fn a_swarm_agent_proves_its_node_and_connects() {
     let pki = Pki::new();
     let store = Store::in_memory().await.unwrap();
     let (env_id, key) = swarm_env(&store, dir.path()).await;
+    trust(&store, env_id, &pki).await;
     let srv = server(store.clone()).await;
     let docker = fake_node(dir.path(), "n1", true, "active", pki.root.clone());
     let certs = pki.node_certs(dir.path(), "n1", true);
@@ -268,6 +282,7 @@ async fn not_yet_backs_off_and_retries() {
     let pki = Pki::new();
     let store = Store::in_memory().await.unwrap();
     let (env_id, key) = swarm_env(&store, dir.path()).await;
+    trust(&store, env_id, &pki).await;
     let srv = server(store.clone()).await;
     let worker = fake_node(dir.path(), "n2", false, "active", pki.root.clone());
     let worker_certs = pki.node_certs(dir.path(), "n2", false);

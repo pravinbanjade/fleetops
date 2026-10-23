@@ -237,3 +237,114 @@ pub async fn retrust(
     .await;
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// What an admin checks before trusting a swarm (swarm spec §2).
+pub const CHECK_COMMAND: &str = "docker swarm ca | openssl x509 -noout -fingerprint -sha256";
+
+/// The swarm a Swarm environment is pinned to, trusted or pending.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SwarmTrust {
+    pub cluster_id: String,
+    /// SHA-256 of the root CA, as `check_command` prints it.
+    pub fingerprint: String,
+    /// The hostname of the manager that proposed it.
+    pub pinned_by: Option<String>,
+    pub pinned_at: i64,
+    pub confirmed: bool,
+    /// Run on a manager to see the swarm's real fingerprint.
+    pub check_command: String,
+}
+
+/// What the admin was shown and trusts.
+#[derive(Debug, serde::Deserialize, ToSchema)]
+pub struct TrustSwarm {
+    pub cluster_id: String,
+    pub fingerprint: String,
+}
+
+#[utoipa::path(
+    get,
+    path = "/envs/{env}/swarm/trust",
+    operation_id = "getSwarmTrust",
+    tag = "environments",
+    summary = "The swarm a Swarm environment is pinned to, and whether an admin trusts it",
+    params(EnvParam),
+    responses(
+        (status = 200, description = "The pinned swarm", body = SwarmTrust),
+        (status = 404, description = "No manager has proposed a swarm yet", body = crate::error::ErrorBody)
+    )
+)]
+pub async fn trust(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(name): ApiPath<String>,
+) -> ApiResult<Json<SwarmTrust>> {
+    let (env, _) = crate::authz::env_access(&s, &cu, &name, Need::AnyGrant).await?;
+    if !env.kind().is_swarm() {
+        return Err(wrong_kind(&name, env.kind()).into());
+    }
+    let p = s
+        .store
+        .get_swarm_cluster(env.id())
+        .await?
+        .ok_or_else(|| Error::NotFound(format!("no swarm is pinned to '{name}' yet")))?;
+    Ok(Json(SwarmTrust {
+        fingerprint: fleetops_tunnel::swarm_proof::fingerprint(&p.trust_root)
+            .map_err(|e| Error::Internal(e.to_string()))?,
+        cluster_id: p.cluster_id,
+        pinned_by: p.pinned_by,
+        pinned_at: p.pinned_at,
+        confirmed: p.confirmed_at.is_some(),
+        check_command: CHECK_COMMAND.into(),
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/envs/{env}/swarm/trust",
+    operation_id = "trustSwarm",
+    tag = "environments",
+    summary = "Trust the swarm a manager proposed, after checking its root CA fingerprint",
+    params(EnvParam),
+    request_body = TrustSwarm,
+    responses(
+        (status = 204, description = "Trusted; its agents are let in as they reconnect"),
+        (status = 409, description = "The pinned swarm is not the one shown", body = crate::error::ErrorBody)
+    )
+)]
+pub async fn trust_swarm(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(name): ApiPath<String>,
+    crate::extract::ApiJson(body): crate::extract::ApiJson<TrustSwarm>,
+) -> ApiResult<StatusCode> {
+    require_admin(&cu.user)?;
+    let _guard = s.envs.lock_mutations().await;
+    let env = swarm_env(&s, &name).await?;
+    let stale = || Error::Conflict("the swarm's pin changed; reload and check again".into());
+    let p = s.store.get_swarm_cluster(env.id).await?.ok_or_else(stale)?;
+    let fp = fleetops_tunnel::swarm_proof::fingerprint(&p.trust_root)
+        .map_err(|e| Error::Internal(e.to_string()))?;
+    if p.cluster_id != body.cluster_id || fp != body.fingerprint {
+        return Err(stale().into());
+    }
+    // The managers are learnt from the first manager that registers.
+    if !s
+        .store
+        .confirm_swarm_cluster(env.id, &p.cluster_id, &p.trust_root, &[], now_unix())
+        .await?
+    {
+        return Err(stale().into());
+    }
+    crate::routes::audit_detail(
+        &s,
+        Some(cu.user.id),
+        "swarm.trust",
+        "environment",
+        &env.name,
+        "success",
+        Some(serde_json::json!({"cluster_id": p.cluster_id, "fingerprint": fp})),
+    )
+    .await;
+    Ok(StatusCode::NO_CONTENT)
+}

@@ -1,5 +1,5 @@
 use fleetops_tunnel::control::SwarmClaim;
-use fleetops_tunnel::swarm_proof::{is_encrypted_key, proof_message, sign, verify, ProofError};
+use fleetops_tunnel::swarm_proof::{fingerprint, is_encrypted_key, proof_message, sign, verify, ProofError};
 use rcgen::{
     BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair, PKCS_ECDSA_P256_SHA256,
 };
@@ -258,4 +258,18 @@ fn rejects_a_ca_as_the_node_certificate() {
         verify(&pki.root, &pki.chain, &c, &msg, &sig, NOW),
         Err(ProofError::BadChain(_))
     ));
+}
+
+#[test]
+fn fingerprint_matches_openssl_format() {
+    use sha2::{Digest, Sha256};
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let mut p = CertificateParams::new(Vec::<String>::new()).unwrap();
+    p.distinguished_name.push(DnType::CommonName, "swarm-ca");
+    let cert = p.self_signed(&key).unwrap();
+    let want: Vec<String> = Sha256::digest(cert.der())
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect();
+    assert_eq!(fingerprint(&cert.pem()).unwrap(), want.join(":"));
 }

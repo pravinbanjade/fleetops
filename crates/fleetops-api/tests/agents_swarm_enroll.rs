@@ -2,7 +2,7 @@ mod common;
 
 use common::{
     agent::TestAgent,
-    fake_swarm::{FakeSwarm, SwarmPki},
+    fake_swarm::{trust, FakeSwarm, SwarmPki},
     *,
 };
 use fleetops_api::ApiConfig;
@@ -183,6 +183,7 @@ async fn finish_rotation_revokes_sessions_on_the_old_key() {
         .to_string();
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id(&t), &pki, &daemon).await;
     let mut m = join(&t, &old, &pki, &daemon, "n1", true).await;
     let r = t
         .send(with_origin(req(
@@ -237,6 +238,7 @@ async fn retrust_clears_the_pin_and_drops_sessions() {
         .to_string();
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true)]);
+    trust(&t, env_id(&t), &pki, &daemon).await;
     let _m = join(&t, &key, &pki, &daemon, "n1", true).await;
     let id = env_id(&t);
     assert!(t.store.get_swarm_cluster(id).await.unwrap().is_some());
@@ -284,6 +286,7 @@ async fn agents_list_merges_nodes_without_agents() {
         .to_string();
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false), ("n3", false)]);
+    trust(&t, env_id(&t), &pki, &daemon).await;
     let _m = join(&t, &key, &pki, &daemon, "n1", true).await;
     let _w = join(&t, &key, &pki, &daemon, "n2", false).await;
     let r = t
@@ -395,6 +398,7 @@ async fn a_second_rotation_revokes_sessions_on_the_first_key() {
         .to_string();
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true)]);
+    trust(&t, env_id(&t), &pki, &daemon).await;
     let mut m = join(&t, &first, &pki, &daemon, "n1", true).await;
     rotate(&t, &admin).await;
     rotate(&t, &admin).await;
@@ -415,6 +419,7 @@ async fn sessions_on_the_previous_key_end_when_its_grace_ends() {
         .to_string();
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true)]);
+    trust(&t, env_id(&t), &pki, &daemon).await;
     let mut m = join(&t, &old, &pki, &daemon, "n1", true).await;
     // A grace period that ends a second from now.
     t.store

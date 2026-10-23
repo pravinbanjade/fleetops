@@ -2,7 +2,7 @@ mod common;
 
 use common::{
     agent::TestAgent,
-    fake_swarm::{FakeSwarm, NodeCert, SwarmPki},
+    fake_swarm::{trust, FakeSwarm, NodeCert, SwarmPki},
     *,
 };
 use fleetops_tunnel::control::{ByeReason, Msg, SwarmClaim, PROTO_MAJOR};
@@ -59,56 +59,141 @@ fn bye(reason: ByeReason) -> Option<Msg> {
 }
 
 #[tokio::test]
-async fn a_manager_pins_the_cluster_and_comes_up() {
+async fn a_pending_swarm_registers_no_agent() {
     let t = app().await;
     let (env_id, key) = swarm_env(&t).await;
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
-    let (_a, reply) = join(
-        &base,
-        &key,
-        &daemon,
-        claim(&pki, "n1", true),
-        &pki.node("n1", true),
-    )
-    .await;
-    assert!(
-        matches!(
-            reply,
-            Some(Msg::Welcome {
-                agent_key: None,
-                ..
-            })
-        ),
-        "{reply:?}"
-    );
-    eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
+    let (_a, reply) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    assert_eq!(reply, bye(ByeReason::NotYet));
+    assert!(t.state.agents.nodes(env_id).is_empty());
     let pinned = t.store.get_swarm_cluster(env_id).await.unwrap().unwrap();
-    assert_eq!(pinned.cluster_id, "c1");
+    assert_eq!(pinned.confirmed_at, None);
     assert_eq!(pinned.trust_root, pki.root);
-    let agents = t.store.list_swarm_agents(env_id).await.unwrap();
-    assert_eq!(agents[0].node_id, "n1");
-    assert!(agents[0].manager);
-    // Audited just after the session is registered.
+    let fp = fleetops_tunnel::swarm_proof::fingerprint(&pki.root).unwrap();
+    let reason = t.state.agents.node_offline_reason(env_id, "n1").unwrap();
+    assert_eq!(
+        reason,
+        format!("waiting for an admin to trust swarm c1 (root CA {fp})")
+    );
+    assert!(t.audit_actions().await.contains(&"swarm.pin".to_string()));
+}
+
+#[tokio::test]
+async fn confirming_lets_the_manager_in() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    let (_pending, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    let r = t.send(req("GET", "/api/v1/envs/prod/swarm/trust", None, Some(&admin))).await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json["confirmed"], false);
+    assert_eq!(r.json["cluster_id"], "c1");
+    assert_eq!(r.json["pinned_by"], "host-n1");
+    assert_eq!(
+        r.json["check_command"],
+        "docker swarm ca | openssl x509 -noout -fingerprint -sha256"
+    );
+    let fp = r.json["fingerprint"].as_str().unwrap().to_string();
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/prod/swarm/trust",
+            Some(serde_json::json!({"cluster_id": "c1", "fingerprint": fp})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 204, "{:?}", r.json);
+    let pinned = t.store.get_swarm_cluster(env_id).await.unwrap().unwrap();
+    assert!(pinned.confirmed_at.is_some());
+    assert!(t.audit_actions().await.contains(&"swarm.trust".to_string()));
+    let (_m, reply) = join(&base, &key, &daemon, claim(&pki, "n1", true), &pki.node("n1", true)).await;
+    assert!(matches!(reply, Some(Msg::Welcome { agent_key: None, .. })), "{reply:?}");
+    eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
     for _ in 0..100 {
-        if t.audit_actions()
-            .await
-            .contains(&"agent.connect".to_string())
-        {
+        if t.audit_actions().await.contains(&"agent.connect".to_string()) {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert!(t
-        .audit_actions()
-        .await
-        .contains(&"agent.connect".to_string()));
+    assert!(t.audit_actions().await.contains(&"agent.connect".to_string()));
     let env = t.state.envs.get("prod").unwrap();
     assert!(matches!(
         env.status().await,
         fleetops_core::env::EnvStatus::Up { .. }
     ));
+}
+
+#[tokio::test]
+async fn only_admins_confirm() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let (env_id, _key) = swarm_env(&t).await;
+    let pki = SwarmPki::new("c1");
+    t.store
+        .pin_swarm_cluster(env_id, "c1", &pki.root, "n1", "host-n1", fleetops_core::now_unix())
+        .await
+        .unwrap();
+    t.create_user(&admin, "bob", "bob-password", "user").await;
+    t.grant("bob", "prod", "operator", None).await;
+    let bob = session_from(&t.login("bob", "bob-password").await);
+    let fp = fleetops_tunnel::swarm_proof::fingerprint(&pki.root).unwrap();
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/prod/swarm/trust",
+            Some(serde_json::json!({"cluster_id": "c1", "fingerprint": fp})),
+            Some(&bob),
+        ))
+        .await;
+    assert_eq!(r.status, 403, "{:?}", r.json);
+    let r = t.send(req("GET", "/api/v1/envs/prod/swarm/trust", None, Some(&bob))).await;
+    assert_eq!(r.status, 200, "operators may read it");
+}
+
+#[tokio::test]
+async fn confirming_a_stale_fingerprint_is_409() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let (env_id, _key) = swarm_env(&t).await;
+    let pki = SwarmPki::new("c1");
+    t.store
+        .pin_swarm_cluster(env_id, "c1", &pki.root, "n1", "host-n1", fleetops_core::now_unix())
+        .await
+        .unwrap();
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/prod/swarm/trust",
+            Some(serde_json::json!({"cluster_id": "c1", "fingerprint": "AA:BB"})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 409, "{:?}", r.json);
+    assert!(r.json.to_string().contains("the swarm's pin changed"));
+}
+
+#[tokio::test]
+async fn rejecting_clears_the_pending_pin() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let (env_id, _key) = swarm_env(&t).await;
+    let pki = SwarmPki::new("c1");
+    t.store
+        .pin_swarm_cluster(env_id, "c1", &pki.root, "n1", "host-n1", fleetops_core::now_unix())
+        .await
+        .unwrap();
+    let r = t
+        .send(req("POST", "/api/v1/envs/prod/swarm/retrust", None, Some(&admin)))
+        .await;
+    assert_eq!(r.status, 204);
+    assert!(t.store.get_swarm_cluster(env_id).await.unwrap().is_none());
+    let r = t.send(req("GET", "/api/v1/envs/prod/swarm/trust", None, Some(&admin))).await;
+    assert_eq!(r.status, 404);
 }
 
 #[tokio::test]
@@ -153,6 +238,7 @@ async fn two_nodes_stay_connected() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
     let m_cert = pki.node("n1", true);
     let (_m, _) = join(&base, &key, &daemon, claim(&pki, "n1", true), &m_cert).await;
     let (_w, _) = join(
@@ -178,6 +264,7 @@ async fn a_removed_node_is_refused() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
     let (_m, _) = join(
         &base,
         &key,
@@ -209,6 +296,7 @@ async fn a_worker_claiming_manager_is_refused() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
     let (_m, _) = join(
         &base,
         &key,
@@ -241,6 +329,7 @@ async fn a_proof_from_another_swarm_is_refused() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
     let (_m, _) = join(
         &base,
         &key,
@@ -272,6 +361,7 @@ async fn a_failed_proof_writes_no_node_state() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
     let (_m, _) = join(
         &base,
         &key,
@@ -355,6 +445,7 @@ async fn the_previous_key_connects_during_rotation_grace() {
     let base = base(&t).await;
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
     let (_m, reply) = join(
         &base,
         &old,

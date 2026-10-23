@@ -16,12 +16,46 @@ pub enum KeyMatch {
     Previous,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SwarmCluster {
     pub cluster_id: String,
     /// PEM of the root CA node certificates must chain to.
     pub trust_root: String,
     pub pinned_at: i64,
+    /// Set once an admin trusts the swarm; until then no agent is let in.
+    pub confirmed_at: Option<i64>,
+    /// The hostname and node id of the manager that proposed the pin.
+    pub pinned_by: Option<String>,
+    pub pinned_node: Option<String>,
+    /// The swarm's manager node ids, as a known manager last reported them.
+    pub known_managers: Option<Vec<String>>,
+}
+
+#[derive(sqlx::FromRow)]
+struct ClusterRow {
+    cluster_id: String,
+    trust_root: String,
+    pinned_at: i64,
+    confirmed_at: Option<i64>,
+    pinned_by: Option<String>,
+    pinned_node: Option<String>,
+    known_managers: Option<String>,
+}
+
+impl From<ClusterRow> for SwarmCluster {
+    fn from(r: ClusterRow) -> Self {
+        Self {
+            cluster_id: r.cluster_id,
+            trust_root: r.trust_root,
+            pinned_at: r.pinned_at,
+            confirmed_at: r.confirmed_at,
+            pinned_by: r.pinned_by,
+            pinned_node: r.pinned_node,
+            known_managers: r
+                .known_managers
+                .and_then(|j| serde_json::from_str(&j).ok()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, sqlx::FromRow, ToSchema)]
@@ -160,23 +194,29 @@ impl Store {
         Ok(prev.flatten())
     }
 
-    /// Pins the environment to a swarm unless one is pinned already;
-    /// returns whichever is pinned.
+    /// Proposes `cluster_id` and its root CA for the environment, pending an
+    /// admin's confirmation, unless something is pinned already; returns
+    /// whichever is pinned.
     pub async fn pin_swarm_cluster(
         &self,
         env_id: i64,
         cluster_id: &str,
         trust_root: &str,
+        pinned_node: &str,
+        pinned_by: &str,
         now: i64,
     ) -> Result<SwarmCluster> {
         sqlx::query(
-            "INSERT INTO swarm_clusters (environment_id, cluster_id, trust_root, pinned_at)
-             VALUES (?, ?, ?, ?) ON CONFLICT (environment_id) DO NOTHING",
+            "INSERT INTO swarm_clusters
+               (environment_id, cluster_id, trust_root, pinned_at, pinned_node, pinned_by)
+             VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (environment_id) DO NOTHING",
         )
         .bind(env_id)
         .bind(cluster_id)
         .bind(trust_root)
         .bind(now)
+        .bind(pinned_node)
+        .bind(pinned_by)
         .execute(&self.pool)
         .await
         .map_err(db_err)?;
@@ -185,14 +225,54 @@ impl Store {
             .ok_or_else(|| Error::NotFound(format!("swarm environment {env_id}")))
     }
 
+    /// Trusts the pinned swarm, only if it is still the `cluster_id` and
+    /// `trust_root` the admin was shown. Returns whether it did.
+    pub async fn confirm_swarm_cluster(
+        &self,
+        env_id: i64,
+        cluster_id: &str,
+        trust_root: &str,
+        managers: &[String],
+        now: i64,
+    ) -> Result<bool> {
+        let known = (!managers.is_empty())
+            .then(|| serde_json::to_string(managers).unwrap_or_default());
+        let done = sqlx::query(
+            "UPDATE swarm_clusters SET confirmed_at = ?, known_managers = ?
+             WHERE environment_id = ? AND cluster_id = ? AND trust_root = ?",
+        )
+        .bind(now)
+        .bind(known)
+        .bind(env_id)
+        .bind(cluster_id)
+        .bind(trust_root)
+        .execute(&self.pool)
+        .await
+        .map_err(db_err)?;
+        Ok(done.rows_affected() == 1)
+    }
+
+    pub async fn set_known_managers(&self, env_id: i64, managers: &[String]) -> Result<()> {
+        sqlx::query("UPDATE swarm_clusters SET known_managers = ? WHERE environment_id = ?")
+            .bind(serde_json::to_string(managers).unwrap_or_default())
+            .bind(env_id)
+            .execute(&self.pool)
+            .await
+            .map_err(db_err)?;
+        Ok(())
+    }
+
     pub async fn get_swarm_cluster(&self, env_id: i64) -> Result<Option<SwarmCluster>> {
-        sqlx::query_as(
-            "SELECT cluster_id, trust_root, pinned_at FROM swarm_clusters WHERE environment_id = ?",
+        let row: Option<ClusterRow> = sqlx::query_as(
+            "SELECT cluster_id, trust_root, pinned_at, confirmed_at, pinned_by, pinned_node,
+                    known_managers
+             FROM swarm_clusters WHERE environment_id = ?",
         )
         .bind(env_id)
         .fetch_optional(&self.pool)
         .await
-        .map_err(db_err)
+        .map_err(db_err)?;
+        Ok(row.map(Into::into))
     }
 
     pub async fn clear_swarm_cluster(&self, env_id: i64) -> Result<()> {

@@ -64,10 +64,10 @@ async fn pinning_keeps_the_first_cluster() {
     let s = Store::in_memory().await.unwrap();
     let id = swarm(&s).await;
     assert!(s.get_swarm_cluster(id).await.unwrap().is_none());
-    let first = s.pin_swarm_cluster(id, "c1", "ROOT1", T0).await.unwrap();
+    let first = s.pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0).await.unwrap();
     assert_eq!(first.cluster_id, "c1");
     let again = s
-        .pin_swarm_cluster(id, "c2", "ROOT2", T0 + 1)
+        .pin_swarm_cluster(id, "c2", "ROOT2", "n2", "mgr-2", T0 + 1)
         .await
         .unwrap();
     assert_eq!(again.cluster_id, "c1");
@@ -79,10 +79,10 @@ async fn pinning_keeps_the_first_cluster() {
 async fn clearing_allows_a_new_pin() {
     let s = Store::in_memory().await.unwrap();
     let id = swarm(&s).await;
-    s.pin_swarm_cluster(id, "c1", "ROOT1", T0).await.unwrap();
+    s.pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0).await.unwrap();
     s.clear_swarm_cluster(id).await.unwrap();
     let pinned = s
-        .pin_swarm_cluster(id, "c2", "ROOT2", T0 + 1)
+        .pin_swarm_cluster(id, "c2", "ROOT2", "n2", "mgr-2", T0 + 1)
         .await
         .unwrap();
     assert_eq!(pinned.cluster_id, "c2");
@@ -124,7 +124,7 @@ async fn swarm_agents_upsert_per_node() {
 async fn deleting_the_environment_removes_its_rows() {
     let s = Store::in_memory().await.unwrap();
     let id = swarm(&s).await;
-    s.pin_swarm_cluster(id, "c1", "ROOT1", T0).await.unwrap();
+    s.pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0).await.unwrap();
     s.record_swarm_agent(
         id,
         &SwarmAgentRecord {
@@ -142,4 +142,44 @@ async fn deleting_the_environment_removes_its_rows() {
     assert!(s.get_swarm_cluster(id).await.unwrap().is_none());
     assert!(s.list_swarm_agents(id).await.unwrap().is_empty());
     assert_eq!(s.swarm_by_key("key-1", T0).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn a_pin_is_pending_until_confirmed_with_the_matching_fingerprint() {
+    let s = Store::in_memory().await.unwrap();
+    let id = swarm(&s).await;
+    let p = s
+        .pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0)
+        .await
+        .unwrap();
+    assert_eq!(p.confirmed_at, None);
+    assert_eq!(p.pinned_by.as_deref(), Some("mgr-1"));
+    assert_eq!(p.pinned_node.as_deref(), Some("n1"));
+    assert_eq!(p.known_managers, None);
+    let managers = vec!["n1".to_string(), "n2".to_string()];
+    assert!(s
+        .confirm_swarm_cluster(id, "c1", "ROOT1", &managers, T0 + 5)
+        .await
+        .unwrap());
+    let p = s.get_swarm_cluster(id).await.unwrap().unwrap();
+    assert_eq!(p.confirmed_at, Some(T0 + 5));
+    assert_eq!(p.known_managers, Some(managers));
+    s.set_known_managers(id, &["n1".to_string()]).await.unwrap();
+    assert_eq!(
+        s.get_swarm_cluster(id).await.unwrap().unwrap().known_managers,
+        Some(vec!["n1".to_string()])
+    );
+}
+
+#[tokio::test]
+async fn a_changed_pin_does_not_confirm() {
+    let s = Store::in_memory().await.unwrap();
+    let id = swarm(&s).await;
+    s.pin_swarm_cluster(id, "c1", "ROOT1", "n1", "mgr-1", T0)
+        .await
+        .unwrap();
+    // Compare-and-set on what the admin was shown.
+    assert!(!s.confirm_swarm_cluster(id, "c1", "OTHER", &[], T0).await.unwrap());
+    assert!(!s.confirm_swarm_cluster(id, "c2", "ROOT1", &[], T0).await.unwrap());
+    assert_eq!(s.get_swarm_cluster(id).await.unwrap().unwrap().confirmed_at, None);
 }

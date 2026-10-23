@@ -1711,6 +1711,27 @@ export type SwarmStack = {
 };
 
 /**
+ * The swarm a Swarm environment is pinned to, trusted or pending.
+ */
+export type SwarmTrust = {
+    /**
+     * Run on a manager to see the swarm's real fingerprint.
+     */
+    check_command: string;
+    cluster_id: string;
+    confirmed: boolean;
+    /**
+     * SHA-256 of the root CA, as `check_command` prints it.
+     */
+    fingerprint: string;
+    pinned_at: number;
+    /**
+     * The hostname of the manager that proposed it.
+     */
+    pinned_by?: string | null;
+};
+
+/**
  * What an up Swarm environment reports about itself.
  */
 export type SwarmVersion = {
@@ -1783,6 +1804,14 @@ export type TriggerResult = {
      * The Job that was started.
      */
     job: string;
+};
+
+/**
+ * What the admin was shown and trusts.
+ */
+export type TrustSwarm = {
+    cluster_id: string;
+    fingerprint: string;
 };
 
 export type UninstallBody = {
@@ -5705,6 +5734,74 @@ export type FinishSwarmRotationResponses = {
 };
 
 export type FinishSwarmRotationResponse = FinishSwarmRotationResponses[keyof FinishSwarmRotationResponses];
+
+export type GetSwarmTrustData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/trust';
+};
+
+export type GetSwarmTrustErrors = {
+    /**
+     * No manager has proposed a swarm yet
+     */
+    404: ErrorBody;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetSwarmTrustError = GetSwarmTrustErrors[keyof GetSwarmTrustErrors];
+
+export type GetSwarmTrustResponses = {
+    /**
+     * The pinned swarm
+     */
+    200: SwarmTrust;
+};
+
+export type GetSwarmTrustResponse = GetSwarmTrustResponses[keyof GetSwarmTrustResponses];
+
+export type TrustSwarmData = {
+    body: TrustSwarm;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/trust';
+};
+
+export type TrustSwarmErrors = {
+    /**
+     * The pinned swarm is not the one shown
+     */
+    409: ErrorBody;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type TrustSwarmError = TrustSwarmErrors[keyof TrustSwarmErrors];
+
+export type TrustSwarmResponses = {
+    /**
+     * Trusted; its agents are let in as they reconnect
+     */
+    204: void;
+};
+
+export type TrustSwarmResponse = TrustSwarmResponses[keyof TrustSwarmResponses];
 
 export type ListVolumesData = {
     body?: never;

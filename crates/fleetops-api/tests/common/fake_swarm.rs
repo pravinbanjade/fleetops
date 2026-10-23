@@ -140,3 +140,31 @@ impl FakeSwarm {
         });
     }
 }
+
+impl FakeSwarm {
+    /// The node ids the daemon reports as managers.
+    pub fn managers(&self) -> Vec<String> {
+        self.nodes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|n| n["Spec"]["Role"] == "manager")
+            .map(|n| n["ID"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+}
+
+/// Pins and confirms the swarm as an admin would, with the daemon's
+/// managers as the known ones.
+pub async fn trust(t: &super::TestApp, env_id: i64, pki: &SwarmPki, daemon: &FakeSwarm) {
+    let now = fleetops_core::now_unix();
+    t.store
+        .pin_swarm_cluster(env_id, &pki.cluster_id, &pki.root, "n1", "host-n1", now)
+        .await
+        .unwrap();
+    assert!(t
+        .store
+        .confirm_swarm_cluster(env_id, &pki.cluster_id, &pki.root, &daemon.managers(), now)
+        .await
+        .unwrap());
+}

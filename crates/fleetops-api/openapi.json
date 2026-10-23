@@ -6858,6 +6858,122 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/swarm/trust": {
+      "get": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "The swarm a Swarm environment is pinned to, and whether an admin trusts it",
+        "operationId": "getSwarmTrust",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The pinned swarm",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwarmTrust"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No manager has proposed a swarm yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Trust the swarm a manager proposed, after checking its root CA fingerprint",
+        "operationId": "trustSwarm",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrustSwarm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Trusted; its agents are let in as they reconnect"
+          },
+          "409": {
+            "description": "The pinned swarm is not the one shown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/volumes": {
       "get": {
         "tags": [
@@ -12191,6 +12307,44 @@
           }
         }
       },
+      "SwarmTrust": {
+        "type": "object",
+        "description": "The swarm a Swarm environment is pinned to, trusted or pending.",
+        "required": [
+          "cluster_id",
+          "fingerprint",
+          "pinned_at",
+          "confirmed",
+          "check_command"
+        ],
+        "properties": {
+          "check_command": {
+            "type": "string",
+            "description": "Run on a manager to see the swarm's real fingerprint."
+          },
+          "cluster_id": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "SHA-256 of the root CA, as `check_command` prints it."
+          },
+          "pinned_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "pinned_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The hostname of the manager that proposed it."
+          }
+        }
+      },
       "SwarmVersion": {
         "type": "object",
         "description": "What an up Swarm environment reports about itself.",
@@ -12429,6 +12583,22 @@
           "job": {
             "type": "string",
             "description": "The Job that was started."
+          }
+        }
+      },
+      "TrustSwarm": {
+        "type": "object",
+        "description": "What the admin was shown and trusts.",
+        "required": [
+          "cluster_id",
+          "fingerprint"
+        ],
+        "properties": {
+          "cluster_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
           }
         }
       },

@@ -1,7 +1,7 @@
 //! The Swarm half of the connect handler (swarm spec §2): challenge the
-//! agent, check its node certificate against the swarm's root CA (pinned on
-//! the first manager), check membership through a manager, then register
-//! the session under its node.
+//! agent, check its node certificate against the swarm's root CA (proposed
+//! by the first manager, trusted by an admin), check membership through a
+//! manager, then register the session under its node.
 
 use super::connect::{control_loop, disconnect_audit_due, say_bye, Control, HANDSHAKE};
 use super::publish_status;
@@ -111,81 +111,54 @@ pub(super) async fn serve(
     session: &Session,
     info: AgentInfo,
 ) -> String {
+    // Refuses with `reason`; `proven` once the proof has passed.
+    macro_rules! no {
+        ($reason:expr, $bye:ident, $proven:expr) => {
+            return refuse(s, env, c, session, &info, $reason, ByeReason::$bye, $proven).await
+        };
+    }
     let claim: SwarmClaim = match (&info.host.serves, &info.host.swarm) {
         (Serves::Swarm, Some(claim)) => claim.clone(),
-        (serves, _) => {
-            let reason = format!(
-                "agent serves {}; this environment expects swarm",
-                serves.as_str()
-            );
-            return refuse(
-                s,
-                env,
-                c,
-                session,
-                &info,
-                reason,
-                ByeReason::Incompatible,
-                false,
-            )
-            .await;
-        }
+        (serves, _) => no!(
+            format!("agent serves {}; this environment expects swarm", serves.as_str()),
+            Incompatible,
+            false
+        ),
     };
     let Some(through) = s.swarm_through.clone() else {
-        let reason = "this server cannot reach Swarm agents".to_string();
-        return refuse(
-            s,
-            env,
-            c,
-            session,
-            &info,
-            reason,
-            ByeReason::Incompatible,
-            false,
-        )
-        .await;
+        no!("this server cannot reach Swarm agents".into(), Incompatible, false)
     };
     let pinned = match s.store.get_swarm_cluster(env.id).await {
         Ok(p) => p,
         Err(e) => return e.to_string(),
     };
+    let confirmed = pinned.as_ref().is_some_and(|p| p.confirmed_at.is_some());
     let checker = manager_session(s, env.id, &claim.node_id);
 
-    // Workers wait for a manager: it pins the swarm and checks membership.
-    if !claim.manager && (pinned.is_none() || checker.is_none()) {
-        let reason = "waiting for a manager's agent to connect".to_string();
-        return refuse(s, env, c, session, &info, reason, ByeReason::NotYet, false).await;
+    // Workers wait for a manager: it proposes the swarm, an admin trusts
+    // it, and a manager checks membership.
+    if !claim.manager && (!confirmed || checker.is_none()) {
+        no!("waiting for a manager's agent to connect".into(), NotYet, false)
     }
     if let Some(p) = &pinned {
         if p.cluster_id != claim.cluster_id {
-            let reason = format!(
-                "this agent belongs to swarm {}; the environment is pinned to {}",
-                claim.cluster_id, p.cluster_id
-            );
-            return refuse(
-                s,
-                env,
-                c,
-                session,
-                &info,
-                reason,
-                ByeReason::Incompatible,
-                false,
+            no!(
+                format!(
+                    "this agent belongs to swarm {}; the environment is pinned to {}",
+                    claim.cluster_id, p.cluster_id
+                ),
+                Incompatible,
+                false
             )
-            .await;
         }
     }
 
     // The proof.
     let nonce = generate_token();
-    if let Err(e) = write_msg(
-        &mut c.tx,
-        &Msg::Challenge {
-            nonce: nonce.clone(),
-        },
-    )
-    .await
-    {
+    let challenge = Msg::Challenge {
+        nonce: nonce.clone(),
+    };
+    if let Err(e) = write_msg(&mut c.tx, &challenge).await {
         return e.to_string();
     }
     let (chain, signature) = match tokio::time::timeout(HANDSHAKE, read_msg(&mut c.rx)).await {
@@ -203,67 +176,56 @@ pub(super) async fn serve(
         Some(p) => p.trust_root.clone(),
         None => match call(own.swarm_info()).await {
             Ok(si) if si.cluster_id == claim.cluster_id => si.trust_root,
-            Ok(si) => {
-                let reason = format!(
+            Ok(si) => no!(
+                format!(
                     "the node reports swarm {} but claims {}",
                     si.cluster_id, claim.cluster_id
-                );
-                return refuse(
-                    s,
-                    env,
-                    c,
-                    session,
-                    &info,
-                    reason,
-                    ByeReason::Incompatible,
-                    false,
-                )
-                .await;
-            }
-            Err(e) => {
-                let reason = format!("cannot read the swarm's root CA: {e}");
-                return refuse(s, env, c, session, &info, reason, ByeReason::NotYet, false).await;
-            }
+                ),
+                Incompatible,
+                false
+            ),
+            Err(e) => no!(format!("cannot read the swarm's root CA: {e}"), NotYet, false),
         },
     };
     let msg = swarm_proof::proof_message(&nonce, &claim);
     if let Err(e) = swarm_proof::verify(&root, &chain, &claim, &msg, &signature, now_unix()) {
-        return refuse(
-            s,
-            env,
-            c,
-            session,
-            &info,
-            e.to_string(),
-            ByeReason::Incompatible,
-            false,
-        )
-        .await;
+        no!(e.to_string(), Incompatible, false)
     }
+
+    // A proven manager proposes the swarm; an admin must trust it.
     if pinned.is_none() {
         match s
             .store
-            .pin_swarm_cluster(env.id, &claim.cluster_id, &root, now_unix())
+            .pin_swarm_cluster(
+                env.id,
+                &claim.cluster_id,
+                &root,
+                &claim.node_id,
+                &info.host.hostname,
+                now_unix(),
+            )
             .await
         {
-            // Another manager pinned first; it must be the same swarm.
-            Ok(p) if p.cluster_id != claim.cluster_id || p.trust_root != root => {
-                let reason = format!("the environment is pinned to swarm {}", p.cluster_id);
-                return refuse(
-                    s,
-                    env,
-                    c,
-                    session,
-                    &info,
-                    reason,
-                    ByeReason::Incompatible,
-                    true,
-                )
-                .await;
-            }
+            // Another manager proposed first; it must be the same swarm.
+            Ok(p) if p.cluster_id != claim.cluster_id || p.trust_root != root => no!(
+                format!("the environment is pinned to swarm {}", p.cluster_id),
+                Incompatible,
+                true
+            ),
             Ok(_) => audit(s, None, "swarm.pin", "environment", &env.name, "success").await,
             Err(e) => return e.to_string(),
         }
+    }
+    if !confirmed {
+        let fp = swarm_proof::fingerprint(&root).unwrap_or_default();
+        no!(
+            format!(
+                "waiting for an admin to trust swarm {} (root CA {fp})",
+                claim.cluster_id
+            ),
+            NotYet,
+            true
+        )
     }
 
     // Membership: a removed node's certificate stays valid until it expires.
@@ -279,37 +241,18 @@ pub(super) async fn serve(
                 NodeRole::Manager => "manager",
                 NodeRole::Worker => "worker",
             };
-            let reason = format!("node {} is a {role} in this swarm", claim.node_id);
-            return refuse(
-                s,
-                env,
-                c,
-                session,
-                &info,
-                reason,
-                ByeReason::Incompatible,
-                true,
+            no!(
+                format!("node {} is a {role} in this swarm", claim.node_id),
+                Incompatible,
+                true
             )
-            .await;
         }
-        Ok(None) => {
-            let reason = format!("node {} is not a member of this swarm", claim.node_id);
-            return refuse(
-                s,
-                env,
-                c,
-                session,
-                &info,
-                reason,
-                ByeReason::Incompatible,
-                true,
-            )
-            .await;
-        }
-        Err(e) => {
-            let reason = format!("cannot check swarm membership: {e}");
-            return refuse(s, env, c, session, &info, reason, ByeReason::NotYet, true).await;
-        }
+        Ok(None) => no!(
+            format!("node {} is not a member of this swarm", claim.node_id),
+            Incompatible,
+            true
+        ),
+        Err(e) => no!(format!("cannot check swarm membership: {e}"), NotYet, true),
     }
 
     let welcome = Msg::Welcome {
