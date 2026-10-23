@@ -32,7 +32,7 @@ fn receiver<T: Send + 'static>(rx: mpsc::Receiver<Result<T>>) -> BoxStream<T> {
 }
 
 /// Splits framed log output into lines, flushing any partial line at the end.
-fn lines<S>(inner: S) -> BoxStream<LogLine>
+pub(crate) fn lines<S>(inner: S) -> BoxStream<LogLine>
 where
     S: Stream<Item = Result<(LogStream, Vec<u8>)>> + Send + 'static,
 {
@@ -75,7 +75,7 @@ fn attributes_name(a: &std::collections::BTreeMap<String, String>) -> Option<Str
     a.get("name").cloned()
 }
 
-fn output_bytes(o: LogOutput) -> (LogStream, Vec<u8>) {
+pub(crate) fn output_bytes(o: LogOutput) -> (LogStream, Vec<u8>) {
     match o {
         LogOutput::StdErr { message } => (LogStream::Stderr, message.to_vec()),
         LogOutput::StdOut { message }
