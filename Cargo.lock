@@ -1604,7 +1604,7 @@ version = "0.6.0"
 dependencies = [
  "anyhow",
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "clap",
  "fleetops-api",
@@ -1637,7 +1637,7 @@ dependencies = [
  "argon2 0.5.3",
  "async-trait",
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "fleetops-core",
  "fleetops-git",
@@ -1709,7 +1709,7 @@ version = "0.6.0"
 dependencies = [
  "async-trait",
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "ed25519-dalek 2.2.0",
  "fleetops-api",
@@ -1746,7 +1746,7 @@ name = "fleetops-git"
 version = "0.6.0"
 dependencies = [
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "fleetops-core",
  "fleetops-git",
  "gix",
@@ -1769,7 +1769,7 @@ name = "fleetops-kube"
 version = "0.6.0"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "flate2",
  "fleetops-agent",
  "fleetops-core",
@@ -1847,7 +1847,7 @@ version = "0.6.0"
 dependencies = [
  "aes-gcm 0.10.3",
  "argon2 0.5.3",
- "base64 0.22.1",
+ "base64 0.23.1",
  "flate2",
  "fleetops-core",
  "hmac 0.12.1",

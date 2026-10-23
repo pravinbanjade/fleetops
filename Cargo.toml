@@ -24,7 +24,7 @@ aes-gcm = { version = "0.10", features = ["stream"] }
 anyhow = "1"
 argon2 = { version = "0.5", features = ["std"] }
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 bollard = "0.21"
 bytes = "1"
