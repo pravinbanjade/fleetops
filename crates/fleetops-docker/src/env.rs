@@ -82,7 +82,7 @@ impl Environment for LocalDockerEnv {
     }
 }
 
-/// Builds local and agent environments. Agent environments read their
+/// Builds local, agent and Swarm environments. Agent environments read their
 /// live sessions from `agents`, which the server shares with the connect
 /// handler.
 #[derive(Default)]
@@ -107,7 +107,12 @@ impl EnvFactory for DockerEnvFactory {
                 &spec.name,
                 self.agents.clone(),
             ))),
-            EnvKind::KubeConfig | EnvKind::KubeAgent | EnvKind::SwarmAgent => Err(Error::Invalid(format!(
+            EnvKind::SwarmAgent => Ok(Arc::new(crate::SwarmEnv::new(
+                spec.id,
+                &spec.name,
+                self.agents.clone(),
+            ))),
+            EnvKind::KubeConfig | EnvKind::KubeAgent => Err(Error::Invalid(format!(
                 "{} is not a Docker environment kind",
                 spec.kind.as_str()
             ))),

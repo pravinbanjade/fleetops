@@ -1,4 +1,4 @@
-//! The server's environment factory: Docker kinds from fleetops-docker,
+//! The server's environment factory: Docker and Swarm kinds from fleetops-docker,
 //! Kubernetes kinds from fleetops-kube, one shared agent registry.
 
 use fleetops_core::env::{EnvFactory, EnvSpec, Environment};
@@ -24,6 +24,7 @@ impl Factory {
 
 impl EnvFactory for Factory {
     fn build(&self, spec: &EnvSpec) -> Result<Arc<dyn Environment>> {
+        // Swarm environments are Docker engines too: fleetops-docker builds them.
         if spec.kind.is_kube() {
             self.kube.build(spec)
         } else {

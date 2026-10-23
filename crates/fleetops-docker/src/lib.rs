@@ -8,10 +8,13 @@ mod error;
 pub mod files;
 mod resources;
 mod streams;
+mod swarm;
+mod swarm_env;
 mod tunnel;
 
 pub use agent_env::AgentDockerEnv;
 pub use env::{DockerEnvFactory, LocalDockerEnv};
+pub use swarm_env::SwarmEnv;
 
 use bollard::Docker;
 use fleetops_core::{Error, Result};
