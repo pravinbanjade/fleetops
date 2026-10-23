@@ -6,10 +6,10 @@ import { envFamily, findEnv } from "@/lib/env";
 
 const DashboardPage = lazy(() => import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage })));
 const KubeOverviewPage = lazy(() => import("@/pages/kube/KubeOverviewPage").then((m) => ({ default: m.KubeOverviewPage })));
-const SwarmHome = lazy(() => import("@/pages/swarm/SwarmHome").then((m) => ({ default: m.SwarmHome })));
+const SwarmOverviewPage = lazy(() => import("@/pages/swarm/SwarmOverviewPage").then((m) => ({ default: m.SwarmOverviewPage })));
 const route = getRouteApi("/authed/shell/envs/$env/");
 
-/** `/envs/$env`: the Docker dashboard, the Kubernetes overview, or a Swarm's nodes. */
+/** `/envs/$env`: the Docker dashboard, the Kubernetes overview, or a Swarm's overview. */
 export function EnvHome() {
   const { env } = route.useParams();
   const { data: envs } = useQuery(envsQuery);
@@ -17,7 +17,7 @@ export function EnvHome() {
   const family = envFamily(findEnv(envs, env)?.kind);
   return (
     <Suspense fallback={null}>
-      {family === "kube" ? <KubeOverviewPage env={env} /> : family === "swarm" ? <SwarmHome env={env} /> : <DashboardPage />}
+      {family === "kube" ? <KubeOverviewPage env={env} /> : family === "swarm" ? <SwarmOverviewPage env={env} /> : <DashboardPage />}
     </Suspense>
   );
 }

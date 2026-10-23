@@ -47,7 +47,8 @@ describe("Swarm environments", () => {
     mockFetch(routes);
     const { screen } = renderApp("/envs/prod");
     const nav = await screen.findByRole("navigation", { name: "Environment" });
-    expect(within(nav).getByRole("link", { name: /Nodes/ })).toHaveAttribute("href", "/envs/prod");
+    expect(within(nav).getByRole("link", { name: /Overview/ })).toHaveAttribute("href", "/envs/prod");
+    expect(within(nav).getByRole("link", { name: /Nodes/ })).toHaveAttribute("href", "/envs/prod/swarm/nodes");
     expect(within(nav).queryByRole("link", { name: /Containers/ })).not.toBeInTheDocument();
   });
 
@@ -59,7 +60,7 @@ describe("Swarm environments", () => {
 
   it("agents table marks nodes without agents", async () => {
     mockFetch(routes);
-    const { screen } = renderApp("/envs/prod");
+    const { screen } = renderApp("/envs/prod/swarm/nodes");
     const table = await screen.findByRole("table", { name: "Nodes" });
     await waitFor(() => expect(within(table).getAllByRole("row")).toHaveLength(4));
     const wrk2 = within(table).getAllByRole("row").find((r) => r.textContent?.includes("wrk-2"))!;
@@ -170,7 +171,7 @@ describe("Swarm trust and node views", () => {
 
   it("a node row links to its node view", async () => {
     mockFetch(routes);
-    const { screen } = renderApp("/envs/prod");
+    const { screen } = renderApp("/envs/prod/swarm/nodes");
     const table = await screen.findByRole("table", { name: "Nodes" });
     const link = await within(table).findByRole("link", { name: "wrk-1" });
     expect(link).toHaveAttribute("href", "/envs/prod@n2");

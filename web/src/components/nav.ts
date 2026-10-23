@@ -17,6 +17,7 @@ import {
   HardDrive,
   KeyRound,
   Layers,
+  LayoutGrid,
   Package,
   Play,
   ScrollText,
@@ -47,7 +48,16 @@ export const NAV = [
 export const NODE_NAV = NAV.filter((n) => n.label !== "Stacks");
 
 /** A Swarm environment's pages, in sidebar order. */
-export const SWARM_NAV = [{ to: "/envs/$env", label: "Nodes", icon: Server, key: "d" }] as const;
+export const SWARM_NAV = [
+  { to: "/envs/$env", label: "Overview", icon: Gauge, key: "d" },
+  { to: "/envs/$env/swarm/nodes", label: "Nodes", icon: Server, key: "e" },
+  { to: "/envs/$env/swarm/services", label: "Services", icon: Boxes, key: "s" },
+  { to: "/envs/$env/swarm/tasks", label: "Tasks", icon: ListChecks, key: "t" },
+  { to: "/envs/$env/swarm/visualizer", label: "Visualizer", icon: LayoutGrid, key: "v" },
+  { to: "/envs/$env/swarm/secrets", label: "Secrets", icon: KeyRound, key: "x" },
+  { to: "/envs/$env/swarm/configs", label: "Configs", icon: FileCog, key: "m" },
+  { to: "/envs/$env/swarm/networks", label: "Networks", icon: Waypoints, key: "n" },
+] as const;
 
 /** Administration pages, shown to admins. */
 export const ADMIN_NAV = [

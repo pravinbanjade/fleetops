@@ -316,6 +316,60 @@ const accountRoute = createRoute({
   component: lazyRouteComponent(() => import("@/pages/AccountPage"), "AccountPage"),
 });
 
+const swarmNodesRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "swarm/nodes",
+  component: lazyRouteComponent(() => import("@/pages/swarm/routes"), "NodesRoute"),
+});
+
+const swarmNodeRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "swarm/nodes/$id",
+  component: lazyRouteComponent(() => import("@/pages/swarm/NodePage"), "NodePage"),
+});
+
+const swarmServicesRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "swarm/services",
+  component: lazyRouteComponent(() => import("@/pages/swarm/ServicesPage"), "ServicesPage"),
+});
+
+const swarmServiceRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "swarm/services/$id",
+  component: lazyRouteComponent(() => import("@/pages/swarm/ServicePage"), "ServicePage"),
+});
+
+const swarmTasksRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "swarm/tasks",
+  component: lazyRouteComponent(() => import("@/pages/swarm/TasksPage"), "TasksPage"),
+});
+
+const swarmVisualizerRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "swarm/visualizer",
+  component: lazyRouteComponent(() => import("@/pages/swarm/VisualizerPage"), "VisualizerPage"),
+});
+
+const swarmSecretsRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "swarm/secrets",
+  component: lazyRouteComponent(() => import("@/pages/swarm/ObjectsPages"), "SecretsPage"),
+});
+
+const swarmConfigsRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "swarm/configs",
+  component: lazyRouteComponent(() => import("@/pages/swarm/ObjectsPages"), "ConfigsPage"),
+});
+
+const swarmNetworksRoute = createRoute({
+  getParentRoute: () => envRoute,
+  path: "swarm/networks",
+  component: lazyRouteComponent(() => import("@/pages/swarm/ObjectsPages"), "NetworksPage"),
+});
+
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
@@ -341,8 +395,17 @@ const routeTree = rootRoute.addChildren([
         helmReleaseRoute,
         kubeListRoute,
         kubeObjectRoute,
-    genericListRoute,
-    genericObjectRoute,
+        genericListRoute,
+        genericObjectRoute,
+        swarmNodesRoute,
+        swarmNodeRoute,
+        swarmServicesRoute,
+        swarmServiceRoute,
+        swarmTasksRoute,
+        swarmVisualizerRoute,
+        swarmSecretsRoute,
+        swarmConfigsRoute,
+        swarmNetworksRoute,
       ]),
       adminRoute.addChildren([usersRoute, envsAdminRoute, auditRoute, backupRoute, ...(ee.adminRoutes(adminRoute) as [])]),
       accountRoute,

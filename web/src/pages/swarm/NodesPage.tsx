@@ -58,7 +58,7 @@ const nodeColumns = (env: string): Column<SwarmAgentView>[] => [
 ];
 
 /** Shown while a manager has proposed the swarm and no admin has trusted it yet. */
-function TrustCard({ env, admin }: { env: string; admin: boolean }) {
+export function TrustCard({ env, admin }: { env: string; admin: boolean }) {
   const qc = useQueryClient();
   const trust = useQuery({
     queryKey: ["env", env, "swarm", "trust"],
@@ -129,8 +129,8 @@ function TrustCard({ env, admin }: { env: string; admin: boolean }) {
   );
 }
 
-/** `/envs/$env` for a Swarm: every node and whether its agent is connected. */
-export function SwarmHome({ env }: { env: string }) {
+/** A swarm's nodes, whether each has an agent, and the key and trust actions. */
+export function NodesPage({ env }: { env: string }) {
   const qc = useQueryClient();
   const { user } = useSession();
   const status = useQuery(envStatusQuery(env, true));

@@ -47,6 +47,13 @@ import {
   listEnvAccess,
   listRecentEvents,
   listVolumes,
+  listSwarmNodes,
+  getSwarmNode,
+  listSwarmServices,
+  getSwarmService,
+  listSwarmSecrets,
+  listSwarmConfigs,
+  listSwarmNetworks,
 } from "./gen/sdk.gen";
 import type { DockerEvent, KubeFilter, KubeKind } from "./gen/types.gen";
 import { mergeEvents } from "@/live/noise";
@@ -437,3 +444,32 @@ export interface UsageTotals {
   TotalSize?: number;
   Reclaimable?: number;
 }
+
+/** A swarm's cluster reads, all under `["env", env, "swarm"]`. */
+export const swarmKeys = {
+  all: (env: string) => ["env", env, "swarm"] as const,
+  nodes: (env: string) => ["env", env, "swarm", "nodes"] as const,
+  node: (env: string, id: string) => ["env", env, "swarm", "nodes", id] as const,
+  services: (env: string) => ["env", env, "swarm", "services"] as const,
+  service: (env: string, id: string) => ["env", env, "swarm", "services", id] as const,
+  secrets: (env: string) => ["env", env, "swarm", "secrets"] as const,
+  configs: (env: string) => ["env", env, "swarm", "configs"] as const,
+  networks: (env: string) => ["env", env, "swarm", "networks"] as const,
+  /** Swarm events seen over the websocket; filled by the live layer, never fetched. */
+  events: (env: string) => ["live", env, "swarm-events"] as const,
+};
+
+export const swarmNodesQuery = (env: string) =>
+  queryOptions({ queryKey: swarmKeys.nodes(env), queryFn: async () => (await listSwarmNodes(path(env))).data });
+export const swarmNodeQuery = (env: string, id: string) =>
+  queryOptions({ queryKey: swarmKeys.node(env, id), queryFn: async () => (await getSwarmNode({ path: { env, id } })).data });
+export const swarmServicesQuery = (env: string) =>
+  queryOptions({ queryKey: swarmKeys.services(env), queryFn: async () => (await listSwarmServices(path(env))).data });
+export const swarmServiceQuery = (env: string, id: string) =>
+  queryOptions({ queryKey: swarmKeys.service(env, id), queryFn: async () => (await getSwarmService({ path: { env, id } })).data });
+export const swarmSecretsQuery = (env: string) =>
+  queryOptions({ queryKey: swarmKeys.secrets(env), queryFn: async () => (await listSwarmSecrets(path(env))).data });
+export const swarmConfigsQuery = (env: string) =>
+  queryOptions({ queryKey: swarmKeys.configs(env), queryFn: async () => (await listSwarmConfigs(path(env))).data });
+export const swarmNetworksQuery = (env: string) =>
+  queryOptions({ queryKey: swarmKeys.networks(env), queryFn: async () => (await listSwarmNetworks(path(env))).data });
