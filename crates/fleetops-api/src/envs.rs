@@ -113,13 +113,22 @@ impl EnvRegistry {
             .sum()
     }
 
+    /// An environment by name, or a Swarm node's view by `<env>@<node>`.
     pub fn get(&self, name: &str) -> Result<Arc<dyn Environment>> {
+        let not_found = || Error::NotFound(format!("environment '{name}'"));
+        if let Some((env, node)) = fleetops_core::env::split_node_view(name) {
+            let base = self.get(env).map_err(|_| not_found())?;
+            if !base.kind().is_swarm() {
+                return Err(not_found());
+            }
+            return base.node_env(node).ok_or_else(not_found);
+        }
         self.envs
             .read()
             .unwrap()
             .get(name)
             .cloned()
-            .ok_or_else(|| Error::NotFound(format!("environment '{name}'")))
+            .ok_or_else(not_found)
     }
 }
 

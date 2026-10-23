@@ -288,6 +288,12 @@ pub async fn create(
             };
             (rec, Some(enrollment), None)
         }
+        EnvKind::SwarmNode => {
+            return Err(Error::Invalid(
+                "a swarm node is part of a Swarm environment; add the swarm".into(),
+            )
+            .into());
+        }
         EnvKind::SwarmAgent => {
             if body.url.is_some() {
                 return Err(Error::Invalid("an agent environment takes no URL".into()).into());

@@ -76,6 +76,7 @@ const DESCRIPTIONS: Record<EnvKind, string> = {
   "kube-agent": "You'll get a kubectl command that installs the agent in the cluster. The cluster needs no inbound access.",
   "swarm-agent":
     "A Docker Swarm. You'll get a key and a stack file that runs the agent on every node; each node's agent connects out to this server.",
+  "swarm-node": "One node of a Docker Swarm, reached through its swarm.",
 };
 
 /** What an in-cluster agent may do, from least to most. */

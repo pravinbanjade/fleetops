@@ -24,6 +24,11 @@ pub struct SwarmEnv {
     clients: Mutex<HashMap<String, (u64, Arc<LocalDocker>)>>,
     /// The leader's node id, as last reported by a manager.
     leader: Mutex<Option<String>>,
+    /// Every node id a manager last reported, for node views of nodes
+    /// without an agent.
+    members: Mutex<Vec<String>>,
+    /// One view per node: WebSocket hubs key on the instance.
+    views: Mutex<HashMap<String, Arc<crate::NodeEnv>>>,
 }
 
 fn is_manager(live: &Live) -> bool {
@@ -38,6 +43,8 @@ impl SwarmEnv {
             agents,
             clients: Mutex::default(),
             leader: Mutex::default(),
+            members: Mutex::default(),
+            views: Mutex::default(),
         }
     }
 
@@ -156,6 +163,29 @@ impl Environment for SwarmEnv {
 
     fn node(&self, node_id: &str) -> Option<Arc<dyn DockerOps>> {
         self.client(node_id).map(|c| c as Arc<dyn DockerOps>)
+    }
+
+    fn node_env(&self, node_id: &str) -> Option<Arc<dyn Environment>> {
+        let known = self.agents.get_node(self.id, node_id).is_some()
+            || self.members.lock().unwrap().iter().any(|n| n == node_id);
+        if !known {
+            return None;
+        }
+        let view = self
+            .views
+            .lock()
+            .unwrap()
+            .entry(node_id.to_string())
+            .or_insert_with(|| {
+                Arc::new(crate::NodeEnv::new(
+                    self.id,
+                    &self.name,
+                    node_id,
+                    self.agents.clone(),
+                ))
+            })
+            .clone();
+        Some(view as Arc<dyn Environment>)
     }
 
     async fn wait_change(&self) {

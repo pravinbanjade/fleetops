@@ -48,6 +48,23 @@ pub async fn ctx(s: &AppState, user: CurrentUser, env_name: &str, need: Need) ->
     })
 }
 
+/// `ctx` for FleetOps stacks, which are stored per environment: a Swarm
+/// node's view shares its swarm's id, so stacks are refused there.
+pub async fn stack_ctx(
+    s: &AppState,
+    user: CurrentUser,
+    env_name: &str,
+    need: Need,
+) -> ApiResult<EnvCtx> {
+    let c = ctx(s, user, env_name, need).await?;
+    if c.env.kind() == fleetops_core::env::EnvKind::SwarmNode {
+        return Err(
+            Error::Conflict("stacks are not available on a single swarm node".into()).into(),
+        );
+    }
+    Ok(c)
+}
+
 impl EnvCtx {
     /// Writes an audit row for a Docker mutation, recording failures with
     /// the error message. Audit failures are logged, never surfaced.
@@ -59,10 +76,17 @@ impl EnvCtx {
         target_id: &str,
         outcome: &Result<T>,
     ) {
-        let (result, detail) = match outcome {
+        let (result, mut detail) = match outcome {
             Ok(_) => ("success", None),
             Err(e) => ("failure", Some(json!({ "error": e.to_string() }))),
         };
+        // A Swarm node's view: say which node.
+        if let Some((_, node)) = fleetops_core::env::split_node_view(self.env.name()) {
+            detail
+                .get_or_insert_with(|| json!({}))
+                .as_object_mut()
+                .map(|o| o.insert("node".into(), json!(node)));
+        }
         let entry = NewAudit {
             ts: now_unix(),
             user_id: Some(self.user.user.id),

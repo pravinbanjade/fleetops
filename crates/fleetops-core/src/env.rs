@@ -22,6 +22,9 @@ pub enum EnvKind {
     KubeAgent,
     /// A Docker Swarm reached through `fleetops-agent --swarm`, one per node.
     SwarmAgent,
+    /// One node of a Swarm environment, as a Docker host (`<env>@<node>`).
+    /// Never stored: it exists only as a view of its swarm.
+    SwarmNode,
 }
 
 impl EnvKind {
@@ -32,6 +35,7 @@ impl EnvKind {
             EnvKind::KubeConfig => "kube-config",
             EnvKind::KubeAgent => "kube-agent",
             EnvKind::SwarmAgent => "swarm-agent",
+            EnvKind::SwarmNode => "swarm-node",
         }
     }
 
@@ -108,6 +112,11 @@ pub trait Environment: Send + Sync {
     fn node(&self, _node_id: &str) -> Option<Arc<dyn DockerOps>> {
         None
     }
+    /// A Swarm node as an environment of its own (`<env>@<node>`), for the
+    /// Docker pages. The same instance for the same node, while it exists.
+    fn node_env(&self, _node_id: &str) -> Option<Arc<dyn Environment>> {
+        None
+    }
     /// Resolves when this environment's reachability may have changed, so
     /// a waiting reconnect can retry at once instead of sleeping out its
     /// backoff. Environments with no such signal never resolve.
@@ -158,6 +167,17 @@ pub fn validate_env_url(url: &str) -> Result<()> {
             "environment URL must be unix://, tcp://, http:// or https://".into(),
         )),
     }
+}
+
+/// The name of a Swarm node's view: `<env>@<node>`. `@` is not allowed in
+/// environment names, so it cannot collide with one.
+pub fn node_view_name(env: &str, node: &str) -> String {
+    format!("{env}@{node}")
+}
+
+/// `(env, node)` for a node view's name.
+pub fn split_node_view(name: &str) -> Option<(&str, &str)> {
+    name.split_once('@').filter(|(e, n)| !e.is_empty() && !n.is_empty())
 }
 
 /// The URL of an agent environment: made by the server, never typed.

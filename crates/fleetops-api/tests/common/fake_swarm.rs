@@ -115,6 +115,19 @@ impl FakeSwarm {
         if path.contains("/nodes") {
             return (200, Value::Array(nodes).to_string());
         }
+        if path.contains("/containers/json") {
+            return (
+                200,
+                json!([{
+                    "Id": "c0ffee", "Names": ["/web.1.abc"], "Image": "nginx:1.27",
+                    "ImageID": "sha256:1", "Command": "nginx", "Created": 1,
+                    "State": "running", "Status": "Up 1 minute", "Ports": [],
+                    "Labels": {"com.docker.compose.project": "blog", "com.docker.compose.service": "web"},
+                    "Mounts": [], "NetworkSettings": {"Networks": {}}
+                }])
+                .to_string(),
+            );
+        }
         if path.contains("/swarm") {
             return (
                 200,

@@ -615,7 +615,7 @@ export type EnvAccessEntry = {
     username: string;
 };
 
-export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent' | 'swarm-agent';
+export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent' | 'swarm-agent' | 'swarm-node';
 
 export type EnvRole = 'viewer' | 'operator';
 

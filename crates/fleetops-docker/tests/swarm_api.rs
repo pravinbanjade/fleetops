@@ -153,3 +153,64 @@ async fn a_manager_session_brings_it_up_and_the_leader_serves() {
     assert!(env.node("n3").is_some());
     assert!(env.node("n4").is_none());
 }
+
+#[tokio::test]
+async fn a_node_view_reaches_that_nodes_engine() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = fake_manager(dir.path());
+    let agents = Arc::new(Registry::default());
+    let env = SwarmEnv::new(9, "prod", agents.clone());
+    let (bye, rx) = mpsc::channel(1);
+    std::mem::forget(rx);
+    agents.insert_node(9, "n3", "k", loopback(Target::Unix(sock)), info("n3", false), bye);
+    let view = env.node_env("n3").expect("a node view");
+    assert_eq!(view.name(), "prod@n3");
+    assert_eq!(view.id(), 9);
+    assert_eq!(view.kind(), fleetops_core::env::EnvKind::SwarmNode);
+    assert!(view.docker().is_some());
+    match view.status().await {
+        EnvStatus::Up {
+            version: EnvVersion::Docker(v),
+        } => assert_eq!(v.version, "27.3.1"),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_node_without_an_agent_is_down() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = fake_manager(dir.path());
+    let agents = Arc::new(Registry::default());
+    let env = SwarmEnv::new(9, "prod", agents.clone());
+    let (bye, rx) = mpsc::channel(1);
+    std::mem::forget(rx);
+    agents.insert_node(9, "n1", "k", loopback(Target::Unix(sock)), info("n1", true), bye);
+    // n3 is in the swarm (a manager reports it) but has no agent.
+    env.status().await;
+    let view = env.node_env("n3").expect("a known node");
+    assert!(view.docker().is_none());
+    match view.status().await {
+        EnvStatus::Down { reason } => assert_eq!(reason, "node n3 has no connected agent"),
+        other => panic!("{other:?}"),
+    }
+    assert!(env.node_env("zz").is_none(), "not in the swarm");
+}
+
+#[tokio::test]
+async fn node_views_are_cached_per_node() {
+    let agents = Arc::new(Registry::default());
+    let env = SwarmEnv::new(9, "prod", agents.clone());
+    let (bye, rx) = mpsc::channel(1);
+    std::mem::forget(rx);
+    agents.insert_node(
+        9,
+        "n3",
+        "k",
+        loopback(Target::Unix("/nonexistent.sock".into())),
+        info("n3", false),
+        bye,
+    );
+    let a = env.node_env("n3").unwrap();
+    let b = env.node_env("n3").unwrap();
+    assert!(Arc::ptr_eq(&a, &b));
+}

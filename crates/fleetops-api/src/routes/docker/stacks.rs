@@ -1,7 +1,7 @@
 //! Stacks: Compose projects FleetOps authors and deploys (stacks spec §5–§6).
 
 use super::compose::ComposeOutcome;
-use super::{ctx, EnvCtx};
+use super::{stack_ctx, EnvCtx};
 use crate::openapi::EnvParam;
 use crate::{
     auth::extract::CurrentUser,
@@ -285,7 +285,7 @@ pub async fn list(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<StackSummary>>> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     let mut out = Vec::new();
     for st in s.store.list_stacks(c.env.id()).await? {
         out.push(summary(&s, st).await?);
@@ -309,7 +309,7 @@ pub async fn create(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<CreateStackBody>,
 ) -> ApiResult<(StatusCode, Json<StackSummary>)> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
     validate_stack_name(&body.name).map_err(Error::Invalid)?;
     check_size(&body.compose, &body.variables)?;
     let res = s
@@ -343,7 +343,7 @@ pub async fn validate(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<ValidateBody>,
 ) -> ApiResult<Json<ValidateResponse>> {
-    ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     check_size(&body.compose, &body.variables)?;
     Ok(Json(
         match parse(&body.compose, &body.variables, &body.name) {
@@ -373,7 +373,7 @@ pub async fn get(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<StackDetail>> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let mut draft = s.store.draft(stack.id).await?.unwrap_or(Draft {
         compose: String::new(),
@@ -411,7 +411,7 @@ pub async fn save_draft(
     ApiPath((env, name)): ApiPath<(String, String)>,
     ApiJson(mut body): ApiJson<DraftBody>,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     check_size(&body.compose, &body.variables)?;
     let stored = s.store.draft(stack.id).await?;
@@ -463,7 +463,7 @@ pub async fn plan_stack(
     ApiPath((env, name)): ApiPath<(String, String)>,
     ApiJson(from): ApiJson<DeploySource>,
 ) -> ApiResult<Json<PlanResponse>> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     Ok(Json(make_plan(&s, c.ops.as_ref(), &stack, from).await?.0))
 }
@@ -485,7 +485,7 @@ pub async fn deploy(
     ApiPath((env, name)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<DeployBody>,
 ) -> ApiResult<(StatusCode, Json<DeployStarted>)> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let started = start_deploy(
         &s,
@@ -514,7 +514,7 @@ pub async fn revisions(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Vec<RevisionRecord>>> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     Ok(Json(s.store.list_revisions(stack.id).await?))
 }
@@ -533,7 +533,7 @@ pub async fn revision(
     cu: CurrentUser,
     ApiPath((env, name, n)): ApiPath<(String, String, i64)>,
 ) -> ApiResult<Json<RevisionDetail>> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let revision = s.store.revision(stack.id, n).await?;
     let mut variables = s.store.revision_variables(stack.id, n).await?;
@@ -581,7 +581,7 @@ pub async fn action(
         "restart" => ContainerAction::Restart,
         other => return Err(Error::NotFound(format!("unknown stack action '{other}'")).into()),
     };
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     recover_stack(&s, c.ops.as_ref(), &stack).await?;
     let _lock = try_lock(&s, stack.id)
@@ -626,7 +626,7 @@ pub async fn remove(
     ApiPath((env, name)): ApiPath<(String, String)>,
     ApiQuery(q): ApiQuery<RemoveQuery>,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Delete)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Delete)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let _lock = try_lock(&s, stack.id)
         .ok_or_else(|| Error::Conflict("a deploy of this stack is running".into()))?;

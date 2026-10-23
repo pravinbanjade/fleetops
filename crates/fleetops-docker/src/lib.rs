@@ -7,6 +7,7 @@ mod env;
 mod error;
 pub mod files;
 mod resources;
+mod node_env;
 mod streams;
 mod swarm;
 mod swarm_env;
@@ -14,6 +15,7 @@ mod tunnel;
 
 pub use agent_env::AgentDockerEnv;
 pub use env::{DockerEnvFactory, LocalDockerEnv};
+pub use node_env::NodeEnv;
 pub use swarm_env::SwarmEnv;
 
 use bollard::Docker;

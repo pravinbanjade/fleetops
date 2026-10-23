@@ -2,7 +2,7 @@
 //! its draft declares, and the values stored for them. Secret values are
 //! write-only: no response ever carries one.
 
-use super::ctx;
+use super::stack_ctx;
 use super::stacks::audit;
 use crate::openapi::EnvParam;
 use crate::{auth::extract::CurrentUser, authz::Need, extract::ApiPath, ApiResult, AppState};
@@ -105,7 +105,7 @@ pub async fn list(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Vec<StackFile>>> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let stored = s.store.stack_files(stack.id).await?;
     let git = match stack.source.as_str() {
@@ -220,7 +220,7 @@ pub async fn set(
     ApiPath((env, stack_name, kind, name)): ApiPath<(String, String, String, String)>,
     body: Bytes,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
     let kind = kind_of(&kind)?;
     check_name(&name)?;
     let text = std::str::from_utf8(&body)
@@ -286,7 +286,7 @@ pub async fn remove(
     cu: CurrentUser,
     ApiPath((env, stack_name, kind, name)): ApiPath<(String, String, String, String)>,
 ) -> ApiResult<StatusCode> {
-    let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
     let kind = kind_of(&kind)?;
     let stack = s.store.stack_by_name(c.env.id(), &stack_name).await?;
     let res = match s
