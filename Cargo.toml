@@ -44,7 +44,7 @@ k8s-openapi = { version = "0.28", features = ["v1_32"] }
 ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ring"] }
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "ring", "ws", "runtime"] }
 jiff = "0.2.37"
-jsonwebtoken = { version = "10.3", default-features = false, features = ["rust_crypto", "use_pem"] }
+jsonwebtoken = { version = "11.1", default-features = false, features = ["rust_crypto", "use_pem"] }
 jsonschema = { version = "0.58", default-features = false }
 mime_guess = "2"
 p256 = "0.13"
