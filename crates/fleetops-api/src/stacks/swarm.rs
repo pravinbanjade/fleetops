@@ -16,7 +16,7 @@ use crate::AppState;
 use fleetops_core::compose::docker::{network_hash, LABEL_HASH};
 use fleetops_core::compose::files::FileValues;
 use fleetops_core::compose::plan::{Plan, ResourceAction, ServiceAction};
-use fleetops_core::compose::swarm::{named, object_name, service_name, service_spec};
+use fleetops_core::compose::swarm::{canonical, named, object_name, service_name, service_spec};
 use fleetops_core::compose::swarm_plan::{drift, SwarmLive};
 use fleetops_core::compose::{FileKind, FileSource, Project, SwarmMode};
 use fleetops_core::env::Environment;
@@ -321,8 +321,9 @@ pub(crate) async fn execute(
         .collect();
     let live = live(ops, stack).await?;
 
-    // (key, service id) of every service created or updated.
-    let mut changed: Vec<(String, String)> = Vec::new();
+    // Every service created or updated, and what converging means for it.
+    let mut changed: Vec<Changed> = Vec::new();
+    let names = live.network_names();
     for sp in plan
         .services
         .iter()
@@ -345,14 +346,30 @@ pub(crate) async fn execute(
             }
         }
         let name = service_name(project, key);
-        let id = match live.service(&name) {
+        // Swarm restarts tasks, and reports an update status, only when
+        // the task template or the endpoint changed.
+        let replaces = |l: &fleetops_core::swarm::ServiceDetail| {
+            let current = canonical(&named(&l.spec, &names));
+            let next = canonical(&spec);
+            ["TaskTemplate", "EndpointSpec"]
+                .iter()
+                .any(|k| current[*k] != next[*k])
+        };
+        let (id, wait) = match live.service(&name) {
             None => {
                 say(progress, "service", format!("creating {key}"));
-                ops.create_service(&spec)
+                let id = ops
+                    .create_service(&spec)
                     .await
-                    .map_err(|e| fail(format!("create {key}: {e}")))?
+                    .map_err(|e| fail(format!("create {key}: {e}")))?;
+                (id, Wait::Created)
             }
             Some(l) => {
+                let wait = if replaces(l) {
+                    Wait::Rollout
+                } else {
+                    Wait::Counts
+                };
                 say(progress, "service", format!("updating {key}"));
                 ops.update_service(
                     &l.summary.id,
@@ -363,7 +380,7 @@ pub(crate) async fn execute(
                 )
                 .await
                 .map_err(|e| fail(format!("update {key}: {e}")))?;
-                l.summary.id.clone()
+                (l.summary.id.clone(), wait)
             }
         };
         let job = matches!(
@@ -371,7 +388,11 @@ pub(crate) async fn execute(
             Some(SwarmMode::ReplicatedJob | SwarmMode::GlobalJob)
         );
         if !job {
-            changed.push((key.clone(), id));
+            changed.push(Changed {
+                key: key.clone(),
+                id,
+                wait,
+            });
         }
     }
 
@@ -397,18 +418,39 @@ pub(crate) async fn execute(
 }
 
 /// Waits until every service in `changed` runs as asked, or fails.
+/// What a created or updated service must show before it counts as
+/// converged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Wait {
+    /// New: Swarm has scheduled its tasks, and they all run.
+    Created,
+    /// Its tasks are replaced: Swarm reports a rollout of its own and
+    /// completes it. Swarm clears the old status on the update and reports
+    /// the new one a little later, so no status yet means not started.
+    Rollout,
+    /// Nothing is replaced (replicas or labels): its tasks all run.
+    Counts,
+}
+
+struct Changed {
+    key: String,
+    id: String,
+    wait: Wait,
+}
+
 async fn converge(
     ops: &dyn SwarmOps,
     watch: &mut TaskWatch,
-    changed: &[(String, String)],
+    changed: &[Changed],
     timing: &Timing,
     progress: Progress<'_>,
 ) -> Result<()> {
     let start = Instant::now();
     let mut waiting: BTreeMap<&str, &str> = changed
         .iter()
-        .map(|(k, id)| (id.as_str(), k.as_str()))
+        .map(|c| (c.id.as_str(), c.key.as_str()))
         .collect();
+    let waits: BTreeMap<&str, Wait> = changed.iter().map(|c| (c.id.as_str(), c.wait)).collect();
     let mut shown: BTreeMap<&str, (u64, u64, Option<String>)> = BTreeMap::new();
     while !waiting.is_empty() {
         watch.drain();
@@ -448,8 +490,17 @@ async fn converge(
             if let Some(why) = watch.failure(id, key, timing.swarm_pending) {
                 return Err(fail(why));
             }
-            let updated = matches!(state.as_deref(), None | Some("completed"));
-            if updated && svc.tasks_running >= svc.tasks_desired {
+            let running = svc.tasks_running >= svc.tasks_desired;
+            let done = match waits[id] {
+                Wait::Rollout => state.as_deref() == Some("completed") && running,
+                Wait::Counts => matches!(state.as_deref(), None | Some("completed")) && running,
+                // Swarm counts a new service's tasks only once it made them.
+                Wait::Created => {
+                    let replicas = svc.replicas_desired;
+                    state.is_none() && running && (svc.tasks_desired > 0 || replicas == Some(0))
+                }
+            };
+            if done {
                 waiting.remove(id);
             }
         }

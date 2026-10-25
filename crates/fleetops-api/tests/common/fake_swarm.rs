@@ -137,6 +137,9 @@ pub struct FakeSwarm {
     pub on_create_task: Mutex<Option<Value>>,
     /// Objects created so far, for their ids.
     created: Mutex<u32>,
+    /// Update statuses a manager has not reported yet: (service id, status),
+    /// shown from the second service listing after the update on.
+    late: Mutex<Vec<(String, Value, u32)>>,
 }
 
 pub fn secrets_json() -> Value {
@@ -190,6 +193,7 @@ impl FakeSwarm {
             update_outcome: Mutex::default(),
             on_create_task: Mutex::default(),
             created: Mutex::default(),
+            late: Mutex::default(),
         })
     }
 
@@ -331,7 +335,13 @@ impl FakeSwarm {
                 .unwrap()
                 .clone()
                 .unwrap_or(("completed".into(), "update completed".into()));
-            svc["UpdateStatus"] = json!({"State": state, "Message": message});
+            // As swarmkit does: the update clears the status, and the
+            // updater reports its own a little later.
+            svc["UpdateStatus"] = Value::Null;
+            self.late
+                .lock()
+                .unwrap()
+                .push((id, json!({"State": state, "Message": message}), 1));
             return (200, r#"{"Warnings":[]}"#.into());
         }
         for (kind, list) in [
@@ -418,7 +428,24 @@ impl FakeSwarm {
             };
         }
         if path.contains("/services") {
-            return (200, self.services.lock().unwrap().to_string());
+            let mut services = self.services.lock().unwrap();
+            let mut late = self.late.lock().unwrap();
+            late.retain_mut(|(id, status, wait)| {
+                if *wait > 0 {
+                    *wait -= 1;
+                    return true;
+                }
+                if let Some(svc) = services
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|s| s["ID"] == id.as_str())
+                {
+                    svc["UpdateStatus"] = status.clone();
+                }
+                false
+            });
+            return (200, services.to_string());
         }
         if path.contains("/tasks") {
             return (200, self.tasks.lock().unwrap().to_string());

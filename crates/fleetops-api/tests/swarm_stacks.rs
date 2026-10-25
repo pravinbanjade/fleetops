@@ -665,3 +665,24 @@ async fn stack_services_need_swarm_services_view() {
         .await;
     assert_eq!(r.status, 403, "{:?}", r.json);
 }
+
+#[tokio::test]
+async fn an_update_that_rolls_back_after_the_first_look_fails_the_deploy() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    deploy(&sw).await;
+    *sw.daemon.update_outcome.lock().unwrap() = Some((
+        "rollback_completed".into(),
+        "rolled back: task failed".into(),
+    ));
+    shop(&sw, &SHOP.replace("nginx:1.27", "nginx:1.28"), "a").await;
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "failed", "{task}");
+    assert!(
+        task["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("deploy failed: web: update rollback_completed: rolled back: task failed"),
+        "{task}"
+    );
+}
