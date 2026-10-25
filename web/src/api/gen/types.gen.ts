@@ -354,6 +354,9 @@ export type ConfigData = {
 export type ConfigSummary = {
     created_at: number;
     id: string;
+    labels: {
+        [key: string]: string;
+    };
     name: string;
     stack?: string | null;
     updated_at: number;
@@ -1389,8 +1392,14 @@ export type Plan = {
      * Problems that stop this plan from being deployed.
      */
     blocking: Array<string>;
+    configs: Array<ResourcePlan>;
     images: Array<ImagePlan>;
     networks: Array<ResourcePlan>;
+    /**
+     * Swarm stacks: the secrets and configs, by Docker name. Empty for a
+     * Compose stack, whose files are copied into its containers.
+     */
+    secrets: Array<ResourcePlan>;
     services: Array<ServicePlan>;
     token: string;
     volumes: Array<ResourcePlan>;
@@ -1582,6 +1591,9 @@ export type SecretRotated = {
 export type SecretSummary = {
     created_at: number;
     id: string;
+    labels: {
+        [key: string]: string;
+    };
     name: string;
     stack?: string | null;
     updated_at: number;
@@ -1639,7 +1651,7 @@ export type ServerMsg = {
     type: 'access_changed';
 };
 
-export type ServiceAction = 'create' | 'recreate' | 'scale' | 'unchanged' | 'remove';
+export type ServiceAction = 'create' | 'recreate' | 'update' | 'scale' | 'unchanged' | 'remove';
 
 export type ServiceDetail = ServiceSummary & {
     /**
@@ -1677,6 +1689,11 @@ export type ServiceEdit = {
 
 export type ServicePlan = {
     action: ServiceAction;
+    /**
+     * Swarm stacks: what changed on the live service since it was
+     * deployed; the deploy overwrites it. Empty otherwise.
+     */
+    drift: Array<string>;
     name: string;
     reasons: Array<string>;
     replicas_after: number;
@@ -1774,8 +1791,8 @@ export type StackFile = {
      */
     name: string;
     /**
-     * The `file:` path as written, or for a `repo` source the path in the
-     * repository.
+     * The `file:` path as written; for a `repo` source the path in the
+     * repository; for an `external` one, the Swarm object's name.
      */
     path?: string | null;
     /**
@@ -1783,7 +1800,8 @@ export type StackFile = {
      */
     set: boolean;
     /**
-     * `fleetops` (a Secrets-tab value), `variable`, `inline` or `repo`.
+     * `fleetops` (a Secrets-tab value), `variable`, `inline`, `repo`, or
+     * `external` (a Swarm object the stack only names).
      */
     source: string;
     updated_at?: number | null;
@@ -1820,6 +1838,25 @@ export type StackRecord = {
      * inline | git
      */
     source: string;
+};
+
+/**
+ * One service of a Swarm stack, as its stack page shows it.
+ */
+export type StackService = {
+    /**
+     * What changed on it since it was deployed; empty when nothing did.
+     */
+    drift: Array<string>;
+    /**
+     * The Compose key (`web` for `shop_web`).
+     */
+    key: string;
+    /**
+     * Deployed by FleetOps: it carries the spec-hash label.
+     */
+    managed: boolean;
+    service: ServiceSummary;
 };
 
 export type StackSummary = {
@@ -1930,6 +1967,9 @@ export type SwarmNetwork = {
     encrypted: boolean;
     id: string;
     internal: boolean;
+    labels: {
+        [key: string]: string;
+    };
     name: string;
     stack?: string | null;
     subnets: Array<string>;
@@ -5804,6 +5844,40 @@ export type GetStackRevisionResponses = {
 };
 
 export type GetStackRevisionResponse = GetStackRevisionResponses[keyof GetStackRevisionResponses];
+
+export type ListStackServicesData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Stack name
+         */
+        stack: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/stacks/{stack}/services';
+};
+
+export type ListStackServicesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListStackServicesError = ListStackServicesErrors[keyof ListStackServicesErrors];
+
+export type ListStackServicesResponses = {
+    /**
+     * The services
+     */
+    200: Array<StackService>;
+};
+
+export type ListStackServicesResponse = ListStackServicesResponses[keyof ListStackServicesResponses];
 
 export type StackActionData = {
     body?: never;

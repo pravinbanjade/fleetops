@@ -6566,6 +6566,66 @@
         ]
       }
     },
+    "/api/v1/envs/{env}/stacks/{stack}/services": {
+      "get": {
+        "tags": [
+          "stacks"
+        ],
+        "summary": "A Swarm stack's services, with what drifted since they were deployed",
+        "description": "Swarm environments only; needs `swarm-services.view` on the whole environment as well.",
+        "operationId": "listStackServices",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stack",
+            "in": "path",
+            "description": "Stack name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StackService"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs/{env}/stacks/{stack}/{action}": {
       "post": {
         "tags": [
@@ -10027,6 +10087,7 @@
         "required": [
           "id",
           "name",
+          "labels",
           "created_at",
           "updated_at",
           "used_by"
@@ -10038,6 +10099,15 @@
           },
           "id": {
             "type": "string"
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "name": {
             "type": "string"
@@ -12688,6 +12758,8 @@
           "networks",
           "volumes",
           "images",
+          "secrets",
+          "configs",
           "blocking",
           "token"
         ],
@@ -12698,6 +12770,12 @@
               "type": "string"
             },
             "description": "Problems that stop this plan from being deployed."
+          },
+          "configs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePlan"
+            }
           },
           "images": {
             "type": "array",
@@ -12710,6 +12788,13 @@
             "items": {
               "$ref": "#/components/schemas/ResourcePlan"
             }
+          },
+          "secrets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourcePlan"
+            },
+            "description": "Swarm stacks: the secrets and configs, by Docker name. Empty for a\nCompose stack, whose files are copied into its containers."
           },
           "services": {
             "type": "array",
@@ -13209,6 +13294,7 @@
         "required": [
           "id",
           "name",
+          "labels",
           "created_at",
           "updated_at",
           "used_by"
@@ -13220,6 +13306,15 @@
           },
           "id": {
             "type": "string"
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "name": {
             "type": "string"
@@ -13442,6 +13537,7 @@
         "enum": [
           "create",
           "recreate",
+          "update",
           "scale",
           "unchanged",
           "remove"
@@ -13512,11 +13608,19 @@
           "action",
           "reasons",
           "replicas_before",
-          "replicas_after"
+          "replicas_after",
+          "drift"
         ],
         "properties": {
           "action": {
             "$ref": "#/components/schemas/ServiceAction"
+          },
+          "drift": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Swarm stacks: what changed on the live service since it was\ndeployed; the deploy overwrites it. Empty otherwise."
           },
           "name": {
             "type": "string"
@@ -13789,7 +13893,7 @@
               "string",
               "null"
             ],
-            "description": "The `file:` path as written, or for a `repo` source the path in the\nrepository."
+            "description": "The `file:` path as written; for a `repo` source the path in the\nrepository; for an `external` one, the Swarm object's name."
           },
           "set": {
             "type": "boolean",
@@ -13797,7 +13901,7 @@
           },
           "source": {
             "type": "string",
-            "description": "`fleetops` (a Secrets-tab value), `variable`, `inline` or `repo`."
+            "description": "`fleetops` (a Secrets-tab value), `variable`, `inline`, `repo`, or\n`external` (a Swarm object the stack only names)."
           },
           "updated_at": {
             "type": [
@@ -13887,6 +13991,36 @@
           "source": {
             "type": "string",
             "description": "inline | git"
+          }
+        }
+      },
+      "StackService": {
+        "type": "object",
+        "description": "One service of a Swarm stack, as its stack page shows it.",
+        "required": [
+          "key",
+          "service",
+          "managed",
+          "drift"
+        ],
+        "properties": {
+          "drift": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What changed on it since it was deployed; empty when nothing did."
+          },
+          "key": {
+            "type": "string",
+            "description": "The Compose key (`web` for `shop_web`)."
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "Deployed by FleetOps: it carries the spec-hash label."
+          },
+          "service": {
+            "$ref": "#/components/schemas/ServiceSummary"
           }
         }
       },
@@ -14144,7 +14278,8 @@
           "internal",
           "encrypted",
           "subnets",
-          "used_by"
+          "used_by",
+          "labels"
         ],
         "properties": {
           "attachable": {
@@ -14161,6 +14296,15 @@
           },
           "internal": {
             "type": "boolean"
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "name": {
             "type": "string"

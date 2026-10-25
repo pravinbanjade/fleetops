@@ -574,3 +574,94 @@ fn fast_config() -> ApiConfig {
         ..Default::default()
     }
 }
+
+// Removal, actions and per-service status.
+
+#[tokio::test]
+async fn removing_a_swarm_stack_removes_its_objects() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    deploy(&sw).await;
+    let before = sw.daemon.write_paths().len();
+    let r = send(&sw, "DELETE", &format!("{SHOP_STACKS}?volumes=true"), None).await;
+    assert_eq!(r.status, 204, "{:?}", r.json);
+    let paths = sw.daemon.write_paths()[before..].to_vec();
+    assert!(paths.iter().all(|p| p.starts_with("DELETE")), "{paths:?}");
+    let svc = position(&paths, "/services/");
+    let sec = position(&paths, "/secrets/");
+    let net = position(&paths, "/networks/");
+    assert!(svc < sec && svc < net, "{paths:?}");
+    assert!(!paths.iter().any(|p| p.contains("/volumes")), "{paths:?}");
+    let r = send(&sw, "GET", SHOP_STACKS, None).await;
+    assert_eq!(r.status, 404);
+    assert!(!sw
+        .daemon
+        .services
+        .lock()
+        .unwrap()
+        .to_string()
+        .contains("shop_web"));
+}
+
+#[tokio::test]
+async fn stack_actions_are_refused_on_a_swarm() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    let r = send(&sw, "POST", &format!("{SHOP_STACKS}/restart"), None).await;
+    assert_eq!(r.status, 409, "{:?}", r.json);
+    assert!(r.json["message"].as_str().unwrap().ends_with(
+        "a Swarm stack's services are scaled or redeployed one by one on the Services page"
+    ));
+}
+
+#[tokio::test]
+async fn stack_services_show_drift() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    deploy(&sw).await;
+    let r = send(&sw, "GET", &format!("{SHOP_STACKS}/services"), None).await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json[0]["key"], "web");
+    assert_eq!(r.json[0]["managed"], true);
+    assert_eq!(r.json[0]["drift"], json!([]));
+    assert_eq!(r.json[0]["service"]["name"], "shop_web");
+    {
+        let mut services = sw.daemon.services.lock().unwrap();
+        let web = services
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|s| s["Spec"]["Name"] == "shop_web")
+            .unwrap();
+        web["Spec"]["Mode"]["Replicated"]["Replicas"] = json!(7);
+    }
+    let r = send(&sw, "GET", &format!("{SHOP_STACKS}/services"), None).await;
+    assert_eq!(
+        r.json[0]["drift"],
+        json!(["replicas: 3 → 7"]),
+        "{:?}",
+        r.json
+    );
+}
+
+#[tokio::test]
+async fn stack_services_need_swarm_services_view() {
+    let (sw, bob) = common::fake_swarm::with_custom(&[(Row::Stacks, Verb::View)]).await;
+    let r = send(
+        &sw,
+        "POST",
+        STACKS,
+        Some(json!({"name": "shop", "compose": SHOP, "variables": []})),
+    )
+    .await;
+    assert_eq!(r.status, 201);
+    let r =
+        sw.t.send(req(
+            "GET",
+            &format!("{SHOP_STACKS}/services"),
+            None,
+            Some(&bob),
+        ))
+        .await;
+    assert_eq!(r.status, 403, "{:?}", r.json);
+}

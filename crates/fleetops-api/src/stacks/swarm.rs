@@ -16,12 +16,14 @@ use crate::AppState;
 use fleetops_core::compose::docker::{network_hash, LABEL_HASH};
 use fleetops_core::compose::files::FileValues;
 use fleetops_core::compose::plan::{Plan, ResourceAction, ServiceAction};
-use fleetops_core::compose::swarm::{object_name, service_name, service_spec};
-use fleetops_core::compose::swarm_plan::SwarmLive;
+use fleetops_core::compose::swarm::{named, object_name, service_name, service_spec};
+use fleetops_core::compose::swarm_plan::{drift, SwarmLive};
 use fleetops_core::compose::{FileKind, FileSource, Project, SwarmMode};
 use fleetops_core::env::Environment;
 use fleetops_core::streams::BoxStream;
-use fleetops_core::swarm::{NewSwarmNetwork, ServiceChange, SwarmOps, TaskSummary, STACK_LABEL};
+use fleetops_core::swarm::{
+    NewSwarmNetwork, ServiceChange, ServiceSummary, SwarmOps, TaskSummary, STACK_LABEL,
+};
 use fleetops_core::{Error, Result};
 use fleetops_store::{RevisionRecord, StackRecord};
 use futures_util::StreamExt;
@@ -593,4 +595,84 @@ pub(crate) fn deploy_stream(
             |mut rx| async move { rx.recv().await.map(|v| (Ok(v), rx)) },
         )
     }))
+}
+
+/// Removes everything labelled with `stack`: its services first, then its
+/// secrets, configs and networks once nothing uses them. Volumes live on
+/// each node and stay.
+pub(crate) async fn remove(ops: &dyn SwarmOps, stack: &str, timing: &Timing) -> Result<()> {
+    let ours = |s: &Option<String>| s.as_deref() == Some(stack);
+    let mut errors = Vec::new();
+    for svc in ops.services().await?.into_iter().filter(|s| ours(&s.stack)) {
+        if let Err(e) = ops.remove_service(&svc.id).await {
+            errors.push(format!("{}: {e}", svc.name));
+        }
+    }
+    for sec in ops.secrets().await?.into_iter().filter(|s| ours(&s.stack)) {
+        if let Err(e) = remove_retried(timing, || ops.remove_secret(&sec.id)).await {
+            errors.push(format!("secret {}: {e}", sec.name));
+        }
+    }
+    for c in ops.configs().await?.into_iter().filter(|c| ours(&c.stack)) {
+        if let Err(e) = remove_retried(timing, || ops.remove_config(&c.id)).await {
+            errors.push(format!("config {}: {e}", c.name));
+        }
+    }
+    for n in ops.networks().await?.into_iter().filter(|n| ours(&n.stack)) {
+        if let Err(e) = remove_retried(timing, || ops.remove_network(&n.id)).await {
+            errors.push(format!("network {}: {e}", n.name));
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(fail(errors.join("; ")))
+    }
+}
+
+/// One service of a Swarm stack, as its stack page shows it.
+#[derive(Debug, serde::Serialize, utoipa::ToSchema)]
+pub struct StackService {
+    /// The Compose key (`web` for `shop_web`).
+    pub key: String,
+    pub service: ServiceSummary,
+    /// Deployed by FleetOps: it carries the spec-hash label.
+    pub managed: bool,
+    /// What changed on it since it was deployed; empty when nothing did.
+    pub drift: Vec<String>,
+}
+
+/// `stack`'s live services, with what drifted from the deployed revision.
+pub(crate) async fn stack_services(
+    s: &AppState,
+    ops: &dyn SwarmOps,
+    stack: &StackRecord,
+) -> Result<Vec<StackService>> {
+    let deployed = super::start::deployed(s, stack, fleetops_core::compose::Mode::Swarm)
+        .await?
+        .and_then(|(_, _, p)| p);
+    let live = live(ops, &stack.name).await?;
+    let names = live.network_names();
+    let prefix = format!("{}_", stack.name);
+    let mut out: Vec<StackService> = live
+        .services
+        .iter()
+        .map(|d| {
+            let key = d
+                .summary
+                .name
+                .strip_prefix(&prefix)
+                .unwrap_or(&d.summary.name)
+                .to_string();
+            let spec = named(&d.spec, &names);
+            StackService {
+                managed: spec["Labels"][fleetops_core::compose::swarm::LABEL_SPEC_HASH].is_string(),
+                drift: drift(&spec, deployed.as_ref(), &key),
+                service: d.summary.clone(),
+                key,
+            }
+        })
+        .collect();
+    out.sort_by(|a, b| a.key.cmp(&b.key));
+    Ok(out)
 }

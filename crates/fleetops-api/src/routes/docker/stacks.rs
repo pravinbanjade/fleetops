@@ -624,6 +624,45 @@ pub async fn action(
     }))
 }
 
+pub use crate::stacks::swarm::StackService;
+
+#[utoipa::path(
+    get,
+    path = "/envs/{env}/stacks/{stack}/services",
+    operation_id = "listStackServices",
+    tag = "stacks",
+    summary = "A Swarm stack's services, with what drifted since they were deployed",
+    description = "Swarm environments only; needs `swarm-services.view` on the whole environment as well.",
+    params(EnvParam, ("stack" = String, Path, description = "Stack name")),
+    responses((status = 200, description = "The services", body = Vec<StackService>))
+)]
+pub async fn services(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath((env, name)): ApiPath<(String, String)>,
+) -> ApiResult<Json<Vec<StackService>>> {
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let StackOps::Swarm(ops) = &c.ops else {
+        return Err(Error::Conflict(
+            "stack services are listed per container on a Docker host".into(),
+        )
+        .into());
+    };
+    let p = Permission::new(Row::SwarmServices, Verb::View);
+    crate::authz::deny_audited(
+        &s,
+        &c.user,
+        c.env.id(),
+        &p.to_string(),
+        c.grants.check_env(p),
+    )
+    .await?;
+    let stack = s.store.stack_by_name(c.env.id(), &name).await?;
+    Ok(Json(
+        crate::stacks::swarm::stack_services(&s, ops.as_ref(), &stack).await?,
+    ))
+}
+
 #[utoipa::path(
     delete,
     path = "/envs/{env}/stacks/{stack}",
@@ -645,9 +684,9 @@ pub async fn remove(
         .ok_or_else(|| Error::Conflict("a deploy of this stack is running".into()))?;
     let outcome = match &c.ops {
         StackOps::Docker(ops) => remove_objects(ops.as_ref(), &name, q.volumes).await,
-        StackOps::Swarm(_) => Err(Error::Conflict(
-            "removing a Swarm stack is not available yet".into(),
-        )),
+        StackOps::Swarm(ops) => {
+            crate::stacks::swarm::remove(ops.as_ref(), &name, &s.config.stack_timing).await
+        }
     };
     let outcome = match outcome {
         Ok(()) => {

@@ -145,6 +145,7 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(stacks::deploy))
         .routes(routes!(stacks::revisions))
         .routes(routes!(stacks::revision))
+        .routes(routes!(stacks::services))
         .routes(routes!(stacks::action))
         .routes(routes!(
             stacks_git::get,
