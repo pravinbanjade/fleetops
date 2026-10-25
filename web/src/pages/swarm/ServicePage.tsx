@@ -1,14 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { FileText, ListChecks, ScrollText } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
+import { useEnvAccess } from "@/api/access";
 import { swarmServiceQuery } from "@/api/queries";
+import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/DataTable";
 import { Page } from "@/components/Page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { errorMessage } from "@/lib/errors";
 import { useSwarmEvents } from "@/live/swarmEvents";
 import { useSwarmTasks } from "@/live/swarmTasks";
+import { ServiceActions } from "./ServiceActions";
+import { ServiceDialog } from "./ServiceDialog";
 import { FeedPaused, taskColumns } from "./TasksPage";
 
 const LogsTab = lazy(() => import("@/pages/containers/logs/LogsTab").then((m) => ({ default: m.LogsTab })));
@@ -21,13 +25,29 @@ export function ServicePage() {
   const { tasks, paused } = useSwarmTasks(env);
   const [cols] = useState(() => taskColumns(env));
   const [tab, setTab] = useState("tasks");
+  const [editing, setEditing] = useState(false);
+  const { can } = useEnvAccess(env);
+  const navigate = useNavigate();
   const s = svc.data;
   if (svc.error) return <Page title={id}>{<p role="alert" className="text-sm text-destructive">{errorMessage(svc.error)}</p>}</Page>;
   return (
     <Page
       title={s?.name ?? id}
       meta={s && `${s.mode} · ${s.tasks_running}/${s.tasks_desired} running · ${s.image}${s.stack ? ` · stack ${s.stack}` : ""}`}
+      actions={
+        s && (
+          <span className="flex items-center gap-2">
+            {can("swarm-services.operate") && (
+              <Button variant="outline" onClick={() => setEditing(true)}>
+                Edit
+              </Button>
+            )}
+            <ServiceActions env={env} service={s} onRemoved={() => void navigate({ to: "/envs/$env/swarm/services", params: { env } })} />
+          </span>
+        )
+      }
     >
+      {editing && s && <ServiceDialog env={env} target={{ mode: "edit", service: s }} onClose={() => setEditing(false)} />}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="tasks">

@@ -5,7 +5,11 @@ import type { ServiceSummary } from "@/api/gen/types.gen";
 import { swarmServicesQuery } from "@/api/queries";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
+import { useEnvAccess } from "@/api/access";
+import { Button } from "@/components/ui/button";
 import { useSwarmEvents } from "@/live/swarmEvents";
+import { ServiceActions } from "./ServiceActions";
+import { ServiceDialog } from "./ServiceDialog";
 import { useEnv } from "./shared";
 
 const col = columns<ServiceSummary>();
@@ -31,6 +35,7 @@ const serviceColumns = (env: string): Column<ServiceSummary>[] => [
   col.accessor("image", { header: "Image", cell: (c) => <span className="font-mono text-xs">{c.getValue()}</span> }),
   col.accessor((s) => s.ports.join(", "), { id: "ports", header: "Ports" }),
   col.accessor((s) => s.update_state ?? "", { id: "update", header: "Update" }),
+  col.display({ id: "actions", header: "", cell: (c) => <ServiceActions env={env} service={c.row.original} /> }),
 ];
 
 export function ServicesPage() {
@@ -38,8 +43,11 @@ export function ServicesPage() {
   useSwarmEvents(env);
   const services = useQuery(swarmServicesQuery(env));
   const [cols] = useState(() => serviceColumns(env));
+  const [creating, setCreating] = useState(false);
+  const { can } = useEnvAccess(env);
   return (
-    <Page title="Services">
+    <Page title="Services" actions={can("swarm-services.create") && <Button onClick={() => setCreating(true)}>Create service</Button>}>
+      {creating && <ServiceDialog env={env} target={{ mode: "create" }} onClose={() => setCreating(false)} />}
       <DataTable label="Services" data={services.data} error={services.error} columns={cols} getRowId={(s) => s.id} empty="No services." initialSorting={[{ id: "name", desc: false }]} />
     </Page>
   );

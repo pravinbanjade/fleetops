@@ -72,3 +72,94 @@ describe("Swarm node actions", () => {
     await waitFor(() => expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ labels: { zone: "a", disk: "ssd" } }));
   });
 });
+
+const SERVICES = [
+  { id: "s1", name: "blog_web", stack: "blog", mode: "replicated", replicas_desired: 3, tasks_running: 3, tasks_desired: 3, image: "nginx:1.27", ports: [], update_state: null, updated_at: 1, labels: {} },
+];
+const S1 = { ...SERVICES[0], spec: { Name: "blog_web", TaskTemplate: { ContainerSpec: { Image: "nginx:1.27" } }, Mode: { Replicated: { Replicas: 3 } } }, update_status: null, version: 10 };
+const svcRoutes = {
+  ...routes,
+  "GET /api/v1/envs/prod/swarm/services": { json: SERVICES },
+  "GET /api/v1/envs/prod/swarm/services/s1": { json: S1 },
+};
+
+describe("Swarm service actions", () => {
+  it("create posts the built spec", async () => {
+    const calls = mockFetch({ ...svcRoutes, "POST /api/v1/envs/prod/swarm/services": { status: 201, json: { id: "s9" } } });
+    renderApp("/envs/prod/swarm/services");
+    await userEvent.click(await screen.findByRole("button", { name: "Create service" }));
+    const d = await screen.findByRole("dialog", { name: "Create service" });
+    await userEvent.type(within(d).getByLabelText("Name"), "api");
+    await userEvent.type(within(d).getByLabelText("Image"), "nginx:1.28");
+    await userEvent.clear(within(d).getByLabelText("Replicas"));
+    await userEvent.type(within(d).getByLabelText("Replicas"), "2");
+    await userEvent.type(within(d).getByLabelText(/^Ports/), "8080:80");
+    await userEvent.click(within(d).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+      spec: {
+        Name: "api",
+        TaskTemplate: { ContainerSpec: { Image: "nginx:1.28" } },
+        Mode: { Replicated: { Replicas: 2 } },
+        EndpointSpec: { Ports: [{ Protocol: "tcp", TargetPort: 80, PublishedPort: 8080 }] },
+      },
+    });
+  });
+
+  it("edit sends the version", async () => {
+    const calls = mockFetch({ ...svcRoutes, "PUT /api/v1/envs/prod/swarm/services/s1": { status: 204 } });
+    renderApp("/envs/prod/swarm/services/s1");
+    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const d = await screen.findByRole("dialog", { name: "Edit blog_web" });
+    await userEvent.clear(within(d).getByLabelText("Image"));
+    await userEvent.type(within(d).getByLabelText("Image"), "nginx:1.28");
+    await userEvent.click(within(d).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const put = calls.find((c) => c.method === "PUT")?.body as { spec: { TaskTemplate: { ContainerSpec: { Image: string } } }; version: number };
+    expect(put.version).toBe(10);
+    expect(put.spec.TaskTemplate.ContainerSpec.Image).toBe("nginx:1.28");
+  });
+
+  it("raw spec mode refuses invalid JSON", async () => {
+    mockFetch(svcRoutes);
+    renderApp("/envs/prod/swarm/services/s1");
+    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const d = await screen.findByRole("dialog", { name: "Edit blog_web" });
+    await userEvent.click(within(d).getByRole("button", { name: "Raw spec" }));
+    const raw = within(d).getByLabelText("ServiceSpec (JSON)");
+    expect((raw as HTMLTextAreaElement).value).toContain('"Name": "blog_web"');
+    await userEvent.clear(raw);
+    await userEvent.type(raw, "{{nope");
+    await userEvent.click(within(d).getByRole("button", { name: "Save" }));
+    expect(await within(d).findByText(/the spec is not valid JSON/)).toBeInTheDocument();
+  });
+
+  it("scale with typed confirmation", async () => {
+    let n = 0;
+    const calls = mockFetch({
+      ...svcRoutes,
+      "POST /api/v1/envs/prod/swarm/services/s1/scale": () =>
+        n++ === 0 ? { status: 409, json: { code: "confirm_required", message: "'blog_web' runs the FleetOps agents; this can disconnect the swarm. Type 'blog_web' to confirm." } } : { status: 204 },
+    });
+    renderApp("/envs/prod/swarm/services");
+    await userEvent.click(await screen.findByRole("button", { name: "Actions for blog_web" }));
+    await userEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Scale" }));
+    const d = await screen.findByRole("dialog", { name: "Scale blog_web" });
+    await userEvent.clear(within(d).getByLabelText("Replicas"));
+    await userEvent.type(within(d).getByLabelText("Replicas"), "5");
+    await userEvent.click(within(d).getByRole("button", { name: "Scale" }));
+    const typed = await screen.findByRole("dialog", { name: "Are you sure?" });
+    await userEvent.type(within(typed).getByLabelText(/to confirm/), "blog_web");
+    await userEvent.click(within(typed).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST").length).toBe(2));
+    expect(calls.filter((c) => c.method === "POST").map((c) => c.body)).toEqual([{ replicas: 5 }, { replicas: 5, confirm: "blog_web" }]);
+  });
+
+  it("an operator without swarm-services.create sees no Create button", async () => {
+    const limited = { ...SWARM, access: { role: "operator", namespaces: null, grants: [{ namespaces: null, permissions: ["swarm-services.view", "swarm-services.operate"] }] } };
+    mockFetch({ ...svcRoutes, "GET /api/v1/envs": { json: [...ENVS, limited] } });
+    renderApp("/envs/prod/swarm/services");
+    expect(await screen.findByRole("link", { name: "blog_web" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create service" })).not.toBeInTheDocument();
+  });
+});
