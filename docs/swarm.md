@@ -80,7 +80,25 @@ Swarm has its own rows in the role grid, under **Docker Swarm**:
 | Secrets (swarm) | names and who uses them | create | | remove | |
 | Configs | names and who uses them | create | | remove | content |
 
-Swarm networks use the **Networks** row. A node's pages use the Docker rows (containers, images, volumes, networks). The built-in Viewer gets every View cell and config content; Operator gets every swarm cell. For now these cells must apply to the whole swarm: a grant limited to stacks sees no cluster pages yet.
+Swarm networks use the **Networks** row. A node's pages use the Docker rows (containers, images, volumes, networks). The built-in Viewer gets every View cell and config content; Operator gets every swarm cell.
+
+## Stack scoping
+
+A grant on a swarm can be limited to stacks, the way a Kubernetes grant is limited to namespaces. In the access dialog, untick **Entire swarm** and list the stacks. An object belongs to a stack by its `com.docker.stack.namespace` label. An object without that label belongs to no stack, and only a grant on the whole swarm reaches it.
+
+**What a grant limited to stacks reaches:**
+- **Cluster objects:** the services, tasks, secrets, configs and networks of its stacks. Lists show only those, and a service's logs need its stack.
+- **Changes:** scaling, redeploying, rolling back, editing and removing its stacks' services, and removing their secrets, configs and networks. An edit cannot move a service out of its stack, by relabelling it or dropping the label. It cannot attach a secret, config or network that belongs to another stack.
+- **Stacks:** its own stacks, and only those can be created or deployed. A deploy cannot name an external secret, config or network of another stack. A Git auto-deploy follows the stacks of whoever last saved the stack's Git settings, and stops if that person no longer has the stack.
+- **Nodes:** the nodes list, read-only, so the visualizer works. A node's own page, and every node change, needs the whole swarm.
+- **Node pages:** only containers, and only its stacks' containers there: their logs, terminals, files, stats and actions. Images, volumes, networks, disk usage and Compose projects reach the whole node, so they are hidden. So is creating, duplicating or pruning containers.
+- **Live updates:** events, logs and the task feed carry only objects in its stacks. Node events carry no stack, so they reach anyone who may list nodes.
+
+**What it cannot do:** create services, secrets, configs or networks directly. It creates them by deploying one of its stacks.
+
+**Several grants** add up as for Kubernetes: an action is allowed when one grant both holds the permission and covers the object. An env-wide Viewer plus an Operator limited to `blog` sees everything and changes only `blog`.
+
+**Scoping is not a sandbox.** It limits what a person sees and manages through FleetOps. Someone who can deploy a stack can still run what Docker allows on the nodes, such as a container that mounts a host path. Give deploy rights on a swarm only to people you would trust on its nodes.
 
 ## Self-protection
 

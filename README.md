@@ -121,6 +121,7 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 - An overview that leads with what needs attention, live nodes, services, tasks and a task visualizer, service logs across tasks, and secrets, configs and networks with who uses them.
 - Every node opens as a Docker host of its own: containers, logs, terminals, images and volumes on that node.
 - Change the swarm from the browser: drain, promote and label nodes; create, edit, scale, redeploy, roll back and remove services; create secrets, configs and overlay networks. Its own role-grid rows, and a typed confirmation before touching FleetOps' own service, its node or the agents.
+- Roles limited to stacks, as Kubernetes roles are limited to namespaces: on every cluster page, node page, live feed and log, a grant reaches only its stacks' services, tasks, secrets, configs, networks and containers.
 - Swarm stacks: the stacks editor, Git sync, variables, secrets, revisions and rollback, deploying Compose files as Swarm services with the whole `deploy:` block. Each deploy reports progress per service and fails on a paused update, a rejected task or a task left pending. A service changed outside its stack is marked as drifted. Stacks deployed with `docker stack deploy` are listed too.
 
 **Multi-host and teams**
