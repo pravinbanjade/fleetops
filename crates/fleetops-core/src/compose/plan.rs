@@ -28,6 +28,8 @@ pub struct Live {
 pub enum ServiceAction {
     Create,
     Recreate,
+    /// Swarm stacks: Swarm rolls the service to its new spec.
+    Update,
     Scale,
     Unchanged,
     Remove,
@@ -49,6 +51,9 @@ pub struct ServicePlan {
     pub reasons: Vec<String>,
     pub replicas_before: u32,
     pub replicas_after: u32,
+    /// Swarm stacks: what changed on the live service since it was
+    /// deployed; the deploy overwrites it. Empty otherwise.
+    pub drift: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -72,6 +77,10 @@ pub struct Plan {
     pub networks: Vec<ResourcePlan>,
     pub volumes: Vec<ResourcePlan>,
     pub images: Vec<ImagePlan>,
+    /// Swarm stacks: the secrets and configs, by Docker name. Empty for a
+    /// Compose stack, whose files are copied into its containers.
+    pub secrets: Vec<ResourcePlan>,
+    pub configs: Vec<ResourcePlan>,
     /// Problems that stop this plan from being deployed.
     pub blocking: Vec<String>,
     pub token: String,
@@ -230,6 +239,7 @@ pub fn plan(new: &Project, deployed: Option<(&Project, i64)>, live: &Live) -> Pl
             reasons,
             replicas_before: before,
             replicas_after: svc.replicas,
+            drift: vec![],
         });
     }
     // A container sharing another's network (`network_mode: service:x`)
@@ -277,6 +287,7 @@ pub fn plan(new: &Project, deployed: Option<(&Project, i64)>, live: &Live) -> Pl
             reasons: vec!["no longer in the file".into()],
             replicas_before: by_service(orphan).len() as u32,
             replicas_after: 0,
+            drift: vec![],
         });
     }
 
@@ -405,6 +416,8 @@ pub fn plan(new: &Project, deployed: Option<(&Project, i64)>, live: &Live) -> Pl
         networks,
         volumes,
         images,
+        secrets: vec![],
+        configs: vec![],
         blocking,
         token,
     }

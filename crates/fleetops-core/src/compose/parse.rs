@@ -149,7 +149,10 @@ impl Cx<'_> {
     /// A whole number, written as a number or a string.
     fn uint(&mut self, m: &Map<String, Value>, key: &str, path: &str) -> Option<u64> {
         let v = m.get(key).filter(|v| !v.is_null())?;
-        match v.as_u64().or_else(|| scalar(v).and_then(|s| s.parse().ok())) {
+        match v
+            .as_u64()
+            .or_else(|| scalar(v).and_then(|s| s.parse().ok()))
+        {
             Some(n) => Some(n),
             None => {
                 self.err(&join(path, key), "must be a whole number");
@@ -687,7 +690,10 @@ fn swarm_file_decl(
         .collect();
     if external {
         if let Some(k) = given.first() {
-            cx.err(&join(path, k), "an external secret or config has no value here");
+            cx.err(
+                &join(path, k),
+                "an external secret or config has no value here",
+            );
             return None;
         }
         return Some(FileSource::External {
@@ -705,7 +711,10 @@ fn swarm_file_decl(
         [] => {
             cx.err(
                 path,
-                format!("needs one source: {}, or external: true", sources.join(", ")),
+                format!(
+                    "needs one source: {}, or external: true",
+                    sources.join(", ")
+                ),
             );
             None
         }

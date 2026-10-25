@@ -17,7 +17,12 @@ fn names_follow_docker_stack_deploy() {
     let p = project();
     assert_eq!(service_name(&p, "web"), "shop_web");
     let secret = object_name(&p, FileKind::Secret, "db");
-    let digest = &p.services["web"].files.iter().find(|f| f.source == "db").unwrap().digest;
+    let digest = &p.services["web"]
+        .files
+        .iter()
+        .find(|f| f.source == "db")
+        .unwrap()
+        .digest;
     assert_eq!(secret, format!("shop_db_{}", &digest[..10]));
     assert!(object_name(&p, FileKind::Config, "site").starts_with("shop_site_"));
 }
@@ -121,7 +126,10 @@ fn renders_a_full_service() {
 fn modes_render_as_docker_names_them() {
     for (mode, want) in [
         ("global", json!({"Global": {}})),
-        ("replicated-job", json!({"ReplicatedJob": {"TotalCompletions": 1}})),
+        (
+            "replicated-job",
+            json!({"ReplicatedJob": {"TotalCompletions": 1}}),
+        ),
         ("global-job", json!({"GlobalJob": {}})),
     ] {
         let mut p = parse_mode(
@@ -189,11 +197,22 @@ fn a_live_spec_with_docker_defaults_has_no_drift() {
     // The fixture was written against the sample with these names.
     live["Labels"][LABEL_SPEC_HASH] = spec["Labels"][LABEL_SPEC_HASH].clone();
     let cs = &mut live["TaskTemplate"]["ContainerSpec"];
-    cs["Secrets"][0]["SecretName"] = spec["TaskTemplate"]["ContainerSpec"]["Secrets"][0]["SecretName"].clone();
-    cs["Configs"][0]["ConfigName"] = spec["TaskTemplate"]["ContainerSpec"]["Configs"][0]["ConfigName"].clone();
-    let live = named(&live, &[("netid1".to_string(), "shop_front".to_string())].into());
-    assert_eq!(spec_changes(&canonical(&spec), &canonical(&live)), Vec::<String>::new());
-    assert_eq!(spec_hash(&live), spec["Labels"][LABEL_SPEC_HASH].as_str().unwrap());
+    cs["Secrets"][0]["SecretName"] =
+        spec["TaskTemplate"]["ContainerSpec"]["Secrets"][0]["SecretName"].clone();
+    cs["Configs"][0]["ConfigName"] =
+        spec["TaskTemplate"]["ContainerSpec"]["Configs"][0]["ConfigName"].clone();
+    let live = named(
+        &live,
+        &[("netid1".to_string(), "shop_front".to_string())].into(),
+    );
+    assert_eq!(
+        spec_changes(&canonical(&spec), &canonical(&live)),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        spec_hash(&live),
+        spec["Labels"][LABEL_SPEC_HASH].as_str().unwrap()
+    );
 }
 
 #[test]
@@ -201,7 +220,8 @@ fn spec_changes_hide_values() {
     let p = project();
     let old = canonical(&service_spec(&p, "web"));
     let mut new = old.clone();
-    new["TaskTemplate"]["ContainerSpec"]["Env"] = json!(["DB_PASSWORD=other", "MODE=prod", "NEW=1"]);
+    new["TaskTemplate"]["ContainerSpec"]["Env"] =
+        json!(["DB_PASSWORD=other", "MODE=prod", "NEW=1"]);
     new["TaskTemplate"]["ContainerSpec"]["Image"] = json!("nginx:1.28");
     new["Labels"]["com.docker.stack.image"] = json!("nginx:1.28");
     new["Mode"]["Replicated"]["Replicas"] = json!(7);
@@ -219,5 +239,7 @@ fn spec_changes_hide_values() {
             "TaskTemplate.Placement.Constraints changed",
         ]
     );
-    assert!(!changes.iter().any(|c| c.contains("other") || c.contains("hunter2")));
+    assert!(!changes
+        .iter()
+        .any(|c| c.contains("other") || c.contains("hunter2")));
 }

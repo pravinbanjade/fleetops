@@ -252,7 +252,11 @@ pub fn service_spec(project: &Project, key: &str) -> Value {
             .collect();
         placement.insert("Preferences".into(), json!(prefs));
     }
-    put(&mut placement, "MaxReplicas", json!(d.max_replicas_per_node));
+    put(
+        &mut placement,
+        "MaxReplicas",
+        json!(d.max_replicas_per_node),
+    );
     if !placement.is_empty() {
         tt.insert("Placement".into(), Value::Object(placement));
     }
@@ -293,12 +297,18 @@ pub fn service_spec(project: &Project, key: &str) -> Value {
         match d.mode {
             SwarmMode::Replicated => json!({"Replicated": {"Replicas": svc.replicas}}),
             SwarmMode::Global => json!({"Global": {}}),
-            SwarmMode::ReplicatedJob => json!({"ReplicatedJob": {"TotalCompletions": svc.replicas}}),
+            SwarmMode::ReplicatedJob => {
+                json!({"ReplicatedJob": {"TotalCompletions": svc.replicas}})
+            }
             SwarmMode::GlobalJob => json!({"GlobalJob": {}}),
         },
     );
     put(&mut spec, "UpdateConfig", update_policy(&d.update_config));
-    put(&mut spec, "RollbackConfig", update_policy(&d.rollback_config));
+    put(
+        &mut spec,
+        "RollbackConfig",
+        update_policy(&d.rollback_config),
+    );
     let mut endpoint = Map::new();
     put(&mut endpoint, "Mode", json!(d.endpoint_mode));
     let ports: Vec<Value> = svc

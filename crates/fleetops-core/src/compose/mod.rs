@@ -10,6 +10,7 @@ pub mod model;
 pub mod parse;
 pub mod plan;
 pub mod swarm;
+pub mod swarm_plan;
 
 use serde::Serialize;
 use utoipa::ToSchema;

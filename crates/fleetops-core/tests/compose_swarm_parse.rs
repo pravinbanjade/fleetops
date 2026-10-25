@@ -112,7 +112,11 @@ services:
         })
     );
     assert_eq!(
-        d.rollback_config.as_ref().unwrap().failure_action.as_deref(),
+        d.rollback_config
+            .as_ref()
+            .unwrap()
+            .failure_action
+            .as_deref(),
         Some("pause")
     );
     assert_eq!(d.labels, BTreeMap::from([("team".into(), "web".into())]));
@@ -123,7 +127,10 @@ services:
 #[test]
 fn every_service_has_a_deploy_block_in_swarm_mode() {
     let p = swarm("services:\n  web:\n    image: x\n");
-    let d = p.project.services["web"].swarm.as_ref().expect("default deploy");
+    let d = p.project.services["web"]
+        .swarm
+        .as_ref()
+        .expect("default deploy");
     assert_eq!(d.mode, SwarmMode::Replicated);
     assert_eq!(p.project.services["web"].replicas, 1);
 }
@@ -134,7 +141,11 @@ fn rollback_config_cannot_roll_back() {
         "services:\n  web:\n    image: x\n    deploy:\n      rollback_config: { failure_action: rollback }\n",
     );
     assert!(
-        has(&i, "services.web.deploy.rollback_config.failure_action", "continue or pause"),
+        has(
+            &i,
+            "services.web.deploy.rollback_config.failure_action",
+            "continue or pause"
+        ),
         "{i:?}"
     );
 }
@@ -174,15 +185,39 @@ services:
     );
     let w = &p.warnings;
     for (path, text) in [
-        ("services.web.container_name", "'container_name' is ignored in a Swarm stack"),
-        ("services.web.restart", "'restart' is ignored in a Swarm stack: use deploy.restart_policy"),
-        ("services.web.mem_limit", "'mem_limit' is ignored in a Swarm stack: use deploy.resources.limits"),
-        ("services.web.cpus", "'cpus' is ignored in a Swarm stack: use deploy.resources.limits"),
-        ("services.web.depends_on", "'depends_on' is ignored in a Swarm stack"),
+        (
+            "services.web.container_name",
+            "'container_name' is ignored in a Swarm stack",
+        ),
+        (
+            "services.web.restart",
+            "'restart' is ignored in a Swarm stack: use deploy.restart_policy",
+        ),
+        (
+            "services.web.mem_limit",
+            "'mem_limit' is ignored in a Swarm stack: use deploy.resources.limits",
+        ),
+        (
+            "services.web.cpus",
+            "'cpus' is ignored in a Swarm stack: use deploy.resources.limits",
+        ),
+        (
+            "services.web.depends_on",
+            "'depends_on' is ignored in a Swarm stack",
+        ),
         ("services.web.links", "'links' is ignored in a Swarm stack"),
-        ("services.web.privileged", "'privileged' is ignored in a Swarm stack"),
-        ("services.web.ports[0].host_ip", "'host_ip' is ignored in a Swarm stack"),
-        ("services.web.networks.default.ipv4_address", "'ipv4_address' is ignored in a Swarm stack"),
+        (
+            "services.web.privileged",
+            "'privileged' is ignored in a Swarm stack",
+        ),
+        (
+            "services.web.ports[0].host_ip",
+            "'host_ip' is ignored in a Swarm stack",
+        ),
+        (
+            "services.web.networks.default.ipv4_address",
+            "'ipv4_address' is ignored in a Swarm stack",
+        ),
     ] {
         assert!(has(w, path, text), "{path}: {w:?}");
     }
@@ -203,7 +238,11 @@ fn global_with_replicas_is_an_error() {
         "services:\n  web:\n    image: x\n    deploy:\n      mode: global\n      replicas: 2\n",
     );
     assert!(
-        has(&i, "services.web.deploy.replicas", "replicas cannot be set with mode global"),
+        has(
+            &i,
+            "services.web.deploy.replicas",
+            "replicas cannot be set with mode global"
+        ),
         "{i:?}"
     );
 }
@@ -269,7 +308,11 @@ fn swarm_networks_are_overlay() {
         "services:\n  web:\n    image: x\n    networks: [front]\nnetworks:\n  front: { driver: bridge }\n",
     );
     assert!(
-        has(&i, "networks.front.driver", "a Swarm stack's networks use the overlay driver"),
+        has(
+            &i,
+            "networks.front.driver",
+            "a Swarm stack's networks use the overlay driver"
+        ),
         "{i:?}"
     );
     swarm(
@@ -280,10 +323,16 @@ fn swarm_networks_are_overlay() {
 #[test]
 fn port_mode_is_kept_in_swarm_mode_only() {
     let p = swarm(SAMPLE.replace("build", "x").as_str());
-    assert_eq!(p.project.services["web"].ports[1].mode.as_deref(), Some("host"));
+    assert_eq!(
+        p.project.services["web"].ports[1].mode.as_deref(),
+        Some("host")
+    );
     assert_eq!(p.project.services["web"].ports[0].mode, None);
     let i = swarm_issues(
         "services:\n  web:\n    image: x\n    ports: [{ target: 80, mode: bridge }]\n",
     );
-    assert!(has(&i, "services.web.ports[0].mode", "ingress or host"), "{i:?}");
+    assert!(
+        has(&i, "services.web.ports[0].mode", "ingress or host"),
+        "{i:?}"
+    );
 }
