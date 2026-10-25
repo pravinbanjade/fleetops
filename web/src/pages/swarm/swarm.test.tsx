@@ -140,6 +140,30 @@ const nodeRoutes = {
   [`GET /api/v1/envs/${NODE}/events`]: { json: [] },
 };
 
+describe("Swarm key rotation on the Nodes page", () => {
+  it("offers no Finish key rotation with none pending", async () => {
+    mockFetch(routes);
+    const { screen } = renderApp("/envs/prod/swarm/nodes");
+    await screen.findByRole("button", { name: "Re-trust swarm" });
+    expect(screen.queryByRole("button", { name: "Finish key rotation" })).not.toBeInTheDocument();
+  });
+
+  it("offers Finish key rotation while one is pending", async () => {
+    const pending = { ...SWARM, agent: { ...SWARM.agent, rotation_ends_at: Math.floor(Date.now() / 1000) + 3600 } };
+    mockFetch({ ...routes, "GET /api/v1/envs": { json: [...ENVS, pending] } });
+    const { screen } = renderApp("/envs/prod/swarm/nodes");
+    expect(await screen.findByRole("button", { name: "Finish key rotation" })).toBeInTheDocument();
+  });
+
+  it("says when only workers are connected", async () => {
+    const workers = { ...SWARM, agent: { ...SWARM.agent, connected: false } };
+    mockFetch({ ...routes, "GET /api/v1/envs": { json: [...ENVS, workers] } });
+    const { screen } = renderApp("/admin/envs");
+    const table = await screen.findByRole("table", { name: "Environments" });
+    await waitFor(() => expect(table).toHaveTextContent("2 nodes connected, no manager"));
+  });
+});
+
 describe("Swarm trust and node views", () => {
   it("a pending swarm shows the fingerprint and trusts on click", async () => {
     const calls = mockFetch({

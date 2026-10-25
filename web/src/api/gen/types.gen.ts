@@ -39,6 +39,11 @@ export type AgentView = {
     join_expires_at?: number | null;
     last_error?: string | null;
     last_seen_at?: number | null;
+    /**
+     * swarm-agent: until when the key from before the last rotation still
+     * works; null with no rotation pending.
+     */
+    rotation_ends_at?: number | null;
 };
 
 /**

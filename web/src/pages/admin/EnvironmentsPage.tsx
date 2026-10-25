@@ -94,7 +94,9 @@ function AgentCell({ env }: { env: EnvView }) {
     const n = env.swarm_nodes_connected ?? 0;
     return (
       <span className="grid gap-0.5">
-        <span className={n ? undefined : "text-muted-foreground"}>{n ? `${n} node${n === 1 ? "" : "s"} connected` : "waiting for agents"}</span>
+        <span className={n ? undefined : "text-muted-foreground"}>
+          {n ? `${n} node${n === 1 ? "" : "s"} connected${a.connected ? "" : ", no manager"}` : "waiting for agents"}
+        </span>
         {a.last_error && <span className="text-xs text-destructive">{a.last_error}</span>}
       </span>
     );

@@ -173,6 +173,64 @@ async fn rotate_names_a_new_secret_and_keeps_the_old_key_for_24h() {
         .contains(&"agent.rotate".to_string()));
 }
 
+/// The list says until when a rotation's old key works, so Finish is
+/// offered only while one is pending.
+#[tokio::test]
+async fn the_env_list_says_when_a_rotation_ends() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    create(&t, &admin).await;
+    let list = || t.send(req("GET", "/api/v1/envs", None, Some(&admin)));
+    assert!(list().await.json[0]["agent"]["rotation_ends_at"].is_null());
+    t.send(with_origin(req(
+        "POST",
+        "/api/v1/envs/prod/swarm/rotate",
+        None,
+        Some(&admin),
+    )))
+    .await;
+    let ends = list().await.json[0]["agent"]["rotation_ends_at"].as_i64();
+    let now = fleetops_core::now_unix();
+    assert!(ends.is_some_and(|e| e > now + 86_000), "{ends:?}");
+    t.send(req(
+        "POST",
+        "/api/v1/envs/prod/swarm/rotate/finish",
+        None,
+        Some(&admin),
+    ))
+    .await;
+    assert!(list().await.json[0]["agent"]["rotation_ends_at"].is_null());
+}
+
+/// A swarm is up only while a manager's agent is connected: workers alone
+/// don't make it "connected".
+#[tokio::test]
+async fn workers_alone_are_not_connected() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let key = create(&t, &admin).await.json["swarm_enrollment"]["agent_key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id(&t), &pki, &daemon).await;
+    let m = join(&t, &key, &pki, &daemon, "n1", true).await;
+    let _w = join(&t, &key, &pki, &daemon, "n2", false).await;
+    let list = || t.send(req("GET", "/api/v1/envs", None, Some(&admin)));
+    assert_eq!(list().await.json[0]["agent"]["connected"], true);
+    drop(m);
+    for _ in 0..200 {
+        if list().await.json[0]["swarm_nodes_connected"] == 1 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let env = &list().await.json[0];
+    assert_eq!(env["swarm_nodes_connected"], 1);
+    assert_eq!(env["agent"]["connected"], false, "{env}");
+}
+
 #[tokio::test]
 async fn finish_rotation_revokes_sessions_on_the_old_key() {
     let t = app().await;

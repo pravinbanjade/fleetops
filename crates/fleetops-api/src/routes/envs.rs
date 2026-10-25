@@ -167,9 +167,13 @@ pub async fn list(State(s): State<AppState>, cu: CurrentUser) -> ApiResult<Json<
         .filter_map(|env| {
             let access = crate::agents::CallerAccess::of(grants.get(&env.id)?);
             let swarm = env.kind == EnvKind::SwarmAgent.as_str();
-            let nodes = swarm.then(|| s.agents.nodes(env.id).len() as u32);
-            let connected = match nodes {
-                Some(n) => n > 0,
+            let live = swarm.then(|| s.agents.nodes(env.id));
+            let nodes = live.as_ref().map(|l| l.len() as u32);
+            // A swarm is reached through a manager: workers alone are not.
+            let connected = match &live {
+                Some(l) => l
+                    .iter()
+                    .any(|(_, n)| n.info.host.swarm.as_ref().is_some_and(|c| c.manager)),
                 None => s.agents.get(env.id).is_some(),
             };
             let agent = agents.remove(&env.id).map(|a| AgentView::new(a, connected));

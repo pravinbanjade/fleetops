@@ -1,6 +1,8 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { finishSwarmRotation } from "@/api/gen/sdk.gen";
+import { keys } from "@/api/queries";
 import type { SwarmEnrollment as Enrollment } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -35,12 +37,14 @@ export function SwarmEnrollment({
   rotated?: boolean;
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
   const [inside, setInside] = useState(false);
   const stack = (inside && enrollment.inside) || enrollment.outside;
   const finish = async () => {
     try {
       await finishSwarmRotation({ path: { env }, throwOnError: true });
       toast.success("Rotation finished: the old key no longer works");
+      await qc.invalidateQueries({ queryKey: keys.envs });
     } catch (e) {
       toast.error(errorMessage(e));
     }

@@ -97,6 +97,9 @@ pub struct AgentView {
     pub access: Option<String>,
     /// kube-agent: the manifest also reads every kind, for custom resources.
     pub custom_resources: bool,
+    /// swarm-agent: until when the key from before the last rotation still
+    /// works; null with no rotation pending.
+    pub rotation_ends_at: Option<i64>,
 }
 
 impl AgentView {
@@ -111,6 +114,9 @@ impl AgentView {
             join_expires_at: rec.join_expires_at,
             access: rec.access,
             custom_resources: rec.custom_resources,
+            rotation_ends_at: rec
+                .rotation_ends_at
+                .filter(|t| *t > fleetops_core::now_unix()),
         }
     }
 }

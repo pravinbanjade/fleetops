@@ -25,11 +25,16 @@ pub struct AgentRecord {
     pub custom_resources: bool,
     /// swarm-agent: 1 at creation, plus one per rotation.
     pub key_generation: i64,
+    /// swarm-agent: until when the key from before the last rotation still
+    /// works; `None` with no rotation pending.
+    pub rotation_ends_at: Option<i64>,
 }
 
 const AGENT_COLS: &str = "environment_id, key_hash IS NOT NULL AS enrolled, join_expires_at, \
                           last_seen_at, agent_version, host_info, last_error, access, \
-                          custom_resources, key_generation";
+                          custom_resources, key_generation, \
+                          CASE WHEN prev_key_hash IS NOT NULL THEN prev_key_expires_at END \
+                          AS rotation_ends_at";
 
 impl Store {
     pub async fn create_agent_environment(

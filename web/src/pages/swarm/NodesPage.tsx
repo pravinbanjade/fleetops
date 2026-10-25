@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useEnvAccess } from "@/api/access";
-import { envStatusQuery } from "@/api/queries";
+import { envStatusQuery, envsQuery } from "@/api/queries";
 import { Link } from "@tanstack/react-router";
 import { finishSwarmRotation, getSwarmTrust, listSwarmAgents, retrustSwarm, trustSwarm } from "@/api/gen/sdk.gen";
 import { ApiError } from "@/api/client";
@@ -160,6 +160,9 @@ export function NodesPage({ env }: { env: string }) {
   const [confirm, setConfirm] = useState<"finish" | "retrust" | null>(null);
   const [cols] = useState(() => nodeColumns(env));
   const rows = agents.data ?? [];
+  // The key from before the last rotation still works until then.
+  const ends = useQuery(envsQuery).data?.find((e) => e.name === env)?.agent?.rotation_ends_at;
+  const rotating = ends != null && ends * 1000 > Date.now();
   const covered = rows.filter((n) => n.connected).length;
   const down = status.data?.state === "down" ? status.data.reason : null;
   return (
@@ -169,9 +172,11 @@ export function NodesPage({ env }: { env: string }) {
       actions={
         user.role === "admin" && (
           <span className="flex gap-2">
-            <Button variant="outline" onClick={() => setConfirm("finish")}>
-              Finish key rotation
-            </Button>
+            {rotating && (
+              <Button variant="outline" onClick={() => setConfirm("finish")}>
+                Finish key rotation
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setConfirm("retrust")}>
               Re-trust swarm
             </Button>
@@ -196,7 +201,7 @@ export function NodesPage({ env }: { env: string }) {
           onConfirm={async () => {
             await finishSwarmRotation({ path: { env }, throwOnError: true });
             toast.success("Rotation finished");
-            await qc.invalidateQueries({ queryKey: agentsKey });
+            await Promise.all([qc.invalidateQueries({ queryKey: agentsKey }), qc.invalidateQueries({ queryKey: envsQuery.queryKey })]);
           }}
         />
       )}

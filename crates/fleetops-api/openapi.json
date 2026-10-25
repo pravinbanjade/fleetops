@@ -9373,6 +9373,14 @@
               "null"
             ],
             "format": "int64"
+          },
+          "rotation_ends_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "swarm-agent: until when the key from before the last rotation still\nworks; null with no rotation pending."
           }
         }
       },
