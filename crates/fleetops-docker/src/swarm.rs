@@ -145,7 +145,13 @@ fn service_summary(svc: &Service) -> ServiceSummary {
 fn task_summary(t: Task, services: &HashMap<String, String>) -> TaskSummary {
     let status = t.status.unwrap_or_default();
     let service_id = t.service_id.unwrap_or_default();
+    let stack = t
+        .spec
+        .as_ref()
+        .and_then(|s| s.container_spec.as_ref())
+        .and_then(|c| stack_of(&c.labels));
     TaskSummary {
+        stack,
         service_name: services.get(&service_id).cloned().unwrap_or_default(),
         service_id,
         id: t.id.unwrap_or_default(),

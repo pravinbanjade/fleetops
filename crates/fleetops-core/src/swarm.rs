@@ -113,6 +113,8 @@ pub struct TaskSummary {
     pub id: String,
     pub service_id: String,
     pub service_name: String,
+    /// From its container spec's stack label (swarm spec §6).
+    pub stack: Option<String>,
     pub slot: Option<u64>,
     pub node_id: Option<String>,
     pub desired_state: String,

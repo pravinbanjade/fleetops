@@ -11386,6 +11386,14 @@
             "type": "integer",
             "format": "int64"
           },
+          "updated_by": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Who last saved the settings; a swarm auto-deploy acts with their\nstack scope."
+          },
           "url": {
             "type": "string"
           }
@@ -14654,6 +14662,13 @@
             ],
             "format": "int64",
             "minimum": 0
+          },
+          "stack": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "From its container spec's stack label (swarm spec §6)."
           },
           "state": {
             "type": "string"

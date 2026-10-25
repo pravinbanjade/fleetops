@@ -815,6 +815,11 @@ export type GitRecord = {
      */
     sync: string;
     updated_at: number;
+    /**
+     * Who last saved the settings; a swarm auto-deploy acts with their
+     * stack scope.
+     */
+    updated_by?: number | null;
     url: string;
 };
 
@@ -2081,6 +2086,10 @@ export type TaskSummary = {
     service_id: string;
     service_name: string;
     slot?: number | null;
+    /**
+     * From its container spec's stack label (swarm spec §6).
+     */
+    stack?: string | null;
     state: string;
     /**
      * Unix seconds.

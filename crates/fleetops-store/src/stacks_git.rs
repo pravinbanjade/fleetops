@@ -34,6 +34,9 @@ pub struct GitRecord {
     pub last_sync_at: Option<i64>,
     pub last_sync_error: Option<String>,
     pub updated_at: i64,
+    /// Who last saved the settings; a swarm auto-deploy acts with their
+    /// stack scope.
+    pub updated_by: Option<i64>,
 }
 
 /// The settings a user edits.
@@ -66,7 +69,7 @@ pub enum TokenChange<'a> {
 const GIT_COLS: &str = "stack_id, url, branch, path, sync, poll_seconds, auto_deploy, paused,
     token IS NOT NULL AS has_token, ssh_key IS NOT NULL AS has_key, ssh_public_key, ssh_host_key,
     last_fetched_commit, pending_commit, last_sync_at,
-    last_sync_error, updated_at";
+    last_sync_error, updated_at, updated_by";
 
 fn token_aad(stack_id: i64) -> Vec<u8> {
     format!("stack-git-token:{stack_id}").into_bytes()

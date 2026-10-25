@@ -149,6 +149,7 @@ mod tests {
 
     fn task(id: &str, version: u64) -> TaskSummary {
         TaskSummary {
+            stack: None,
             id: id.into(),
             service_id: "s".into(),
             service_name: "s".into(),

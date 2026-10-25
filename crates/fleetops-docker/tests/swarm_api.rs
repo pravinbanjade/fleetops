@@ -67,6 +67,7 @@ fn tasks_json() -> serde_json::Value {
     serde_json::json!([
         {
             "ID": "t1", "Version": {"Index": 20}, "ServiceID": "s1", "Slot": 1, "NodeID": "n1",
+            "Spec": {"ContainerSpec": {"Labels": {"com.docker.stack.namespace": "blog"}}},
             "UpdatedAt": "2026-10-21T10:00:00Z", "DesiredState": "running",
             "Status": {"State": "running", "Message": "started", "ContainerStatus": {"ContainerID": "c1"}}
         },
@@ -468,4 +469,13 @@ async fn a_services_healthcheck_survives_a_read_through_an_agent() {
         spec["TaskTemplate"]["ContainerSpec"]["HealthCheck"]["Interval"],
         10_000_000_000i64
     );
+}
+
+#[tokio::test]
+async fn tasks_carry_their_stack() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = manager(dir.path());
+    let tasks = d.tasks().await.unwrap();
+    assert_eq!(tasks[0].stack.as_deref(), Some("blog"));
+    assert_eq!(tasks[1].stack, None);
 }

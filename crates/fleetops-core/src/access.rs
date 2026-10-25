@@ -78,6 +78,45 @@ pub fn cluster_scoped_denied() -> Error {
     Error::Forbidden("cluster-scoped objects are outside your access".into())
 }
 
+/// A swarm object of a stack outside the grant.
+pub fn stack_denied(stack: &str) -> Error {
+    Error::Forbidden(format!("stack '{stack}' is not in your access"))
+}
+
+/// A swarm object in no stack, or an action only a grant on the whole
+/// swarm may take.
+pub fn swarm_wide_denied() -> Error {
+    Error::Forbidden("only access to the whole swarm covers this".into())
+}
+
+/// A grant's scope for an environment of kind `env_kind`: namespaces on a
+/// Kubernetes cluster, stack names on a swarm (swarm spec §6).
+pub fn normalize_scope(env_kind: &str, v: Vec<String>) -> Result<BTreeSet<String>> {
+    if env_kind.starts_with("kube-") {
+        return normalize_namespaces(v);
+    }
+    if env_kind != crate::env::EnvKind::SwarmAgent.as_str() {
+        return Err(Error::Invalid(
+            "only Kubernetes and Swarm environments can be limited to namespaces or stacks".into(),
+        ));
+    }
+    if v.is_empty() {
+        return Err(Error::Invalid(
+            "give at least one stack, or omit for the whole swarm".into(),
+        ));
+    }
+    for name in &v {
+        crate::compose::validate_stack_name(name).map_err(Error::Invalid)?;
+    }
+    let set: BTreeSet<String> = v.into_iter().collect();
+    if set.len() > NAMESPACES_MAX {
+        return Err(Error::Invalid(format!(
+            "at most {NAMESPACES_MAX} stacks per grant"
+        )));
+    }
+    Ok(set)
+}
+
 /// An RFC 1123 DNS label: what Kubernetes allows for namespace names.
 pub fn is_dns_label(s: &str) -> bool {
     let b = s.as_bytes();
@@ -412,6 +451,21 @@ impl Grants {
         Self::first_ok(p, self.holding(p), |g| g.check_ns(ns))
     }
 
+    /// `p` on a swarm object of `stack`; `None` is an object in no stack,
+    /// which only a grant on the whole swarm covers.
+    pub fn allows_stack(&self, p: Permission, stack: Option<&str>) -> bool {
+        self.allows(p, stack)
+    }
+
+    pub fn check_stack(&self, p: Permission, stack: Option<&str>) -> Result<()> {
+        Self::first_ok(p, self.holding(p), |g| match (&g.namespaces, stack) {
+            (None, _) => Ok(()),
+            (Some(set), Some(st)) if set.contains(st) => Ok(()),
+            (Some(_), Some(st)) => Err(stack_denied(st)),
+            (Some(_), None) => Err(swarm_wide_denied()),
+        })
+    }
+
     pub fn check_list(&self, p: Permission, kind: KubeKind, ns: Option<&str>) -> Result<()> {
         if open_read(p, kind) {
             return Self::first_ok(p, self.0.iter(), |g| g.check_list(kind, ns));
@@ -548,6 +602,53 @@ mod tests {
             health: RowHealth::Ok,
             columns: Default::default(),
         }
+    }
+
+    #[test]
+    fn allows_stack_and_check_stack() {
+        let p = Permission::new(Row::SwarmServices, Verb::Operate);
+        let scoped = Grants(vec![limited(&["blog"])]);
+        assert!(scoped.allows_stack(p, Some("blog")));
+        assert!(!scoped.allows_stack(p, Some("shop")));
+        assert!(!scoped.allows_stack(p, None));
+        assert_eq!(
+            scoped.check_stack(p, Some("shop")).unwrap_err().to_string(),
+            "stack 'shop' is not in your access"
+        );
+        assert_eq!(
+            scoped.check_stack(p, None).unwrap_err().to_string(),
+            "only access to the whole swarm covers this"
+        );
+        let whole = Grants(vec![Grant::full(EnvRole::Operator)]);
+        for st in [Some("blog"), Some("shop"), None] {
+            assert!(whole.allows_stack(p, st));
+            assert!(whole.check_stack(p, st).is_ok());
+        }
+        let viewer = Grants(vec![Grant::builtin(
+            EnvRole::Viewer,
+            Some(BTreeSet::from(["blog".to_string()])),
+        )]);
+        assert_eq!(
+            viewer.check_stack(p, Some("blog")).unwrap_err().to_string(),
+            "swarm-services.operate permission required"
+        );
+    }
+
+    #[test]
+    fn normalize_scope_by_kind() {
+        let one = |s: &str| vec![s.to_string()];
+        assert_eq!(
+            normalize_scope("swarm-agent", one("my_stack")).unwrap(),
+            BTreeSet::from(["my_stack".to_string()])
+        );
+        assert!(normalize_scope("swarm-agent", one("Bad Name")).is_err());
+        assert!(normalize_scope("kube-config", one("my_stack")).is_err());
+        assert!(normalize_scope("kube-config", one("team-a")).is_ok());
+        assert_eq!(
+            normalize_scope("docker-local", one("x")).unwrap_err().to_string(),
+            "invalid input: only Kubernetes and Swarm environments can be limited to namespaces or stacks"
+        );
+        assert!(normalize_scope("swarm-agent", vec![]).is_err());
     }
 
     #[test]
