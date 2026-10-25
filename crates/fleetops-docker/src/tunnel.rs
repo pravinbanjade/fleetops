@@ -20,6 +20,7 @@ const POOL_IDLE: Duration = Duration::from_secs(30);
 impl LocalDocker {
     /// A client for the Docker endpoint at the far end of an agent tunnel.
     pub fn through(opener: Arc<dyn StreamOpener>) -> Result<Self> {
+        let raw = Some(crate::raw::tunnel(opener.clone()));
         let client = Arc::new(
             Client::builder(TokioExecutor::new())
                 .pool_idle_timeout(POOL_IDLE)
@@ -41,7 +42,7 @@ impl LocalDocker {
             API_DEFAULT_VERSION,
         )
         .map_err(|e| Error::EnvUnavailable(format!("agent transport: {e}")))?;
-        Ok(Self { client })
+        Ok(Self { client, raw })
     }
 }
 

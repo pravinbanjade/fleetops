@@ -231,15 +231,53 @@ fn found<T>(r: Result<T>) -> Result<Option<T>> {
     }
 }
 
+/// Docker names a container spec's healthcheck `Healthcheck`; bollard's
+/// model reads and writes `HealthCheck`. Moved over, so it survives being
+/// written back through the model.
+fn healthcheck_for_bollard(service: &mut Value) {
+    if let Some(cs) = service["Spec"]["TaskTemplate"]["ContainerSpec"].as_object_mut() {
+        if let Some(h) = cs.remove("Healthcheck") {
+            cs.entry("HealthCheck").or_insert(h);
+        }
+    }
+}
+
 impl LocalDocker {
+    /// The service as Docker sent it, read raw where it can be so nothing
+    /// bollard's model lacks is lost; `None` for Docker's 404.
+    async fn inspect_service_json(&self, id: &str) -> Result<Option<Value>> {
+        let Some(get) = &self.raw else {
+            return found(self.client.inspect_service(id, None).await.map_err(map_err))?
+                .map(|s| to_value(&s))
+                .transpose();
+        };
+        let (status, body) = get(format!("/services/{id}")).await?;
+        let parsed: Option<Value> = serde_json::from_slice(&body).ok();
+        match status {
+            200..=299 => {
+                let mut v = parsed.ok_or_else(|| {
+                    Error::Internal("docker sent a service that is not JSON".into())
+                })?;
+                healthcheck_for_bollard(&mut v);
+                Ok(Some(v))
+            }
+            404 => Ok(None),
+            status => Err(Error::Upstream {
+                status,
+                message: parsed
+                    .and_then(|v| v["message"].as_str().map(str::to_string))
+                    .unwrap_or_else(|| format!("docker answered {status}")),
+            }),
+        }
+    }
+
     async fn inspect_service_raw(&self, id: &str) -> Result<(Value, u64)> {
-        let svc = self
-            .client
-            .inspect_service(id, None)
-            .await
-            .map_err(map_err)?;
-        let version = svc.version.as_ref().and_then(|v| v.index).unwrap_or(0);
-        Ok((to_value(&svc.spec.unwrap_or_default())?, version))
+        let v = self
+            .inspect_service_json(id)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("service {id}")))?;
+        let version = v["Version"]["Index"].as_u64().unwrap_or(0);
+        Ok((v["Spec"].clone(), version))
     }
 
     async fn put_service(&self, id: &str, spec: Value, version: u64, rollback: bool) -> Result<()> {
@@ -342,15 +380,18 @@ impl SwarmOps for LocalDocker {
     }
 
     async fn service(&self, id: &str) -> Result<Option<ServiceDetail>> {
-        let svc = match self.client.inspect_service(id, None).await.map_err(map_err) {
-            Ok(s) => s,
-            Err(Error::Upstream { status: 404, .. }) => return Ok(None),
-            Err(e) => return Err(e),
+        let Some(raw) = self.inspect_service_json(id).await? else {
+            return Ok(None);
         };
-        let spec = svc.spec.clone().unwrap_or_default();
+        let svc: Service = serde_json::from_value(raw.clone())
+            .map_err(|e| Error::Internal(format!("docker sent an unreadable service: {e}")))?;
         Ok(Some(ServiceDetail {
             summary: service_summary(&svc),
-            spec: serde_json::to_value(&spec).map_err(|e| Error::Internal(e.to_string()))?,
+            spec: if raw["Spec"].is_object() {
+                raw["Spec"].clone()
+            } else {
+                serde_json::json!({})
+            },
             update_status: svc
                 .update_status
                 .as_ref()

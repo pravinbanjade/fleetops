@@ -105,3 +105,86 @@ async fn a_deployed_spec_reads_back_without_drift() {
         spec["Labels"][LABEL_SPEC_HASH].as_str().unwrap()
     );
 }
+
+/// What a stack says little about: Docker fills in the rest, and none of it
+/// may read as drift.
+#[tokio::test]
+#[ignore = "needs a Swarm manager on DOCKER_HOST"]
+async fn partial_deploy_blocks_read_back_without_drift() {
+    let d = LocalDocker::connect(&host()).unwrap();
+    let stack = format!("fopartial{}", std::process::id());
+    let yaml = r#"
+services:
+  health:
+    image: nginx:1.27
+    healthcheck: { test: ["CMD", "true"], interval: 10s }
+  policies:
+    image: nginx:1.27
+    deploy:
+      restart_policy: { condition: on-failure }
+      update_config: { parallelism: 1 }
+      rollback_config: { delay: 5s }
+  everywhere:
+    image: nginx:1.27
+    deploy: { mode: global }
+  once:
+    image: alpine:3.20
+    command: ["true"]
+    deploy: { mode: replicated-job }
+  plain:
+    image: nginx:1.27
+    ports: ["18080:80"]
+"#;
+    let mut p = parse_mode(yaml, &[], &stack, Mode::Swarm).unwrap().project;
+    resolve(&mut p, &[], &Default::default(), &[7; 32]).unwrap();
+    let net = &p.networks["default"];
+    let net_id = d
+        .create_network(
+            &NewSwarmNetwork {
+                name: net.name.clone(),
+                attachable: false,
+                internal: false,
+                encrypted: false,
+                subnet: None,
+            },
+            &BTreeMap::from([(STACK_LABEL.to_string(), stack.clone())]),
+            &Default::default(),
+        )
+        .await
+        .unwrap();
+    let mut failures = vec![];
+    let mut created = vec![];
+    for key in p.services.keys() {
+        let spec = service_spec(&p, key);
+        let id = match d.create_service(&spec).await {
+            Ok(id) => id,
+            Err(e) => {
+                failures.push(format!("{key}: create: {e}"));
+                continue;
+            }
+        };
+        created.push(id.clone());
+        let names: BTreeMap<String, String> = d
+            .networks()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|n| (n.id, n.name))
+            .collect();
+        let live = named(&d.service(&id).await.unwrap().unwrap().spec, &names);
+        let changes = spec_changes(&canonical(&spec), &canonical(&live));
+        if !changes.is_empty() {
+            failures.push(format!(
+                "{key}: {changes:?}\nsent: {}\nread: {}",
+                canonical(&spec),
+                canonical(&live)
+            ));
+        }
+    }
+    for id in &created {
+        let _ = d.remove_service(id).await;
+    }
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    let _ = d.remove_network(&net_id).await;
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}

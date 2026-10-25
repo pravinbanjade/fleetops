@@ -7,6 +7,7 @@ mod env;
 mod error;
 pub mod files;
 mod node_env;
+mod raw;
 mod resources;
 mod streams;
 mod swarm;
@@ -24,6 +25,9 @@ use fleetops_core::{Error, Result};
 /// A connection to one Docker (or Podman) API endpoint.
 pub struct LocalDocker {
     client: Docker,
+    /// Raw reads where bollard's model loses data; `None` over TCP, where
+    /// those reads fall back to bollard.
+    raw: Option<raw::RawGet>,
 }
 
 impl LocalDocker {
@@ -32,6 +36,9 @@ impl LocalDocker {
     pub fn connect(url: &str) -> Result<Self> {
         let client = Docker::connect_with_host(url)
             .map_err(|e| Error::EnvUnavailable(format!("cannot connect to {url}: {e}")))?;
-        Ok(Self { client })
+        let raw = url
+            .strip_prefix("unix://")
+            .map(|p| raw::unix(std::path::PathBuf::from(p)));
+        Ok(Self { client, raw })
     }
 }

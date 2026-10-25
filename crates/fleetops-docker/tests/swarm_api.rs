@@ -38,6 +38,7 @@ fn services_json() -> serde_json::Value {
                 "TaskTemplate": {
                     "ContainerSpec": {
                         "Image": "nginx:1.27@sha256:abc",
+                        "Healthcheck": {"Test": ["CMD", "true"], "Interval": 10_000_000_000i64},
                         "Secrets": [{"SecretID": "sec1", "SecretName": "blog_db"}],
                         "Configs": [{"ConfigID": "cfg1", "ConfigName": "blog_nginx"}]
                     },
@@ -426,4 +427,45 @@ async fn service_logs_stream_lines() {
         .await;
     let line = lines[0].as_ref().unwrap();
     assert_eq!(line.text, "hello from blog_web.1");
+}
+
+/// Docker calls the field `Healthcheck`; bollard's model says `HealthCheck`
+/// and drops it on read. A service read must keep it, under the name the
+/// model writes back, or a scale or an edit would remove it.
+#[tokio::test]
+async fn a_services_healthcheck_survives_a_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = manager(dir.path());
+    let spec = d.service("s1").await.unwrap().unwrap().spec;
+    let cs = &spec["TaskTemplate"]["ContainerSpec"];
+    assert_eq!(
+        cs["HealthCheck"]["Test"],
+        serde_json::json!(["CMD", "true"]),
+        "{cs}"
+    );
+    assert!(cs.get("Healthcheck").is_none(), "{cs}");
+}
+
+#[tokio::test]
+async fn a_services_healthcheck_survives_a_read_through_an_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = fake_manager(dir.path());
+    let agents = Arc::new(Registry::default());
+    let env = SwarmEnv::new(9, "prod", agents.clone());
+    let (bye, rx) = mpsc::channel(1);
+    std::mem::forget(rx);
+    agents.insert_node(
+        9,
+        "n2",
+        "k",
+        loopback(Target::Unix(sock.clone())),
+        info("n2", true),
+        bye,
+    );
+    let ops = env.swarm().expect("a manager serves");
+    let spec = ops.service("s1").await.unwrap().unwrap().spec;
+    assert_eq!(
+        spec["TaskTemplate"]["ContainerSpec"]["HealthCheck"]["Interval"],
+        10_000_000_000i64
+    );
 }
