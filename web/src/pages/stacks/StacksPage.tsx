@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { GitBranch } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { StackSummary } from "@/api/gen/types.gen";
-import { useEnvAccess } from "@/api/access";
-import { composeProjectsQuery, stacksQuery } from "@/api/queries";
+import type { ServiceSummary, StackSummary } from "@/api/gen/types.gen";
+import { useEnvAccess, useEnvFamily } from "@/api/access";
+import { composeProjectsQuery, stacksQuery, swarmServicesQuery } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, columns } from "@/components/DataTable";
@@ -71,15 +71,72 @@ function stackColumns(env: string) {
   ];
 }
 
-/** FleetOps stacks, then the Compose projects FleetOps does not manage. */
+/**
+ * Stacks deployed to a swarm outside FleetOps (`docker stack deploy`), from
+ * the stack label on their services. Creating a FleetOps stack of the same
+ * name takes them over: its first deploy updates them in place.
+ */
+function OtherSwarmStacks({ env, managed }: { env: string; managed: Set<string> }) {
+  const services = useQuery(swarmServicesQuery(env));
+  const byStack = new Map<string, ServiceSummary[]>();
+  for (const s of services.data ?? []) {
+    if (s.stack && !managed.has(s.stack)) byStack.set(s.stack, [...(byStack.get(s.stack) ?? []), s]);
+  }
+  if (services.error)
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {errorMessage(services.error)}
+      </p>
+    );
+  if (byStack.size === 0) return null;
+  return (
+    <section className="grid gap-4" aria-labelledby="other-stacks">
+      <div className="grid gap-1">
+        <h2 id="other-stacks" className="text-base font-semibold">
+          Other stacks
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Deployed outside FleetOps, read from the stack label on their services. Create a stack with the same name to
+          manage one here: its first deploy updates these services in place.
+        </p>
+      </div>
+      <ul className="grid gap-3">
+        {[...byStack.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([stack, list]) => (
+            <li key={stack} className="grid gap-1 rounded-md border px-3 py-2">
+              <span className="font-ident font-medium">{stack}</span>
+              <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                {list.map((s) => (
+                  <li key={s.id}>
+                    <Link
+                      to="/envs/$env/swarm/services/$id"
+                      params={{ env, id: s.id }}
+                      className="font-ident hover:underline"
+                    >
+                      {s.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+      </ul>
+    </section>
+  );
+}
+
+/** FleetOps stacks, then the Compose projects (or Swarm stacks) FleetOps does not manage. */
 export function StacksPage() {
   const { env } = route.useParams();
+  const swarm = useEnvFamily(env) === "swarm";
   const stacks = useQuery(stacksQuery(env));
-  const projects = useQuery(composeProjectsQuery(env));
+  const projects = useQuery({ ...composeProjectsQuery(env), enabled: !swarm });
   const cols = useMemo(() => stackColumns(env), [env]);
   const { can } = useEnvAccess(env);
   const [creating, setCreating] = useState(false);
   const unmanaged = (projects.data ?? []).filter((p) => !p.managed);
+  const managed = new Set((stacks.data ?? []).map((s) => s.name));
   return (
     <Page
       title="Stacks"
@@ -100,7 +157,9 @@ export function StacksPage() {
         error={stacks.error}
         empty="No stacks in this environment yet."
       />
-      {projects.error ? (
+      {swarm ? (
+        can("swarm-services.view") && <OtherSwarmStacks env={env} managed={managed} />
+      ) : projects.error ? (
         <p role="alert" className="text-sm text-destructive">
           {errorMessage(projects.error)}
         </p>

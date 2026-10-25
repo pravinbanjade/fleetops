@@ -25,6 +25,7 @@ import {
   getStackGit,
   listStackFiles,
   listStacks,
+  listStackServices,
   listContainers,
   listEnvs,
   listImages,
@@ -361,6 +362,13 @@ export const composeProjectsQuery = (env: string) =>
   queryOptions({
     queryKey: keys.composeProjects(env),
     queryFn: async () => (await listComposeProjects(path(env))).data,
+  });
+
+/** A Swarm stack's services with their drift; refreshed by service events. */
+export const stackServicesQuery = (env: string, stack: string) =>
+  queryOptions({
+    queryKey: [...swarmKeys.services(env), "stack", stack] as const,
+    queryFn: async () => (await listStackServices({ path: { env, stack } })).data,
   });
 
 export const stacksQuery = (env: string) =>

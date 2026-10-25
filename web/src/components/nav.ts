@@ -52,6 +52,7 @@ export const SWARM_NAV = [
   { to: "/envs/$env", label: "Overview", icon: Gauge, key: "d" },
   { to: "/envs/$env/swarm/nodes", label: "Nodes", icon: Server, key: "e" },
   { to: "/envs/$env/swarm/services", label: "Services", icon: Boxes, key: "s" },
+  { to: "/envs/$env/stacks", label: "Stacks", icon: FileStack, key: "p" },
   { to: "/envs/$env/swarm/tasks", label: "Tasks", icon: ListChecks, key: "t" },
   { to: "/envs/$env/swarm/visualizer", label: "Visualizer", icon: LayoutGrid, key: "v" },
   { to: "/envs/$env/swarm/secrets", label: "Secrets", icon: KeyRound, key: "x" },

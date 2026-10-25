@@ -45,7 +45,7 @@ const detail = {
 const plan = {
   issues: [],
   warnings: [],
-  plan: { services: [], networks: [], volumes: [], images: [], blocking: [], token: "tok" },
+  plan: { services: [], networks: [], volumes: [], images: [], secrets: [], configs: [], blocking: [], token: "tok" },
   compose_before: COMPOSE,
   compose_after: COMPOSE,
   variables_changed: [],

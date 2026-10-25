@@ -5,7 +5,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { stackAction } from "@/api/gen/sdk.gen";
 import type { DeploySource, StackActionName } from "@/api/gen/types.gen";
-import { useEnvAccess } from "@/api/access";
+import { useEnvAccess, useEnvFamily } from "@/api/access";
 import { containersQuery, keys, stackQuery } from "@/api/queries";
 import { Page } from "@/components/Page";
 import { ContainerState, StateBadge } from "@/components/StateBadge";
@@ -18,6 +18,7 @@ import { ReviewDeployDialog } from "./ReviewDeployDialog";
 import { RevisionsTab } from "./RevisionsTab";
 import { SecretsTab } from "./SecretsTab";
 import { StackEditor } from "./StackEditor";
+import { SwarmStackServices } from "./SwarmStackServices";
 
 const route = getRouteApi("/authed/shell/envs/$env/stacks/$stack");
 
@@ -29,7 +30,9 @@ export function StackPage() {
   const { env, stack } = route.useParams();
   const qc = useQueryClient();
   const detail = useQuery(stackQuery(env, stack));
-  const containers = useQuery(containersQuery(env));
+  // A swarm's stacks are services; it has no containers of its own.
+  const swarm = useEnvFamily(env) === "swarm";
+  const containers = useQuery({ ...containersQuery(env), enabled: !swarm });
   const { can } = useEnvAccess(env);
   const [review, setReview] = useState<DeploySource | null>(null);
   const [removing, setRemoving] = useState(false);
@@ -85,6 +88,7 @@ export function StackPage() {
       actions={
         <>
           {canOperate &&
+            !swarm &&
             (["start", "stop", "restart"] as const).map((a) => {
               const Icon = ICON[a];
               return (
@@ -142,7 +146,9 @@ export function StackPage() {
           <SecretsTab env={env} stack={stack} isGit={isGit} canEdit={can("stacks.create")} />
         </TabsContent>
         <TabsContent value="services" className="pt-4">
-          {byService.length === 0 ? (
+          {swarm ? (
+            <SwarmStackServices env={env} stack={stack} />
+          ) : byService.length === 0 ? (
             <p className="text-sm text-muted-foreground">No containers.</p>
           ) : (
             <div className="grid gap-4">
@@ -186,6 +192,7 @@ export function StackPage() {
         <ReviewDeployDialog
           env={env}
           stack={stack}
+          swarm={swarm}
           source={review}
           onClose={() => setReview(null)}
           onSecrets={() => {
@@ -194,7 +201,7 @@ export function StackPage() {
           }}
         />
       )}
-      {removing && <RemoveStackDialog env={env} stack={stack} onClose={() => setRemoving(false)} />}
+      {removing && <RemoveStackDialog env={env} stack={stack} swarm={swarm} onClose={() => setRemoving(false)} />}
     </Page>
   );
 }

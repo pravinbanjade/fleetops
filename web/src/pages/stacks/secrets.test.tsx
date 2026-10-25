@@ -38,7 +38,7 @@ const FILES = [
 const plan = (issues: { path: string; message: string }[] = []) => ({
   issues,
   warnings: [],
-  plan: issues.length ? null : { services: [], networks: [], volumes: [], images: [], blocking: [], token: "tok" },
+  plan: issues.length ? null : { services: [], networks: [], volumes: [], images: [], secrets: [], configs: [], blocking: [], token: "tok" },
   compose_before: null,
   compose_after: COMPOSE,
   variables_changed: [],

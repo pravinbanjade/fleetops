@@ -1,4 +1,4 @@
-import { findEnv } from "@/lib/env";
+import { envFamily, findEnv, type EnvFamily } from "@/lib/env";
 import { useQuery } from "@tanstack/react-query";
 import type { EnvRole } from "@/api/gen/types.gen";
 import { envsQuery } from "./queries";
@@ -59,4 +59,11 @@ export function accessOf(env: { access?: AccessField } | undefined): EnvAccess {
 export function useEnvAccess(env?: string): EnvAccess {
   const { data } = useQuery(envsQuery);
   return accessOf(findEnv(data, env));
+}
+
+/** Which pages `env` has, once the environment list has loaded. */
+export function useEnvFamily(env?: string): EnvFamily | undefined {
+  const { data } = useQuery(envsQuery);
+  const found = findEnv(data, env);
+  return found && envFamily(found.kind);
 }

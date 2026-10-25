@@ -3,7 +3,7 @@ import { useState } from "react";
 import { deployStack, planStack } from "@/api/gen/sdk.gen";
 import type { DeploySource, ServicePlan } from "@/api/gen/types.gen";
 import { ApiError } from "@/api/client";
-import { keys } from "@/api/queries";
+import { keys, swarmKeys } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DiffView } from "@/components/yaml-editor/DiffView";
@@ -15,22 +15,26 @@ import { IssueLine } from "./SecretsTab";
 const ACTION_LABEL: Record<ServicePlan["action"], string> = {
   create: "Create",
   recreate: "Recreate",
+  update: "Update",
   scale: "Scale",
   remove: "Remove",
   unchanged: "Unchanged",
 };
-const ORDER: ServicePlan["action"][] = ["recreate", "create", "scale", "remove", "unchanged"];
+const ORDER: ServicePlan["action"][] = ["recreate", "update", "create", "scale", "remove", "unchanged"];
 
 /** Plans a deploy of the draft or an earlier revision, shows it, and deploys exactly that plan. */
 export function ReviewDeployDialog({
   env,
   stack,
+  swarm = false,
   source,
   onClose,
   onSecrets,
 }: {
   env: string;
   stack: string;
+  /** A Swarm stack: Swarm rolls it out, and a failed deploy is not undone. */
+  swarm?: boolean;
   source: DeploySource;
   onClose: () => void;
   /** Opens the stack's Secrets tab, where a missing value is set. */
@@ -58,7 +62,7 @@ export function ReviewDeployDialog({
   const close = () => {
     void qc.invalidateQueries({ queryKey: keys.stack(env, stack) });
     void qc.invalidateQueries({ queryKey: keys.stacks(env) });
-    void qc.invalidateQueries({ queryKey: keys.containers(env) });
+    void qc.invalidateQueries({ queryKey: swarm ? swarmKeys.all(env) : keys.containers(env) });
     onClose();
   };
   const p = plan.data;
@@ -71,7 +75,9 @@ export function ReviewDeployDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            What the deploy will change. If it fails part way, the stack is put back as it was.
+            {swarm
+              ? "Swarm rolls each service out with its update policy. If the deploy fails, what was applied stays; roll back to an earlier revision to undo it."
+              : "What the deploy will change. If it fails part way, the stack is put back as it was."}
           </DialogDescription>
         </DialogHeader>
         {task ? (
@@ -172,6 +178,8 @@ function PlanView({ plan }: { plan: NonNullable<import("@/api/gen/types.gen").Pl
   const resources = [
     ...plan.networks.map((n) => ({ ...n, kind: "network" })),
     ...plan.volumes.map((v) => ({ ...v, kind: "volume" })),
+    ...plan.secrets.map((s) => ({ ...s, kind: "secret" })),
+    ...plan.configs.map((c) => ({ ...c, kind: "config" })),
   ].filter((r) => r.action !== "exists");
   return (
     <section aria-label="Plan" className="grid gap-3 text-sm">
@@ -190,6 +198,7 @@ function PlanView({ plan }: { plan: NonNullable<import("@/api/gen/types.gen").Pl
                     ))}
                   </ul>
                 )}
+                {s.drift.length > 0 && <p className="ml-4 text-state-wait-text">Changed outside the stack: {s.drift.join(", ")}</p>}
               </li>
             ))}
           </ul>

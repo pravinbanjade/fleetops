@@ -126,7 +126,9 @@ export const envRoute = createRoute({
     const page = rest.startsWith("/k8s/") ? "kube" : rest.startsWith("/swarm/") ? "swarm" : "docker";
     const family = envFamily(env.kind);
     const allowed = family === "node" ? "docker" : family;
-    if (!home && page !== allowed) throw redirect({ to: "/envs/$env", params: { env: params.env } });
+    // Stacks live on Docker hosts and on swarms alike.
+    const stacks = family === "swarm" && /^\/stacks(\/|$)/.test(rest);
+    if (!home && !stacks && page !== allowed) throw redirect({ to: "/envs/$env", params: { env: params.env } });
   },
   component: Outlet,
 });

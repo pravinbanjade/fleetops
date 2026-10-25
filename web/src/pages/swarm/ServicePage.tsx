@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { FileText, ListChecks, ScrollText } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { useEnvAccess } from "@/api/access";
@@ -48,6 +48,15 @@ export function ServicePage() {
       }
     >
       {editing && s && <ServiceDialog env={env} target={{ mode: "edit", service: s }} onClose={() => setEditing(false)} />}
+      {s?.stack && s.labels["io.fleetops.stack.spec-hash"] && (
+        <p className="rounded-md border px-3 py-2 text-sm">
+          Managed by stack{" "}
+          <Link to="/envs/$env/stacks/$stack" params={{ env, stack: s.stack }} className="font-ident font-medium hover:underline">
+            {s.stack}
+          </Link>
+          ; changes here are overwritten on the next deploy.
+        </p>
+      )}
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="tasks">

@@ -19,10 +19,12 @@ const plan = {
   issues: [],
   warnings: [],
   plan: {
-    services: [{ name: "web", action: "recreate", reasons: ["image: nginx:1.26 → nginx:1.27"], replicas_before: 1, replicas_after: 1 }],
+    services: [{ name: "web", action: "recreate", reasons: ["image: nginx:1.26 → nginx:1.27"], replicas_before: 1, replicas_after: 1, drift: [] }],
     networks: [],
     volumes: [],
     images: [{ image: "nginx:1.27", pull: true }],
+    secrets: [],
+    configs: [],
     blocking: [],
     token: "tok",
   },

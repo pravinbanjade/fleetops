@@ -129,6 +129,8 @@ export function SecretsTab({ env, stack, isGit, canEdit }: { env: string; stack:
         return <span className="font-ident">variable {f.variable}</span>;
       case "inline":
         return "inline";
+      case "external":
+        return <span className="font-ident">external {f.path}</span>;
       case "repo": {
         const g = git.data?.git;
         const href = g && f.path ? repoFileLink(g.url, g.branch, f.path) : null;
