@@ -630,6 +630,29 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// What FleetOps renders reaches Docker through bollard's model and
+    /// comes back through it: nothing it says may be lost on the way, or a
+    /// fresh deploy would read as drifted.
+    #[test]
+    fn rendered_specs_survive_bollards_model() {
+        use fleetops_core::compose::swarm::{canonical, sample_variables, SAMPLE_STACK};
+        use fleetops_core::compose::{files::resolve, parse_mode, swarm as render, Mode};
+        let vars = sample_variables();
+        let mut p = parse_mode(SAMPLE_STACK, &vars, "shop", Mode::Swarm)
+            .unwrap()
+            .project;
+        resolve(&mut p, &vars, &Default::default(), &[7; 32]).unwrap();
+        for mode in ["", "global", "replicated-job", "global-job"] {
+            if !mode.is_empty() {
+                let d = p.services.get_mut("web").unwrap().swarm.as_mut().unwrap();
+                d.mode = serde_json::from_value(json!(mode)).unwrap();
+            }
+            let spec = render::service_spec(&p, "web");
+            let through = to_value(&service_spec(spec.clone()).unwrap()).unwrap();
+            assert_eq!(canonical(&through), canonical(&spec), "mode {mode:?}");
+        }
+    }
+
     #[test]
     fn scaling_sets_replicas_and_keeps_the_rest() {
         let spec =

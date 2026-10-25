@@ -9,6 +9,7 @@ pub mod interp;
 pub mod model;
 pub mod parse;
 pub mod plan;
+pub mod swarm;
 
 use serde::Serialize;
 use utoipa::ToSchema;

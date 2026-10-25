@@ -1,0 +1,74 @@
+{
+  "ID": "svc1",
+  "Version": {"Index": 42},
+  "Spec": {
+    "Name": "shop_web",
+    "Labels": {
+      "team": "web",
+      "com.docker.stack.namespace": "shop",
+      "com.docker.stack.image": "nginx:1.27",
+      "io.fleetops.stack.spec-hash": "filled-in-by-the-test"
+    },
+    "TaskTemplate": {
+      "ContainerSpec": {
+        "Image": "nginx:1.27@sha256:0d17b565c37bcbd895e9d92315a05c1c3c9a29f762b011a10c54a66cd53c9b31",
+        "Labels": {"tier": "front", "com.docker.stack.namespace": "shop"},
+        "Command": ["/docker-entrypoint.sh"],
+        "Args": ["nginx", "-g", "daemon off;"],
+        "Hostname": "web",
+        "Env": ["DB_PASSWORD=hunter2", "MODE=prod"],
+        "Dir": "/srv",
+        "User": "101",
+        "ReadOnly": true,
+        "Init": true,
+        "Mounts": [
+          {"Type": "volume", "Source": "shop_data", "Target": "/data",
+           "VolumeOptions": {"Labels": {"com.docker.stack.namespace": "shop"},
+                             "DriverConfig": {"Name": "local", "Options": {"type": "none"}}}},
+          {"Type": "bind", "Source": "/srv/static", "Target": "/static", "ReadOnly": true},
+          {"Type": "volume", "Target": "/cache"}
+        ],
+        "StopSignal": "SIGQUIT",
+        "StopGracePeriod": 20000000000,
+        "HealthCheck": {"Test": ["CMD", "true"], "Interval": 10000000000, "Timeout": 2000000000,
+                        "Retries": 3, "StartPeriod": 5000000000},
+        "DNSConfig": {"Nameservers": ["1.1.1.1"]},
+        "Hosts": ["10.0.0.2 db.local"],
+        "CapabilityAdd": ["NET_ADMIN"],
+        "CapabilityDrop": ["ALL"],
+        "Secrets": [{"File": {"Name": "/run/secrets/db", "UID": "0", "GID": "0", "Mode": 292},
+                     "SecretID": "z2kmn0a1b2c3", "SecretName": "filled-in-by-the-test"}],
+        "Configs": [{"File": {"Name": "/etc/nginx/conf.d/site.conf", "UID": "0", "GID": "0", "Mode": 288},
+                     "ConfigID": "q9wer7t6y5u4", "ConfigName": "filled-in-by-the-test"}],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {"NanoCPUs": 500000000, "MemoryBytes": 134217728, "Pids": 100},
+        "Reservations": {"NanoCPUs": 250000000, "MemoryBytes": 67108864}
+      },
+      "RestartPolicy": {"Condition": "on-failure", "Delay": 5000000000, "MaxAttempts": 3, "Window": 120000000000},
+      "Placement": {
+        "Constraints": ["node.role == worker"],
+        "Preferences": [{"Spread": {"SpreadDescriptor": "node.labels.zone"}}],
+        "MaxReplicas": 2
+      },
+      "Networks": [{"Target": "netid1", "Aliases": ["web", "www"]}],
+      "LogDriver": {"Name": "json-file", "Options": {"max-size": "10m"}},
+      "ForceUpdate": 0,
+      "Runtime": "container"
+    },
+    "Mode": {"Replicated": {"Replicas": 3}},
+    "UpdateConfig": {"Parallelism": 2, "Delay": 10000000000, "FailureAction": "rollback",
+                     "Monitor": 30000000000, "MaxFailureRatio": 0.1, "Order": "start-first"},
+    "RollbackConfig": {"Parallelism": 1, "FailureAction": "pause"},
+    "EndpointSpec": {
+      "Mode": "vip",
+      "Ports": [
+        {"Protocol": "tcp", "TargetPort": 80, "PublishedPort": 8080, "PublishMode": "ingress"},
+        {"Protocol": "tcp", "TargetPort": 443, "PublishedPort": 8443, "PublishMode": "host"}
+      ]
+    }
+  },
+  "Endpoint": {"Spec": {"Mode": "vip"}},
+  "UpdateStatus": {"State": "completed", "Message": "update completed"}
+}
