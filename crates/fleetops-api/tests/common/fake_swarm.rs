@@ -151,6 +151,10 @@ pub struct FakeSwarm {
     pub linger: Mutex<u32>,
     /// Removed services whose tasks still run: (service id, listings left).
     lingering: Mutex<Vec<(String, u32)>>,
+    /// How many service listings fail after each service create or update,
+    /// as while a manager is re-elected.
+    pub blip_after_write: std::sync::atomic::AtomicU32,
+    blip: std::sync::atomic::AtomicU32,
 }
 
 pub fn secrets_json() -> Value {
@@ -246,6 +250,8 @@ impl FakeSwarm {
             events: Mutex::new(events_json()),
             linger: Mutex::default(),
             lingering: Mutex::default(),
+            blip_after_write: Default::default(),
+            blip: Default::default(),
         })
     }
 
@@ -344,6 +350,10 @@ impl FakeSwarm {
             }
         }
         let body = &body;
+        if path.contains("/services/") {
+            use std::sync::atomic::Ordering::SeqCst;
+            self.blip.store(self.blip_after_write.load(SeqCst), SeqCst);
+        }
         let version = path
             .split("version=")
             .nth(1)
@@ -515,6 +525,14 @@ impl FakeSwarm {
             };
         }
         if path.contains("/services") {
+            use std::sync::atomic::Ordering::SeqCst;
+            if self
+                .blip
+                .fetch_update(SeqCst, SeqCst, |n| n.checked_sub(1))
+                .is_ok()
+            {
+                return (500, r#"{"message":"manager unavailable"}"#.into());
+            }
             let mut services = self.services.lock().unwrap();
             let mut late = self.late.lock().unwrap();
             late.retain_mut(|(id, status, wait)| {

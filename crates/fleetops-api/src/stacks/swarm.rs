@@ -523,7 +523,16 @@ async fn converge(
     let mut shown: BTreeMap<&str, (u64, u64, Option<String>)> = BTreeMap::new();
     while !waiting.is_empty() {
         watch.drain(|| ops.tasks()).await;
-        let services = ops.services().await?;
+        // Swarm has the change: a manager that can't answer for a moment
+        // is waited out, up to the limit.
+        let services = match ops.services().await {
+            Ok(s) => s,
+            Err(e) if start.elapsed() >= timing.health_cap => return Err(e),
+            Err(_) => {
+                tokio::time::sleep(timing.poll).await;
+                continue;
+            }
+        };
         for (id, key) in waiting.clone() {
             let Some(svc) = services.iter().find(|s| s.id == id) else {
                 return Err(fail(format!("{key} disappeared during the deploy")));

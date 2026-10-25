@@ -383,6 +383,19 @@ async fn a_changed_value_makes_a_new_secret_and_removes_the_old() {
     );
 }
 
+/// A manager that can't answer for a moment, as while one is re-elected,
+/// doesn't fail a deploy Swarm already took.
+#[tokio::test]
+async fn a_blip_while_waiting_does_not_fail_the_deploy() {
+    let sw = fast().await;
+    sw.daemon
+        .blip_after_write
+        .store(2, std::sync::atomic::Ordering::SeqCst);
+    shop(&sw, SHOP, "a").await;
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "succeeded", "{task}");
+}
+
 #[tokio::test]
 async fn a_paused_update_fails_the_deploy() {
     let sw = fast().await;
