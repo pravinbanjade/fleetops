@@ -191,14 +191,25 @@ impl TaskWatch {
         }
     }
 
-    /// Takes in whatever the feed sent since the last look. A lagged
-    /// receiver keeps what it has; later changes still arrive.
-    fn drain(&mut self) {
+    /// Takes in whatever the feed sent since the last look. A receiver
+    /// that lagged missed changes for good, so it starts over from `fresh`
+    /// tasks; a failed read keeps what it has.
+    async fn drain<F, Fut>(&mut self, fresh: F)
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<Vec<TaskSummary>>>,
+    {
+        let mut lagged = false;
         loop {
             match self.rx.try_recv() {
                 Ok(m) => self.apply(m),
-                Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
+                Err(broadcast::error::TryRecvError::Lagged(_)) => lagged = true,
                 Err(_) => break,
+            }
+        }
+        if lagged {
+            if let Ok(tasks) = fresh().await {
+                self.apply(FeedMsg::Snapshot { tasks });
             }
         }
     }
@@ -511,7 +522,7 @@ async fn converge(
     let waits: BTreeMap<&str, Wait> = changed.iter().map(|c| (c.id.as_str(), c.wait)).collect();
     let mut shown: BTreeMap<&str, (u64, u64, Option<String>)> = BTreeMap::new();
     while !waiting.is_empty() {
-        watch.drain();
+        watch.drain(|| ops.tasks()).await;
         let services = ops.services().await?;
         for (id, key) in waiting.clone() {
             let Some(svc) = services.iter().find(|s| s.id == id) else {
@@ -805,4 +816,47 @@ pub(crate) async fn stack_services(
         .collect();
     out.sort_by(|a, b| a.key.cmp(&b.key));
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn task(id: &str, state: &str) -> TaskSummary {
+        TaskSummary {
+            id: id.into(),
+            service_id: "svc".into(),
+            service_name: "shop_web".into(),
+            stack: Some("shop".into()),
+            slot: Some(1),
+            node_id: None,
+            desired_state: "running".into(),
+            state: state.into(),
+            message: String::new(),
+            error: Some("no such image".into()),
+            container_id: None,
+            updated_at: 0,
+            version: 1,
+        }
+    }
+
+    /// A watch that fell behind the feed missed changes it can't get
+    /// back: it reads the tasks afresh, so a rejection still fails the
+    /// deploy at once.
+    #[tokio::test]
+    async fn a_lagged_watch_reads_the_tasks_again() {
+        let (tx, rx) = broadcast::channel(1);
+        let mut w = TaskWatch::new(None, rx, BTreeSet::new());
+        let changes = |t: TaskSummary| FeedMsg::Changes {
+            upsert: vec![t],
+            remove: vec![],
+        };
+        // The rejection is overwritten before the watch looks.
+        tx.send(changes(task("t1", "rejected"))).unwrap();
+        tx.send(changes(task("t2", "running"))).unwrap();
+        w.drain(|| async { Ok(vec![task("t1", "rejected"), task("t2", "running")]) })
+            .await;
+        let why = w.failure("svc", "web", Duration::from_secs(60));
+        assert_eq!(why.as_deref(), Some("web: task rejected: no such image"));
+    }
 }
