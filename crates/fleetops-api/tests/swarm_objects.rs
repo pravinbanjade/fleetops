@@ -34,9 +34,10 @@ async fn secret_create_never_echoes_the_value() {
     );
     let rows = sw.t.store.list_audit(1000, None).await.unwrap();
     assert!(rows.iter().any(|a| a.action == "swarm.secret.create"));
-    assert!(!rows
-        .iter()
-        .any(|a| a.detail.as_ref().is_some_and(|d| d.to_string().contains("s3cret"))));
+    assert!(!rows.iter().any(|a| a
+        .detail
+        .as_ref()
+        .is_some_and(|d| d.to_string().contains("s3cret"))));
     let r = send(
         &sw,
         "POST",
@@ -51,20 +52,33 @@ async fn secret_create_never_echoes_the_value() {
         .ends_with("a secret value is at most 500 KiB"));
     let r = send(&sw, "DELETE", &format!("{E}/secrets/sec1"), None).await;
     assert_eq!(r.status, 204, "{:?}", r.json);
-    assert!(sw.t.audit_actions().await.contains(&"swarm.secret.remove".to_string()));
+    assert!(sw
+        .t
+        .audit_actions()
+        .await
+        .contains(&"swarm.secret.remove".to_string()));
 }
 
 #[tokio::test]
 async fn config_content_needs_reveal() {
     let (sw, bob) = with_custom(&[(Row::SwarmConfigs, Verb::View)]).await;
     let r =
-        sw.t.send(req("GET", &format!("{E}/configs/cfg1/data"), None, Some(&bob)))
-            .await;
+        sw.t.send(req(
+            "GET",
+            &format!("{E}/configs/cfg1/data"),
+            None,
+            Some(&bob),
+        ))
+        .await;
     assert_eq!(r.status, 403, "{:?}", r.json);
     let r = send(&sw, "GET", &format!("{E}/configs/cfg1/data"), None).await;
     assert_eq!(r.status, 200, "{:?}", r.json);
     assert_eq!(r.json, json!({"text": "server {}", "size": 9}));
-    assert!(sw.t.audit_actions().await.contains(&"swarm.config.reveal".to_string()));
+    assert!(sw
+        .t
+        .audit_actions()
+        .await
+        .contains(&"swarm.config.reveal".to_string()));
     let r = send(&sw, "GET", &format!("{E}/configs/nope/data"), None).await;
     assert_eq!(r.status, 404, "{:?}", r.json);
 }
@@ -107,7 +121,11 @@ async fn swarm_networks_create_and_remove() {
     assert_eq!(r.status, 404, "{:?}", r.json);
     let r = send(&sw, "DELETE", &format!("{E}/networks/net1"), None).await;
     assert_eq!(r.status, 204, "{:?}", r.json);
-    assert!(sw.t.audit_actions().await.contains(&"swarm.network.remove".to_string()));
+    assert!(sw
+        .t
+        .audit_actions()
+        .await
+        .contains(&"swarm.network.remove".to_string()));
 }
 
 #[tokio::test]

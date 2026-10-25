@@ -18,9 +18,9 @@ use fleetops_core::swarm::{
     SecretSummary, ServiceChange, ServiceDetail, ServiceSummary, SwarmInfo, SwarmNetwork, SwarmOps,
     TaskSummary, STACK_LABEL,
 };
-use serde_json::Value;
 use fleetops_core::{Error, Result};
 use futures_util::StreamExt;
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
 /// Unix seconds of a Docker timestamp, whatever type bollard gives it.
@@ -133,7 +133,12 @@ fn service_summary(svc: &Service) -> ServiceSummary {
         ports,
         update_state: svc.update_status.as_ref().and_then(|u| name(&u.state)),
         updated_at: unix(&svc.updated_at),
-        labels: spec.labels.clone().unwrap_or_default().into_iter().collect(),
+        labels: spec
+            .labels
+            .clone()
+            .unwrap_or_default()
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -499,11 +504,10 @@ impl SwarmOps for LocalDocker {
         if let Some(l) = &change.labels {
             spec.labels = Some(l.clone().into_iter().collect());
         }
-        let o = UpdateNodeOptionsBuilder::new().version(version as i64).build();
-        self.client
-            .update_node(id, spec, o)
-            .await
-            .map_err(map_err)
+        let o = UpdateNodeOptionsBuilder::new()
+            .version(version as i64)
+            .build();
+        self.client.update_node(id, spec, o).await.map_err(map_err)
     }
 
     async fn remove_node(&self, id: &str) -> Result<()> {
@@ -524,7 +528,9 @@ impl SwarmOps for LocalDocker {
 
     async fn update_service(&self, id: &str, change: ServiceChange) -> Result<()> {
         match change {
-            ServiceChange::Spec { spec, version } => self.put_service(id, spec, version, false).await,
+            ServiceChange::Spec { spec, version } => {
+                self.put_service(id, spec, version, false).await
+            }
             ServiceChange::Scale(n) => {
                 let (spec, version) = self.inspect_service_raw(id).await?;
                 self.put_service(id, scaled(spec, n)?, version, false).await
@@ -626,7 +632,8 @@ mod tests {
 
     #[test]
     fn scaling_sets_replicas_and_keeps_the_rest() {
-        let spec = json!({"Name": "web", "Labels": {"a": "b"}, "Mode": {"Replicated": {"Replicas": 3}}});
+        let spec =
+            json!({"Name": "web", "Labels": {"a": "b"}, "Mode": {"Replicated": {"Replicas": 3}}});
         let s = scaled(spec, 5).unwrap();
         assert_eq!(s["Mode"]["Replicated"]["Replicas"], 5);
         assert_eq!(s["Labels"], json!({"a": "b"}));

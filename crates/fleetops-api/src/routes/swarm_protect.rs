@@ -93,9 +93,15 @@ mod tests {
 
     #[test]
     fn repositories() {
-        assert_eq!(repository("docker.io/fleets/fleetops-agent:0.7.0@sha256:ab"), "fleets/fleetops-agent");
+        assert_eq!(
+            repository("docker.io/fleets/fleetops-agent:0.7.0@sha256:ab"),
+            "fleets/fleetops-agent"
+        );
         assert_eq!(repository("fleets/fleetops"), "fleets/fleetops");
-        assert_eq!(repository("localhost:5000/fleets/fleetops"), "localhost:5000/fleets/fleetops");
+        assert_eq!(
+            repository("localhost:5000/fleets/fleetops"),
+            "localhost:5000/fleets/fleetops"
+        );
     }
 
     #[test]

@@ -96,7 +96,13 @@ pub async fn update_node(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<NodeUpdate>,
 ) -> ApiResult<StatusCode> {
-    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmNodes, Verb::Operate)).await?;
+    let c = swarm_ctx(
+        &s,
+        cu,
+        &env,
+        Permission::new(Row::SwarmNodes, Verb::Operate),
+    )
+    .await?;
     let node = c
         .ops
         .node(&id)
@@ -220,15 +226,28 @@ pub async fn create_service(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<NewService>,
 ) -> ApiResult<(StatusCode, axum::Json<Created>)> {
-    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmServices, Verb::Create)).await?;
+    let c = swarm_ctx(
+        &s,
+        cu,
+        &env,
+        Permission::new(Row::SwarmServices, Verb::Create),
+    )
+    .await?;
     let name = body.spec["Name"]
         .as_str()
         .filter(|n| !n.is_empty())
         .ok_or_else(|| Error::Invalid("a service spec needs a Name".into()))?
         .to_string();
     let res = c.ops.create_service(&body.spec).await;
-    c.audit(&s, "swarm.service.create", "swarm-service", &name, &res, json!({}))
-        .await;
+    c.audit(
+        &s,
+        "swarm.service.create",
+        "swarm-service",
+        &name,
+        &res,
+        json!({}),
+    )
+    .await;
     Ok((StatusCode::CREATED, axum::Json(Created { id: res? })))
 }
 
@@ -249,7 +268,11 @@ pub async fn edit_service(
     if !c.grants.allows(reveal, None) {
         let strings = |v: Option<&Value>| -> Vec<String> {
             v.and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|e| e.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|e| e.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default()
         };
         let path = "/TaskTemplate/ContainerSpec/Env";
@@ -266,8 +289,15 @@ pub async fn edit_service(
     };
     let res = c.ops.update_service(&id, change).await;
     let detail = with_confirmed(json!({ "name": svc.summary.name }), confirmed);
-    c.audit(&s, "swarm.service.update", "swarm-service", &id, &res, detail)
-        .await;
+    c.audit(
+        &s,
+        "swarm.service.update",
+        "swarm-service",
+        &id,
+        &res,
+        detail,
+    )
+    .await;
     res?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -285,14 +315,24 @@ pub async fn scale_service(
     let (svc, confirmed) = guarded_service(&c, &id, body.confirm.as_deref()).await?;
     let res = c
         .ops
-        .update_service(&id, fleetops_core::swarm::ServiceChange::Scale(body.replicas))
+        .update_service(
+            &id,
+            fleetops_core::swarm::ServiceChange::Scale(body.replicas),
+        )
         .await;
     let detail = with_confirmed(
         json!({ "name": svc.summary.name, "replicas": body.replicas }),
         confirmed,
     );
-    c.audit(&s, "swarm.service.scale", "swarm-service", &id, &res, detail)
-        .await;
+    c.audit(
+        &s,
+        "swarm.service.scale",
+        "swarm-service",
+        &id,
+        &res,
+        detail,
+    )
+    .await;
     res?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -311,7 +351,8 @@ async fn simple_change(
     let (svc, confirmed) = guarded_service(&c, &id, confirm.as_deref()).await?;
     let res = c.ops.update_service(&id, change).await;
     let detail = with_confirmed(json!({ "name": svc.summary.name }), confirmed);
-    c.audit(&s, action, "swarm-service", &id, &res, detail).await;
+    c.audit(&s, action, "swarm-service", &id, &res, detail)
+        .await;
     res?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -326,7 +367,16 @@ pub async fn redeploy_service(
     ApiJson(body): ApiJson<Confirm>,
 ) -> ApiResult<StatusCode> {
     use fleetops_core::swarm::ServiceChange::Redeploy;
-    simple_change(s, cu, env, id, body.confirm, Redeploy, "swarm.service.redeploy").await
+    simple_change(
+        s,
+        cu,
+        env,
+        id,
+        body.confirm,
+        Redeploy,
+        "swarm.service.redeploy",
+    )
+    .await
 }
 
 #[utoipa::path(post, path = "/envs/{env}/swarm/services/{id}/rollback", operation_id = "rollbackSwarmService", tag = "swarm",
@@ -339,7 +389,16 @@ pub async fn rollback_service(
     ApiJson(body): ApiJson<Confirm>,
 ) -> ApiResult<StatusCode> {
     use fleetops_core::swarm::ServiceChange::Rollback;
-    simple_change(s, cu, env, id, body.confirm, Rollback, "swarm.service.rollback").await
+    simple_change(
+        s,
+        cu,
+        env,
+        id,
+        body.confirm,
+        Rollback,
+        "swarm.service.rollback",
+    )
+    .await
 }
 
 #[utoipa::path(delete, path = "/envs/{env}/swarm/services/{id}", operation_id = "removeSwarmService", tag = "swarm",
@@ -351,12 +410,25 @@ pub async fn remove_service(
     ApiPath((env, id)): ApiPath<(String, String)>,
     Query(q): Query<ConfirmQuery>,
 ) -> ApiResult<StatusCode> {
-    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmServices, Verb::Delete)).await?;
+    let c = swarm_ctx(
+        &s,
+        cu,
+        &env,
+        Permission::new(Row::SwarmServices, Verb::Delete),
+    )
+    .await?;
     let (svc, confirmed) = guarded_service(&c, &id, q.confirm.as_deref()).await?;
     let res = c.ops.remove_service(&id).await;
     let detail = with_confirmed(json!({ "name": svc.summary.name }), confirmed);
-    c.audit(&s, "swarm.service.remove", "swarm-service", &id, &res, detail)
-        .await;
+    c.audit(
+        &s,
+        "swarm.service.remove",
+        "swarm-service",
+        &id,
+        &res,
+        detail,
+    )
+    .await;
     res?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -390,11 +462,24 @@ pub async fn create_secret(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<NewSwarmObject>,
 ) -> ApiResult<(StatusCode, axum::Json<Created>)> {
-    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmSecrets, Verb::Create)).await?;
+    let c = swarm_ctx(
+        &s,
+        cu,
+        &env,
+        Permission::new(Row::SwarmSecrets, Verb::Create),
+    )
+    .await?;
     let data = checked_value(&body, "secret")?;
     let res = c.ops.create_secret(&body.name, data).await;
-    c.audit(&s, "swarm.secret.create", "swarm-secret", &body.name, &res, json!({}))
-        .await;
+    c.audit(
+        &s,
+        "swarm.secret.create",
+        "swarm-secret",
+        &body.name,
+        &res,
+        json!({}),
+    )
+    .await;
     Ok((StatusCode::CREATED, axum::Json(Created { id: res? })))
 }
 
@@ -406,10 +491,23 @@ pub async fn remove_secret(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<StatusCode> {
-    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmSecrets, Verb::Delete)).await?;
+    let c = swarm_ctx(
+        &s,
+        cu,
+        &env,
+        Permission::new(Row::SwarmSecrets, Verb::Delete),
+    )
+    .await?;
     let res = c.ops.remove_secret(&id).await;
-    c.audit(&s, "swarm.secret.remove", "swarm-secret", &id, &res, json!({}))
-        .await;
+    c.audit(
+        &s,
+        "swarm.secret.remove",
+        "swarm-secret",
+        &id,
+        &res,
+        json!({}),
+    )
+    .await;
     res?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -423,11 +521,24 @@ pub async fn create_config(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<NewSwarmObject>,
 ) -> ApiResult<(StatusCode, axum::Json<Created>)> {
-    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmConfigs, Verb::Create)).await?;
+    let c = swarm_ctx(
+        &s,
+        cu,
+        &env,
+        Permission::new(Row::SwarmConfigs, Verb::Create),
+    )
+    .await?;
     let data = checked_value(&body, "config")?;
     let res = c.ops.create_config(&body.name, data).await;
-    c.audit(&s, "swarm.config.create", "swarm-config", &body.name, &res, json!({}))
-        .await;
+    c.audit(
+        &s,
+        "swarm.config.create",
+        "swarm-config",
+        &body.name,
+        &res,
+        json!({}),
+    )
+    .await;
     Ok((StatusCode::CREATED, axum::Json(Created { id: res? })))
 }
 
@@ -446,14 +557,27 @@ pub async fn config_data(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<axum::Json<ConfigData>> {
-    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmConfigs, Verb::Reveal)).await?;
+    let c = swarm_ctx(
+        &s,
+        cu,
+        &env,
+        Permission::new(Row::SwarmConfigs, Verb::Reveal),
+    )
+    .await?;
     let data = c
         .ops
         .config_data(&id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("no such config '{id}'")))?;
-    c.audit(&s, "swarm.config.reveal", "swarm-config", &id, &Ok(()), json!({}))
-        .await;
+    c.audit(
+        &s,
+        "swarm.config.reveal",
+        "swarm-config",
+        &id,
+        &Ok(()),
+        json!({}),
+    )
+    .await;
     Ok(axum::Json(ConfigData {
         size: data.len() as u64,
         text: String::from_utf8(data).ok(),
@@ -468,10 +592,23 @@ pub async fn remove_config(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<StatusCode> {
-    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmConfigs, Verb::Delete)).await?;
+    let c = swarm_ctx(
+        &s,
+        cu,
+        &env,
+        Permission::new(Row::SwarmConfigs, Verb::Delete),
+    )
+    .await?;
     let res = c.ops.remove_config(&id).await;
-    c.audit(&s, "swarm.config.remove", "swarm-config", &id, &res, json!({}))
-        .await;
+    c.audit(
+        &s,
+        "swarm.config.remove",
+        "swarm-config",
+        &id,
+        &res,
+        json!({}),
+    )
+    .await;
     res?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -491,8 +628,15 @@ pub async fn create_network(
         return Err(Error::Invalid("a network needs a name".into()).into());
     }
     let res = c.ops.create_network(&body).await;
-    c.audit(&s, "swarm.network.create", "swarm-network", &body.name, &res, json!({}))
-        .await;
+    c.audit(
+        &s,
+        "swarm.network.create",
+        "swarm-network",
+        &body.name,
+        &res,
+        json!({}),
+    )
+    .await;
     Ok((StatusCode::CREATED, axum::Json(Created { id: res? })))
 }
 
@@ -506,12 +650,25 @@ pub async fn remove_network(
 ) -> ApiResult<StatusCode> {
     let c = swarm_ctx(&s, cu, &env, Permission::new(Row::Networks, Verb::Delete)).await?;
     // Only the swarm's own networks: a node's local ones go through its view.
-    if !c.ops.networks().await?.iter().any(|n| n.id == id || n.name == id) {
+    if !c
+        .ops
+        .networks()
+        .await?
+        .iter()
+        .any(|n| n.id == id || n.name == id)
+    {
         return Err(Error::NotFound(format!("no such swarm network '{id}'")).into());
     }
     let res = c.ops.remove_network(&id).await;
-    c.audit(&s, "swarm.network.remove", "swarm-network", &id, &res, json!({}))
-        .await;
+    c.audit(
+        &s,
+        "swarm.network.remove",
+        "swarm-network",
+        &id,
+        &res,
+        json!({}),
+    )
+    .await;
     res?;
     Ok(StatusCode::NO_CONTENT)
 }

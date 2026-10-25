@@ -188,10 +188,15 @@ impl FakeSwarm {
             },
             "ServiceStatus": {"RunningTasks": 1, "DesiredTasks": 1}
         }));
-        self.tasks.lock().unwrap().as_array_mut().unwrap().push(json!({
-            "ID": "t3", "Version": {"Index": 30}, "ServiceID": "s3", "Slot": 1, "NodeID": node,
-            "DesiredState": "running", "Status": {"State": "running", "Message": "started"}
-        }));
+        self.tasks
+            .lock()
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "ID": "t3", "Version": {"Index": 30}, "ServiceID": "s3", "Slot": 1, "NodeID": node,
+                "DesiredState": "running", "Status": {"State": "running", "Message": "started"}
+            }));
     }
 
     /// The non-GET calls so far, as `METHOD path`.
@@ -234,7 +239,10 @@ impl FakeSwarm {
             let id = id_after("nodes");
             let mut nodes = self.nodes.lock().unwrap();
             let Some(n) = nodes.iter_mut().find(|n| n["ID"] == id.as_str()) else {
-                return (404, json!({"message": format!("node {id} not found")}).to_string());
+                return (
+                    404,
+                    json!({"message": format!("node {id} not found")}).to_string(),
+                );
             };
             if version != n["Version"]["Index"].as_u64() {
                 return out_of_sequence;
@@ -246,9 +254,16 @@ impl FakeSwarm {
         if path.contains("/services/") && path.contains("/update") {
             let id = id_after("services");
             let services = self.services.lock().unwrap();
-            let Some(svc) = services.as_array().unwrap().iter().find(|s| s["ID"] == id.as_str())
+            let Some(svc) = services
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|s| s["ID"] == id.as_str())
             else {
-                return (404, json!({"message": format!("service {id} not found")}).to_string());
+                return (
+                    404,
+                    json!({"message": format!("service {id} not found")}).to_string(),
+                );
             };
             if version != svc["Version"]["Index"].as_u64() {
                 return out_of_sequence;
@@ -272,7 +287,10 @@ impl FakeSwarm {
             }
             return (200, String::new());
         }
-        (404, json!({"message": format!("unexpected {method} {path}")}).to_string())
+        (
+            404,
+            json!({"message": format!("unexpected {method} {path}")}).to_string(),
+        )
     }
 
     fn answer(&self, path: &str) -> (u16, String) {
@@ -308,7 +326,10 @@ impl FakeSwarm {
         if let Some(id) = path.split("/configs/").nth(1) {
             let id = id.split('?').next().unwrap_or_default();
             if id != "cfg1" {
-                return (404, json!({"message": format!("config {id} not found")}).to_string());
+                return (
+                    404,
+                    json!({"message": format!("config {id} not found")}).to_string(),
+                );
             }
             return (
                 200,
@@ -419,8 +440,7 @@ impl FakeSwarm {
             let path = head.split_whitespace().nth(1).unwrap_or("/").to_string();
             me.requests.lock().unwrap().push(path.clone());
             if method != "GET" {
-                let body: Value =
-                    serde_json::from_slice(&buf[head_end..]).unwrap_or(Value::Null);
+                let body: Value = serde_json::from_slice(&buf[head_end..]).unwrap_or(Value::Null);
                 let (status, out) = me.answer_write(&method, &path, &body);
                 me.writes.lock().unwrap().push((method, path, body));
                 let resp = format!(

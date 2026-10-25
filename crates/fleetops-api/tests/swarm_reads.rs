@@ -148,13 +148,25 @@ async fn get_as(sw: &common::fake_swarm::Swarm, who: &Session, path: &str) -> Re
 #[tokio::test]
 async fn swarm_reads_need_their_rows() {
     let (sw, bob) = with_custom(&[(Row::Containers, Verb::View)]).await;
-    for what in ["nodes", "services", "tasks", "secrets", "configs", "networks"] {
+    for what in [
+        "nodes", "services", "tasks", "secrets", "configs", "networks",
+    ] {
         let r = get_as(&sw, &bob, &format!("/api/v1/envs/prod/swarm/{what}")).await;
         assert_eq!(r.status, 403, "{what}: {:?}", r.json);
     }
     let (sw, bob) = with_custom(&[(Row::SwarmNodes, Verb::View)]).await;
-    assert_eq!(get_as(&sw, &bob, "/api/v1/envs/prod/swarm/nodes").await.status, 200);
-    assert_eq!(get_as(&sw, &bob, "/api/v1/envs/prod/swarm/services").await.status, 403);
+    assert_eq!(
+        get_as(&sw, &bob, "/api/v1/envs/prod/swarm/nodes")
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        get_as(&sw, &bob, "/api/v1/envs/prod/swarm/services")
+            .await
+            .status,
+        403
+    );
 }
 
 #[tokio::test]

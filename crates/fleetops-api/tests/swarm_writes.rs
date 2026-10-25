@@ -38,7 +38,9 @@ async fn node_availability_labels_and_role_update() {
     assert_eq!(r.status, 204, "{:?}", r.json);
     let paths = sw.daemon.write_paths();
     assert!(
-        paths.iter().any(|p| p.contains("/nodes/n2/update") && p.contains("version=5")),
+        paths
+            .iter()
+            .any(|p| p.contains("/nodes/n2/update") && p.contains("version=5")),
         "{paths:?}"
     );
     let body = sw.daemon.body_of("/nodes/n2/update");
@@ -89,7 +91,13 @@ async fn removing_a_down_worker_works() {
 async fn draining_fleetops_node_needs_its_name() {
     let sw = swarm().await;
     sw.daemon.add_fleetops_server("n1");
-    let r = send(&sw, "PATCH", &format!("{N}/n1"), Some(json!({"availability": "drain"}))).await;
+    let r = send(
+        &sw,
+        "PATCH",
+        &format!("{N}/n1"),
+        Some(json!({"availability": "drain"})),
+    )
+    .await;
     assert_eq!(r.status, 409, "{:?}", r.json);
     assert_eq!(r.json["code"], "confirm_required");
     assert_eq!(
@@ -110,7 +118,13 @@ async fn draining_fleetops_node_needs_its_name() {
         true
     );
     // Pausing stops nothing that runs.
-    let r = send(&sw, "PATCH", &format!("{N}/n1"), Some(json!({"availability": "pause"}))).await;
+    let r = send(
+        &sw,
+        "PATCH",
+        &format!("{N}/n1"),
+        Some(json!({"availability": "pause"})),
+    )
+    .await;
     assert_eq!(r.status, 204, "{:?}", r.json);
 }
 
@@ -126,7 +140,9 @@ async fn node_writes_need_their_cells() {
         ))
         .await;
     assert_eq!(r.status, 403, "{:?}", r.json);
-    let r = sw.t.send(req("DELETE", &format!("{N}/n2"), None, Some(&bob))).await;
+    let r =
+        sw.t.send(req("DELETE", &format!("{N}/n2"), None, Some(&bob)))
+            .await;
     assert_eq!(r.status, 403, "{:?}", r.json);
 }
 
@@ -143,10 +159,7 @@ async fn create_service_posts_the_spec() {
     let body = sw.daemon.body_of("/services/create");
     assert_eq!(body["Name"], "api");
     assert_eq!(body["Mode"]["Replicated"]["Replicas"], 2);
-    assert_eq!(
-        body["TaskTemplate"]["ContainerSpec"]["Image"],
-        "nginx:1.27"
-    );
+    assert_eq!(body["TaskTemplate"]["ContainerSpec"]["Image"], "nginx:1.27");
     let a = audit(&sw, "swarm.service.create").await;
     assert_eq!(a.target_id.as_deref(), Some("api"));
     assert_eq!(a.target_type.as_deref(), Some("swarm-service"));
@@ -155,7 +168,13 @@ async fn create_service_posts_the_spec() {
 #[tokio::test]
 async fn scale_updates_replicas_at_the_inspected_version() {
     let sw = swarm().await;
-    let r = send(&sw, "POST", &format!("{S}/s1/scale"), Some(json!({"replicas": 5}))).await;
+    let r = send(
+        &sw,
+        "POST",
+        &format!("{S}/s1/scale"),
+        Some(json!({"replicas": 5})),
+    )
+    .await;
     assert_eq!(r.status, 204, "{:?}", r.json);
     assert!(sw
         .daemon
@@ -171,7 +190,13 @@ async fn scale_updates_replicas_at_the_inspected_version() {
         5
     );
     // The agent service is global, and protected.
-    let r = send(&sw, "POST", &format!("{S}/s2/scale"), Some(json!({"replicas": 2}))).await;
+    let r = send(
+        &sw,
+        "POST",
+        &format!("{S}/s2/scale"),
+        Some(json!({"replicas": 2})),
+    )
+    .await;
     assert_eq!(r.status, 409, "{:?}", r.json);
     assert_eq!(r.json["code"], "confirm_required");
     let r = send(
@@ -217,7 +242,9 @@ async fn an_edit_without_reveal_keeps_real_env_values() {
         (Row::SwarmServices, Verb::Operate),
     ])
     .await;
-    let r = sw.t.send(req("GET", &format!("{S}/s1"), None, Some(&bob))).await;
+    let r =
+        sw.t.send(req("GET", &format!("{S}/s1"), None, Some(&bob)))
+            .await;
     assert_eq!(r.status, 200, "{:?}", r.json);
     let spec = r.json["spec"].clone();
     assert!(!spec.to_string().contains("hunter2"));
@@ -241,7 +268,10 @@ async fn an_edit_without_reveal_keeps_real_env_values() {
         .await
         .unwrap()
         .iter()
-        .any(|a| a.detail.as_ref().is_some_and(|d| d.to_string().contains("hunter2"))));
+        .any(|a| a
+            .detail
+            .as_ref()
+            .is_some_and(|d| d.to_string().contains("hunter2"))));
 }
 
 #[tokio::test]
@@ -289,7 +319,13 @@ async fn the_agent_service_is_protected_by_its_image() {
 async fn fleetops_own_service_is_protected_by_its_label() {
     let sw = swarm().await;
     sw.daemon.add_fleetops_server("n1");
-    let r = send(&sw, "POST", &format!("{S}/s3/scale"), Some(json!({"replicas": 0}))).await;
+    let r = send(
+        &sw,
+        "POST",
+        &format!("{S}/s3/scale"),
+        Some(json!({"replicas": 0})),
+    )
+    .await;
     assert_eq!(r.status, 409, "{:?}", r.json);
     assert_eq!(
         r.json["message"],
@@ -310,7 +346,11 @@ async fn service_writes_need_their_cells() {
     let (sw, bob) = with_custom(&[(Row::SwarmServices, Verb::View)]).await;
     for (m, p, b) in [
         ("POST", S.to_string(), Some(json!({"spec": {"Name": "x"}}))),
-        ("POST", format!("{S}/s1/scale"), Some(json!({"replicas": 1}))),
+        (
+            "POST",
+            format!("{S}/s1/scale"),
+            Some(json!({"replicas": 1})),
+        ),
         ("DELETE", format!("{S}/s1"), None),
     ] {
         let r = sw.t.send(req(m, &p, b, Some(&bob))).await;
