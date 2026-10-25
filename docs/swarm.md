@@ -59,6 +59,38 @@ A Swarm environment's sidebar has:
 
 These pages update live. Services, nodes, secrets, configs and networks follow the swarm's events. Swarm sends no event for tasks, and a task that fails before it gets a container produces no event at all. So while a task page is open, the server reads the task list through the manager every 3 seconds and sends only what changed. The browser never polls, and the server stops reading as soon as nobody is watching.
 
+## Changing the swarm
+
+- **Nodes:** activate, pause or drain a node; promote a worker or demote a manager; edit its labels. A worker that is down can be removed. FleetOps refuses to remove a node that is still up, or a manager (demote it first). Draining a node stops every task on it, its FleetOps agent included, so that node's pages go offline until it is active again.
+- **Services:** create a service, or edit one as a form (image, mode, replicas, ports, environment, placement) or as Docker's raw ServiceSpec. Fields the form does not show are kept. Scale, redeploy (restart every task with the same spec), roll back to the previous spec, or remove. If someone else changed the service since you opened it, saving fails and asks you to reload. Without the Reveal cell on containers, environment values show masked, and saving keeps the real values.
+- **Secrets and configs:** create and remove. A secret's value is write-only: neither Docker nor FleetOps shows it again. A config's content can be viewed with the Reveal cell, and each view is audited. Values are at most 500 KiB.
+- **Networks:** create overlay networks (attachable, internal, encrypted, with an optional subnet) and remove them. Only the swarm's own networks are listed here; a node's local networks are on its node pages.
+
+Every change goes to the audit log with the node, service or object, and secret values never appear there.
+
+## Permissions
+
+Swarm has its own rows in the role grid, under **Docker Swarm**:
+
+| Row | View | Create | Operate | Delete | Reveal |
+|---|---|---|---|---|---|
+| Nodes | list and inspect | | availability, role, labels | remove | |
+| Services & tasks | services, tasks, service logs | create | edit, scale, redeploy, roll back | remove | |
+| Secrets (swarm) | names and who uses them | create | | remove | |
+| Configs | names and who uses them | create | | remove | content |
+
+Swarm networks use the **Networks** row. A node's pages use the Docker rows (containers, images, volumes, networks). The built-in Viewer gets every View cell and config content; Operator gets every swarm cell. For now these cells must apply to the whole swarm: a grant limited to stacks sees no cluster pages yet.
+
+## Self-protection
+
+FleetOps asks you to type the name before a change that could stop FleetOps or cut it off from the swarm:
+
+- any change to the **agent service** (scale, edit, redeploy, roll back, remove);
+- any change to **FleetOps' own service**, when FleetOps runs inside the swarm;
+- **draining or removing the node** that runs FleetOps' own service.
+
+Both services are known by the label `io.fleetops.role` (`agent` or `server`), which the generated agent stack and `deploy/swarm/fleetops.yml` set, or by their image (`fleets/fleetops-agent`, `fleets/fleetops`) for stacks deployed before the label existed. If you run FleetOps from another image, add `io.fleetops.role: server` under `deploy: labels:` in your stack file.
+
 ## Node pages
 
 Every node also opens as a Docker host of its own, at `<environment>@<node id>` (follow a node's name on the Nodes page). It has the usual Docker pages for that node's containers, images, volumes and networks, with logs, stats, terminals and files. They work through that node's own agent. Roles on the swarm apply to its nodes too, and actions on a node are audited with the node's id. FleetOps stacks are not available on a single node: they belong to the swarm. A node's Compose projects are still listed.
