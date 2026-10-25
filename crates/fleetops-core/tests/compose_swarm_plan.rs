@@ -322,3 +322,21 @@ fn a_service_on_the_host_network_is_unchanged() {
     let plan = plan_swarm(&p, Some((&p, 1)), &live);
     assert_eq!(action(&plan, "web"), ServiceAction::Unchanged);
 }
+
+/// A redeploy from the Services page bumps ForceUpdate to restart tasks:
+/// that is not drift, and needs no update to undo.
+#[test]
+fn a_redeploy_is_not_drift() {
+    let p = project(FILE, "a");
+    let mut live = deployed(&p);
+    let web = live
+        .services
+        .iter_mut()
+        .find(|s| s.summary.name == "blog_web")
+        .unwrap();
+    web.spec["TaskTemplate"]["ForceUpdate"] = json!(2);
+    let plan = plan_swarm(&p, Some((&p, 1)), &live);
+    let web = plan.services.iter().find(|s| s.name == "web").unwrap();
+    assert_eq!(web.action, ServiceAction::Unchanged, "{:?}", web.reasons);
+    assert!(web.drift.is_empty(), "{:?}", web.drift);
+}

@@ -425,6 +425,10 @@ pub(crate) async fn execute(
                     Wait::Counts
                 };
                 say(progress, "service", format!("updating {key}"));
+                // Resetting a redeploy's counter would restart every task.
+                if let Some(n) = l.spec["TaskTemplate"].get("ForceUpdate") {
+                    spec["TaskTemplate"]["ForceUpdate"] = n.clone();
+                }
                 ops.update_service(
                     &l.summary.id,
                     ServiceChange::Spec {

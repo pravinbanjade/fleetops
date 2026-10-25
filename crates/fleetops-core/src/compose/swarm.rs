@@ -396,8 +396,9 @@ fn mount(project: &Project, m: &Mount) -> Value {
 }
 
 /// `spec` without what Docker fills in or FleetOps adds itself: the
-/// spec-hash label, secret and config ids, empty values, Docker's defaults
-/// and the digest Docker may pin an image to. Object keys are sorted.
+/// spec-hash label, secret and config ids, empty values, Docker's defaults,
+/// a redeploy's ForceUpdate counter and the digest Docker may pin an image
+/// to. Object keys are sorted.
 pub fn canonical(spec: &Value) -> Value {
     clean(spec, "").unwrap_or_else(|| json!({}))
 }
@@ -442,7 +443,8 @@ fn is_default(path: &str, key: &str, v: &Value) -> bool {
     match (path, key) {
         ("Labels", LABEL_SPEC_HASH) => true,
         (_, "SecretID" | "ConfigID") => true,
-        ("TaskTemplate", "ForceUpdate") => v == &json!(0),
+        // Bumped by a redeploy to restart tasks; a deploy keeps it.
+        ("TaskTemplate", "ForceUpdate") => true,
         ("TaskTemplate", "Runtime") => v == "container",
         ("TaskTemplate.ContainerSpec", "Isolation") => v == "default",
         ("EndpointSpec", "Mode") => v == "vip",

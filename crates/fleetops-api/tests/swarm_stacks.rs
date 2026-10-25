@@ -309,6 +309,41 @@ async fn a_stack_on_the_host_network_deploys_and_stays_unchanged() {
     assert_eq!(after.len(), before, "{:?}", &after[before..]);
 }
 
+/// A redeploy from the Services page is kept by the next deploy, which
+/// would otherwise restart the tasks again by resetting it.
+#[tokio::test]
+async fn a_deploy_keeps_a_services_page_redeploy() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    deploy(&sw).await;
+    let id = sw
+        .daemon
+        .services
+        .lock()
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["Spec"]["Name"] == "shop_web")
+        .unwrap()["ID"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = send(
+        &sw,
+        "POST",
+        &format!("/api/v1/envs/prod/swarm/services/{id}/redeploy"),
+        None,
+    )
+    .await;
+    assert_eq!(r.status, 204, "{:?}", r.json);
+    shop(&sw, &SHOP.replace("nginx:1.27", "nginx:1.28"), "a").await;
+    assert_eq!(deploy(&sw).await.0["status"], "succeeded");
+    let body = sw.daemon.body_of(&format!("/services/{id}/update"));
+    assert_eq!(body["TaskTemplate"]["ContainerSpec"]["Image"], "nginx:1.28");
+    assert_eq!(body["TaskTemplate"]["ForceUpdate"], 1, "{body}");
+}
+
 #[tokio::test]
 async fn a_changed_value_makes_a_new_secret_and_removes_the_old() {
     let sw = fast().await;
