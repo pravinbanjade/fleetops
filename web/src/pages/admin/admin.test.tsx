@@ -420,6 +420,30 @@ describe("access", () => {
     ]);
   });
 
+  it("limits a swarm grant to stacks", async () => {
+    const SWARM = { id: 7, name: "prod", kind: "swarm-agent", url: "agent://7", created_at: 0, updated_at: 0 };
+    const calls = mockFetch({
+      ...routes,
+      "GET /api/v1/envs": { json: [...ENVS, SWARM] },
+      "GET /api/v1/users/2/access": { json: [] },
+      "PUT /api/v1/users/2/access/7": {
+        json: { env_id: 7, env_name: "prod", env_kind: "swarm-agent", role: "operator", namespaces: ["blog"] },
+      },
+    });
+    const { screen } = renderApp("/admin/users");
+    await waitFor(() => expect(row(screen, "bob")).toBeTruthy());
+    await userEvent.click(within(row(screen, "bob")).getByRole("button", { name: "Access" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.selectOptions(await within(dialog).findByLabelText("Role on prod"), "operator");
+    await userEvent.click(within(dialog).getByLabelText("Entire swarm"));
+    await userEvent.type(within(dialog).getByLabelText("Stacks on prod"), "blog{enter}");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(calls.filter((c) => c.method === "PUT").map((c) => [c.path, c.body])).toEqual([
+      ["/api/v1/users/2/access/7", { role: "operator", namespaces: ["blog"] }],
+    ]);
+  });
+
   it("revokes a grant by choosing None", async () => {
     const calls = mockFetch({
       ...routes,

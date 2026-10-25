@@ -20,7 +20,7 @@ function namedColumns<T extends Named>(env: string, kind: "secret" | "config"): 
     col.accessor((x) => x.stack ?? "", { id: "stack", header: "Stack" }),
     col.accessor((x) => x.used_by.join(", "), { id: "used_by", header: "Used by" }),
     col.accessor((x) => x.updated_at, { id: "updated", header: "Updated", cell: (c) => formatAgo(c.getValue()) }),
-    col.display({ id: "actions", header: "", cell: (c) => <ObjectActions env={env} kind={kind} id={c.row.original.id} name={c.row.original.name} /> }),
+    col.display({ id: "actions", header: "", cell: (c) => <ObjectActions env={env} kind={kind} id={c.row.original.id} name={c.row.original.name} stack={c.row.original.stack ?? null} /> }),
   ];
 }
 
@@ -33,7 +33,7 @@ export function SecretsPage() {
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
-    <Page title="Secrets" actions={can(permOf("secret", "create")) && <Button onClick={() => setCreating(true)}>Create secret</Button>}>
+    <Page title="Secrets" actions={can(permOf("secret", "create"), null) && <Button onClick={() => setCreating(true)}>Create secret</Button>}>
       {creating && <CreateObjectDialog env={env} kind="secret" onClose={() => setCreating(false)} />}
       <DataTable label="Secrets" data={q.data} error={q.error} columns={cols} getRowId={(x) => x.id} empty="No secrets." initialSorting={[{ id: "name", desc: false }]} />
     </Page>
@@ -48,7 +48,7 @@ export function ConfigsPage() {
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
-    <Page title="Configs" actions={can(permOf("config", "create")) && <Button onClick={() => setCreating(true)}>Create config</Button>}>
+    <Page title="Configs" actions={can(permOf("config", "create"), null) && <Button onClick={() => setCreating(true)}>Create config</Button>}>
       {creating && <CreateObjectDialog env={env} kind="config" onClose={() => setCreating(false)} />}
       <DataTable label="Configs" data={q.data} error={q.error} columns={cols} getRowId={(x) => x.id} empty="No configs." initialSorting={[{ id: "name", desc: false }]} />
     </Page>
@@ -63,7 +63,7 @@ const networkColumns = (env: string): Column<SwarmNetwork>[] => [
   ncol.accessor((n) => n.subnets.join(", "), { id: "subnets", header: "Subnets" }),
   ncol.accessor((n) => [n.attachable && "attachable", n.internal && "internal", n.encrypted && "encrypted"].filter(Boolean).join(", "), { id: "flags", header: "Options" }),
   ncol.accessor((n) => n.used_by.join(", "), { id: "used_by", header: "Used by" }),
-  ncol.display({ id: "actions", header: "", cell: (c) => <ObjectActions env={env} kind="network" id={c.row.original.id} name={c.row.original.name} /> }),
+  ncol.display({ id: "actions", header: "", cell: (c) => <ObjectActions env={env} kind="network" id={c.row.original.id} name={c.row.original.name} stack={c.row.original.stack ?? null} /> }),
 ];
 
 export function NetworksPage() {
@@ -74,7 +74,7 @@ export function NetworksPage() {
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
-    <Page title="Networks" actions={can(permOf("network", "create")) && <Button onClick={() => setCreating(true)}>Create network</Button>}>
+    <Page title="Networks" actions={can(permOf("network", "create"), null) && <Button onClick={() => setCreating(true)}>Create network</Button>}>
       {creating && <CreateSwarmNetworkDialog env={env} onClose={() => setCreating(false)} />}
       <DataTable label="Networks" data={q.data} error={q.error} columns={cols} getRowId={(x) => x.id} empty="No swarm networks." initialSorting={[{ id: "name", desc: false }]} />
     </Page>

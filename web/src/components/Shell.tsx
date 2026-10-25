@@ -1,3 +1,4 @@
+import { useEnvAccess } from "@/api/access";
 import { useQuery } from "@tanstack/react-query";
 import { listSwarmAgents } from "@/api/gen/sdk.gen";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
@@ -80,7 +81,12 @@ function navParams(item: NavItem, env: string) {
   return ("kind" in item ? { env, kind: item.kind } : { env }) as never;
 }
 
+/** A node's pages a grant limited to stacks cannot use: they reach the whole node. */
+const NODE_WIDE: Record<string, string> = { Images: "images.view", Volumes: "volumes.view", Networks: "networks.view" };
+
 function Rail({ env, family }: { env?: string; family: EnvFamily }) {
+  const { can } = useEnvAccess(env);
+  const nodeNav = NODE_NAV.filter((n) => !NODE_WIDE[n.label] || can(NODE_WIDE[n.label], null));
   return (
     <div className="relative flex h-full flex-col gap-5 overflow-y-auto p-3 pt-4">
       <EnvBand env={env} />
@@ -94,7 +100,7 @@ function Rail({ env, family }: { env?: string; family: EnvFamily }) {
           {family === "kube" ? (
             <KubeSidebar env={env} />
           ) : (
-            (family === "swarm" ? SWARM_NAV : family === "node" ? NODE_NAV : NAV).map((item) => (
+            (family === "swarm" ? SWARM_NAV : family === "node" ? nodeNav : NAV).map((item) => (
               <NavRow key={item.label} item={item} env={env} />
             ))
           )}

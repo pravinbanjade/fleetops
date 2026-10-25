@@ -4,7 +4,7 @@ import type { AccessEntry, EnvRole, EnvView, SetAccess } from "@/api/gen/types.g
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useRoleOptions } from "@/ee-slots";
-import { isKube } from "@/lib/env";
+import { isKube, isSwarm } from "@/lib/env";
 
 /** One environment's row in the dialog: its role, and for a cluster, the namespaces. */
 export interface Row {
@@ -46,6 +46,9 @@ export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; 
   const listOnly = limit !== undefined && limit.namespaces !== null;
   const [typed, setTyped] = useState("");
   const kube = isKube(env.kind);
+  // A swarm grant can be limited to stacks, as a cluster's to namespaces.
+  const swarm = isSwarm(env.kind);
+  const scope = swarm ? { all: "Entire swarm", what: "Stacks", one: "stack" } : { all: "Entire cluster", what: "Namespaces", one: "namespace" };
   const add = () => {
     const names = typed
       .split(/[\s,]+/)
@@ -78,7 +81,7 @@ export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; 
           ))}
         </NativeSelect>
       </div>
-      {kube && row.role !== "none" && (
+      {(kube || swarm) && row.role !== "none" && (
         <>
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -87,7 +90,7 @@ export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; 
               disabled={listOnly && row.namespaces !== null}
               onChange={(e) => onChange({ ...row, namespaces: e.target.checked ? null : [] })}
             />
-            Entire cluster
+            {scope.all}
           </label>
           {row.namespaces !== null && (
             <div className="grid gap-2">
@@ -103,8 +106,8 @@ export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; 
               </div>
               {!listOnly && (
                 <Input
-                  aria-label={`Namespaces on ${env.name}`}
-                  placeholder="Type a namespace, then Enter"
+                  aria-label={`${scope.what} on ${env.name}`}
+                  placeholder={`Type a ${scope.one}, then Enter`}
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
                   onBlur={add}

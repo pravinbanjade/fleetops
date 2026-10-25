@@ -69,7 +69,7 @@ export function StackPage() {
       return acc;
     }, {}),
   ).sort(([a], [b]) => a.localeCompare(b));
-  const canOperate = can("stacks.operate");
+  const canOperate = can("stacks.operate", stack);
   const isGit = d.stack.source === "git";
   return (
     <Page
@@ -98,7 +98,7 @@ export function StackPage() {
                 </Button>
               );
             })}
-          {can("stacks.delete") && (
+          {can("stacks.delete", stack) && (
             <Button
               variant="outline"
               size="sm"
@@ -125,7 +125,7 @@ export function StackPage() {
             key={d.draft.updated_at}
             env={env}
             detail={d}
-            canEdit={can("stacks.create")}
+            canEdit={can("stacks.create", stack)}
             canDeploy={canOperate}
             onReview={() => setReview({ source: "draft" })}
             onSecrets={() => setTab("secrets")}
@@ -136,14 +136,14 @@ export function StackPage() {
             <GitTab
               env={env}
               stack={stack}
-              canEdit={can("stacks.create")}
+              canEdit={can("stacks.create", stack)}
               canOperate={canOperate}
               onReview={setReview}
             />
           </TabsContent>
         )}
         <TabsContent value="secrets" className="pt-4">
-          <SecretsTab env={env} stack={stack} isGit={isGit} canEdit={can("stacks.create")} />
+          <SecretsTab env={env} stack={stack} isGit={isGit} canEdit={can("stacks.create", stack)} />
         </TabsContent>
         <TabsContent value="services" className="pt-4">
           {swarm ? (

@@ -133,13 +133,26 @@ export function CreateSwarmNetworkDialog({ env, onClose }: { env: string; onClos
 }
 
 /** A secret's, config's or network's ⋮ menu: view content (configs) and remove. */
-export function ObjectActions({ env, kind, id, name }: { env: string; kind: ObjectKind; id: string; name: string }) {
+export function ObjectActions({
+  env,
+  kind,
+  id,
+  name,
+  stack = null,
+}: {
+  env: string;
+  kind: ObjectKind;
+  id: string;
+  name: string;
+  /** Its stack; a grant limited to stacks acts on theirs only. */
+  stack?: string | null;
+}) {
   const qc = useQueryClient();
   const { can } = useEnvAccess(env);
   const [asking, setAsking] = useState<"view" | "remove" | null>(null);
   const items: QuickItem[] = [];
-  if (kind === "config" && can(permOf(kind, "reveal"))) items.push({ id: "view", label: "View content", icon: Eye, onSelect: () => setAsking("view") });
-  if (can(permOf(kind, "delete"))) items.push({ id: "remove", label: "Remove", icon: Trash2, danger: true, onSelect: () => setAsking("remove") });
+  if (kind === "config" && can(permOf(kind, "reveal"), stack)) items.push({ id: "view", label: "View content", icon: Eye, onSelect: () => setAsking("view") });
+  if (can(permOf(kind, "delete"), stack)) items.push({ id: "remove", label: "Remove", icon: Trash2, danger: true, onSelect: () => setAsking("remove") });
   const remove = { secret: removeSwarmSecret, config: removeSwarmConfig, network: removeSwarmNetwork }[kind];
   return (
     <>

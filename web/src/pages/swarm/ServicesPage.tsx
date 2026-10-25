@@ -46,7 +46,7 @@ export function ServicesPage() {
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
-    <Page title="Services" actions={can("swarm-services.create") && <Button onClick={() => setCreating(true)}>Create service</Button>}>
+    <Page title="Services" actions={can("swarm-services.create", null) && <Button onClick={() => setCreating(true)}>Create service</Button>}>
       {creating && <ServiceDialog env={env} target={{ mode: "create" }} onClose={() => setCreating(false)} />}
       <DataTable label="Services" data={services.data} error={services.error} columns={cols} getRowId={(s) => s.id} empty="No services." initialSorting={[{ id: "name", desc: false }]} />
     </Page>

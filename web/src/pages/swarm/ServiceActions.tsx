@@ -36,7 +36,7 @@ export function ServiceActions({ env, service, onRemoved }: { env: string; servi
       .catch((e) => toast.error(errorMessage(e)));
 
   const items: QuickItem[] = [];
-  if (can("swarm-services.operate")) {
+  if (can("swarm-services.operate", service.stack ?? null)) {
     if (service.mode === "replicated")
       items.push({
         id: "scale",
@@ -50,7 +50,7 @@ export function ServiceActions({ env, service, onRemoved }: { env: string; servi
     items.push({ id: "redeploy", label: "Redeploy", icon: RefreshCw, onSelect: () => setAsking("redeploy") });
     items.push({ id: "rollback", label: "Roll back", icon: Undo2, onSelect: () => setAsking("rollback") });
   }
-  if (can("swarm-services.delete")) items.push({ id: "remove", label: "Remove", icon: Trash2, danger: true, onSelect: () => setAsking("remove") });
+  if (can("swarm-services.delete", service.stack ?? null)) items.push({ id: "remove", label: "Remove", icon: Trash2, danger: true, onSelect: () => setAsking("remove") });
 
   const close = (open: boolean) => !open && setAsking(null);
   return (

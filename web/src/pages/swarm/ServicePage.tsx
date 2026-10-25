@@ -37,7 +37,7 @@ export function ServicePage() {
       actions={
         s && (
           <span className="flex items-center gap-2">
-            {can("swarm-services.operate") && (
+            {can("swarm-services.operate", s.stack ?? null) && (
               <Button variant="outline" onClick={() => setEditing(true)}>
                 Edit
               </Button>

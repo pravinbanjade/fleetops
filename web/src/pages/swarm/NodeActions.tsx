@@ -68,7 +68,7 @@ export function NodeActions({ env, node }: { env: string; node: NodeRef }) {
       .catch((e) => toast.error(errorMessage(e)));
 
   const items: QuickItem[] = [];
-  if (can("swarm-nodes.operate")) {
+  if (can("swarm-nodes.operate", null)) {
     if (node.availability !== "active")
       items.push({ id: "active", label: "Activate", icon: CirclePlay, onSelect: () => void change({ availability: "active" }, `${name} is active`) });
     if (node.availability !== "pause")
@@ -95,7 +95,7 @@ export function NodeActions({ env, node }: { env: string; node: NodeRef }) {
       },
     });
   }
-  if (can("swarm-nodes.delete"))
+  if (can("swarm-nodes.delete", null))
     items.push({ id: "remove", label: node.state === "ready" ? "Remove (only a node that is down)" : "Remove", icon: Trash2, danger: true, disabled: node.state === "ready", onSelect: () => setAsking("remove") });
 
   const close = (open: boolean) => !open && setAsking(null);
