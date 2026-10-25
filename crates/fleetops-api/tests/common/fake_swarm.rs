@@ -237,6 +237,19 @@ impl FakeSwarm {
             }));
     }
 
+    /// Sets the update state of the service named `name`.
+    pub fn set_update_state(&self, name: &str, state: &str) {
+        let mut services = self.services.lock().unwrap();
+        if let Some(svc) = services
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|s| s["Spec"]["Name"] == name)
+        {
+            svc["UpdateStatus"] = json!({"State": state, "Message": ""});
+        }
+    }
+
     /// The non-GET calls so far, as `METHOD path`.
     pub fn write_paths(&self) -> Vec<String> {
         self.writes
@@ -343,12 +356,15 @@ impl FakeSwarm {
             let object = match kind {
                 "services" => {
                     let n = body["Mode"]["Replicated"]["Replicas"].as_u64().unwrap_or(1);
+                    // A service with a task that never starts never runs.
+                    let mut running = n;
                     if let Some(mut t) = self.on_create_task.lock().unwrap().clone() {
                         t["ServiceID"] = id.clone().into();
                         self.tasks.lock().unwrap().as_array_mut().unwrap().push(t);
+                        running = 0;
                     }
                     json!({"ID": id, "Version": {"Index": 1}, "Spec": body,
-                           "ServiceStatus": {"RunningTasks": n, "DesiredTasks": n}})
+                           "ServiceStatus": {"RunningTasks": running, "DesiredTasks": n}})
                 }
                 "networks" => json!({"Name": body["Name"], "Id": id, "Scope": "swarm",
                                      "Driver": body["Driver"], "Labels": body["Labels"],

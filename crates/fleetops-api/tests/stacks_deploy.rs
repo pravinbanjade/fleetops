@@ -17,6 +17,7 @@ fn timing() -> Timing {
         exit_check: Duration::from_millis(5),
         poll: Duration::from_millis(1),
         health_cap: Duration::from_millis(50),
+        ..Default::default()
     }
 }
 

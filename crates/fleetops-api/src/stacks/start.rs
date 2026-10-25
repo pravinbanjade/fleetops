@@ -415,24 +415,26 @@ pub async fn start_deploy(
     if !p.blocking.is_empty() {
         return Err(Error::Invalid(p.blocking.join("; ")));
     }
-    let StackOps::Docker(ops) = ops else {
-        return Err(Error::Conflict(
-            "deploying a Swarm stack is not available yet".into(),
-        ));
+    // A Swarm stack builds nothing: Swarm pulls each image on its nodes.
+    let (built, keep, prepared) = match &ops {
+        StackOps::Docker(_) => {
+            let built: Builds = builds::builds_of(&project, &inputs);
+            // Images of the deploy before this one stay, for a quick rollback.
+            let mut keep: BTreeSet<String> = built.values().map(|b| b.image.clone()).collect();
+            if let Some(n) = stack.deployed_revision {
+                keep.extend(
+                    s.store
+                        .revision_builds(stack.id, n)
+                        .await?
+                        .into_values()
+                        .map(|b| b.image),
+                );
+            }
+            let prepared = builds::prepare(s, stack, &project, &p, &inputs).await?;
+            (built, keep, prepared)
+        }
+        StackOps::Swarm(_) => Default::default(),
     };
-    let built: Builds = builds::builds_of(&project, &inputs);
-    // Images of the deploy before this one stay, for a quick rollback.
-    let mut keep: BTreeSet<String> = built.values().map(|b| b.image.clone()).collect();
-    if let Some(n) = stack.deployed_revision {
-        keep.extend(
-            s.store
-                .revision_builds(stack.id, n)
-                .await?
-                .into_values()
-                .map(|b| b.image),
-        );
-    }
-    let prepared = builds::prepare(s, stack, &project, &p, &inputs).await?;
     if !s.stack_locks.lock().unwrap().insert(stack.id) {
         return Err(Error::Conflict(
             "a deploy of this stack is already running".into(),
@@ -484,18 +486,31 @@ pub async fn start_deploy(
         }
     }
     let number = rev.number;
-    let stream = deploy_stream(
-        s.clone(),
-        ops.clone(),
-        stack.clone(),
-        rev,
-        project,
-        files,
-        prepared,
-        keep,
-        p,
-        s.config.stack_timing,
-    );
+    let stream = match &ops {
+        StackOps::Docker(d) => deploy_stream(
+            s.clone(),
+            d.clone(),
+            stack.clone(),
+            rev,
+            project,
+            files,
+            prepared,
+            keep,
+            p,
+            s.config.stack_timing,
+        ),
+        StackOps::Swarm(sw) => super::swarm::deploy_stream(
+            s.clone(),
+            env.clone(),
+            sw.clone(),
+            stack.clone(),
+            rev,
+            project,
+            files,
+            p,
+            s.config.stack_timing,
+        ),
+    };
     let store = s.store.clone();
     let (env_id, stack_id, stack_name, is_git) = (
         env.id(),

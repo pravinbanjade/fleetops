@@ -1,11 +1,14 @@
 mod common;
 
 use common::{
-    fake_swarm::{connected_swarm as swarm, with_custom_in, Swarm},
+    fake_swarm::{connected_swarm as swarm, connected_swarm_with, with_custom_in, Swarm},
     *,
 };
+use fleetops_api::stacks::Timing;
+use fleetops_api::ApiConfig;
 use fleetops_core::perm::{Row, Verb};
 use serde_json::{json, Value};
+use std::time::Duration;
 
 async fn send(sw: &Swarm, method: &str, path: &str, body: Option<Value>) -> Resp {
     sw.t.send(req(method, path, body, Some(&sw.admin))).await
@@ -140,4 +143,434 @@ async fn a_protected_service_blocks_the_plan() {
         p["plan"]["blocking"],
         json!(["service 'fleetops_fleetops' runs FleetOps; change it outside FleetOps"])
     );
+}
+
+// Deploys.
+
+const SHOP: &str = r#"
+services:
+  web:
+    image: nginx:1.27
+    deploy: { replicas: 3 }
+    secrets: [db]
+secrets:
+  db: { environment: DB_PW }
+"#;
+
+const SHOP_STACKS: &str = "/api/v1/envs/prod/stacks/shop";
+
+async fn fast() -> Swarm {
+    connected_swarm_with(fast_config()).await
+}
+
+async fn shop(sw: &Swarm, compose: &str, pw: &str) {
+    let r = send(sw, "GET", SHOP_STACKS, None).await;
+    let body = json!({"compose": compose, "variables": [format!("DB_PW={pw}")]});
+    let r = if r.status == 404 {
+        let mut b = body.clone();
+        b["name"] = json!("shop");
+        send(sw, "POST", STACKS, Some(b)).await
+    } else {
+        send(sw, "PUT", &format!("{SHOP_STACKS}/draft"), Some(body)).await
+    };
+    assert!(r.status == 201 || r.status == 204, "{:?}", r.json);
+}
+
+/// Plans `from`, deploys it, and waits for the task: (task, its messages).
+async fn deploy_from(sw: &Swarm, from: Value) -> (Value, Vec<Value>) {
+    let r = send(
+        sw,
+        "POST",
+        &format!("{SHOP_STACKS}/plan"),
+        Some(from.clone()),
+    )
+    .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    let token = r.json["plan"]["token"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{:?}", r.json))
+        .to_string();
+    let r = send(
+        sw,
+        "POST",
+        &format!("{SHOP_STACKS}/deploy"),
+        Some(json!({"from": from, "plan_token": token})),
+    )
+    .await;
+    assert_eq!(r.status, 202, "{:?}", r.json);
+    let id = r.json["task_id"].as_str().unwrap().to_string();
+    for _ in 0..2000 {
+        let t = send(sw, "GET", &format!("/api/v1/tasks/{id}"), None).await;
+        if t.json["status"] != "running" {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+            let backlog = sw.t.state.tasks.get(&id).unwrap().feed().backlog;
+            return (t.json, backlog);
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("task {id} never finished");
+}
+
+async fn deploy(sw: &Swarm) -> (Value, Vec<Value>) {
+    deploy_from(sw, json!({"source": "draft"})).await
+}
+
+async fn revisions(sw: &Swarm) -> Vec<Value> {
+    send(sw, "GET", &format!("{SHOP_STACKS}/revisions"), None)
+        .await
+        .json
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+fn position(paths: &[String], needle: &str) -> usize {
+    paths
+        .iter()
+        .position(|p| p.contains(needle))
+        .unwrap_or_else(|| panic!("no {needle} in {paths:?}"))
+}
+
+#[tokio::test]
+async fn swarm_deploy_creates_objects_then_services() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "s3cr3t-value").await;
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "succeeded", "{task}");
+    let paths = sw.daemon.write_paths();
+    let (n, sec, svc) = (
+        position(&paths, "/networks/create"),
+        position(&paths, "/secrets/create"),
+        position(&paths, "/services/create"),
+    );
+    assert!(n < sec && sec < svc, "{paths:?}");
+    let net = sw.daemon.body_of("/networks/create");
+    assert_eq!(net["Name"], "shop_default");
+    assert_eq!(net["Labels"]["com.docker.stack.namespace"], "shop");
+    let secret = sw.daemon.body_of("/secrets/create");
+    assert_eq!(secret["Labels"]["com.docker.stack.namespace"], "shop");
+    let body = sw.daemon.body_of("/services/create");
+    assert_eq!(body["Name"], "shop_web");
+    assert_eq!(body["Labels"]["com.docker.stack.namespace"], "shop");
+    assert!(
+        body["Labels"]["io.fleetops.stack.spec-hash"].is_string(),
+        "{body}"
+    );
+    let r = &body["TaskTemplate"]["ContainerSpec"]["Secrets"][0];
+    assert_eq!(r["SecretName"], secret["Name"]);
+    let name = secret["Name"].as_str().unwrap();
+    assert!(
+        name.starts_with("shop_db_") && name.len() == "shop_db_".len() + 10,
+        "{name}"
+    );
+    let created = sw.daemon.secrets.lock().unwrap().clone();
+    let id = created
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["Spec"]["Name"] == name)
+        .unwrap()["ID"]
+        .clone();
+    assert_eq!(r["SecretID"], id);
+    assert_eq!(revisions(&sw).await[0]["status"], "deployed");
+    let a = sw.t.store.list_audit(100, None).await.unwrap();
+    let d = a
+        .iter()
+        .find(|a| a.action == "stack.deploy")
+        .expect("audit row");
+    assert_eq!(d.result, "success");
+}
+
+#[tokio::test]
+async fn a_second_deploy_of_the_same_file_changes_nothing() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    assert_eq!(deploy(&sw).await.0["status"], "succeeded");
+    let before = sw.daemon.write_paths().len();
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "succeeded", "{task}");
+    let after = sw.daemon.write_paths();
+    assert_eq!(after.len(), before, "{:?}", &after[before..]);
+}
+
+#[tokio::test]
+async fn a_changed_value_makes_a_new_secret_and_removes_the_old() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    deploy(&sw).await;
+    let old = sw.daemon.body_of("/secrets/create")["Name"].clone();
+    let old_id = sw
+        .daemon
+        .secrets
+        .lock()
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["Spec"]["Name"] == old)
+        .unwrap()["ID"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    shop(&sw, SHOP, "b").await;
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "succeeded", "{task}");
+    let new = sw.daemon.body_of("/secrets/create")["Name"].clone();
+    assert_ne!(old, new);
+    let paths = sw.daemon.write_paths();
+    assert!(
+        paths
+            .iter()
+            .any(|p| p.contains("/services/") && p.contains("/update")),
+        "{paths:?}"
+    );
+    assert!(
+        paths
+            .iter()
+            .any(|p| p.starts_with("DELETE") && p.contains(&format!("/secrets/{old_id}"))),
+        "{paths:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_paused_update_fails_the_deploy() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    deploy(&sw).await;
+    *sw.daemon.update_outcome.lock().unwrap() = Some(("paused".into(), "task failed".into()));
+    shop(&sw, &SHOP.replace("nginx:1.27", "nginx:1.28"), "a").await;
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "failed");
+    assert!(
+        task["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("deploy failed: web: update paused: task failed"),
+        "{task}"
+    );
+    assert_eq!(revisions(&sw).await[0]["status"], "failed");
+    assert!(!sw
+        .daemon
+        .write_paths()
+        .iter()
+        .any(|p| p.starts_with("DELETE") && p.contains("/services/")));
+}
+
+#[tokio::test]
+async fn a_rejected_task_fails_the_deploy() {
+    let sw = fast().await;
+    *sw.daemon.on_create_task.lock().unwrap() = Some(json!({
+        "ID": "tnew", "Version": {"Index": 1}, "Slot": 1, "NodeID": "n2",
+        "UpdatedAt": "2026-10-25T10:00:00Z", "DesiredState": "shutdown",
+        "Status": {"State": "rejected", "Message": "preparing", "Err": "No such image: nginx:9"}
+    }));
+    shop(&sw, SHOP, "a").await;
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "failed");
+    assert!(
+        task["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("deploy failed: web: task rejected: No such image: nginx:9"),
+        "{task}"
+    );
+}
+
+#[tokio::test]
+async fn old_rejected_tasks_do_not_fail_a_deploy() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    deploy(&sw).await;
+    let id = sw
+        .daemon
+        .services
+        .lock()
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["Spec"]["Name"] == "shop_web")
+        .unwrap()["ID"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    sw.daemon
+        .tasks
+        .lock()
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "ID": "old", "Version": {"Index": 1}, "ServiceID": id, "Slot": 1, "NodeID": "n2",
+            "UpdatedAt": "2026-10-25T09:00:00Z", "DesiredState": "shutdown",
+            "Status": {"State": "rejected", "Message": "preparing", "Err": "an old failure"}
+        }));
+    // The update takes a while, so the feed has shown the old task by then.
+    *sw.daemon.update_outcome.lock().unwrap() = Some(("updating".into(), String::new()));
+    let daemon = sw.daemon.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        daemon.set_update_state("shop_web", "completed");
+    });
+    shop(&sw, &SHOP.replace("nginx:1.27", "nginx:1.28"), "a").await;
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "succeeded", "{task}");
+}
+
+#[tokio::test]
+async fn a_pending_task_times_out() {
+    let sw = fast().await;
+    *sw.daemon.on_create_task.lock().unwrap() = Some(json!({
+        "ID": "tp", "Version": {"Index": 1}, "Slot": 1,
+        "UpdatedAt": "2026-10-25T10:00:00Z", "DesiredState": "running",
+        "Status": {"State": "pending", "Message": "no suitable node (scheduling constraints)"}
+    }));
+    shop(&sw, SHOP, "a").await;
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "failed");
+    let e = task["error"].as_str().unwrap();
+    assert!(
+        e.starts_with("deploy failed: web: a task is still pending after"),
+        "{e}"
+    );
+    assert!(e.contains("no suitable node"), "{e}");
+}
+
+#[tokio::test]
+async fn swarm_deploy_never_echoes_secret_values() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "s3cr3t-value").await;
+    let plan = send(
+        &sw,
+        "POST",
+        &format!("{SHOP_STACKS}/plan"),
+        Some(json!({"source": "draft"})),
+    )
+    .await;
+    assert!(!plan.json.to_string().contains("s3cr3t-value"));
+    let (task, messages) = deploy(&sw).await;
+    assert_eq!(task["status"], "succeeded", "{task}");
+    assert!(!format!("{task}{messages:?}").contains("s3cr3t-value"));
+    let audit = sw.t.store.list_audit(100, None).await.unwrap();
+    assert!(!format!("{audit:?}").contains("s3cr3t-value"));
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode("s3cr3t-value");
+    for (method, path, body) in sw.daemon.writes.lock().unwrap().iter() {
+        let text = body.to_string();
+        assert!(!text.contains("s3cr3t-value"), "{method} {path}");
+        if text.contains(&b64) {
+            assert!(path.contains("/secrets/create"), "{method} {path}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn rollback_redeploys_an_earlier_revision() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    deploy(&sw).await;
+    shop(&sw, &SHOP.replace("nginx:1.27", "nginx:1.28"), "a").await;
+    deploy(&sw).await;
+    let (task, _) = deploy_from(&sw, json!({"source": "revision", "revision": 1})).await;
+    assert_eq!(task["status"], "succeeded", "{task}");
+    let body = sw.daemon.body_of("/update");
+    assert_eq!(body["TaskTemplate"]["ContainerSpec"]["Image"], "nginx:1.27");
+    let revs = revisions(&sw).await;
+    assert_eq!(revs[0]["kind"], "rollback");
+    assert_eq!(revs[0]["status"], "deployed");
+}
+
+#[tokio::test]
+async fn an_interrupted_swarm_deploy_is_marked_failed() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    let stack = sw.t.store.stack_by_name(sw.env_id, "shop").await.unwrap();
+    sw.t.store
+        .create_revision(
+            stack.id,
+            SHOP,
+            &[],
+            "deploy",
+            None,
+            None,
+            None,
+            1,
+            &[],
+            &Default::default(),
+        )
+        .await
+        .unwrap();
+    fleetops_api::stacks::recover_all(&sw.t.state).await;
+    let revs = revisions(&sw).await;
+    assert_eq!(revs[0]["status"], "failed");
+    assert_eq!(revs[0]["error"], "interrupted");
+}
+
+#[tokio::test]
+async fn git_auto_deploy_works_on_a_swarm() {
+    use fleetops_api::stacks::git::{sync_stack, SyncOutcome, SyncTrigger};
+    use fleetops_git::testing::{GitServer, ServerOpts, TestRepo};
+    let sw = connected_swarm_with(ApiConfig {
+        git_allow_http: true,
+        data_dir: Some(tempfile::tempdir().unwrap().keep()),
+        ..fast_config()
+    })
+    .await;
+    shop(&sw, "", "a").await;
+    let repo = TestRepo::new("main");
+    repo.commit(&[("compose.yaml", SHOP_PLACED)], "one");
+    let server = GitServer::start(&repo.root(), ServerOpts::default()).await;
+    let stack = sw.t.store.stack_by_name(sw.env_id, "shop").await.unwrap();
+    sw.t.store
+        .set_stack_git(
+            stack.id,
+            &common::git::settings(&server, "poll", true),
+            fleetops_store::TokenChange::Keep,
+            Some("hook-secret"),
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+    let stack = sw.t.store.stack_by_id(stack.id).await.unwrap();
+    match sync_stack(&sw.t.state, &stack, SyncTrigger::Poll)
+        .await
+        .unwrap()
+    {
+        SyncOutcome::Deploying { task_id, .. } => {
+            for _ in 0..2000 {
+                let t = sw.t.state.tasks.get(&task_id).unwrap().info();
+                if t.status != fleetops_api::tasks::TaskStatus::Running {
+                    assert_eq!(
+                        t.status,
+                        fleetops_api::tasks::TaskStatus::Succeeded,
+                        "{t:?}"
+                    );
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }
+        other => panic!("expected a deploy, got {other:?}"),
+    }
+    let body = sw.daemon.body_of("/services/create");
+    assert_eq!(
+        body["TaskTemplate"]["Placement"]["Constraints"],
+        json!(["node.role == worker"])
+    );
+}
+
+const SHOP_PLACED: &str = "services:\n  web:\n    image: nginx:1.27\n    deploy:\n      placement: { constraints: [\"node.role == worker\"] }\n";
+
+fn fast_config() -> ApiConfig {
+    ApiConfig {
+        stack_timing: Timing {
+            exit_check: Duration::from_millis(5),
+            poll: Duration::from_millis(20),
+            health_cap: Duration::from_secs(2),
+            swarm_pending: Duration::from_millis(300),
+        },
+        swarm_task_poll: Duration::from_millis(20),
+        ..Default::default()
+    }
 }

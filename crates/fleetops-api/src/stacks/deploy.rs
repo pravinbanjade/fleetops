@@ -32,8 +32,12 @@ pub struct Timing {
     /// How often a dependency's state is polled.
     pub poll: Duration,
     /// The longest a `service_healthy` or `service_completed_successfully`
-    /// wait may take.
+    /// wait may take; on a swarm, the longest its services may take to
+    /// converge.
     pub health_cap: Duration,
+    /// On a swarm, how long a new task may stay pending (no node fits it)
+    /// before the deploy fails.
+    pub swarm_pending: Duration,
 }
 
 impl Default for Timing {
@@ -42,6 +46,7 @@ impl Default for Timing {
             exit_check: Duration::from_secs(10),
             poll: Duration::from_secs(1),
             health_cap: Duration::from_secs(300),
+            swarm_pending: Duration::from_secs(120),
         }
     }
 }
