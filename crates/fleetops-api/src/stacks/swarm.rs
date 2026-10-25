@@ -234,6 +234,32 @@ impl TaskWatch {
     }
 }
 
+/// Waits, up to the convergence limit, until no task of the `removed`
+/// services is still running or about to; a failed look ends the wait.
+async fn stopped(ops: &dyn SwarmOps, removed: &BTreeSet<String>, timing: &Timing) {
+    const ACTIVE: [&str; 8] = [
+        "new",
+        "pending",
+        "assigned",
+        "accepted",
+        "preparing",
+        "ready",
+        "starting",
+        "running",
+    ];
+    let start = Instant::now();
+    while start.elapsed() < timing.health_cap {
+        let Ok(tasks) = ops.tasks().await else { return };
+        if !tasks
+            .iter()
+            .any(|t| removed.contains(&t.service_id) && ACTIVE.contains(&t.state.as_str()))
+        {
+            return;
+        }
+        tokio::time::sleep(timing.poll).await;
+    }
+}
+
 /// Runs a retried removal: Docker refuses to remove an object a task that
 /// is still stopping uses, so it is tried for up to 10 s.
 async fn remove_retried<F, Fut>(timing: &Timing, mut f: F) -> Result<()>
@@ -696,11 +722,18 @@ pub(crate) async fn remove(ops: &dyn SwarmOps, stack: &str, timing: &Timing) -> 
         )));
     }
     let mut errors = Vec::new();
+    let mut removed = BTreeSet::new();
     for svc in services {
-        if let Err(e) = ops.remove_service(&svc.id).await {
-            errors.push(format!("{}: {e}", svc.name));
+        match ops.remove_service(&svc.id).await {
+            Ok(()) => {
+                removed.insert(svc.id);
+            }
+            Err(e) => errors.push(format!("{}: {e}", svc.name)),
         }
     }
+    // Their tasks hold the networks, secrets and configs until they stop,
+    // which a long stop grace period makes slow.
+    stopped(ops, &removed, timing).await;
     for sec in ops.secrets().await?.into_iter().filter(|s| ours(&s.stack)) {
         if let Err(e) = remove_retried(timing, || ops.remove_secret(&sec.id)).await {
             errors.push(format!("secret {}: {e}", sec.name));

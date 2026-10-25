@@ -622,6 +622,41 @@ async fn removing_a_swarm_stack_removes_its_objects() {
         .contains("shop_web"));
 }
 
+/// Tasks with a long stop grace period hold the stack's network after
+/// their service is gone: removal waits for them, within the convergence
+/// limit, before removing it.
+#[tokio::test]
+async fn removal_waits_for_stopping_tasks() {
+    let sw = fast().await;
+    shop(&sw, SHOP, "a").await;
+    deploy(&sw).await;
+    let web = sw
+        .daemon
+        .services
+        .lock()
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["Spec"]["Name"] == "shop_web")
+        .unwrap()["ID"]
+        .clone();
+    sw.daemon.tasks.lock().unwrap().as_array_mut().unwrap().push(json!({
+        "ID": "t-shop", "ServiceID": web, "Status": {"State": "running", "Timestamp": "2026-10-25T10:00:00Z"},
+        "DesiredState": "shutdown", "Version": {"Index": 1}
+    }));
+    *sw.daemon.linger.lock().unwrap() = 5;
+    let r = send(&sw, "DELETE", SHOP_STACKS, None).await;
+    assert_eq!(r.status, 204, "{:?}", r.json);
+    assert!(!sw
+        .daemon
+        .networks
+        .lock()
+        .unwrap()
+        .to_string()
+        .contains("shop_default"));
+}
+
 #[tokio::test]
 async fn stack_actions_are_refused_on_a_swarm() {
     let sw = fast().await;

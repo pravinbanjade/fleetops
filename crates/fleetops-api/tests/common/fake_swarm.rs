@@ -146,6 +146,11 @@ pub struct FakeSwarm {
     /// Update statuses a manager has not reported yet: (service id, status),
     /// shown from the second service listing after the update on.
     late: Mutex<Vec<(String, Value, u32)>>,
+    /// How many task listings a removed service's tasks keep running for,
+    /// as with a long stop grace period; meanwhile no network is removed.
+    pub linger: Mutex<u32>,
+    /// Removed services whose tasks still run: (service id, listings left).
+    lingering: Mutex<Vec<(String, u32)>>,
 }
 
 pub fn secrets_json() -> Value {
@@ -239,6 +244,8 @@ impl FakeSwarm {
             late: Mutex::default(),
             containers: Mutex::new(json!([container_json("c0ffee", "blog")])),
             events: Mutex::new(events_json()),
+            linger: Mutex::default(),
+            lingering: Mutex::default(),
         })
     }
 
@@ -448,6 +455,26 @@ impl FakeSwarm {
             };
         }
         if method == "DELETE" {
+            if path.contains("/networks/") && !self.lingering.lock().unwrap().is_empty() {
+                return (
+                    400,
+                    json!({"message": "network is in use by a task"}).to_string(),
+                );
+            }
+            if path.contains("/services/") {
+                let id = id_after("services");
+                let linger = *self.linger.lock().unwrap();
+                if linger > 0 {
+                    self.lingering.lock().unwrap().push((id, linger));
+                } else {
+                    self.tasks
+                        .lock()
+                        .unwrap()
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|t| t["ServiceID"] != id.as_str());
+                }
+            }
             if path.contains("/nodes/") {
                 let id = id_after("nodes");
                 self.remove(&id);
@@ -508,7 +535,19 @@ impl FakeSwarm {
             return (200, services.to_string());
         }
         if path.contains("/tasks") {
-            return (200, self.tasks.lock().unwrap().to_string());
+            let mut tasks = self.tasks.lock().unwrap();
+            self.lingering.lock().unwrap().retain_mut(|(id, left)| {
+                if *left > 0 {
+                    *left -= 1;
+                    return true;
+                }
+                tasks
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|t| t["ServiceID"] != id.as_str());
+                false
+            });
+            return (200, tasks.to_string());
         }
         if path.contains("/secrets") {
             // Docker never hands back a secret's data.
