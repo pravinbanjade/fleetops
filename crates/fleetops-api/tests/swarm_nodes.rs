@@ -141,3 +141,31 @@ async fn admin_routes_do_not_take_a_node_view_name() {
         .unwrap()
         .is_some());
 }
+
+/// A swarm's stacks are its services, never one node's Compose projects:
+/// a project there of the same name is not FleetOps-managed.
+#[tokio::test]
+async fn node_compose_projects_are_never_managed() {
+    let sw = common::fake_swarm::connected_swarm().await;
+    let r = sw
+        .t
+        .send(req(
+            "POST",
+            "/api/v1/envs/prod/stacks",
+            Some(serde_json::json!({"name": "blog", "compose": "services:\n  web:\n    image: nginx\n", "variables": []})),
+            Some(&sw.admin),
+        ))
+        .await;
+    assert_eq!(r.status, 201, "{:?}", r.json);
+    let r =
+        sw.t.send(req(
+            "GET",
+            "/api/v1/envs/prod@n2/compose-projects",
+            None,
+            Some(&sw.admin),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json[0]["name"], "blog");
+    assert_eq!(r.json[0]["managed"], false, "{:?}", r.json);
+}

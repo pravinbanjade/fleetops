@@ -29,13 +29,19 @@ pub async fn list(
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ComposeProject>>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
-    let stacks: std::collections::BTreeSet<String> = s
-        .store
-        .list_stacks(c.env.id())
-        .await?
-        .into_iter()
-        .map(|st| st.name)
-        .collect();
+    // A node view shares its swarm's id, but the swarm's stacks are
+    // services, never one node's Compose projects.
+    let stacks: std::collections::BTreeSet<String> =
+        if fleetops_core::env::split_node_view(c.env.name()).is_some() {
+            Default::default()
+        } else {
+            s.store
+                .list_stacks(c.env.id())
+                .await?
+                .into_iter()
+                .map(|st| st.name)
+                .collect()
+        };
     let mut projects = group_projects(&c.ops.list_containers().await?);
     for p in &mut projects {
         p.managed = stacks.contains(&p.name);
