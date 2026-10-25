@@ -101,6 +101,8 @@ pub struct ServiceDetail {
     pub spec: serde_json::Value,
     #[schema(value_type = Option<Object>)]
     pub update_status: Option<serde_json::Value>,
+    /// Swarm's object version; an edit names the version it was made from.
+    pub version: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -157,6 +159,56 @@ pub struct SwarmNetwork {
     pub used_by: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Availability {
+    Active,
+    Pause,
+    Drain,
+}
+
+/// A change to a node; absent fields stay as they are.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct NodeChange {
+    pub availability: Option<Availability>,
+    /// Promote (`manager`) or demote (`worker`).
+    pub role: Option<NodeRole>,
+    /// Replaces every label.
+    pub labels: Option<BTreeMap<String, String>>,
+}
+
+/// A change to a service.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ServiceChange {
+    /// A whole new spec, made from `version`.
+    Spec {
+        spec: serde_json::Value,
+        version: u64,
+    },
+    Scale(u64),
+    /// Restart every task with the same spec.
+    Redeploy,
+    /// Back to Docker's previous spec.
+    Rollback,
+}
+
+/// A new swarm-scoped (overlay) network.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct NewSwarmNetwork {
+    pub name: String,
+    /// Standalone containers may join it.
+    #[serde(default)]
+    pub attachable: bool,
+    /// No route outside.
+    #[serde(default)]
+    pub internal: bool,
+    /// IPsec between nodes.
+    #[serde(default)]
+    pub encrypted: bool,
+    /// CIDR, e.g. `10.20.0.0/24`.
+    pub subnet: Option<String>,
+}
+
 /// Cluster calls, answered by a manager.
 #[async_trait]
 pub trait SwarmOps: Send + Sync {
@@ -176,4 +228,19 @@ pub trait SwarmOps: Send + Sync {
     fn service_logs(&self, id: &str, opts: &LogOptions) -> BoxStream<LogLine>;
     /// The manager's own event stream: cluster events and its local ones.
     fn events(&self) -> BoxStream<DockerEvent>;
+
+    async fn update_node(&self, id: &str, change: &NodeChange) -> Result<()>;
+    async fn remove_node(&self, id: &str) -> Result<()>;
+    /// `spec` is Docker's ServiceSpec; returns the new service's id.
+    async fn create_service(&self, spec: &serde_json::Value) -> Result<String>;
+    async fn update_service(&self, id: &str, change: ServiceChange) -> Result<()>;
+    async fn remove_service(&self, id: &str) -> Result<()>;
+    async fn create_secret(&self, name: &str, data: &[u8]) -> Result<String>;
+    async fn remove_secret(&self, id: &str) -> Result<()>;
+    async fn create_config(&self, name: &str, data: &[u8]) -> Result<String>;
+    /// `None` when the swarm has no such config.
+    async fn config_data(&self, id: &str) -> Result<Option<Vec<u8>>>;
+    async fn remove_config(&self, id: &str) -> Result<()>;
+    async fn create_network(&self, n: &NewSwarmNetwork) -> Result<String>;
+    async fn remove_network(&self, id: &str) -> Result<()>;
 }

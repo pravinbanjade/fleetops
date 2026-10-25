@@ -23,6 +23,10 @@ pub enum Error {
     NodeLimit(u32),
     #[error("too many attempts; retry in {retry_after_secs}s")]
     RateLimited { retry_after_secs: u64 },
+    /// The action touches something FleetOps depends on: the caller must
+    /// repeat it with the object's name as `confirm` (409).
+    #[error("{0}")]
+    ConfirmRequired(String),
     #[error("environment unavailable: {0}")]
     EnvUnavailable(String),
     /// An error reported by Docker; `message` is shown to the user verbatim.
@@ -45,6 +49,7 @@ impl Error {
             | Error::Unauthorized(m)
             | Error::Forbidden(m)
             | Error::EnvUnavailable(m)
+            | Error::ConfirmRequired(m)
             | Error::Internal(m) => m.clone(),
             Error::Upstream { message, .. } => message.clone(),
             Error::RateLimited { .. }
@@ -66,6 +71,7 @@ impl Error {
             Error::NodeLimit(_) => "node_limit",
             Error::RateLimited { .. } => "rate_limited",
             Error::EnvUnavailable(_) => "env_unavailable",
+            Error::ConfirmRequired(_) => "confirm_required",
             Error::Upstream { .. } => "upstream",
             Error::Internal(_) => "internal",
         }
@@ -83,6 +89,10 @@ mod tests {
         assert_eq!(Error::Invalid("x".into()).code(), "invalid");
         assert_eq!(Error::Unauthorized("x".into()).code(), "unauthorized");
         assert_eq!(Error::Forbidden("x".into()).code(), "forbidden");
+        assert_eq!(
+            Error::ConfirmRequired("x".into()).code(),
+            "confirm_required"
+        );
         assert_eq!(
             Error::RateLimited {
                 retry_after_secs: 1

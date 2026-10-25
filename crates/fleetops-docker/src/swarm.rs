@@ -2,16 +2,23 @@
 
 use crate::{error::map_err, LocalDocker};
 use async_trait::async_trait;
-use bollard::models::{Node, NodeSpecRoleEnum, Service, Task};
+use base64::Engine;
+use bollard::models::{
+    ConfigSpec, Ipam, IpamConfig, NetworkCreateRequest, Node, NodeSpecAvailabilityEnum,
+    NodeSpecRoleEnum, SecretSpec, Service, ServiceSpec, Task,
+};
 use bollard::query_parameters::{
-    ListConfigsOptions, ListNetworksOptionsBuilder, ListNodesOptions, ListSecretsOptions,
-    ListServicesOptionsBuilder, ListTasksOptions, LogsOptionsBuilder,
+    DeleteNodeOptions, ListConfigsOptions, ListNetworksOptionsBuilder, ListNodesOptions,
+    ListSecretsOptions, ListServicesOptionsBuilder, ListTasksOptions, LogsOptionsBuilder,
+    UpdateNodeOptionsBuilder, UpdateServiceOptionsBuilder,
 };
 use fleetops_core::streams::{BoxStream, DockerEvent, LogLine, LogOptions, StreamOps};
 use fleetops_core::swarm::{
-    ConfigSummary, NodeDetail, NodeRole, NodeSummary, SecretSummary, ServiceDetail, ServiceSummary,
-    SwarmInfo, SwarmNetwork, SwarmOps, TaskSummary, STACK_LABEL,
+    Availability, ConfigSummary, NewSwarmNetwork, NodeChange, NodeDetail, NodeRole, NodeSummary,
+    SecretSummary, ServiceChange, ServiceDetail, ServiceSummary, SwarmInfo, SwarmNetwork, SwarmOps,
+    TaskSummary, STACK_LABEL,
 };
+use serde_json::Value;
 use fleetops_core::{Error, Result};
 use futures_util::StreamExt;
 use std::collections::{BTreeMap, HashMap};
@@ -170,7 +177,77 @@ fn summary(n: Node) -> NodeSummary {
     }
 }
 
+/// `spec` with `n` replicas; only replicated services scale.
+fn scaled(mut spec: Value, n: u64) -> Result<Value> {
+    match spec.pointer_mut("/Mode/Replicated") {
+        Some(r) if r.is_object() => {
+            r["Replicas"] = n.into();
+            Ok(spec)
+        }
+        _ => {
+            let name = spec["Name"].as_str().unwrap_or_default();
+            let mode = spec["Mode"]
+                .as_object()
+                .and_then(|m| m.keys().next())
+                .map(|k| k.to_lowercase())
+                .unwrap_or_else(|| "not replicated".into());
+            Err(Error::Invalid(format!(
+                "only replicated services scale; '{name}' is {mode}"
+            )))
+        }
+    }
+}
+
+/// `spec` with its tasks forced to restart.
+fn forced(mut spec: Value) -> Value {
+    if !spec["TaskTemplate"].is_object() {
+        spec["TaskTemplate"] = serde_json::json!({});
+    }
+    let n = spec["TaskTemplate"]["ForceUpdate"].as_u64().unwrap_or(0);
+    spec["TaskTemplate"]["ForceUpdate"] = (n + 1).into();
+    spec
+}
+
+fn service_spec(v: Value) -> Result<ServiceSpec> {
+    serde_json::from_value(v).map_err(|e| Error::Invalid(format!("not a service spec: {e}")))
+}
+
+fn to_value<T: serde::Serialize>(v: &T) -> Result<Value> {
+    serde_json::to_value(v).map_err(|e| Error::Internal(e.to_string()))
+}
+
+/// `Ok(None)` for Docker's 404.
+fn found<T>(r: Result<T>) -> Result<Option<T>> {
+    match r {
+        Ok(v) => Ok(Some(v)),
+        Err(Error::Upstream { status: 404, .. }) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 impl LocalDocker {
+    async fn inspect_service_raw(&self, id: &str) -> Result<(Value, u64)> {
+        let svc = self
+            .client
+            .inspect_service(id, None)
+            .await
+            .map_err(map_err)?;
+        let version = svc.version.as_ref().and_then(|v| v.index).unwrap_or(0);
+        Ok((to_value(&svc.spec.unwrap_or_default())?, version))
+    }
+
+    async fn put_service(&self, id: &str, spec: Value, version: u64, rollback: bool) -> Result<()> {
+        let mut o = UpdateServiceOptionsBuilder::new().version(version as i32);
+        if rollback {
+            o = o.rollback("previous");
+        }
+        self.client
+            .update_service(id, service_spec(spec)?, o.build(), None)
+            .await
+            .map_err(map_err)?;
+        Ok(())
+    }
+
     async fn list_services(&self) -> Result<Vec<Service>> {
         let opts = ListServicesOptionsBuilder::new().status(true).build();
         self.client.list_services(Some(opts)).await.map_err(map_err)
@@ -268,6 +345,7 @@ impl SwarmOps for LocalDocker {
                 .update_status
                 .as_ref()
                 .and_then(|u| serde_json::to_value(u).ok()),
+            version: svc.version.as_ref().and_then(|v| v.index).unwrap_or(0),
         }))
     }
 
@@ -396,11 +474,173 @@ impl SwarmOps for LocalDocker {
         StreamOps::events(self)
     }
 
+    async fn update_node(&self, id: &str, change: &NodeChange) -> Result<()> {
+        let n = self.client.inspect_node(id).await.map_err(map_err)?;
+        let version = n.version.and_then(|v| v.index).unwrap_or(0);
+        let mut spec = n.spec.unwrap_or_default();
+        if let Some(a) = change.availability {
+            spec.availability = Some(match a {
+                Availability::Active => NodeSpecAvailabilityEnum::ACTIVE,
+                Availability::Pause => NodeSpecAvailabilityEnum::PAUSE,
+                Availability::Drain => NodeSpecAvailabilityEnum::DRAIN,
+            });
+        }
+        if let Some(r) = change.role {
+            spec.role = Some(match r {
+                NodeRole::Manager => NodeSpecRoleEnum::MANAGER,
+                NodeRole::Worker => NodeSpecRoleEnum::WORKER,
+            });
+        }
+        if let Some(l) = &change.labels {
+            spec.labels = Some(l.clone().into_iter().collect());
+        }
+        let o = UpdateNodeOptionsBuilder::new().version(version as i64).build();
+        self.client
+            .update_node(id, spec, o)
+            .await
+            .map_err(map_err)
+    }
+
+    async fn remove_node(&self, id: &str) -> Result<()> {
+        self.client
+            .delete_node(id, None::<DeleteNodeOptions>)
+            .await
+            .map_err(map_err)
+    }
+
+    async fn create_service(&self, spec: &Value) -> Result<String> {
+        let r = self
+            .client
+            .create_service(service_spec(spec.clone())?, None)
+            .await
+            .map_err(map_err)?;
+        Ok(r.id.unwrap_or_default())
+    }
+
+    async fn update_service(&self, id: &str, change: ServiceChange) -> Result<()> {
+        match change {
+            ServiceChange::Spec { spec, version } => self.put_service(id, spec, version, false).await,
+            ServiceChange::Scale(n) => {
+                let (spec, version) = self.inspect_service_raw(id).await?;
+                self.put_service(id, scaled(spec, n)?, version, false).await
+            }
+            ServiceChange::Redeploy => {
+                let (spec, version) = self.inspect_service_raw(id).await?;
+                self.put_service(id, forced(spec), version, false).await
+            }
+            ServiceChange::Rollback => {
+                let (spec, version) = self.inspect_service_raw(id).await?;
+                self.put_service(id, spec, version, true).await
+            }
+        }
+    }
+
+    async fn remove_service(&self, id: &str) -> Result<()> {
+        self.client.delete_service(id).await.map_err(map_err)
+    }
+
+    async fn create_secret(&self, name: &str, data: &[u8]) -> Result<String> {
+        let spec = SecretSpec {
+            name: Some(name.into()),
+            data: Some(base64::engine::general_purpose::STANDARD.encode(data)),
+            ..Default::default()
+        };
+        let r = self.client.create_secret(spec).await.map_err(map_err)?;
+        Ok(r.id)
+    }
+
+    async fn remove_secret(&self, id: &str) -> Result<()> {
+        self.client.delete_secret(id).await.map_err(map_err)
+    }
+
+    async fn create_config(&self, name: &str, data: &[u8]) -> Result<String> {
+        let spec = ConfigSpec {
+            name: Some(name.into()),
+            data: Some(base64::engine::general_purpose::STANDARD.encode(data)),
+            ..Default::default()
+        };
+        let r = self.client.create_config(spec).await.map_err(map_err)?;
+        Ok(r.id)
+    }
+
+    async fn config_data(&self, id: &str) -> Result<Option<Vec<u8>>> {
+        let Some(c) = found(self.client.inspect_config(id).await.map_err(map_err))? else {
+            return Ok(None);
+        };
+        let data = c.spec.and_then(|s| s.data).unwrap_or_default();
+        base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map(Some)
+            .map_err(|e| Error::Internal(format!("config data is not base64: {e}")))
+    }
+
+    async fn remove_config(&self, id: &str) -> Result<()> {
+        self.client.delete_config(id).await.map_err(map_err)
+    }
+
+    async fn create_network(&self, n: &NewSwarmNetwork) -> Result<String> {
+        let req = NetworkCreateRequest {
+            name: n.name.clone(),
+            driver: Some("overlay".into()),
+            scope: Some("swarm".into()),
+            attachable: Some(n.attachable),
+            internal: Some(n.internal),
+            options: n
+                .encrypted
+                .then(|| HashMap::from([("encrypted".to_string(), String::new())])),
+            ipam: n.subnet.as_ref().map(|s| Ipam {
+                config: Some(vec![IpamConfig {
+                    subnet: Some(s.clone()),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let r = self.client.create_network(req).await.map_err(map_err)?;
+        Ok(r.id)
+    }
+
+    async fn remove_network(&self, id: &str) -> Result<()> {
+        self.client.remove_network(id).await.map_err(map_err)
+    }
+
     async fn node(&self, id: &str) -> Result<Option<NodeSummary>> {
         match self.client.inspect_node(id).await.map_err(map_err) {
             Ok(n) => Ok(Some(summary(n))),
             Err(Error::Upstream { status: 404, .. }) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn scaling_sets_replicas_and_keeps_the_rest() {
+        let spec = json!({"Name": "web", "Labels": {"a": "b"}, "Mode": {"Replicated": {"Replicas": 3}}});
+        let s = scaled(spec, 5).unwrap();
+        assert_eq!(s["Mode"]["Replicated"]["Replicas"], 5);
+        assert_eq!(s["Labels"], json!({"a": "b"}));
+    }
+
+    #[test]
+    fn global_services_do_not_scale() {
+        let e = scaled(json!({"Name": "agent", "Mode": {"Global": {}}}), 2).unwrap_err();
+        assert_eq!(
+            e.detail(),
+            "only replicated services scale; 'agent' is global"
+        );
+    }
+
+    #[test]
+    fn redeploy_bumps_force_update() {
+        let s = forced(json!({"TaskTemplate": {"ContainerSpec": {}}}));
+        assert_eq!(s["TaskTemplate"]["ForceUpdate"], 1);
+        let s = forced(json!({"TaskTemplate": {"ForceUpdate": 4}}));
+        assert_eq!(s["TaskTemplate"]["ForceUpdate"], 5);
     }
 }

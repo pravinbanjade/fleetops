@@ -11,7 +11,8 @@ use utoipa::ToSchema;
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ErrorBody {
     /// Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,
-    /// `forbidden`, `license_required`, `seat_limit`, `node_limit`, `rate_limited`, `env_unavailable`, `upstream`, `internal`.
+    /// `forbidden`, `license_required`, `seat_limit`, `node_limit`, `rate_limited`, `env_unavailable`, `confirm_required` (repeat with the
+    /// object's name as `confirm`), `upstream`, `internal`.
     pub code: &'static str,
     pub message: String,
     /// Matches the `x-request-id` response header and the server log.
@@ -34,7 +35,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let status = match &self.0 {
             Error::NotFound(_) => StatusCode::NOT_FOUND,
-            Error::Conflict(_) => StatusCode::CONFLICT,
+            Error::Conflict(_) | Error::ConfirmRequired(_) => StatusCode::CONFLICT,
             Error::Invalid(_) => StatusCode::BAD_REQUEST,
             Error::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             Error::Forbidden(_) => StatusCode::FORBIDDEN,
