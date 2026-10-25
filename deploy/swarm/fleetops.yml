@@ -21,7 +21,8 @@ services:
       - "9443:9443"
     volumes:
       - fleetops-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
+      # FleetOps manages this engine through its socket.
+      - /var/run/docker.sock:/var/run/docker.sock # nosemgrep
     networks:
       - fleetops
     deploy:

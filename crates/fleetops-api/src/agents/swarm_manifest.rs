@@ -64,6 +64,8 @@ pub fn swarm_stack(server_url: &str, secret: &str, ca_pem: Option<&str>) -> Stri
              image: {AGENT_IMAGE}:{version}\n    \
              # Swarm's node certificates are readable by root only.\n    \
              user: \"0\"\n    \
+             # The node's name, which the agent reports, not the container id.\n    \
+             hostname: \"{{{{.Node.Hostname}}}}\"\n    \
              command: [\"--server\", \"{server_url}\", \"--swarm\", \"--key-file\", \"/run/secrets/{KEY_SECRET}\"]\n",
         version = env!("CARGO_PKG_VERSION"),
     );
@@ -153,6 +155,8 @@ mod tests {
         assert_eq!(agent["deploy"]["mode"], "global");
         assert_eq!(agent["deploy"]["labels"]["io.fleetops.role"], "agent");
         assert_eq!(agent["user"], "0");
+        // The node's name, not the container's id, on the Nodes page.
+        assert_eq!(agent["hostname"], "{{.Node.Hostname}}");
         assert_eq!(
             agent["command"],
             serde_json::json!([

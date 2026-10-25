@@ -11,7 +11,7 @@ In **Admin → Environments → Add environment**, choose **Docker Swarm** and n
 
 The first manager agent to connect proposes the swarm, and FleetOps waits for you to trust it (see [Trusting a swarm](#trusting-a-swarm)). The environment's **Nodes** page lists every node of the swarm and whether its agent is connected, with the reason when one was refused. The environment is up while at least one manager's agent is connected.
 
-The agent runs as root (`user: "0"`). It needs the node's Docker socket, and it reads the node's Swarm certificate from `/var/lib/docker/swarm/certificates`, mounted read-only, which only root can read.
+The agent runs as root (`user: "0"`). It needs the node's Docker socket, and it reads the node's Swarm certificate from `/var/lib/docker/swarm/certificates`, mounted read-only, which only root can read. The stack sets each task's hostname to its node's (`{{.Node.Hostname}}`), so the Nodes page shows node names; an agent stack deployed before FleetOps set it shows container ids until it is deployed again.
 
 ## FleetOps outside or inside the swarm
 
