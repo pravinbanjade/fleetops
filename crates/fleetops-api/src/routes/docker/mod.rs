@@ -12,13 +12,16 @@ pub mod system;
 pub mod volumes;
 
 use crate::{auth::extract::CurrentUser, authz::Need, ApiResult, AppState};
-use fleetops_core::access::Grants;
+use fleetops_core::access::{swarm_wide_denied, Grants};
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
+use fleetops_core::perm::{Permission, Row};
+use fleetops_core::swarm::STACK_LABEL;
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::NewAudit;
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use utoipa::IntoParams;
 
@@ -30,12 +33,48 @@ pub struct EnvCtx {
     pub ops: Arc<dyn DockerOps>,
     /// The caller's grants, for checks beyond the one `ctx` made.
     pub grants: Grants,
+    /// On a swarm node's view, the stacks a grant limited to stacks covers
+    /// (swarm spec §6); `None` when the permission covers the whole swarm.
+    pub stacks: Option<BTreeSet<String>>,
+}
+
+/// The stacks `need` reaches on a swarm node's view, when no grant covers
+/// the whole swarm.
+pub(crate) fn node_scope(grants: &Grants, need: Need) -> Option<BTreeSet<String>> {
+    match need {
+        Need::Perm(p) => grants.namespaces_for(p),
+        Need::AnyGrant => {
+            let mut all = BTreeSet::new();
+            for g in &grants.0 {
+                all.extend(g.namespaces.as_ref()?.iter().cloned());
+            }
+            Some(all)
+        }
+    }
 }
 
 pub async fn ctx(s: &AppState, user: CurrentUser, env_name: &str, need: Need) -> ApiResult<EnvCtx> {
     let (env, grants) = crate::authz::env_access(s, &user, env_name, need).await?;
     if env.kind().is_kube() || env.kind().is_swarm() {
         return Err(crate::routes::kube::wrong_kind(env_name, env.kind()).into());
+    }
+    let stacks = if env.kind() == fleetops_core::env::EnvKind::SwarmNode {
+        node_scope(&grants, need)
+    } else {
+        None
+    };
+    // A grant limited to stacks reaches a node's containers only.
+    if let (Some(_), Need::Perm(p)) = (&stacks, need) {
+        if p.row != Row::Containers {
+            crate::authz::deny_audited(
+                s,
+                &user,
+                env.id(),
+                &p.to_string(),
+                Err::<(), _>(swarm_wide_denied()),
+            )
+            .await?;
+        }
     }
     let ops = env
         .docker()
@@ -45,7 +84,82 @@ pub async fn ctx(s: &AppState, user: CurrentUser, env_name: &str, need: Need) ->
         env,
         ops,
         grants,
+        stacks,
     })
+}
+
+/// A container's stack, from its labels.
+pub(crate) fn stack_of(labels: &std::collections::BTreeMap<String, String>) -> Option<&str> {
+    labels.get(STACK_LABEL).map(String::as_str)
+}
+
+/// `p` on container `id` of a node's view, by its stack: a grant limited to
+/// stacks reaches its stacks' containers only. Audited when refused.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn check_container(
+    s: &AppState,
+    user: &CurrentUser,
+    env: &Arc<dyn Environment>,
+    ops: &Arc<dyn DockerOps>,
+    grants: &Grants,
+    stacks: &Option<BTreeSet<String>>,
+    p: Permission,
+    id: &str,
+) -> Result<()> {
+    if stacks.is_none() {
+        return Ok(());
+    }
+    let inspect = ops.inspect_container(id).await?;
+    let stack = inspect["Config"]["Labels"][STACK_LABEL].as_str();
+    crate::authz::deny_audited(
+        s,
+        user,
+        env.id(),
+        &p.to_string(),
+        grants.check_stack(p, stack),
+    )
+    .await
+}
+
+impl EnvCtx {
+    /// See [`check_container`].
+    pub async fn check_container(&self, s: &AppState, p: Permission, id: &str) -> Result<()> {
+        check_container(
+            s,
+            &self.user,
+            &self.env,
+            &self.ops,
+            &self.grants,
+            &self.stacks,
+            p,
+            id,
+        )
+        .await
+    }
+
+    /// Refuses a grant limited to stacks: creating and pruning reach the
+    /// whole node.
+    pub async fn whole(&self, s: &AppState, p: Permission) -> Result<()> {
+        if self.stacks.is_none() {
+            return Ok(());
+        }
+        crate::authz::deny_audited(
+            s,
+            &self.user,
+            self.env.id(),
+            &p.to_string(),
+            Err(swarm_wide_denied()),
+        )
+        .await
+    }
+
+    /// Whether a container with `labels` is in the caller's stacks.
+    pub fn sees(&self, labels: &std::collections::BTreeMap<String, String>) -> bool {
+        match &self.stacks {
+            None => true,
+            Some(set) => stack_of(labels).is_some_and(|st| set.contains(st)),
+        }
+    }
 }
 
 /// Everything a stack handler needs: the caller, the environment, what its

@@ -50,6 +50,15 @@ pub async fn disk_usage(
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Value>> {
     let c = ctx(&s, cu, &env, Need::AnyGrant).await?;
+    // Disk usage lists every image and volume on the node.
+    c.whole(
+        &s,
+        fleetops_core::perm::Permission::new(
+            fleetops_core::perm::Row::Images,
+            fleetops_core::perm::Verb::View,
+        ),
+    )
+    .await?;
     Ok(Json(c.ops.disk_usage().await?))
 }
 
@@ -82,5 +91,10 @@ pub async fn recent_events(
         .since
         .unwrap_or(now - RECENT_EVENTS_DEFAULT_AGE)
         .max(now - RECENT_EVENTS_MAX_AGE);
-    Ok(Json(c.ops.recent_events(since).await?))
+    let mut events = c.ops.recent_events(since).await?;
+    // A grant limited to stacks hears of its stacks' containers only.
+    if c.stacks.is_some() {
+        events.retain(|e| e.kind == "container" && c.sees(&e.attributes));
+    }
+    Ok(Json(events))
 }

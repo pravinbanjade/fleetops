@@ -139,6 +139,10 @@ pub struct FakeSwarm {
     pub on_create_task: Mutex<Option<Value>>,
     /// Objects created so far, for their ids.
     created: Mutex<u32>,
+    /// What a node's engine lists as its containers.
+    pub containers: Mutex<Value>,
+    /// What the event stream sends, before falling silent.
+    pub events: Mutex<Vec<Value>>,
     /// Update statuses a manager has not reported yet: (service id, status),
     /// shown from the second service listing after the update on.
     late: Mutex<Vec<(String, Value, u32)>>,
@@ -162,6 +166,40 @@ pub fn networks_json() -> Value {
          "Labels": {"com.docker.stack.namespace": "blog"}},
         {"Name": "bridge", "Id": "b", "Scope": "local", "Driver": "bridge"}
     ])
+}
+
+/// A node container of stack `stack`, as `docker ps` lists it.
+pub fn container_json(id: &str, stack: &str) -> Value {
+    json!({
+        "Id": id, "Names": [format!("/{stack}_web.1.{id}")], "Image": "nginx:1.27",
+        "ImageID": "sha256:1", "Command": "nginx", "Created": 1,
+        "State": "running", "Status": "Up 1 minute", "Ports": [],
+        "Labels": {"com.docker.compose.project": stack, "com.docker.compose.service": "web",
+                   "com.docker.stack.namespace": stack},
+        "Mounts": [], "NetworkSettings": {"Networks": {}}
+    })
+}
+
+/// A service update, a container start (the manager's own), a swarm
+/// network's creation.
+pub fn events_json() -> Vec<Value> {
+    [
+        ("service", "update", "s1", "swarm", json!({"name": "s1"})),
+        ("container", "start", "c1", "local", json!({"name": "c1"})),
+        (
+            "network",
+            "create",
+            "net1",
+            "swarm",
+            json!({"name": "net1"}),
+        ),
+    ]
+    .into_iter()
+    .map(|(kind, action, id, scope, attrs)| {
+        json!({"Type": kind, "Action": action, "Actor": {"ID": id, "Attributes": attrs},
+               "scope": scope, "time": 1_792_576_800, "timeNano": 1_792_576_800_000_000_000i64})
+    })
+    .collect()
 }
 
 pub fn node_json(id: &str, manager: bool) -> Value {
@@ -196,6 +234,8 @@ impl FakeSwarm {
             on_create_task: Mutex::default(),
             created: Mutex::default(),
             late: Mutex::default(),
+            containers: Mutex::new(json!([container_json("c0ffee", "blog")])),
+            events: Mutex::new(events_json()),
         })
     }
 
@@ -503,17 +543,34 @@ impl FakeSwarm {
             return (200, Value::Array(nodes).to_string());
         }
         if path.contains("/containers/json") {
-            return (
-                200,
-                json!([{
-                    "Id": "c0ffee", "Names": ["/web.1.abc"], "Image": "nginx:1.27",
-                    "ImageID": "sha256:1", "Command": "nginx", "Created": 1,
-                    "State": "running", "Status": "Up 1 minute", "Ports": [],
-                    "Labels": {"com.docker.compose.project": "blog", "com.docker.compose.service": "web"},
-                    "Mounts": [], "NetworkSettings": {"Networks": {}}
-                }])
-                .to_string(),
-            );
+            return (200, self.containers.lock().unwrap().to_string());
+        }
+        if let Some(rest) = path.split("/containers/").nth(1) {
+            let id = rest.split(['/', '?']).next().unwrap_or_default();
+            if rest.contains("/json") {
+                return match self
+                    .containers
+                    .lock()
+                    .unwrap()
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|c| c["Id"] == id)
+                {
+                    Some(c) => (
+                        200,
+                        json!({"Id": id, "Name": c["Names"][0], "Image": "sha256:1",
+                               "Config": {"Labels": c["Labels"], "Image": c["Image"]},
+                               "State": {"Status": "running", "Running": true},
+                               "HostConfig": {}, "Mounts": [], "NetworkSettings": {"Networks": {}}})
+                        .to_string(),
+                    ),
+                    None => (
+                        404,
+                        json!({"message": format!("No such container: {id}")}).to_string(),
+                    ),
+                };
+            }
         }
         if path.contains("/swarm") {
             return (
@@ -582,19 +639,10 @@ impl FakeSwarm {
                 return;
             }
             if path.contains("/events") {
-                // A service update, a container start (the manager's own),
-                // a swarm network's creation, then silence.
+                // `events`, then silence.
                 let mut body = String::new();
-                for (kind, action, id, scope) in [
-                    ("service", "update", "s1", "swarm"),
-                    ("container", "start", "c1", "local"),
-                    ("network", "create", "net1", "swarm"),
-                ] {
-                    body.push_str(
-                        &json!({"Type": kind, "Action": action, "Actor": {"ID": id, "Attributes": {"name": id}},
-                                "scope": scope, "time": 1_792_576_800, "timeNano": 1_792_576_800_000_000_000i64})
-                        .to_string(),
-                    );
+                for e in me.events.lock().unwrap().iter() {
+                    body.push_str(&e.to_string());
                     body.push('\n');
                 }
                 let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n";

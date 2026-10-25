@@ -57,22 +57,40 @@ fn opts<T: serde::de::DeserializeOwned + Default>(v: Value) -> Result<T> {
     serde_json::from_value(v).map_err(|e| Error::Invalid(format!("bad opts: {e}")))
 }
 
-/// Resolves the environment, authorises, and returns its Docker ops.
-async fn docker_for(
+/// A Docker environment as a topic sees it; on a swarm node's view, with
+/// the stacks a grant limited to stacks covers (swarm spec §6).
+struct DockerTopic {
+    env: Arc<dyn Environment>,
+    ops: Arc<dyn DockerOps>,
+    stacks: Option<std::collections::BTreeSet<String>>,
+}
+
+/// Resolves the environment, authorises, and returns its Docker ops;
+/// with `id`, checks that container's stack on a node's view.
+async fn docker_scoped(
     s: &AppState,
     cu: &CurrentUser,
     env: &Option<String>,
     need: Need,
-) -> Result<(Arc<dyn Environment>, Arc<dyn DockerOps>)> {
+    id: Option<&str>,
+) -> Result<DockerTopic> {
     let name = required(env, "env")?;
-    let (env, _) = crate::authz::env_access(s, cu, name, need).await?;
+    let (env, grants) = crate::authz::env_access(s, cu, name, need).await?;
     if env.kind().is_kube() || env.kind().is_swarm() {
         return Err(crate::routes::kube::wrong_kind(name, env.kind()));
     }
     let ops = env
         .docker()
         .ok_or_else(|| Error::EnvUnavailable(format!("environment '{name}' is unreachable")))?;
-    Ok((env, ops))
+    let stacks = if env.kind() == fleetops_core::env::EnvKind::SwarmNode {
+        crate::routes::docker::node_scope(&grants, need)
+    } else {
+        None
+    };
+    if let (Some(id), Need::Perm(p)) = (id, need) {
+        crate::routes::docker::check_container(s, cu, &env, &ops, &grants, &stacks, p, id).await?;
+    }
+    Ok(DockerTopic { env, ops, stacks })
 }
 
 /// `<namespace>/<pod>`, the id of a pod on the logs and exec topics.
@@ -162,6 +180,9 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
     // A swarm's events come from its serving manager: only the cluster's
     // own kinds go on, not that one node's containers.
     let swarm_env = is_swarm_env(s, &env);
+    // On a node's view, a grant limited to stacks hears of their
+    // containers only.
+    let mut node_stacks: Option<std::collections::BTreeSet<String>> = None;
     let (env, grants) = if swarm_env {
         // The hub waits out a manager outage and says so (status down/up).
         let (env, grants) =
@@ -169,7 +190,9 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
                 .await?;
         (env, Some(grants))
     } else {
-        (docker_for(s, cu, &env, Need::AnyGrant).await?.0, None)
+        let d = docker_scoped(s, cu, &env, Need::AnyGrant, None).await?;
+        node_stacks = d.stacks;
+        (d.env, None)
     };
     let q = c.queue(Policy::DropOldest);
     let mut rx = s
@@ -184,6 +207,12 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
                 Ok(e) => {
                     if swarm_env && !is_swarm_event(&e) {
                         continue;
+                    }
+                    if let Some(set) = &node_stacks {
+                        let stack = e.attributes.get(fleetops_core::swarm::STACK_LABEL);
+                        if e.kind != "container" || !stack.is_some_and(|st| set.contains(st)) {
+                            continue;
+                        }
                     }
                     // Each kind needs its view cell on the whole swarm.
                     if let Some(g) = &grants {
@@ -221,8 +250,16 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
 /// Stats samples for container `id`, shared with every other subscriber.
 pub(super) async fn stats(c: &Ctx<'_>, env: Option<String>, id: Option<String>) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) = docker_for(s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
     let id = required(&id, "id")?.to_string();
+    let d = docker_scoped(
+        s,
+        cu,
+        &env,
+        Need::of(Row::Containers, Verb::View),
+        Some(&id),
+    )
+    .await?;
+    let (env, ops) = (d.env, d.ops);
     let (handle, mut rx) = s.hubs.stats(&env).subscribe(ops, &id);
     let q = c.queue(Policy::DropOldest);
     let qq = q.clone();
@@ -300,8 +337,9 @@ pub(super) async fn logs(
         .await?;
         ops.service_logs(service, &o)
     } else {
-        let (_, ops) = docker_for(s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
-        ops.logs(required(&id, "id")?, &o)
+        let id = required(&id, "id")?;
+        let d = docker_scoped(s, cu, &env, Need::of(Row::Containers, Verb::View), Some(id)).await?;
+        d.ops.logs(id, &o)
     };
     let q = c.queue(Policy::Gap);
     let task = pump_logs(q.clone(), sub, lines);
@@ -367,8 +405,16 @@ pub(super) async fn exec(
         return kube_exec(c, env, id, opts_v).await;
     }
     let (s, cu, sub) = (c.s, c.cu, c.sub);
-    let (env, ops) = docker_for(s, cu, &env, Need::of(Row::Containers, Verb::Shell)).await?;
     let id = required(&id, "id")?.to_string();
+    let d = docker_scoped(
+        s,
+        cu,
+        &env,
+        Need::of(Row::Containers, Verb::Shell),
+        Some(&id),
+    )
+    .await?;
+    let (env, ops) = (d.env, d.ops);
     let o: ExecOptions = opts(opts_v)?;
     let session = ops.exec_start(&id, &o).await;
     // Only the error text crosses the await: the session is not Sync.

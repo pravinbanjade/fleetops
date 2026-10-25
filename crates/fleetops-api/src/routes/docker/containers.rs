@@ -84,7 +84,9 @@ pub async fn list(
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ContainerSummary>>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
-    Ok(Json(c.ops.list_containers().await?))
+    let mut list = c.ops.list_containers().await?;
+    list.retain(|x| c.sees(&x.labels));
+    Ok(Json(list))
 }
 
 #[utoipa::path(
@@ -104,6 +106,8 @@ pub async fn create(
     ApiJson(body): ApiJson<CreateBody>,
 ) -> ApiResult<(StatusCode, Json<Created>)> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Create)).await?;
+    c.whole(&s, Permission::new(Row::Containers, Verb::Create))
+        .await?;
     body.spec.validate()?;
     let target = body
         .spec
@@ -138,6 +142,8 @@ pub async fn inspect(
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Value>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
+    c.check_container(&s, Permission::new(Row::Containers, Verb::View), &id)
+        .await?;
     let mut v = c.ops.inspect_container(&id).await?;
     if !c.grants.allows(REVEAL, None) {
         if let Some(env) = v.pointer_mut("/Config/Env").and_then(Value::as_array_mut) {
@@ -167,6 +173,8 @@ pub async fn spec(
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<ContainerSpec>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::View)).await?;
+    c.check_container(&s, Permission::new(Row::Containers, Verb::View), &id)
+        .await?;
     let mut spec = c.ops.container_spec(&id).await?;
     if !c.grants.allows(REVEAL, None) {
         mask_env(&mut spec.env);
@@ -190,6 +198,8 @@ pub async fn action(
 ) -> ApiResult<StatusCode> {
     let action: ContainerAction = action.parse()?;
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Operate)).await?;
+    c.check_container(&s, Permission::new(Row::Containers, Verb::Operate), &id)
+        .await?;
     let res = c.ops.container_action(&id, action).await;
     c.audit(
         &s,
@@ -220,6 +230,8 @@ pub async fn rename(
     ApiJson(body): ApiJson<NameBody>,
 ) -> ApiResult<StatusCode> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Operate)).await?;
+    c.check_container(&s, Permission::new(Row::Containers, Verb::Operate), &id)
+        .await?;
     let res = c.ops.rename_container(&id, &body.name).await;
     c.audit(&s, "container.rename", "container", &id, &res)
         .await;
@@ -243,6 +255,8 @@ pub async fn remove(
     ApiQuery(q): ApiQuery<ForceQuery>,
 ) -> ApiResult<StatusCode> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Delete)).await?;
+    c.check_container(&s, Permission::new(Row::Containers, Verb::Delete), &id)
+        .await?;
     let res = c.ops.remove_container(&id, q.force, q.volumes).await;
     c.audit(&s, "container.remove", "container", &id, &res)
         .await;
@@ -265,6 +279,8 @@ pub async fn prune(
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<PruneReport>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Delete)).await?;
+    c.whole(&s, Permission::new(Row::Containers, Verb::Delete))
+        .await?;
     let res = c.ops.prune_containers().await;
     c.audit(&s, "container.prune", "container", "*", &res).await;
     Ok(Json(res?))
@@ -287,6 +303,8 @@ pub async fn recreate_container(
     ApiJson(mut spec): ApiJson<ContainerSpec>,
 ) -> ApiResult<Json<RecreateResult>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Create)).await?;
+    c.check_container(&s, Permission::new(Row::Containers, Verb::Create), &id)
+        .await?;
     let delete = Permission::new(Row::Containers, Verb::Delete);
     crate::authz::deny_audited(
         &s,
@@ -330,6 +348,8 @@ pub async fn duplicate(
     ApiJson(body): ApiJson<NameBody>,
 ) -> ApiResult<(StatusCode, Json<Created>)> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Create)).await?;
+    c.whole(&s, Permission::new(Row::Containers, Verb::Create))
+        .await?;
     refuse_stack_files(c.ops.as_ref(), &id).await?;
     let mut spec = c.ops.container_spec(&id).await?;
     spec.name = Some(body.name);
@@ -363,6 +383,8 @@ pub async fn list_files(
     ApiQuery(q): ApiQuery<PathQuery>,
 ) -> ApiResult<Json<DirListing>> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Reveal)).await?;
+    c.check_container(&s, Permission::new(Row::Containers, Verb::Reveal), &id)
+        .await?;
     let secrets = refuse_secret(c.ops.as_ref(), &id, &q.path).await?;
     let mut listing = c.ops.list_dir(&id, &q.path).await?;
     if !secrets.is_empty() {
@@ -462,6 +484,8 @@ pub async fn download_file(
     ApiQuery(q): ApiQuery<PathQuery>,
 ) -> ApiResult<Response> {
     let c = ctx(&s, cu, &env, Need::of(Row::Containers, Verb::Reveal)).await?;
+    c.check_container(&s, Permission::new(Row::Containers, Verb::Reveal), &id)
+        .await?;
     refuse_secret(c.ops.as_ref(), &id, &q.path).await?;
     let data = c.ops.read_file(&id, &q.path, MAX_DOWNLOAD_BYTES).await?;
     refuse_secret_content(&s, c.ops.as_ref(), &id, &data).await?;
