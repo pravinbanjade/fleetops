@@ -60,4 +60,13 @@ describe("a grant limited to stacks", () => {
     await waitFor(() => expect(within(nav).getByRole("link", { name: /Containers/ })).toBeInTheDocument());
     for (const name of [/Images/, /Volumes/, /Networks/]) expect(within(nav).queryByRole("link", { name })).not.toBeInTheDocument();
   });
+
+  it("is offered no node-wide container actions", async () => {
+    const grants = [{ namespaces: ["blog"], permissions: [...SWARM.access.grants[0].permissions, "containers.create", "containers.delete", "containers.operate"] }];
+    mockFetch({ ...routes, "GET /api/v1/envs": { json: [...ENVS, { ...SWARM, access: { ...SWARM.access, grants } }] } });
+    const { screen } = renderApp("/envs/prod@n2/containers");
+    await screen.findByRole("table", { name: "Containers" });
+    expect(screen.queryByRole("button", { name: "Prune" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Create container" })).not.toBeInTheDocument();
+  });
 });

@@ -178,7 +178,8 @@ function ContainerActions({ env, c, name, can }: { env: string; c: ContainerInsp
           Rename
         </Button>
       )}
-      {can("containers.create") && can("containers.delete") && (
+      {/* A new container is outside every stack: whole-environment grants only. */}
+      {can("containers.create", null) && can("containers.delete", null) && (
         <Button variant="outline" asChild>
           <Link to="/envs/$env/containers/$id/edit" params={{ env, id: c.Id }}>
             <SlidersHorizontal />
@@ -186,7 +187,7 @@ function ContainerActions({ env, c, name, can }: { env: string; c: ContainerInsp
           </Link>
         </Button>
       )}
-      {can("containers.create") && (
+      {can("containers.create", null) && (
         <Button variant="outline" asChild>
           <Link to="/envs/$env/containers/new" params={{ env }} search={{ from: c.Id }}>
             <Copy />

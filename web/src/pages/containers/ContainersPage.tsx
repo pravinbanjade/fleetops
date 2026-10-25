@@ -180,13 +180,14 @@ export function ContainersPage() {
       title="Containers"
       actions={
         <>
-          {can("containers.delete") && (
+          {/* Node-wide: not for a grant limited to stacks on a node's view. */}
+          {can("containers.delete", null) && (
             <Button variant="outline" onClick={() => setPruning(true)}>
               <Trash2 />
               Prune
             </Button>
           )}
-          {can("containers.create") && (
+          {can("containers.create", null) && (
             <Button asChild>
               <Link to="/envs/$env/containers/new" params={{ env }}>
                 <Plus />
