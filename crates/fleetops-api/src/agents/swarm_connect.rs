@@ -236,6 +236,15 @@ pub(super) async fn serve(
                 Incompatible,
                 false
             ),
+            // A worker's engine can't read the swarm: its claim is false.
+            Err(e) if e.contains("not a swarm manager") => no!(
+                format!(
+                    "node {} claims to be a manager, but its engine is not one",
+                    claim.node_id
+                ),
+                Incompatible,
+                false
+            ),
             Err(e) => no!(
                 format!("cannot read the swarm's root CA: {e}"),
                 NotYet,

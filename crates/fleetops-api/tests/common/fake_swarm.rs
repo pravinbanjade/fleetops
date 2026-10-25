@@ -155,6 +155,8 @@ pub struct FakeSwarm {
     /// as while a manager is re-elected.
     pub blip_after_write: std::sync::atomic::AtomicU32,
     blip: std::sync::atomic::AtomicU32,
+    /// Answers as a worker's engine: the swarm's own state is refused.
+    pub worker_engine: std::sync::atomic::AtomicBool,
 }
 
 pub fn secrets_json() -> Value {
@@ -252,6 +254,7 @@ impl FakeSwarm {
             lingering: Mutex::default(),
             blip_after_write: Default::default(),
             blip: Default::default(),
+            worker_engine: Default::default(),
         })
     }
 
@@ -662,6 +665,13 @@ impl FakeSwarm {
                        "ContainersPaused": 0, "ContainersStopped": 0, "Images": 12,
                        "ServerVersion": "27.3.1"})
                 .to_string(),
+            );
+        }
+        if path.contains("/swarm") && self.worker_engine.load(std::sync::atomic::Ordering::SeqCst) {
+            return (
+                503,
+                json!({"message": "This node is not a swarm manager. Worker nodes can't be used to view or modify cluster state."})
+                    .to_string(),
             );
         }
         if path.contains("/swarm") {

@@ -428,6 +428,34 @@ async fn a_worker_claiming_manager_is_refused() {
         .contains(&"agent.reject".to_string()));
 }
 
+/// Before any swarm is pinned, a worker claiming to be a manager can't
+/// read the swarm's root CA: refused and audited, not told to retry.
+#[tokio::test]
+async fn a_worker_claiming_manager_before_the_pin_is_refused() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    daemon
+        .worker_engine
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let (_w, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n2", true),
+        &pki.node("n2", false),
+    )
+    .await;
+    assert_eq!(reply, bye(ByeReason::Incompatible));
+    assert!(t.store.get_swarm_cluster(env_id).await.unwrap().is_none());
+    assert!(t
+        .audit_actions()
+        .await
+        .contains(&"agent.reject".to_string()));
+}
+
 #[tokio::test]
 async fn a_proof_from_another_swarm_is_refused() {
     let t = app().await;
