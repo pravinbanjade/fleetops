@@ -507,12 +507,7 @@ async fn a_replaced_session_leaves_the_new_row() {
     new.answer_challenge(&pki.node("n1", true), &claim(&pki, "n1", true))
         .await;
     assert!(matches!(new.next().await, Some(Msg::Welcome { .. })));
-    loop {
-        match old.next().await {
-            Some(Msg::Ping { .. }) => continue,
-            _ => break,
-        }
-    }
+    while let Some(Msg::Ping { .. }) = old.next().await {}
     old.closed().await;
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     let rows = t.store.list_swarm_agents(env_id).await.unwrap();
