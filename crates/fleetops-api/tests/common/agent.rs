@@ -85,6 +85,15 @@ impl TestAgent {
 
     /// A Swarm agent's hello for `claim`.
     pub async fn hello_swarm(&mut self, claim: fleetops_tunnel::control::SwarmClaim) {
+        self.hello_swarm_as(claim, "0.7.0-test").await;
+    }
+
+    /// [`hello_swarm`](Self::hello_swarm) from agent `version`.
+    pub async fn hello_swarm_as(
+        &mut self,
+        claim: fleetops_tunnel::control::SwarmClaim,
+        version: &str,
+    ) {
         let host = HostInfo {
             hostname: format!("host-{}", claim.node_id),
             os: "linux".into(),
@@ -97,7 +106,7 @@ impl TestAgent {
             &mut self.tx,
             &Msg::Hello {
                 proto: fleetops_tunnel::PROTO_MAJOR,
-                agent_version: "0.7.0-test".into(),
+                agent_version: version.into(),
                 host,
             },
         )

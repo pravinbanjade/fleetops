@@ -481,6 +481,44 @@ async fn an_agent_that_cannot_prove_says_why() {
     assert!(err.contains(&why), "{err}");
 }
 
+/// A node's agent that reconnects replaces its old session; the old one's
+/// teardown leaves the new one's row as it is.
+#[tokio::test]
+async fn a_replaced_session_leaves_the_new_row() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let (mut old, reply) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    assert!(matches!(reply, Some(Msg::Welcome { .. })));
+    let mut new = TestAgent::connect_swarm(&base, &key, daemon.clone())
+        .await
+        .unwrap();
+    new.hello_swarm_as(claim(&pki, "n1", true), "0.8.0").await;
+    new.answer_challenge(&pki.node("n1", true), &claim(&pki, "n1", true))
+        .await;
+    assert!(matches!(new.next().await, Some(Msg::Welcome { .. })));
+    loop {
+        match old.next().await {
+            Some(Msg::Ping { .. }) => continue,
+            _ => break,
+        }
+    }
+    old.closed().await;
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let rows = t.store.list_swarm_agents(env_id).await.unwrap();
+    assert_eq!(rows[0].agent_version.as_deref(), Some("0.8.0"), "{rows:?}");
+}
+
 #[tokio::test]
 async fn a_proof_from_another_swarm_is_refused() {
     let t = app().await;

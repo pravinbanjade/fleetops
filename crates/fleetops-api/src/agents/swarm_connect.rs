@@ -426,8 +426,10 @@ pub(super) async fn serve(
         r.abort();
     }
 
-    s.agents.remove_node(env.id, &node, id, &reason);
-    let _ = s.store.record_swarm_agent(env.id, &record(None)).await;
+    // A session another one replaced leaves the row to the newer one.
+    if s.agents.remove_node(env.id, &node, id, &reason) {
+        let _ = s.store.record_swarm_agent(env.id, &record(None)).await;
+    }
     if disconnect_audit_due(s, env.id, &node) {
         audit(
             s,
