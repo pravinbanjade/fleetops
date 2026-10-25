@@ -105,11 +105,13 @@ fn known_manager_session(
 }
 
 /// Records the swarm's managers as `ops` reports them, and revokes any
-/// registered manager session whose node is a manager no longer.
+/// registered session whose node left the swarm, or whose node is a
+/// manager no longer.
 async fn refresh_known_managers(s: &AppState, env_id: i64, ops: &dyn SwarmOps) {
     let Ok(nodes) = call(ops.nodes()).await else {
         return;
     };
+    let members: Vec<String> = nodes.iter().map(|n| n.id.clone()).collect();
     let managers: Vec<String> = nodes
         .into_iter()
         .filter(|n| n.role == NodeRole::Manager)
@@ -120,7 +122,7 @@ async fn refresh_known_managers(s: &AppState, env_id: i64, ops: &dyn SwarmOps) {
     }
     for (node, live) in s.agents.nodes(env_id) {
         let claims_manager = live.info.host.swarm.as_ref().is_some_and(|c| c.manager);
-        if claims_manager && !managers.contains(&node) {
+        if !members.contains(&node) || (claims_manager && !managers.contains(&node)) {
             s.agents.revoke_node(env_id, &node);
         }
     }

@@ -971,6 +971,58 @@ async fn a_removed_manager_drops_off_while_fleetops_runs() {
     assert_eq!(known(&t, env_id).await, ["n1"]);
 }
 
+/// A worker removed from the swarm loses its session, and with it its
+/// node pages, at the next refresh.
+#[tokio::test]
+async fn a_removed_worker_is_dropped_while_fleetops_runs() {
+    let t = app_with(fleetops_api::ApiConfig {
+        agent_ping_interval: std::time::Duration::from_millis(250),
+        ..fleetops_api::ApiConfig::default()
+    })
+    .await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
+    trust(&t, env_id, &pki, &daemon).await;
+    let (mut m, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n1", true),
+        &pki.node("n1", true),
+    )
+    .await;
+    let (mut w, _) = join(
+        &base,
+        &key,
+        &daemon,
+        claim(&pki, "n2", false),
+        &pki.node("n2", false),
+    )
+    .await;
+    eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
+    daemon.remove("n2");
+    let mut revoked = false;
+    for _ in 0..200 {
+        tokio::select! {
+            Some(msg) = w.next() => match msg {
+                Msg::Ping { n } => w.pong(n).await,
+                Msg::Bye { reason } => {
+                    assert_eq!(reason, ByeReason::Revoked);
+                    revoked = true;
+                    break;
+                }
+                _ => {}
+            },
+            Some(Msg::Ping { n }) = m.next() => m.pong(n).await,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
+        }
+    }
+    assert!(revoked, "the removed worker was not dropped");
+    eventually("gone", || t.state.agents.get_node(env_id, "n2").is_none()).await;
+}
+
 #[tokio::test]
 async fn right_after_trust_only_the_proposing_manager_checks_itself() {
     let t = app().await;
