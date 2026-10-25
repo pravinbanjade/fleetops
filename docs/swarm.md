@@ -53,6 +53,7 @@ A Swarm environment's sidebar has:
 - **Overview:** what needs attention first (nodes that are not ready, services short of tasks, tasks that failed or were rejected in the last hour), the swarm's latest events, and which manager serves FleetOps' cluster calls.
 - **Nodes:** every node with its role, state and agent. A node's page shows its address, resources, labels and tasks.
 - **Services:** every service with its stack, mode, running and desired tasks, image and ports. A service's page shows its tasks, its logs from every task (the same log viewer as containers), and its spec.
+- **Stacks:** FleetOps stacks deployed as Swarm services (see [Stacks](#stacks)), then the stacks deployed with `docker stack deploy`.
 - **Tasks:** every task, with its node and, when it has one, a link to its container on that node.
 - **Visualizer:** one column per node with the tasks running or starting there.
 - **Secrets, Configs, Networks:** what exists and which services use each. Secret values are never shown: Swarm never returns them.
@@ -90,6 +91,58 @@ FleetOps asks you to type the name before a change that could stop FleetOps or c
 - **draining, demoting, relabelling or removing the node** that runs FleetOps' own service: its stack places it by role and label.
 
 Both services are known by the label `io.fleetops.role` (`agent` or `server`), which the generated agent stack and `deploy/swarm/fleetops.yml` set, or by their image (`fleets/fleetops-agent`, `fleets/fleetops`) for stacks deployed before the label existed. If you run FleetOps from another image, add `io.fleetops.role: server` under `deploy: labels:` in your stack file.
+
+## Stacks
+
+A stack on a Swarm environment deploys its Compose file as Swarm services. Everything else is as for stacks on a Docker host: the editor, Git with polling and webhooks, variables, the Secrets tab, revisions, rollback, and a reviewed plan before every deploy.
+
+**What the file may say.**
+- **Honoured:**
+  - the whole `deploy:` block: `mode` (replicated, global, replicated-job, global-job), `replicas`, `placement` (constraints, spread preferences, `max_replicas_per_node`), `resources` (limits and reservations), `restart_policy`, `update_config`, `rollback_config`, `labels` and `endpoint_mode`;
+  - a port's `mode: host`;
+  - secrets and configs marked `external: true`, optionally with a `name:`.
+- **Refused:** `build:`. Swarm cannot build, so push the image to a registry and name it in `image:`. Nodes must already be able to pull it (`docker login` on each node).
+- **Ignored, with a warning:** what `docker stack deploy` also ignores:
+  - `container_name`, `depends_on`, `links`, `external_links`, `network_mode`, `devices`, `tmpfs`, `privileged`, `pull_policy`, `shm_size`, `cgroup_parent`, `security_opt` and `userns_mode`;
+  - `restart`: use `deploy.restart_policy`;
+  - `mem_limit` and `cpus`: use `deploy.resources.limits`;
+  - a port's `host_ip`, and a network's `ipv4_address`.
+- **Networks** use the overlay driver. A stack's `default` network is `<stack>_default`.
+
+**Names and labels.**
+- Objects are named as `docker stack deploy` names them: service `web` of stack `shop` is `shop_web`.
+- Every service, network, secret and config carries `com.docker.stack.namespace=<stack>`.
+- A secret or config gets the stack name, its key and a fingerprint of its value: `shop_db_3f9a1c07d2`. Swarm cannot change a secret, so a new value makes a new one. The deploy moves the service onto it, then removes the old one.
+- Each service also carries `io.fleetops.stack.spec-hash`, the hash of the spec FleetOps deployed.
+
+**Drift.**
+- A stack's services can still be edited, scaled, redeployed and rolled back on the Services page. Their page says that the stack manages them, and that the next deploy overwrites such changes.
+- A service whose spec no longer matches its hash has drifted. The stack's Services tab marks it and names the fields that changed. Environment values are never shown.
+- The next deploy's plan lists what it will put back.
+
+**Deploying.**
+1. FleetOps creates networks, then secrets and configs, then creates or updates services.
+2. It waits for each service to converge: Swarm's update completes and every task runs. The task log reports progress per service.
+3. Only then does it remove the services that left the file, and the secrets, configs and networks nothing uses any more.
+
+**When a deploy fails.**
+- **What fails it:**
+  - an update that Swarm pauses or rolls back;
+  - a task the deploy started that is rejected (for example, an image that cannot be pulled);
+  - a task that stays pending for 2 minutes (no node fits it);
+  - a service that has not converged after 5 minutes.
+- **What happens then:** FleetOps does not undo the deploy. Swarm already rolled each service out under its own update policy, and its `failure_action` applies. The revision is marked failed. To undo the deploy, roll back to an earlier revision.
+- **How rejected and pending tasks are seen:** the deploy reads them from the same task feed the task pages use.
+
+**Stacks deployed outside FleetOps.**
+- Stacks deployed with `docker stack deploy` are listed under **Other stacks**. Their services can be managed one by one.
+- To manage such a stack here, create a FleetOps stack with the same name. Its first deploy updates those services in place; the plan marks them "not deployed by FleetOps".
+
+**Removing.** Removing a Swarm stack removes its services, then its secrets, configs and networks. Volumes live on each node and stay.
+
+**Stopping and starting.** There is no start, stop or restart for a Swarm stack. Scale or redeploy its services on the Services page.
+
+**What FleetOps will not deploy.** A plan that would update or remove FleetOps' own service or the agent service is refused. Change those outside FleetOps: the deploy could stop itself half way.
 
 ## Node pages
 

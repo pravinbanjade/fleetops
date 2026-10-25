@@ -121,6 +121,7 @@ In **Admin → Environments → Add environment**, either paste a kubeconfig, or
 - An overview that leads with what needs attention, live nodes, services, tasks and a task visualizer, service logs across tasks, and secrets, configs and networks with who uses them.
 - Every node opens as a Docker host of its own: containers, logs, terminals, images and volumes on that node.
 - Change the swarm from the browser: drain, promote and label nodes; create, edit, scale, redeploy, roll back and remove services; create secrets, configs and overlay networks. Its own role-grid rows, and a typed confirmation before touching FleetOps' own service, its node or the agents.
+- Swarm stacks: the stacks editor, Git sync, variables, secrets, revisions and rollback, deploying Compose files as Swarm services with the whole `deploy:` block. Each deploy reports progress per service and fails on a paused update, a rejected task or a task left pending. A service changed outside its stack is marked as drifted. Stacks deployed with `docker stack deploy` are listed too.
 
 **Multi-host and teams**
 - Dial-out agents for remote Docker hosts, Docker Swarms (one per node, each proving its node with the node's Swarm certificate) and clusters, with key rotation and live online/offline state.
@@ -235,7 +236,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 ## Documentation
 
 - [Kubernetes and Helm](docs/kubernetes.md)
-- [Docker Swarm](docs/swarm.md): adding a swarm, FleetOps inside or outside it, key rotation
+- [Docker Swarm](docs/swarm.md): adding a swarm, FleetOps inside or outside it, stacks, key rotation
 - [Single sign-on](docs/sso.md): connecting Microsoft, Google, GitHub and OpenID Connect providers
 - [Development](docs/development.md): toolchain, make targets, tests and CI
 - [Architecture](docs/architecture.md): crates, request pipeline, agent tunnel, REST API and websocket protocol
