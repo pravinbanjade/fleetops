@@ -185,6 +185,20 @@ describe("Swarm trust and node views", () => {
     expect(within(nav).queryByRole("link", { name: /Stacks/ })).not.toBeInTheDocument();
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).getByRole("link", { name: "prod" })).toHaveAttribute("href", "/envs/prod");
+    expect(within(crumbs).getByRole("link", { name: "Nodes" })).toHaveAttribute("href", "/envs/prod/swarm/nodes");
     expect(history.location.pathname).toBe("/envs/prod@n2/containers");
+  });
+
+  it("without the nodes row, the overview asks for neither trust nor agents", async () => {
+    const scoped = { ...SWARM, access: { role: "viewer", grants: [{ namespaces: null, permissions: ["swarm-services.view"] }] } };
+    const calls = mockFetch({
+      ...routes,
+      "GET /api/v1/envs": { json: [...ENVS, scoped] },
+      "GET /api/v1/envs/prod/swarm/trust": { json: TRUST },
+    });
+    const { screen } = renderApp("/envs/prod");
+    await screen.findByRole("heading", { name: "Overview" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.filter((c) => c.path.endsWith("/swarm/trust") || c.path.endsWith("/swarm/agents"))).toEqual([]);
   });
 });

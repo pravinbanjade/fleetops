@@ -500,8 +500,10 @@ function UserMenuFor({ user }: { user: { username: string; role: string } }) {
 /** `swarm / Nodes / host` for a swarm node's view, each part a link back. */
 function NodeBreadcrumb({ env }: { env: string }) {
   const view = splitNodeView(env)!;
+  const { can } = useEnvAccess(view.swarm);
   const agents = useQuery({
     queryKey: ["env", view.swarm, "swarm", "agents"],
+    enabled: can("swarm-nodes.view"),
     queryFn: async () => (await listSwarmAgents({ path: { env: view.swarm }, throwOnError: true })).data,
   });
   const host = agents.data?.find((n) => n.node_id === view.node)?.hostname ?? view.node;
@@ -514,7 +516,7 @@ function NodeBreadcrumb({ env }: { env: string }) {
       <span aria-hidden className="text-muted-foreground/60">
         /
       </span>
-      <Link to="/envs/$env" params={{ env: view.swarm }} className="text-muted-foreground hover:underline">
+      <Link to="/envs/$env/swarm/nodes" params={{ env: view.swarm }} className="text-muted-foreground hover:underline">
         Nodes
       </Link>
       <span aria-hidden className="text-muted-foreground/60">

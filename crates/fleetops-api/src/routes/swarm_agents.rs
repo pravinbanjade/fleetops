@@ -16,6 +16,7 @@ use axum::{
     Json,
 };
 use fleetops_core::env::EnvKind;
+use fleetops_core::perm::{Row, Verb};
 use fleetops_core::swarm::NodeRole;
 use fleetops_core::{now_unix, Error};
 use fleetops_store::EnvironmentRecord;
@@ -79,7 +80,9 @@ pub async fn agents(
     cu: CurrentUser,
     ApiPath(name): ApiPath<String>,
 ) -> ApiResult<Json<Vec<SwarmAgentView>>> {
-    let (env, _) = crate::authz::env_access(&s, &cu, &name, Need::AnyGrant).await?;
+    // Like the nodes list: the nodes row, held anywhere.
+    let (env, _) =
+        crate::authz::env_access(&s, &cu, &name, Need::of(Row::SwarmNodes, Verb::View)).await?;
     if !env.kind().is_swarm() {
         return Err(wrong_kind(&name, env.kind()).into());
     }
@@ -279,7 +282,9 @@ pub async fn trust(
     cu: CurrentUser,
     ApiPath(name): ApiPath<String>,
 ) -> ApiResult<Json<SwarmTrust>> {
-    let (env, _) = crate::authz::env_access(&s, &cu, &name, Need::AnyGrant).await?;
+    // Like the nodes list: the nodes row, held anywhere.
+    let (env, _) =
+        crate::authz::env_access(&s, &cu, &name, Need::of(Row::SwarmNodes, Verb::View)).await?;
     if !env.kind().is_swarm() {
         return Err(wrong_kind(&name, env.kind()).into());
     }

@@ -247,3 +247,24 @@ async fn mixed_grants_view_everything() {
         200
     );
 }
+
+/// The agents list and the trust card name every node: they need the
+/// nodes row, not just any grant.
+#[tokio::test]
+async fn agents_and_trust_need_the_nodes_row() {
+    use fleetops_core::perm::{Row, Verb};
+    let paths = [
+        "/api/v1/envs/prod/swarm/agents",
+        "/api/v1/envs/prod/swarm/trust",
+    ];
+    let (sw, bob) = fake_swarm::with_custom(&[(Row::Containers, Verb::View)]).await;
+    for p in paths {
+        let r = sw.t.send(req("GET", p, None, Some(&bob))).await;
+        assert_eq!(r.status, 403, "{p}: {:?}", r.json);
+    }
+    let (sw, bob) = fake_swarm::with_custom(&[(Row::SwarmNodes, Verb::View)]).await;
+    for p in paths {
+        let r = sw.t.send(req("GET", p, None, Some(&bob))).await;
+        assert_eq!(r.status, 200, "{p}: {:?}", r.json);
+    }
+}

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useEnvAccess } from "@/api/access";
 import { envStatusQuery } from "@/api/queries";
 import { Link } from "@tanstack/react-router";
 import { finishSwarmRotation, getSwarmTrust, listSwarmAgents, retrustSwarm, trustSwarm } from "@/api/gen/sdk.gen";
@@ -69,8 +70,11 @@ const nodeColumns = (env: string): Column<SwarmAgentView>[] => [
 /** Shown while a manager has proposed the swarm and no admin has trusted it yet. */
 export function TrustCard({ env, admin }: { env: string; admin: boolean }) {
   const qc = useQueryClient();
+  const { can } = useEnvAccess(env);
   const trust = useQuery({
     queryKey: ["env", env, "swarm", "trust"],
+    // The server answers only grants holding the nodes row.
+    enabled: can("swarm-nodes.view"),
     queryFn: async () => {
       try {
         return (await getSwarmTrust({ path: { env }, throwOnError: true })).data;
