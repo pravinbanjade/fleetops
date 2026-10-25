@@ -9,7 +9,7 @@ use fleetops_core::swarm::TaskSummary;
 use serde::Serialize;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{atomic::Ordering::SeqCst, Arc, Mutex},
     time::Duration,
 };
 use tokio::sync::broadcast;
@@ -34,6 +34,9 @@ struct Feed {
     /// The last tasks read, or why there are none: `Ok(None)` before the
     /// first read, `Err(reason)` while paused.
     current: Mutex<std::result::Result<Option<Vec<TaskSummary>>, String>>,
+    /// Set, under the `current` lock, when the poller stopped for want of
+    /// listeners: such a feed is never joined again.
+    stopped: std::sync::atomic::AtomicBool,
 }
 
 /// What a new subscriber is told first, if anything.
@@ -65,25 +68,51 @@ impl SwarmTasks {
         poll: Duration,
     ) -> (Option<FeedMsg>, broadcast::Receiver<FeedMsg>) {
         let key = super::hub::key(&env);
+        self.join(key, |feed| {
+            tokio::spawn(run(env, feed, poll));
+        })
+    }
+
+    /// Joins `key`'s feed, or makes one and hands it to `spawn` for its
+    /// poller, with its first receiver already in place.
+    fn join(
+        &self,
+        key: super::hub::EnvKey,
+        spawn: impl FnOnce(Arc<Feed>),
+    ) -> (Option<FeedMsg>, broadcast::Receiver<FeedMsg>) {
         let mut feeds = self.feeds.lock().unwrap();
-        feeds.retain(|_, f| f.tx.receiver_count() > 0);
+        feeds.retain(|_, f| f.tx.receiver_count() > 0 && !f.stopped.load(SeqCst));
         if let Some(feed) = feeds.get(&key) {
-            // Under the lock the poller updates `current` with, so nothing
-            // is missed or seen twice between the snapshot and the receiver.
+            // Under the lock the poller updates `current` and stops with, so
+            // nothing is missed or seen twice between the snapshot and the
+            // receiver, and a poller that just stopped is not joined.
             let current = feed.current.lock().unwrap();
-            let rx = feed.tx.subscribe();
-            return (first(&current), rx);
+            if !feed.stopped.load(SeqCst) {
+                let rx = feed.tx.subscribe();
+                return (first(&current), rx);
+            }
         }
         let (tx, rx) = broadcast::channel(CAPACITY);
         let feed = Arc::new(Feed {
             tx,
             current: Mutex::new(Ok(None)),
+            stopped: Default::default(),
         });
         feeds.insert(key, feed.clone());
-        // Spawned with its first receiver already in place.
-        tokio::spawn(run(env, feed, poll));
+        spawn(feed);
         (None, rx)
     }
+}
+
+/// Whether nobody listens to `feed` any more, so its poller stops; then
+/// it is marked stopped, under the lock a subscriber joins it with.
+fn stop_if_unheard(feed: &Feed) -> bool {
+    let _current = feed.current.lock().unwrap();
+    let unheard = feed.tx.receiver_count() == 0;
+    if unheard {
+        feed.stopped.store(true, SeqCst);
+    }
+    unheard
 }
 
 /// `next` against `prev`: upserts by id and version, removals by id.
@@ -108,7 +137,7 @@ async fn run(env: Arc<dyn Environment>, feed: Arc<Feed>, poll: Duration) {
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         tick.tick().await;
-        if feed.tx.receiver_count() == 0 {
+        if stop_if_unheard(&feed) {
             return;
         }
         // Whichever manager serves now: failover needs nothing more.
@@ -163,6 +192,26 @@ mod tests {
             updated_at: 0,
             version,
         }
+    }
+
+    /// A poller stops when it finds nobody listening, even if a new
+    /// subscriber looked the feed up a moment before; that subscriber gets
+    /// a new feed with a poller, never the stopped one.
+    #[test]
+    fn a_stopped_feed_is_never_joined() {
+        let feeds = SwarmTasks::default();
+        let mut spawned = 0;
+        let (_, rx) = feeds.join((1, 1), |_| spawned += 1);
+        let feed = feeds.feeds.lock().unwrap()[&(1, 1)].clone();
+        assert!(!stop_if_unheard(&feed), "someone listens");
+        drop(rx);
+        assert!(stop_if_unheard(&feed));
+        // Looked up in the window: a receiver appeared after the poller's
+        // look, on a feed it has left.
+        let _late = feed.tx.subscribe();
+        let (_, _rx) = feeds.join((1, 1), |_| spawned += 1);
+        assert_eq!(spawned, 2);
+        assert!(!Arc::ptr_eq(&feed, &feeds.feeds.lock().unwrap()[&(1, 1)]));
     }
 
     #[test]
