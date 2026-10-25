@@ -171,7 +171,7 @@ pub fn networks_json() -> Value {
 /// A node container of stack `stack`, as `docker ps` lists it.
 pub fn container_json(id: &str, stack: &str) -> Value {
     json!({
-        "Id": id, "Names": [format!("/{stack}_web.1.{id}")], "Image": "nginx:1.27",
+        "Id": id, "Names": [if id == "c0ffee" { "/web.1.abc".to_string() } else { format!("/{stack}_web.1.{id}") }], "Image": "nginx:1.27",
         "ImageID": "sha256:1", "Command": "nginx", "Created": 1,
         "State": "running", "Status": "Up 1 minute", "Ports": [],
         "Labels": {"com.docker.compose.project": stack, "com.docker.compose.service": "web",
