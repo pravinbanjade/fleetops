@@ -277,6 +277,13 @@ impl LocalDocker {
         }
     }
 
+    /// Node `id`, by its exact id: Docker also matches an id prefix or a
+    /// hostname, which a node's claim must not.
+    async fn inspect_node_exact(&self, id: &str) -> Result<Option<bollard::models::Node>> {
+        Ok(found(self.client.inspect_node(id).await.map_err(map_err))?
+            .filter(|n| n.id.as_deref() == Some(id)))
+    }
+
     async fn inspect_service_raw(&self, id: &str) -> Result<(Value, u64)> {
         let v = self
             .inspect_service_json(id)
@@ -372,10 +379,8 @@ impl SwarmOps for LocalDocker {
     }
 
     async fn node_detail(&self, id: &str) -> Result<Option<NodeDetail>> {
-        let n = match self.client.inspect_node(id).await.map_err(map_err) {
-            Ok(n) => n,
-            Err(Error::Upstream { status: 404, .. }) => return Ok(None),
-            Err(e) => return Err(e),
+        let Some(n) = self.inspect_node_exact(id).await? else {
+            return Ok(None);
         };
         let d = n.description.clone().unwrap_or_default();
         let res = d.resources.clone().unwrap_or_default();
@@ -733,11 +738,7 @@ impl SwarmOps for LocalDocker {
     }
 
     async fn node(&self, id: &str) -> Result<Option<NodeSummary>> {
-        match self.client.inspect_node(id).await.map_err(map_err) {
-            Ok(n) => Ok(Some(summary(n))),
-            Err(Error::Upstream { status: 404, .. }) => Ok(None),
-            Err(e) => Err(e),
-        }
+        Ok(self.inspect_node_exact(id).await?.map(summary))
     }
 }
 

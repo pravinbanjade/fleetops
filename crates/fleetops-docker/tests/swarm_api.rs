@@ -145,7 +145,10 @@ fn answer(path: &str) -> (u16, String) {
     ]);
     if let Some(id) = path.split("/nodes/").nth(1) {
         let id = id.split('?').next().unwrap();
-        return match nodes.as_array().unwrap().iter().find(|n| n["ID"] == id) {
+        // As Docker does: an id prefix or a hostname finds a node too.
+        return match nodes.as_array().unwrap().iter().find(|n| {
+            n["ID"].as_str().unwrap().starts_with(id) || n["Description"]["Hostname"] == id
+        }) {
             Some(n) => (200, n.to_string()),
             None => (404, format!(r#"{{"message":"node {id} not found"}}"#)),
         };
@@ -538,4 +541,16 @@ async fn an_update_sends_the_whole_version_and_every_field() {
         body["TaskTemplate"]["ContainerSpec"]["Future"]["Kept"], true,
         "{body}"
     );
+}
+
+/// Docker finds a node by id prefix or hostname too; a node claim names an
+/// exact id, so only that may match.
+#[tokio::test]
+async fn a_node_is_found_by_its_exact_id_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = manager(dir.path());
+    assert_eq!(d.node("n1").await.unwrap().unwrap().id, "n1");
+    assert!(d.node("n").await.unwrap().is_none());
+    assert!(d.node("mgr-1").await.unwrap().is_none());
+    assert!(d.node_detail("mgr-1").await.unwrap().is_none());
 }
