@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CordonKubeData, CordonKubeErrors, CordonKubeResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateStackData, CreateStackErrors, CreateStackResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteGenericKubeData, DeleteGenericKubeErrors, DeleteGenericKubeResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DeployStackData, DeployStackErrors, DeployStackResponses, DetachStackGitData, DetachStackGitErrors, DetachStackGitResponses, DiscardBackupData, DiscardBackupErrors, DiscardBackupResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadBackupData, DownloadBackupErrors, DownloadBackupResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableGenericKubeData, EditableGenericKubeErrors, EditableGenericKubeResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, FinishSwarmRotationData, FinishSwarmRotationErrors, FinishSwarmRotationResponses, GenericKubeEventsData, GenericKubeEventsErrors, GenericKubeEventsResponses, GetAuthProvidersData, GetAuthProvidersErrors, GetAuthProvidersResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEditionData, GetEditionErrors, GetEditionResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetGenericKubeData, GetGenericKubeErrors, GetGenericKubeResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetStackData, GetStackErrors, GetStackGitData, GetStackGitErrors, GetStackGitResponses, GetStackResponses, GetStackRevisionData, GetStackRevisionErrors, GetStackRevisionResponses, GetSwarmNodeData, GetSwarmNodeErrors, GetSwarmNodeResponses, GetSwarmServiceData, GetSwarmServiceErrors, GetSwarmServiceResponses, GetSwarmTrustData, GetSwarmTrustErrors, GetSwarmTrustResponses, GetTaskData, GetTaskErrors, GetTaskResponses, HelmCapabilitiesData, HelmCapabilitiesErrors, HelmCapabilitiesResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, InstallHelmChartData, InstallHelmChartErrors, InstallHelmChartResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeDiscoveryData, KubeDiscoveryErrors, KubeDiscoveryResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListGenericKubeData, ListGenericKubeErrors, ListGenericKubeResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListStackFilesData, ListStackFilesErrors, ListStackFilesResponses, ListStackRevisionsData, ListStackRevisionsErrors, ListStackRevisionsResponses, ListStacksData, ListStacksErrors, ListStacksResponses, ListSwarmAgentsData, ListSwarmAgentsErrors, ListSwarmAgentsResponses, ListSwarmConfigsData, ListSwarmConfigsErrors, ListSwarmConfigsResponses, ListSwarmNetworksData, ListSwarmNetworksErrors, ListSwarmNetworksResponses, ListSwarmNodesData, ListSwarmNodesErrors, ListSwarmNodesResponses, ListSwarmSecretsData, ListSwarmSecretsErrors, ListSwarmSecretsResponses, ListSwarmServicesData, ListSwarmServicesErrors, ListSwarmServicesResponses, ListSwarmTasksData, ListSwarmTasksErrors, ListSwarmTasksResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PlanStackData, PlanStackErrors, PlanStackResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RemoveStackData, RemoveStackErrors, RemoveStackFileData, RemoveStackFileErrors, RemoveStackFileResponses, RemoveStackResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceGenericKubeData, ReplaceGenericKubeErrors, ReplaceGenericKubeResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, ResetStackGitHostKeyData, ResetStackGitHostKeyErrors, ResetStackGitHostKeyResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, RestoreBackupData, RestoreBackupErrors, RestoreBackupResponses, RestoreSetupBackupData, RestoreSetupBackupErrors, RestoreSetupBackupResponses, ResumeKubeData, ResumeKubeErrors, ResumeKubeResponses, ResumeStackGitData, ResumeStackGitErrors, ResumeStackGitResponses, RetrustSwarmData, RetrustSwarmErrors, RetrustSwarmResponses, RevealSecretData, RevealSecretErrors, RevealSecretResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, RotateStackGitSecretData, RotateStackGitSecretErrors, RotateStackGitSecretResponses, RotateSwarmKeyData, RotateSwarmKeyErrors, RotateSwarmKeyResponses, SaveStackDraftData, SaveStackDraftErrors, SaveStackDraftResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, SetStackFileData, SetStackFileErrors, SetStackFileResponses, SetStackGitData, SetStackGitErrors, SetStackGitResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, ShowHelmChartData, ShowHelmChartErrors, ShowHelmChartResponses, StackActionData, StackActionErrors, StackActionResponses, StackWebhookData, StackWebhookErrors, StackWebhookResponses, StageBackupData, StageBackupErrors, StageBackupResponses, StageSetupBackupData, StageSetupBackupErrors, StageSetupBackupResponses, SuspendKubeData, SuspendKubeErrors, SuspendKubeResponses, SyncStackGitData, SyncStackGitErrors, SyncStackGitResponses, TagImageData, TagImageErrors, TagImageResponses, TriggerKubeData, TriggerKubeErrors, TriggerKubeResponses, TrustSwarmData, TrustSwarmErrors, TrustSwarmResponses, UncordonKubeData, UncordonKubeErrors, UncordonKubeResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses, UpgradeHelmReleaseData, UpgradeHelmReleaseErrors, UpgradeHelmReleaseResponses, ValidateStackData, ValidateStackErrors, ValidateStackResponses, WorkloadPodsData, WorkloadPodsErrors, WorkloadPodsResponses } from './types.gen';
+import type { AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CordonKubeData, CordonKubeErrors, CordonKubeResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateStackData, CreateStackErrors, CreateStackResponses, CreateSwarmConfigData, CreateSwarmConfigErrors, CreateSwarmConfigResponses, CreateSwarmNetworkData, CreateSwarmNetworkErrors, CreateSwarmNetworkResponses, CreateSwarmSecretData, CreateSwarmSecretErrors, CreateSwarmSecretResponses, CreateSwarmServiceData, CreateSwarmServiceErrors, CreateSwarmServiceResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteGenericKubeData, DeleteGenericKubeErrors, DeleteGenericKubeResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DeployStackData, DeployStackErrors, DeployStackResponses, DetachStackGitData, DetachStackGitErrors, DetachStackGitResponses, DiscardBackupData, DiscardBackupErrors, DiscardBackupResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadBackupData, DownloadBackupErrors, DownloadBackupResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableGenericKubeData, EditableGenericKubeErrors, EditableGenericKubeResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, EditSwarmServiceData, EditSwarmServiceErrors, EditSwarmServiceResponses, FinishSwarmRotationData, FinishSwarmRotationErrors, FinishSwarmRotationResponses, GenericKubeEventsData, GenericKubeEventsErrors, GenericKubeEventsResponses, GetAuthProvidersData, GetAuthProvidersErrors, GetAuthProvidersResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEditionData, GetEditionErrors, GetEditionResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetGenericKubeData, GetGenericKubeErrors, GetGenericKubeResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetStackData, GetStackErrors, GetStackGitData, GetStackGitErrors, GetStackGitResponses, GetStackResponses, GetStackRevisionData, GetStackRevisionErrors, GetStackRevisionResponses, GetSwarmConfigDataData, GetSwarmConfigDataErrors, GetSwarmConfigDataResponses, GetSwarmNodeData, GetSwarmNodeErrors, GetSwarmNodeResponses, GetSwarmServiceData, GetSwarmServiceErrors, GetSwarmServiceResponses, GetSwarmTrustData, GetSwarmTrustErrors, GetSwarmTrustResponses, GetTaskData, GetTaskErrors, GetTaskResponses, HelmCapabilitiesData, HelmCapabilitiesErrors, HelmCapabilitiesResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, InstallHelmChartData, InstallHelmChartErrors, InstallHelmChartResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeDiscoveryData, KubeDiscoveryErrors, KubeDiscoveryResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListGenericKubeData, ListGenericKubeErrors, ListGenericKubeResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListStackFilesData, ListStackFilesErrors, ListStackFilesResponses, ListStackRevisionsData, ListStackRevisionsErrors, ListStackRevisionsResponses, ListStacksData, ListStacksErrors, ListStacksResponses, ListSwarmAgentsData, ListSwarmAgentsErrors, ListSwarmAgentsResponses, ListSwarmConfigsData, ListSwarmConfigsErrors, ListSwarmConfigsResponses, ListSwarmNetworksData, ListSwarmNetworksErrors, ListSwarmNetworksResponses, ListSwarmNodesData, ListSwarmNodesErrors, ListSwarmNodesResponses, ListSwarmSecretsData, ListSwarmSecretsErrors, ListSwarmSecretsResponses, ListSwarmServicesData, ListSwarmServicesErrors, ListSwarmServicesResponses, ListSwarmTasksData, ListSwarmTasksErrors, ListSwarmTasksResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PlanStackData, PlanStackErrors, PlanStackResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RedeploySwarmServiceData, RedeploySwarmServiceErrors, RedeploySwarmServiceResponses, RemoveStackData, RemoveStackErrors, RemoveStackFileData, RemoveStackFileErrors, RemoveStackFileResponses, RemoveStackResponses, RemoveSwarmConfigData, RemoveSwarmConfigErrors, RemoveSwarmConfigResponses, RemoveSwarmNetworkData, RemoveSwarmNetworkErrors, RemoveSwarmNetworkResponses, RemoveSwarmNodeData, RemoveSwarmNodeErrors, RemoveSwarmNodeResponses, RemoveSwarmSecretData, RemoveSwarmSecretErrors, RemoveSwarmSecretResponses, RemoveSwarmServiceData, RemoveSwarmServiceErrors, RemoveSwarmServiceResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceGenericKubeData, ReplaceGenericKubeErrors, ReplaceGenericKubeResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, ResetStackGitHostKeyData, ResetStackGitHostKeyErrors, ResetStackGitHostKeyResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, RestoreBackupData, RestoreBackupErrors, RestoreBackupResponses, RestoreSetupBackupData, RestoreSetupBackupErrors, RestoreSetupBackupResponses, ResumeKubeData, ResumeKubeErrors, ResumeKubeResponses, ResumeStackGitData, ResumeStackGitErrors, ResumeStackGitResponses, RetrustSwarmData, RetrustSwarmErrors, RetrustSwarmResponses, RevealSecretData, RevealSecretErrors, RevealSecretResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RollbackSwarmServiceData, RollbackSwarmServiceErrors, RollbackSwarmServiceResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, RotateStackGitSecretData, RotateStackGitSecretErrors, RotateStackGitSecretResponses, RotateSwarmKeyData, RotateSwarmKeyErrors, RotateSwarmKeyResponses, SaveStackDraftData, SaveStackDraftErrors, SaveStackDraftResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, ScaleSwarmServiceData, ScaleSwarmServiceErrors, ScaleSwarmServiceResponses, SetStackFileData, SetStackFileErrors, SetStackFileResponses, SetStackGitData, SetStackGitErrors, SetStackGitResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, ShowHelmChartData, ShowHelmChartErrors, ShowHelmChartResponses, StackActionData, StackActionErrors, StackActionResponses, StackWebhookData, StackWebhookErrors, StackWebhookResponses, StageBackupData, StageBackupErrors, StageBackupResponses, StageSetupBackupData, StageSetupBackupErrors, StageSetupBackupResponses, SuspendKubeData, SuspendKubeErrors, SuspendKubeResponses, SyncStackGitData, SyncStackGitErrors, SyncStackGitResponses, TagImageData, TagImageErrors, TagImageResponses, TriggerKubeData, TriggerKubeErrors, TriggerKubeResponses, TrustSwarmData, TrustSwarmErrors, TrustSwarmResponses, UncordonKubeData, UncordonKubeErrors, UncordonKubeResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateSwarmNodeData, UpdateSwarmNodeErrors, UpdateSwarmNodeResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses, UpgradeHelmReleaseData, UpgradeHelmReleaseErrors, UpgradeHelmReleaseResponses, ValidateStackData, ValidateStackErrors, ValidateStackResponses, WorkloadPodsData, WorkloadPodsErrors, WorkloadPodsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -1636,6 +1636,49 @@ export const listSwarmConfigs = <ThrowOnError extends boolean = true>(options: O
 });
 
 /**
+ * Create a config
+ */
+export const createSwarmConfig = <ThrowOnError extends boolean = true>(options: Options<CreateSwarmConfigData, ThrowOnError>): RequestResult<CreateSwarmConfigResponses, CreateSwarmConfigErrors, ThrowOnError> => (options.client ?? client).post<CreateSwarmConfigResponses, CreateSwarmConfigErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/configs',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove a config no service uses
+ */
+export const removeSwarmConfig = <ThrowOnError extends boolean = true>(options: Options<RemoveSwarmConfigData, ThrowOnError>): RequestResult<RemoveSwarmConfigResponses, RemoveSwarmConfigErrors, ThrowOnError> => (options.client ?? client).delete<RemoveSwarmConfigResponses, RemoveSwarmConfigErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/configs/{id}',
+    ...options
+});
+
+/**
+ * A config's content (needs Reveal)
+ */
+export const getSwarmConfigData = <ThrowOnError extends boolean = true>(options: Options<GetSwarmConfigDataData, ThrowOnError>): RequestResult<GetSwarmConfigDataResponses, GetSwarmConfigDataErrors, ThrowOnError> => (options.client ?? client).get<GetSwarmConfigDataResponses, GetSwarmConfigDataErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/configs/{id}/data',
+    ...options
+});
+
+/**
  * The swarm's swarm-scoped networks
  */
 export const listSwarmNetworks = <ThrowOnError extends boolean = true>(options: Options<ListSwarmNetworksData, ThrowOnError>): RequestResult<ListSwarmNetworksResponses, ListSwarmNetworksErrors, ThrowOnError> => (options.client ?? client).get<ListSwarmNetworksResponses, ListSwarmNetworksErrors, ThrowOnError>({
@@ -1645,6 +1688,36 @@ export const listSwarmNetworks = <ThrowOnError extends boolean = true>(options: 
             type: 'apiKey'
         }],
     url: '/api/v1/envs/{env}/swarm/networks',
+    ...options
+});
+
+/**
+ * Create an overlay network
+ */
+export const createSwarmNetwork = <ThrowOnError extends boolean = true>(options: Options<CreateSwarmNetworkData, ThrowOnError>): RequestResult<CreateSwarmNetworkResponses, CreateSwarmNetworkErrors, ThrowOnError> => (options.client ?? client).post<CreateSwarmNetworkResponses, CreateSwarmNetworkErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/networks',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove a swarm-scoped network
+ */
+export const removeSwarmNetwork = <ThrowOnError extends boolean = true>(options: Options<RemoveSwarmNetworkData, ThrowOnError>): RequestResult<RemoveSwarmNetworkResponses, RemoveSwarmNetworkErrors, ThrowOnError> => (options.client ?? client).delete<RemoveSwarmNetworkResponses, RemoveSwarmNetworkErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/networks/{id}',
     ...options
 });
 
@@ -1662,6 +1735,19 @@ export const listSwarmNodes = <ThrowOnError extends boolean = true>(options: Opt
 });
 
 /**
+ * Remove a worker that is down
+ */
+export const removeSwarmNode = <ThrowOnError extends boolean = true>(options: Options<RemoveSwarmNodeData, ThrowOnError>): RequestResult<RemoveSwarmNodeResponses, RemoveSwarmNodeErrors, ThrowOnError> => (options.client ?? client).delete<RemoveSwarmNodeResponses, RemoveSwarmNodeErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/nodes/{id}',
+    ...options
+});
+
+/**
  * One node
  */
 export const getSwarmNode = <ThrowOnError extends boolean = true>(options: Options<GetSwarmNodeData, ThrowOnError>): RequestResult<GetSwarmNodeResponses, GetSwarmNodeErrors, ThrowOnError> => (options.client ?? client).get<GetSwarmNodeResponses, GetSwarmNodeErrors, ThrowOnError>({
@@ -1672,6 +1758,23 @@ export const getSwarmNode = <ThrowOnError extends boolean = true>(options: Optio
         }],
     url: '/api/v1/envs/{env}/swarm/nodes/{id}',
     ...options
+});
+
+/**
+ * Set a node's availability, role or labels
+ */
+export const updateSwarmNode = <ThrowOnError extends boolean = true>(options: Options<UpdateSwarmNodeData, ThrowOnError>): RequestResult<UpdateSwarmNodeResponses, UpdateSwarmNodeErrors, ThrowOnError> => (options.client ?? client).patch<UpdateSwarmNodeResponses, UpdateSwarmNodeErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/nodes/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**
@@ -1727,6 +1830,36 @@ export const listSwarmSecrets = <ThrowOnError extends boolean = true>(options: O
 });
 
 /**
+ * Create a secret (its value is write-only)
+ */
+export const createSwarmSecret = <ThrowOnError extends boolean = true>(options: Options<CreateSwarmSecretData, ThrowOnError>): RequestResult<CreateSwarmSecretResponses, CreateSwarmSecretErrors, ThrowOnError> => (options.client ?? client).post<CreateSwarmSecretResponses, CreateSwarmSecretErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/secrets',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove a secret no service uses
+ */
+export const removeSwarmSecret = <ThrowOnError extends boolean = true>(options: Options<RemoveSwarmSecretData, ThrowOnError>): RequestResult<RemoveSwarmSecretResponses, RemoveSwarmSecretErrors, ThrowOnError> => (options.client ?? client).delete<RemoveSwarmSecretResponses, RemoveSwarmSecretErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/secrets/{id}',
+    ...options
+});
+
+/**
  * The swarm's services
  */
 export const listSwarmServices = <ThrowOnError extends boolean = true>(options: Options<ListSwarmServicesData, ThrowOnError>): RequestResult<ListSwarmServicesResponses, ListSwarmServicesErrors, ThrowOnError> => (options.client ?? client).get<ListSwarmServicesResponses, ListSwarmServicesErrors, ThrowOnError>({
@@ -1736,6 +1869,36 @@ export const listSwarmServices = <ThrowOnError extends boolean = true>(options: 
             type: 'apiKey'
         }],
     url: '/api/v1/envs/{env}/swarm/services',
+    ...options
+});
+
+/**
+ * Create a service from a ServiceSpec
+ */
+export const createSwarmService = <ThrowOnError extends boolean = true>(options: Options<CreateSwarmServiceData, ThrowOnError>): RequestResult<CreateSwarmServiceResponses, CreateSwarmServiceErrors, ThrowOnError> => (options.client ?? client).post<CreateSwarmServiceResponses, CreateSwarmServiceErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/services',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove a service
+ */
+export const removeSwarmService = <ThrowOnError extends boolean = true>(options: Options<RemoveSwarmServiceData, ThrowOnError>): RequestResult<RemoveSwarmServiceResponses, RemoveSwarmServiceErrors, ThrowOnError> => (options.client ?? client).delete<RemoveSwarmServiceResponses, RemoveSwarmServiceErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/services/{id}',
     ...options
 });
 
@@ -1750,6 +1913,74 @@ export const getSwarmService = <ThrowOnError extends boolean = true>(options: Op
         }],
     url: '/api/v1/envs/{env}/swarm/services/{id}',
     ...options
+});
+
+/**
+ * Replace a service's spec
+ */
+export const editSwarmService = <ThrowOnError extends boolean = true>(options: Options<EditSwarmServiceData, ThrowOnError>): RequestResult<EditSwarmServiceResponses, EditSwarmServiceErrors, ThrowOnError> => (options.client ?? client).put<EditSwarmServiceResponses, EditSwarmServiceErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/services/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Restart every task with the same spec (force update)
+ */
+export const redeploySwarmService = <ThrowOnError extends boolean = true>(options: Options<RedeploySwarmServiceData, ThrowOnError>): RequestResult<RedeploySwarmServiceResponses, RedeploySwarmServiceErrors, ThrowOnError> => (options.client ?? client).post<RedeploySwarmServiceResponses, RedeploySwarmServiceErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/services/{id}/redeploy',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Go back to the service's previous spec
+ */
+export const rollbackSwarmService = <ThrowOnError extends boolean = true>(options: Options<RollbackSwarmServiceData, ThrowOnError>): RequestResult<RollbackSwarmServiceResponses, RollbackSwarmServiceErrors, ThrowOnError> => (options.client ?? client).post<RollbackSwarmServiceResponses, RollbackSwarmServiceErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/services/{id}/rollback',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Set a replicated service's replicas
+ */
+export const scaleSwarmService = <ThrowOnError extends boolean = true>(options: Options<ScaleSwarmServiceData, ThrowOnError>): RequestResult<ScaleSwarmServiceResponses, ScaleSwarmServiceErrors, ThrowOnError> => (options.client ?? client).post<ScaleSwarmServiceResponses, ScaleSwarmServiceErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/envs/{env}/swarm/services/{id}/scale',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 /**

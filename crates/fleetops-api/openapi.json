@@ -6776,6 +6776,168 @@
             "session": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Create a config",
+        "operationId": "createSwarmConfig",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSwarmObject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/configs/{id}": {
+      "delete": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Remove a config no service uses",
+        "operationId": "removeSwarmConfig",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/configs/{id}/data": {
+      "get": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "A config's content (needs Reveal)",
+        "operationId": "getSwarmConfigData",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigData"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
       }
     },
     "/api/v1/envs/{env}/swarm/networks": {
@@ -6823,6 +6985,112 @@
         },
         "security": [
           {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Create an overlay network",
+        "operationId": "createSwarmNetwork",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSwarmNetwork"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/networks/{id}": {
+      "delete": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Remove a swarm-scoped network",
+        "operationId": "removeSwarmNetwork",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
             "session": []
           }
         ]
@@ -6929,6 +7197,127 @@
         },
         "security": [
           {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Remove a worker that is down",
+        "operationId": "removeSwarmNode",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "description": "The object's name, when the server asked for it (`confirm_required`).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "409": {
+            "description": "The node is up or a manager, or `confirm_required`"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Set a node's availability, role or labels",
+        "operationId": "updateSwarmNode",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Changed"
+          },
+          "409": {
+            "description": "`confirm_required`: FleetOps runs on this node"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
             "session": []
           }
         ]
@@ -7112,6 +7501,112 @@
             "session": []
           }
         ]
+      },
+      "post": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Create a secret (its value is write-only)",
+        "operationId": "createSwarmSecret",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewSwarmObject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/secrets/{id}": {
+      "delete": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Remove a secret no service uses",
+        "operationId": "removeSwarmSecret",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
       }
     },
     "/api/v1/envs/{env}/swarm/services": {
@@ -7159,6 +7654,62 @@
         },
         "security": [
           {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Create a service from a ServiceSpec",
+        "operationId": "createSwarmService",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewService"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Created"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
             "session": []
           }
         ]
@@ -7215,6 +7766,316 @@
         },
         "security": [
           {
+            "session": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Replace a service's spec",
+        "operationId": "editSwarmService",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceEdit"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Updated"
+          },
+          "409": {
+            "description": "Changed since `version`, or `confirm_required`"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Remove a service",
+        "operationId": "removeSwarmService",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "description": "The object's name, when the server asked for it (`confirm_required`).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "409": {
+            "description": "`confirm_required`"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/services/{id}/redeploy": {
+      "post": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Restart every task with the same spec (force update)",
+        "operationId": "redeploySwarmService",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Confirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Redeploying"
+          },
+          "409": {
+            "description": "`confirm_required`"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/services/{id}/rollback": {
+      "post": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Go back to the service's previous spec",
+        "operationId": "rollbackSwarmService",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Confirm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Rolling back"
+          },
+          "409": {
+            "description": "`confirm_required`"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/envs/{env}/swarm/services/{id}/scale": {
+      "post": {
+        "tags": [
+          "swarm"
+        ],
+        "summary": "Set a replicated service's replicas",
+        "operationId": "scaleSwarmService",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Swarm object id.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Scale"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Scaled"
+          },
+          "409": {
+            "description": "`confirm_required`"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
             "session": []
           }
         ]
@@ -8643,6 +9504,14 @@
           }
         }
       },
+      "Availability": {
+        "type": "string",
+        "enum": [
+          "active",
+          "pause",
+          "drain"
+        ]
+      },
       "BackupBody": {
         "type": "object",
         "required": [
@@ -9083,6 +9952,26 @@
           }
         }
       },
+      "ConfigData": {
+        "type": "object",
+        "required": [
+          "size"
+        ],
+        "properties": {
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Null when the content is not UTF-8."
+          }
+        }
+      },
       "ConfigSummary": {
         "type": "object",
         "description": "A config's metadata; its content is read separately.",
@@ -9119,6 +10008,18 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "Confirm": {
+        "type": "object",
+        "properties": {
+          "confirm": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The object's name, when the server asked for it."
           }
         }
       },
@@ -10132,7 +11033,7 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,\n`forbidden`, `license_required`, `seat_limit`, `node_limit`, `rate_limited`, `env_unavailable`, `upstream`, `internal`."
+            "description": "Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,\n`forbidden`, `license_required`, `seat_limit`, `node_limit`, `rate_limited`, `env_unavailable`, `confirm_required` (repeat with the\nobject's name as `confirm`), `upstream`, `internal`."
           },
           "message": {
             "type": "string"
@@ -11509,6 +12410,105 @@
           }
         }
       },
+      "NewService": {
+        "type": "object",
+        "required": [
+          "spec"
+        ],
+        "properties": {
+          "spec": {
+            "type": "object",
+            "description": "Docker's ServiceSpec."
+          }
+        }
+      },
+      "NewSwarmNetwork": {
+        "type": "object",
+        "description": "A new swarm-scoped (overlay) network.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "attachable": {
+            "type": "boolean",
+            "description": "Standalone containers may join it."
+          },
+          "encrypted": {
+            "type": "boolean",
+            "description": "IPsec between nodes."
+          },
+          "internal": {
+            "type": "boolean",
+            "description": "No route outside."
+          },
+          "name": {
+            "type": "string"
+          },
+          "subnet": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "CIDR, e.g. `10.20.0.0/24`."
+          }
+        }
+      },
+      "NewSwarmObject": {
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string",
+            "description": "Write-only for secrets: neither Docker nor FleetOps shows it again."
+          }
+        }
+      },
+      "NodeChange": {
+        "type": "object",
+        "description": "A change to a node; absent fields stay as they are.",
+        "properties": {
+          "availability": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Availability"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "labels": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Replaces every label.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "role": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NodeRole",
+                "description": "Promote (`manager`) or demote (`worker`)."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "NodeDetail": {
         "allOf": [
           {
@@ -11612,6 +12612,25 @@
             "description": "`ready`, `down`, `unknown` or `disconnected`."
           }
         }
+      },
+      "NodeUpdate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NodeChange"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "confirm": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The node's hostname, when the server asked for it."
+              }
+            }
+          }
+        ]
       },
       "Plan": {
         "type": "object",
@@ -12092,6 +13111,25 @@
           "off"
         ]
       },
+      "Scale": {
+        "type": "object",
+        "required": [
+          "replicas"
+        ],
+        "properties": {
+          "confirm": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replicas": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "ScaleBody": {
         "type": "object",
         "required": [
@@ -12368,19 +13406,10 @@
           {
             "type": "object",
             "required": [
-              "labels",
-              "spec"
+              "spec",
+              "version"
             ],
             "properties": {
-              "labels": {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "propertyNames": {
-                  "type": "string"
-                }
-              },
               "spec": {
                 "type": "object",
                 "description": "Docker's ServiceSpec, verbatim. It never holds secret values: Swarm\nkeeps those in secrets."
@@ -12390,10 +13419,42 @@
                   "object",
                   "null"
                 ]
+              },
+              "version": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Swarm's object version; an edit names the version it was made from.",
+                "minimum": 0
               }
             }
           }
         ]
+      },
+      "ServiceEdit": {
+        "type": "object",
+        "required": [
+          "spec",
+          "version"
+        ],
+        "properties": {
+          "confirm": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The service's name, when the server asked for it."
+          },
+          "spec": {
+            "type": "object",
+            "description": "Docker's ServiceSpec, whole."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The `version` the spec was read at.",
+            "minimum": 0
+          }
+        }
       },
       "ServicePlan": {
         "type": "object",
@@ -12439,7 +13500,8 @@
           "tasks_desired",
           "image",
           "ports",
-          "updated_at"
+          "updated_at",
+          "labels"
         ],
         "properties": {
           "id": {
@@ -12448,6 +13510,15 @@
           "image": {
             "type": "string",
             "description": "Without the digest Docker pins it to."
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "mode": {
             "type": "string",

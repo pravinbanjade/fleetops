@@ -13,6 +13,7 @@ import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { errorMessage } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
+import { NodeActions } from "./NodeActions";
 
 const col = columns<SwarmAgentView>();
 
@@ -54,6 +55,14 @@ const nodeColumns = (env: string): Column<SwarmAgentView>[] => [
     id: "error",
     header: "Error",
     cell: (c) => <span className="text-xs text-destructive">{c.getValue()}</span>,
+  }),
+  col.display({
+    id: "actions",
+    header: "",
+    cell: (c) => {
+      const n = c.row.original;
+      return <NodeActions env={env} node={{ id: n.node_id, hostname: n.hostname ?? n.node_id, role: n.role, state: n.state }} />;
+    },
   }),
 ];
 

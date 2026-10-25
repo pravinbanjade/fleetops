@@ -148,6 +148,8 @@ export type AuthStatus = {
     setup_required: boolean;
 };
 
+export type Availability = 'active' | 'pause' | 'drain';
+
 export type BackupBody = {
     /**
      * At least 12 characters; needed to restore the file.
@@ -338,6 +340,14 @@ export type ComposeProject = {
     status: string;
 };
 
+export type ConfigData = {
+    size: number;
+    /**
+     * Null when the content is not UTF-8.
+     */
+    text?: string | null;
+};
+
 /**
  * A config's metadata; its content is read separately.
  */
@@ -348,6 +358,13 @@ export type ConfigSummary = {
     stack?: string | null;
     updated_at: number;
     used_by: Array<string>;
+};
+
+export type Confirm = {
+    /**
+     * The object's name, when the server asked for it.
+     */
+    confirm?: string | null;
 };
 
 export type ConfirmRestore = {
@@ -682,7 +699,8 @@ export type EnvironmentRecord = {
 export type ErrorBody = {
     /**
      * Machine-readable: `not_found`, `conflict`, `invalid`, `unauthorized`,
-     * `forbidden`, `license_required`, `seat_limit`, `node_limit`, `rate_limited`, `env_unavailable`, `upstream`, `internal`.
+     * `forbidden`, `license_required`, `seat_limit`, `node_limit`, `rate_limited`, `env_unavailable`, `confirm_required` (repeat with the
+     * object's name as `confirm`), `upstream`, `internal`.
      */
     code: string;
     message: string;
@@ -1268,6 +1286,60 @@ export type NetworkSummary = {
     subnet?: string | null;
 };
 
+export type NewService = {
+    /**
+     * Docker's ServiceSpec.
+     */
+    spec: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * A new swarm-scoped (overlay) network.
+ */
+export type NewSwarmNetwork = {
+    /**
+     * Standalone containers may join it.
+     */
+    attachable?: boolean;
+    /**
+     * IPsec between nodes.
+     */
+    encrypted?: boolean;
+    /**
+     * No route outside.
+     */
+    internal?: boolean;
+    name: string;
+    /**
+     * CIDR, e.g. `10.20.0.0/24`.
+     */
+    subnet?: string | null;
+};
+
+export type NewSwarmObject = {
+    name: string;
+    /**
+     * Write-only for secrets: neither Docker nor FleetOps shows it again.
+     */
+    value: string;
+};
+
+/**
+ * A change to a node; absent fields stay as they are.
+ */
+export type NodeChange = {
+    availability?: Availability | null;
+    /**
+     * Replaces every label.
+     */
+    labels?: {
+        [key: string]: string;
+    } | null;
+    role?: NodeRole | null;
+};
+
 export type NodeDetail = NodeSummary & {
     addr: string;
     arch: string;
@@ -1303,6 +1375,13 @@ export type NodeSummary = {
      * `ready`, `down`, `unknown` or `disconnected`.
      */
     state: string;
+};
+
+export type NodeUpdate = NodeChange & {
+    /**
+     * The node's hostname, when the server asked for it.
+     */
+    confirm?: string | null;
 };
 
 export type Plan = {
@@ -1484,6 +1563,11 @@ export type RollbackBody = {
  */
 export type RowHealth = 'ok' | 'warn' | 'bad' | 'unknown' | 'off';
 
+export type Scale = {
+    confirm?: string | null;
+    replicas: number;
+};
+
 export type ScaleBody = {
     replicas: number;
 };
@@ -1558,9 +1642,6 @@ export type ServerMsg = {
 export type ServiceAction = 'create' | 'recreate' | 'scale' | 'unchanged' | 'remove';
 
 export type ServiceDetail = ServiceSummary & {
-    labels: {
-        [key: string]: string;
-    };
     /**
      * Docker's ServiceSpec, verbatim. It never holds secret values: Swarm
      * keeps those in secrets.
@@ -1571,6 +1652,27 @@ export type ServiceDetail = ServiceSummary & {
     update_status?: {
         [key: string]: unknown;
     } | null;
+    /**
+     * Swarm's object version; an edit names the version it was made from.
+     */
+    version: number;
+};
+
+export type ServiceEdit = {
+    /**
+     * The service's name, when the server asked for it.
+     */
+    confirm?: string | null;
+    /**
+     * Docker's ServiceSpec, whole.
+     */
+    spec: {
+        [key: string]: unknown;
+    };
+    /**
+     * The `version` the spec was read at.
+     */
+    version: number;
 };
 
 export type ServicePlan = {
@@ -1587,6 +1689,9 @@ export type ServiceSummary = {
      * Without the digest Docker pins it to.
      */
     image: string;
+    labels: {
+        [key: string]: string;
+    };
     /**
      * `replicated`, `global`, `replicated-job` or `global-job`.
      */
@@ -5825,6 +5930,104 @@ export type ListSwarmConfigsResponses = {
 
 export type ListSwarmConfigsResponse = ListSwarmConfigsResponses[keyof ListSwarmConfigsResponses];
 
+export type CreateSwarmConfigData = {
+    body: NewSwarmObject;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/configs';
+};
+
+export type CreateSwarmConfigErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateSwarmConfigError = CreateSwarmConfigErrors[keyof CreateSwarmConfigErrors];
+
+export type CreateSwarmConfigResponses = {
+    /**
+     * Created
+     */
+    201: Created;
+};
+
+export type CreateSwarmConfigResponse = CreateSwarmConfigResponses[keyof CreateSwarmConfigResponses];
+
+export type RemoveSwarmConfigData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/configs/{id}';
+};
+
+export type RemoveSwarmConfigErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RemoveSwarmConfigError = RemoveSwarmConfigErrors[keyof RemoveSwarmConfigErrors];
+
+export type RemoveSwarmConfigResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type RemoveSwarmConfigResponse = RemoveSwarmConfigResponses[keyof RemoveSwarmConfigResponses];
+
+export type GetSwarmConfigDataData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/configs/{id}/data';
+};
+
+export type GetSwarmConfigDataErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetSwarmConfigDataError = GetSwarmConfigDataErrors[keyof GetSwarmConfigDataErrors];
+
+export type GetSwarmConfigDataResponses = {
+    /**
+     * The content
+     */
+    200: ConfigData;
+};
+
+export type GetSwarmConfigDataResponse = GetSwarmConfigDataResponses[keyof GetSwarmConfigDataResponses];
+
 export type ListSwarmNetworksData = {
     body?: never;
     path: {
@@ -5855,6 +6058,70 @@ export type ListSwarmNetworksResponses = {
 
 export type ListSwarmNetworksResponse = ListSwarmNetworksResponses[keyof ListSwarmNetworksResponses];
 
+export type CreateSwarmNetworkData = {
+    body: NewSwarmNetwork;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/networks';
+};
+
+export type CreateSwarmNetworkErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateSwarmNetworkError = CreateSwarmNetworkErrors[keyof CreateSwarmNetworkErrors];
+
+export type CreateSwarmNetworkResponses = {
+    /**
+     * Created
+     */
+    201: Created;
+};
+
+export type CreateSwarmNetworkResponse = CreateSwarmNetworkResponses[keyof CreateSwarmNetworkResponses];
+
+export type RemoveSwarmNetworkData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/networks/{id}';
+};
+
+export type RemoveSwarmNetworkErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RemoveSwarmNetworkError = RemoveSwarmNetworkErrors[keyof RemoveSwarmNetworkErrors];
+
+export type RemoveSwarmNetworkResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type RemoveSwarmNetworkResponse = RemoveSwarmNetworkResponses[keyof RemoveSwarmNetworkResponses];
+
 export type ListSwarmNodesData = {
     body?: never;
     path: {
@@ -5884,6 +6151,49 @@ export type ListSwarmNodesResponses = {
 };
 
 export type ListSwarmNodesResponse = ListSwarmNodesResponses[keyof ListSwarmNodesResponses];
+
+export type RemoveSwarmNodeData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * The object's name, when the server asked for it (`confirm_required`).
+         */
+        confirm?: string;
+    };
+    url: '/api/v1/envs/{env}/swarm/nodes/{id}';
+};
+
+export type RemoveSwarmNodeErrors = {
+    /**
+     * The node is up or a manager, or `confirm_required`
+     */
+    409: unknown;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RemoveSwarmNodeError = RemoveSwarmNodeErrors[keyof RemoveSwarmNodeErrors];
+
+export type RemoveSwarmNodeResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type RemoveSwarmNodeResponse = RemoveSwarmNodeResponses[keyof RemoveSwarmNodeResponses];
 
 export type GetSwarmNodeData = {
     body?: never;
@@ -5918,6 +6228,44 @@ export type GetSwarmNodeResponses = {
 };
 
 export type GetSwarmNodeResponse = GetSwarmNodeResponses[keyof GetSwarmNodeResponses];
+
+export type UpdateSwarmNodeData = {
+    body: NodeUpdate;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/nodes/{id}';
+};
+
+export type UpdateSwarmNodeErrors = {
+    /**
+     * `confirm_required`: FleetOps runs on this node
+     */
+    409: unknown;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type UpdateSwarmNodeError = UpdateSwarmNodeErrors[keyof UpdateSwarmNodeErrors];
+
+export type UpdateSwarmNodeResponses = {
+    /**
+     * Changed
+     */
+    204: void;
+};
+
+export type UpdateSwarmNodeResponse = UpdateSwarmNodeResponses[keyof UpdateSwarmNodeResponses];
 
 export type RetrustSwarmData = {
     body?: never;
@@ -6039,6 +6387,70 @@ export type ListSwarmSecretsResponses = {
 
 export type ListSwarmSecretsResponse = ListSwarmSecretsResponses[keyof ListSwarmSecretsResponses];
 
+export type CreateSwarmSecretData = {
+    body: NewSwarmObject;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/secrets';
+};
+
+export type CreateSwarmSecretErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateSwarmSecretError = CreateSwarmSecretErrors[keyof CreateSwarmSecretErrors];
+
+export type CreateSwarmSecretResponses = {
+    /**
+     * Created
+     */
+    201: Created;
+};
+
+export type CreateSwarmSecretResponse = CreateSwarmSecretResponses[keyof CreateSwarmSecretResponses];
+
+export type RemoveSwarmSecretData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/secrets/{id}';
+};
+
+export type RemoveSwarmSecretErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RemoveSwarmSecretError = RemoveSwarmSecretErrors[keyof RemoveSwarmSecretErrors];
+
+export type RemoveSwarmSecretResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type RemoveSwarmSecretResponse = RemoveSwarmSecretResponses[keyof RemoveSwarmSecretResponses];
+
 export type ListSwarmServicesData = {
     body?: never;
     path: {
@@ -6068,6 +6480,79 @@ export type ListSwarmServicesResponses = {
 };
 
 export type ListSwarmServicesResponse = ListSwarmServicesResponses[keyof ListSwarmServicesResponses];
+
+export type CreateSwarmServiceData = {
+    body: NewService;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/services';
+};
+
+export type CreateSwarmServiceErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateSwarmServiceError = CreateSwarmServiceErrors[keyof CreateSwarmServiceErrors];
+
+export type CreateSwarmServiceResponses = {
+    /**
+     * Created
+     */
+    201: Created;
+};
+
+export type CreateSwarmServiceResponse = CreateSwarmServiceResponses[keyof CreateSwarmServiceResponses];
+
+export type RemoveSwarmServiceData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * The object's name, when the server asked for it (`confirm_required`).
+         */
+        confirm?: string;
+    };
+    url: '/api/v1/envs/{env}/swarm/services/{id}';
+};
+
+export type RemoveSwarmServiceErrors = {
+    /**
+     * `confirm_required`
+     */
+    409: unknown;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RemoveSwarmServiceError = RemoveSwarmServiceErrors[keyof RemoveSwarmServiceErrors];
+
+export type RemoveSwarmServiceResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type RemoveSwarmServiceResponse = RemoveSwarmServiceResponses[keyof RemoveSwarmServiceResponses];
 
 export type GetSwarmServiceData = {
     body?: never;
@@ -6102,6 +6587,158 @@ export type GetSwarmServiceResponses = {
 };
 
 export type GetSwarmServiceResponse = GetSwarmServiceResponses[keyof GetSwarmServiceResponses];
+
+export type EditSwarmServiceData = {
+    body: ServiceEdit;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/services/{id}';
+};
+
+export type EditSwarmServiceErrors = {
+    /**
+     * Changed since `version`, or `confirm_required`
+     */
+    409: unknown;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type EditSwarmServiceError = EditSwarmServiceErrors[keyof EditSwarmServiceErrors];
+
+export type EditSwarmServiceResponses = {
+    /**
+     * Updated
+     */
+    204: void;
+};
+
+export type EditSwarmServiceResponse = EditSwarmServiceResponses[keyof EditSwarmServiceResponses];
+
+export type RedeploySwarmServiceData = {
+    body: Confirm;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/services/{id}/redeploy';
+};
+
+export type RedeploySwarmServiceErrors = {
+    /**
+     * `confirm_required`
+     */
+    409: unknown;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RedeploySwarmServiceError = RedeploySwarmServiceErrors[keyof RedeploySwarmServiceErrors];
+
+export type RedeploySwarmServiceResponses = {
+    /**
+     * Redeploying
+     */
+    204: void;
+};
+
+export type RedeploySwarmServiceResponse = RedeploySwarmServiceResponses[keyof RedeploySwarmServiceResponses];
+
+export type RollbackSwarmServiceData = {
+    body: Confirm;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/services/{id}/rollback';
+};
+
+export type RollbackSwarmServiceErrors = {
+    /**
+     * `confirm_required`
+     */
+    409: unknown;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RollbackSwarmServiceError = RollbackSwarmServiceErrors[keyof RollbackSwarmServiceErrors];
+
+export type RollbackSwarmServiceResponses = {
+    /**
+     * Rolling back
+     */
+    204: void;
+};
+
+export type RollbackSwarmServiceResponse = RollbackSwarmServiceResponses[keyof RollbackSwarmServiceResponses];
+
+export type ScaleSwarmServiceData = {
+    body: Scale;
+    path: {
+        /**
+         * Environment name.
+         */
+        env: string;
+        /**
+         * Swarm object id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/envs/{env}/swarm/services/{id}/scale';
+};
+
+export type ScaleSwarmServiceErrors = {
+    /**
+     * `confirm_required`
+     */
+    409: unknown;
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ScaleSwarmServiceError = ScaleSwarmServiceErrors[keyof ScaleSwarmServiceErrors];
+
+export type ScaleSwarmServiceResponses = {
+    /**
+     * Scaled
+     */
+    204: void;
+};
+
+export type ScaleSwarmServiceResponse = ScaleSwarmServiceResponses[keyof ScaleSwarmServiceResponses];
 
 export type ListSwarmTasksData = {
     body?: never;

@@ -6,6 +6,7 @@ import { DataTable } from "@/components/DataTable";
 import { Page } from "@/components/Page";
 import { errorMessage } from "@/lib/errors";
 import { useSwarmTasks } from "@/live/swarmTasks";
+import { NodeActions } from "./NodeActions";
 import { FeedPaused, taskColumns } from "./TasksPage";
 
 const gib = (b: number) => `${(b / 1024 ** 3).toFixed(1)} GiB`;
@@ -23,9 +24,12 @@ export function NodePage() {
       title={n?.hostname ?? id}
       meta={n && `${n.role}${n.leader ? " (leader)" : ""} · ${n.state} · ${n.availability} · Docker ${n.engine} · ${n.os}/${n.arch}`}
       actions={
-        <Link to="/envs/$env" params={{ env: `${env}@${id}` }} className="text-sm underline">
-          Containers, images and volumes on this node
-        </Link>
+        <span className="flex items-center gap-2">
+          <Link to="/envs/$env" params={{ env: `${env}@${id}` }} className="text-sm underline">
+            Containers, images and volumes on this node
+          </Link>
+          {n && <NodeActions env={env} node={n} />}
+        </span>
       }
     >
       {n && (
