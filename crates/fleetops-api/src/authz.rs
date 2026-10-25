@@ -122,6 +122,25 @@ pub async fn deny_audited<T>(
     r
 }
 
+/// [`deny_audited`] for an object the caller may not even see: the refusal
+/// is audited, then reads as `missing`, so it cannot be told apart from an
+/// object that does not exist (swarm spec §6).
+pub async fn hidden_audited(
+    s: &AppState,
+    cu: &CurrentUser,
+    env_id: i64,
+    what: &str,
+    r: Result<()>,
+    missing: Error,
+) -> Result<()> {
+    deny_audited(s, cu, env_id, what, r)
+        .await
+        .map_err(|e| match e {
+            Error::Forbidden(_) => missing,
+            e => e,
+        })
+}
+
 /// Fails with `license_required` unless the license grants `feature`.
 /// Enterprise handlers call this before doing anything.
 pub fn require_feature(state: &AppState, feature: fleetops_core::edition::Feature) -> Result<()> {

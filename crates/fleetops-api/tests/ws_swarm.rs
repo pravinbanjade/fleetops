@@ -319,9 +319,5 @@ async fn scoped_service_logs() {
     ))
     .await;
     let err = ws.until(|v| v["sub"] == 2 && v["type"] == "error").await;
-    assert!(
-        err.to_string()
-            .contains("only access to the whole swarm covers this"),
-        "{err}"
-    );
+    assert!(err.to_string().contains("no such service 's2'"), "{err}");
 }

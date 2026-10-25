@@ -433,13 +433,20 @@ pub(super) async fn logs(
             .swarm()
             .ok_or_else(|| Error::EnvUnavailable("no manager agent is connected".into()))?;
         if !grants.allows(view, None) {
-            let stack = ops.service(service).await?.and_then(|d| d.summary.stack);
-            crate::authz::deny_audited(
+            let missing = || Error::NotFound(format!("no such service '{service}'"));
+            let stack = ops
+                .service(service)
+                .await?
+                .ok_or_else(missing)?
+                .summary
+                .stack;
+            crate::authz::hidden_audited(
                 s,
                 cu,
                 env.id(),
                 &view.to_string(),
                 grants.check_stack(view, stack.as_deref()),
+                missing(),
             )
             .await?;
         }

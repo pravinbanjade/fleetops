@@ -427,8 +427,7 @@ async fn scoped_writes_follow_stacks() {
         204
     );
     let r = as_bob(&sw, &bob, "POST", &format!("{SW}/services/s2/scale"), scale).await;
-    assert_eq!(r.status, 403);
-    ends(&r, "only access to the whole swarm covers this");
+    assert_eq!(r.status, 404);
     assert_eq!(
         as_bob(
             &sw,
@@ -470,7 +469,7 @@ async fn scoped_writes_follow_stacks() {
         204
     );
     let r = as_bob(&sw, &bob, "GET", &format!("{SW}/configs/cfg2/data"), None).await;
-    assert_eq!(r.status, 403);
+    assert_eq!(r.status, 404);
     assert_eq!(
         as_bob(&sw, &bob, "DELETE", &format!("{SW}/networks/net1"), None)
             .await
@@ -587,4 +586,61 @@ async fn mixed_grants_view_all_operate_in_scope() {
             .status,
         204
     );
+}
+
+#[tokio::test]
+async fn hidden_objects_read_as_missing_to_writes() {
+    // Bob may change `blog` only, and see nothing else.
+    let (sw, bob) = common::fake_swarm::with_custom_in(ALL, Some(&["blog"])).await;
+    sw.daemon.add_shop();
+    sw.daemon.secrets.lock().unwrap().as_array_mut().unwrap().push(json!(
+        {"ID": "sec9", "Version": {"Index": 1}, "Spec": {"Name": "shop_db", "Labels": {"com.docker.stack.namespace": "shop"}}}
+    ));
+    for (method, path, body, missing) in [
+        (
+            "POST",
+            format!("{SW}/services/s4/scale"),
+            Some(json!({"replicas": 2})),
+            "no such service 's4'",
+        ),
+        (
+            "DELETE",
+            format!("{SW}/services/shop_api"),
+            None,
+            "no such service 'shop_api'",
+        ),
+        (
+            "DELETE",
+            format!("{SW}/secrets/shop_db"),
+            None,
+            "no such secret 'shop_db'",
+        ),
+        (
+            "DELETE",
+            format!("{SW}/secrets/nope"),
+            None,
+            "no such secret 'nope'",
+        ),
+        (
+            "GET",
+            format!("{SW}/configs/cfg2/data"),
+            None,
+            "no such config 'cfg2'",
+        ),
+        (
+            "DELETE",
+            format!("{SW}/networks/nope"),
+            None,
+            "no such swarm network 'nope'",
+        ),
+    ] {
+        let r = as_bob(&sw, &bob, method, &path, body).await;
+        assert_eq!(r.status, 404, "{path}: {:?}", r.json);
+        ends(&r, missing);
+    }
+    assert!(sw
+        .t
+        .audit_actions()
+        .await
+        .contains(&"access.denied".to_string()));
 }

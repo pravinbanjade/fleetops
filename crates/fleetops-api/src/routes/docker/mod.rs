@@ -109,8 +109,20 @@ pub(crate) async fn check_container(
     if stacks.is_none() {
         return Ok(());
     }
-    let inspect = ops.inspect_container(id).await?;
+    // Another stack's container reads exactly as a missing one.
+    let missing = || Error::NotFound(format!("no such container '{id}'"));
+    let inspect = ops.inspect_container(id).await.map_err(|_| missing())?;
     let stack = inspect["Config"]["Labels"][STACK_LABEL].as_str();
+    let view = Permission::new(Row::Containers, fleetops_core::perm::Verb::View);
+    crate::authz::hidden_audited(
+        s,
+        user,
+        env.id(),
+        &view.to_string(),
+        grants.check_stack(view, stack),
+        missing(),
+    )
+    .await?;
     crate::authz::deny_audited(
         s,
         user,

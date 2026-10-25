@@ -215,7 +215,11 @@ async fn guarded_service(
         .service(id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("no such service '{id}'")))?;
-    c.check(s, p, svc.summary.stack.as_deref()).await?;
+    let stack = svc.summary.stack.as_deref();
+    let view = Permission::new(Row::SwarmServices, Verb::View);
+    let missing = Error::NotFound(format!("no such service '{id}'"));
+    c.visible(s, view, stack, missing).await?;
+    c.check(s, p, stack).await?;
     let reason = swarm_protect::service_guard(&svc.summary);
     let confirmed = swarm_protect::require(reason, &svc.summary.name, confirm)?;
     Ok((svc, confirmed))
@@ -558,7 +562,11 @@ pub async fn remove_secret(
         .await?
         .into_iter()
         .find(|x| x.id == id || x.name == id);
-    let found = found.ok_or_else(|| Error::NotFound(format!("no such secret '{id}'")))?;
+    let missing = || Error::NotFound(format!("no such secret '{id}'"));
+    let found = found.ok_or_else(missing)?;
+    let view = Permission::new(Row::SwarmSecrets, Verb::View);
+    c.visible(&s, view, found.stack.as_deref(), missing())
+        .await?;
     c.check(&s, p, found.stack.as_deref()).await?;
     let res = c.ops.remove_secret(&id).await;
     c.audit(
@@ -611,7 +619,11 @@ async fn check_config(s: &AppState, c: &SwarmCtx, p: Permission, id: &str) -> Re
         .await?
         .into_iter()
         .find(|x| x.id == id || x.name == id);
-    let found = found.ok_or_else(|| Error::NotFound(format!("no such config '{id}'")))?;
+    let missing = || Error::NotFound(format!("no such config '{id}'"));
+    let found = found.ok_or_else(missing)?;
+    let view = Permission::new(Row::SwarmConfigs, Verb::View);
+    c.visible(s, view, found.stack.as_deref(), missing())
+        .await?;
     c.check(s, p, found.stack.as_deref()).await
 }
 
@@ -728,6 +740,9 @@ pub async fn remove_network(
         .into_iter()
         .find(|n| n.id == id || n.name == id)
         .ok_or_else(|| Error::NotFound(format!("no such swarm network '{id}'")))?;
+    let view = Permission::new(Row::Networks, Verb::View);
+    let missing = Error::NotFound(format!("no such swarm network '{id}'"));
+    c.visible(&s, view, found.stack.as_deref(), missing).await?;
     c.check(&s, p, found.stack.as_deref()).await?;
     let res = c.ops.remove_network(&id).await;
     c.audit(

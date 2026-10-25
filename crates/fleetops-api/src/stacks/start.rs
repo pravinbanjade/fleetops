@@ -8,7 +8,7 @@ use crate::AppState;
 use fleetops_core::compose::docker::LABEL_PROJECT;
 use fleetops_core::compose::files::{resolve, FileValues};
 use fleetops_core::compose::plan::{plan, Live, Plan};
-use fleetops_core::compose::swarm_plan::{outside_scope, plan_swarm};
+use fleetops_core::compose::swarm_plan::{apply_scope, plan_swarm};
 use fleetops_core::compose::{parse_mode, parse_variables, ComposeIssue, FileKind, Mode, Project};
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
@@ -346,8 +346,7 @@ pub(crate) async fn make_plan(
                     let mut p = plan_swarm(&parsed.project, prev, &live);
                     super::swarm::protect(&mut p, &live, &stack.name);
                     if let Some(scope) = scope {
-                        p.blocking
-                            .extend(outside_scope(&parsed.project, &live, scope));
+                        apply_scope(&mut p, &parsed.project, &live, scope);
                     }
                     (p, vec![])
                 }

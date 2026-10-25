@@ -193,26 +193,13 @@ async fn scoped_grants_see_their_stacks() {
     let p = "/api/v1/envs/prod/swarm";
     let r = get_as(&sw, &bob, &format!("{p}/services")).await;
     assert_eq!(names(&r, "name"), ["blog_web"]);
-    let r = get_as(&sw, &bob, &format!("{p}/services/s2")).await;
-    assert_eq!(r.status, 403);
-    assert!(
-        r.json["message"]
-            .as_str()
-            .unwrap()
-            .ends_with("only access to the whole swarm covers this"),
-        "{:?}",
-        r.json
-    );
-    let r = get_as(&sw, &bob, &format!("{p}/services/s4")).await;
-    assert_eq!(r.status, 403);
-    assert!(
-        r.json["message"]
-            .as_str()
-            .unwrap()
-            .ends_with("stack 'shop' is not in your access"),
-        "{:?}",
-        r.json
-    );
+    // What the grant may not see reads exactly as what does not exist.
+    for id in ["s2", "s4", "shop_api", "nope"] {
+        let r = get_as(&sw, &bob, &format!("{p}/services/{id}")).await;
+        assert_eq!(r.status, 404, "{id}: {:?}", r.json);
+        let m = r.json["message"].as_str().unwrap();
+        assert!(m.ends_with(&format!("no such service '{id}'")), "{id}: {m}");
+    }
     assert_eq!(
         get_as(&sw, &bob, &format!("{p}/services/s1")).await.status,
         200

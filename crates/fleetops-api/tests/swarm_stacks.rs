@@ -805,7 +805,7 @@ async fn scoped_deploys_cannot_use_other_stacks_externals() {
     assert_eq!(r.status, 200, "{:?}", r.json);
     assert_eq!(
         r.json["plan"]["blocking"],
-        json!(["external secret shop_tls is outside your stacks"])
+        json!(["external secret shop_tls does not exist or is outside your stacks"])
     );
     let p = plan(&sw, "blog").await;
     assert_eq!(p["plan"]["blocking"], json!([]), "{p}");
@@ -856,7 +856,7 @@ async fn git_auto_deploys_use_the_authors_scope() {
     {
         SyncOutcome::Failed { error } => {
             assert!(
-                error.contains("external secret shop_tls is outside your stacks"),
+                error.contains("external secret shop_tls does not exist or is outside your stacks"),
                 "{error}"
             )
         }
@@ -887,5 +887,34 @@ async fn scoped_stack_services_follow_the_stack() {
             .await
             .status,
         403
+    );
+}
+
+#[tokio::test]
+async fn a_scoped_plan_does_not_tell_missing_from_hidden_externals() {
+    let (sw, bob) = with_custom_in(STACK_CELLS, Some(&["blog"])).await;
+    add_shop_secret(&sw);
+    create(
+        &sw,
+        "blog",
+        "services:\n  web:\n    image: x\n    secrets: [a, b]\nsecrets:\n  a: { external: true, name: shop_tls }\n  b: { external: true, name: nope }\n",
+    )
+    .await;
+    let r = bob_says(
+        &sw,
+        &bob,
+        "POST",
+        &format!("{STACKS}/blog/plan"),
+        Some(json!({"source": "draft"})),
+    )
+    .await;
+    assert_eq!(
+        r.json["plan"]["blocking"],
+        json!([
+            "external secret shop_tls does not exist or is outside your stacks",
+            "external secret nope does not exist or is outside your stacks",
+        ]),
+        "{:?}",
+        r.json
     );
 }

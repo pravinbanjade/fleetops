@@ -75,10 +75,27 @@ pub fn drift(live: &Value, deployed: Option<&Project>, key: &str) -> Vec<String>
     }
 }
 
-/// Blocking lines for the external secrets, configs and networks `project`
-/// names that belong to no stack in `scope` (swarm spec §6): a grant
-/// limited to stacks lends a stack nothing of another's.
-pub fn outside_scope(project: &Project, live: &SwarmLive, scope: &BTreeSet<String>) -> Vec<String> {
+/// Applies a deployer's stack scope to `plan` (swarm spec §6): an external
+/// secret, config or network of no stack in `scope` blocks it, a grant
+/// limited to stacks lending a stack nothing of another's. A missing one
+/// and one outside the scope read the same, so the plan tells the deployer
+/// nothing about objects they may not see.
+pub fn apply_scope(plan: &mut Plan, project: &Project, live: &SwarmLive, scope: &BTreeSet<String>) {
+    let lines = outside_scope(project, live, scope);
+    let missing: Vec<String> = lines
+        .iter()
+        .map(|l| {
+            l.replace(
+                " does not exist or is outside your stacks",
+                " does not exist",
+            )
+        })
+        .collect();
+    plan.blocking.retain(|b| !missing.contains(b));
+    plan.blocking.extend(lines);
+}
+
+fn outside_scope(project: &Project, live: &SwarmLive, scope: &BTreeSet<String>) -> Vec<String> {
     let inside = |stack: Option<&String>| stack.is_some_and(|s| scope.contains(s));
     let mut out = Vec::new();
     for (kind, decls, stacks) in [
@@ -96,7 +113,7 @@ pub fn outside_scope(project: &Project, live: &SwarmLive, scope: &BTreeSet<Strin
             if let Some(FileSource::External { name }) = decls.get(key) {
                 if !inside(stacks.get(name).and_then(Option::as_ref)) {
                     out.push(format!(
-                        "external {} {name} is outside your stacks",
+                        "external {} {name} does not exist or is outside your stacks",
                         kind.as_str()
                     ));
                 }
@@ -111,7 +128,7 @@ pub fn outside_scope(project: &Project, live: &SwarmLive, scope: &BTreeSet<Strin
             .and_then(|n| n.stack.as_ref());
         if !inside(stack) {
             out.push(format!(
-                "external network {} is outside your stacks",
+                "external network {} does not exist or is outside your stacks",
                 net.name
             ));
         }

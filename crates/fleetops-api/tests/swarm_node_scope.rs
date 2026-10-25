@@ -76,14 +76,18 @@ async fn node_view_container_routes_follow_stacks() {
             .status,
         200
     );
-    let r = bob_get(&sw, &bob, &format!("{N}/containers/beef")).await;
-    assert_eq!(r.status, 403, "{:?}", r.json);
-    assert!(r.json["message"]
-        .as_str()
-        .unwrap()
-        .ends_with("stack 'shop' is not in your access"));
+    // Another stack's container reads exactly as a missing one.
+    for id in ["beef", "nope"] {
+        let r = bob_get(&sw, &bob, &format!("{N}/containers/{id}")).await;
+        assert_eq!(r.status, 404, "{id}: {:?}", r.json);
+        let m = r.json["message"].as_str().unwrap();
+        assert!(
+            m.ends_with(&format!("no such container '{id}'")),
+            "{id}: {m}"
+        );
+    }
     let r = bob_get(&sw, &bob, &format!("{N}/containers/beef/files?path=/")).await;
-    assert_eq!(r.status, 403, "{:?}", r.json);
+    assert_eq!(r.status, 404, "{:?}", r.json);
     let r =
         sw.t.send(req(
             "POST",
@@ -92,7 +96,7 @@ async fn node_view_container_routes_follow_stacks() {
             Some(&bob),
         ))
         .await;
-    assert_eq!(r.status, 403, "{:?}", r.json);
+    assert_eq!(r.status, 404, "{:?}", r.json);
 
     let mut ws = Ws::open(sw.t.serve().await, &bob).await;
     ws.send(sub(1, "logs", Some("c0ffee"), json!({"follow": false})))
@@ -102,16 +106,14 @@ async fn node_view_container_routes_follow_stacks() {
         .await;
     let err = ws.until(|v| v["sub"] == 2 && v["type"] == "error").await;
     assert!(
-        err.to_string()
-            .contains("stack 'shop' is not in your access"),
+        err.to_string().contains("no such container 'beef'"),
         "{err}"
     );
     ws.send(sub(3, "exec", Some("beef"), json!({"cmd": ["sh"]})))
         .await;
     let err = ws.until(|v| v["sub"] == 3 && v["type"] == "error").await;
     assert!(
-        err.to_string()
-            .contains("stack 'shop' is not in your access"),
+        err.to_string().contains("no such container 'beef'"),
         "{err}"
     );
     ws.send(sub(4, "stats", Some("beef"), json!({}))).await;

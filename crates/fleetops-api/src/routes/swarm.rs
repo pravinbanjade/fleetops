@@ -140,6 +140,26 @@ impl SwarmCtx {
         .await
     }
 
+    /// The object must be one the caller may see (`view` on its stack);
+    /// otherwise it reads as `missing`.
+    pub async fn visible(
+        &self,
+        s: &AppState,
+        view: Permission,
+        stack: Option<&str>,
+        missing: Error,
+    ) -> Result<()> {
+        crate::authz::hidden_audited(
+            s,
+            &self.user,
+            self.env.id(),
+            &view.to_string(),
+            self.grants.check_stack(view, stack),
+            missing,
+        )
+        .await
+    }
+
     /// `p` on the whole swarm: node changes and raw creates.
     pub async fn whole(&self, s: &AppState, p: Permission) -> Result<()> {
         self.check(s, p, None).await
@@ -226,12 +246,13 @@ pub async fn service(
         .await?
         .ok_or_else(|| Error::NotFound(format!("no such service '{id}'")))?;
     let stack = svc.summary.stack.as_deref();
-    deny_audited(
+    crate::authz::hidden_audited(
         &s,
         &cu,
         env.id(),
         &view.to_string(),
         grants.check_stack(view, stack),
+        Error::NotFound(format!("no such service '{id}'")),
     )
     .await?;
     // As for containers: env values are secret material without Reveal.
