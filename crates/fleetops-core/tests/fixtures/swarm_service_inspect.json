@@ -60,7 +60,7 @@
     "Mode": {"Replicated": {"Replicas": 3}},
     "UpdateConfig": {"Parallelism": 2, "Delay": 10000000000, "FailureAction": "rollback",
                      "Monitor": 30000000000, "MaxFailureRatio": 0.1, "Order": "start-first"},
-    "RollbackConfig": {"Parallelism": 1, "FailureAction": "pause"},
+    "RollbackConfig": {"Parallelism": 1, "FailureAction": "pause", "Monitor": 0, "MaxFailureRatio": 0, "Order": "stop-first"},
     "EndpointSpec": {
       "Mode": "vip",
       "Ports": [

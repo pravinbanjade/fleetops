@@ -297,9 +297,11 @@ pub fn service_spec(project: &Project, key: &str) -> Value {
         match d.mode {
             SwarmMode::Replicated => json!({"Replicated": {"Replicas": svc.replicas}}),
             SwarmMode::Global => json!({"Global": {}}),
-            SwarmMode::ReplicatedJob => {
-                json!({"ReplicatedJob": {"TotalCompletions": svc.replicas}})
-            }
+            // Docker runs one at a time unless told otherwise; said
+            // explicitly, so the stored spec reads back the same.
+            SwarmMode::ReplicatedJob => json!({
+                "ReplicatedJob": {"MaxConcurrent": 1, "TotalCompletions": svc.replicas}
+            }),
             SwarmMode::GlobalJob => json!({"GlobalJob": {}}),
         },
     );
@@ -439,6 +441,18 @@ fn is_default(path: &str, key: &str, v: &Value) -> bool {
         ("EndpointSpec", "Mode") => v == "vip",
         ("EndpointSpec.Ports[]", "Protocol") => v == "tcp",
         ("EndpointSpec.Ports[]", "PublishMode") => v == "ingress",
+        // Docker stores a healthcheck's zero durations and retries as
+        // absent.
+        ("TaskTemplate.ContainerSpec.HealthCheck", _) => v == &json!(0),
+        // What Docker fills into a partial restart policy or update config.
+        ("TaskTemplate.RestartPolicy", "MaxAttempts") => v == &json!(0),
+        ("TaskTemplate.RestartPolicy", "Condition") => v == "any",
+        (
+            "UpdateConfig" | "RollbackConfig",
+            "Parallelism" | "MaxFailureRatio" | "Monitor" | "Delay",
+        ) => v.as_f64() == Some(0.0),
+        ("UpdateConfig" | "RollbackConfig", "FailureAction") => v == "pause",
+        ("UpdateConfig" | "RollbackConfig", "Order") => v == "stop-first",
         _ => false,
     }
 }

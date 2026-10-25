@@ -128,7 +128,7 @@ fn modes_render_as_docker_names_them() {
         ("global", json!({"Global": {}})),
         (
             "replicated-job",
-            json!({"ReplicatedJob": {"TotalCompletions": 1}}),
+            json!({"ReplicatedJob": {"MaxConcurrent": 1, "TotalCompletions": 1}}),
         ),
         ("global-job", json!({"GlobalJob": {}})),
     ] {
@@ -242,4 +242,65 @@ fn spec_changes_hide_values() {
     assert!(!changes
         .iter()
         .any(|c| c.contains("other") || c.contains("hunter2")));
+}
+
+/// What moby hands back for a service whose `deploy:` says little: Docker
+/// drops zero healthcheck durations, and fills in update, rollback and
+/// restart defaults. None of it is drift.
+#[test]
+fn docker_fills_in_defaults_without_drift() {
+    let mut p = parse_mode(
+        r#"
+services:
+  web:
+    image: x
+    healthcheck: { test: ["CMD", "true"], interval: 10s }
+    deploy:
+      restart_policy: { condition: on-failure }
+      update_config: { parallelism: 1 }
+      rollback_config: { delay: 5s }
+"#,
+        &[],
+        "shop",
+        Mode::Swarm,
+    )
+    .unwrap()
+    .project;
+    resolve(&mut p, &[], &Default::default(), &[7; 32]).unwrap();
+    let spec = service_spec(&p, "web");
+    let mut live = spec.clone();
+    let hc = &mut live["TaskTemplate"]["ContainerSpec"]["HealthCheck"];
+    hc.as_object_mut().unwrap().remove("StartPeriod");
+    live["TaskTemplate"]["RestartPolicy"]["MaxAttempts"] = json!(0);
+    for k in ["UpdateConfig", "RollbackConfig"] {
+        live[k]["MaxFailureRatio"] = json!(0);
+        live[k]["Order"] = json!("stop-first");
+        live[k]["FailureAction"] = json!("pause");
+        live[k]["Monitor"] = json!(0);
+    }
+    live["RollbackConfig"]["Parallelism"] = json!(0);
+    assert_eq!(
+        spec_changes(&canonical(&spec), &canonical(&live)),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        spec_hash(&live),
+        spec["Labels"][LABEL_SPEC_HASH].as_str().unwrap()
+    );
+    // A condition left unset reads back as Docker's default, `any`.
+    let mut q = p.clone();
+    q.services
+        .get_mut("web")
+        .unwrap()
+        .swarm
+        .as_mut()
+        .unwrap()
+        .restart_policy = Some(RestartPolicy::default());
+    let spec = service_spec(&q, "web");
+    let mut live = spec.clone();
+    live["TaskTemplate"]["RestartPolicy"] = json!({"Condition": "any", "MaxAttempts": 0});
+    assert_eq!(
+        spec_hash(&live),
+        spec["Labels"][LABEL_SPEC_HASH].as_str().unwrap()
+    );
 }
