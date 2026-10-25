@@ -242,11 +242,21 @@ impl LocalDocker {
         if rollback {
             o = o.rollback("previous");
         }
-        self.client
+        match self
+            .client
             .update_service(id, service_spec(spec)?, o.build(), None)
             .await
-            .map_err(map_err)?;
-        Ok(())
+            .map_err(map_err)
+        {
+            Ok(_) => Ok(()),
+            // Someone changed it since this version was read.
+            Err(Error::Upstream { message, .. }) if message.contains("out of sequence") => {
+                Err(Error::Conflict(format!(
+                    "the service changed since it was read; reload and try again ({message})"
+                )))
+            }
+            Err(e) => Err(e),
+        }
     }
 
     async fn list_services(&self) -> Result<Vec<Service>> {

@@ -87,8 +87,15 @@ fn env_routes() -> OpenApiRouter<AppState> {
             swarm_write::update_node,
             swarm_write::remove_node
         ))
-        .routes(routes!(swarm::services))
-        .routes(routes!(swarm::service))
+        .routes(routes!(swarm::services, swarm_write::create_service))
+        .routes(routes!(
+            swarm::service,
+            swarm_write::edit_service,
+            swarm_write::remove_service
+        ))
+        .routes(routes!(swarm_write::scale_service))
+        .routes(routes!(swarm_write::redeploy_service))
+        .routes(routes!(swarm_write::rollback_service))
         .routes(routes!(swarm::tasks))
         .routes(routes!(swarm::secrets))
         .routes(routes!(swarm::configs))
