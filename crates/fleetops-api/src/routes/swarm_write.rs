@@ -225,6 +225,23 @@ async fn guarded_service(
     Ok((svc, confirmed))
 }
 
+/// A grant limited to stacks keeps a service `spec` in them, its
+/// containers too (node pages place them by their own label), and lends
+/// it nothing of another stack's.
+async fn check_spec(s: &AppState, c: &SwarmCtx, p: Permission, spec: &Value) -> Result<()> {
+    c.check(s, p, spec["Labels"][STACK_LABEL].as_str()).await?;
+    if c.grants.allows(p, None) {
+        return Ok(());
+    }
+    let containers = spec
+        .pointer("/TaskTemplate/ContainerSpec/Labels")
+        .and_then(|l| l.get(STACK_LABEL));
+    if let Some(stack) = containers {
+        c.check(s, p, stack.as_str()).await?;
+    }
+    check_references(s, c, p, spec).await
+}
+
 /// Every secret, config and network `spec` uses must be in the caller's
 /// stacks: an id or name the swarm does not know is refused.
 async fn check_references(s: &AppState, c: &SwarmCtx, p: Permission, spec: &Value) -> Result<()> {
@@ -343,13 +360,7 @@ pub async fn edit_service(
     let p = operate();
     let c = swarm_ctx(&s, cu, &env, p).await?;
     let (svc, confirmed) = guarded_service(&s, &c, p, &id, body.confirm.as_deref()).await?;
-    // A grant limited to stacks keeps the service in them, and lends it
-    // nothing of another stack's.
-    let label = body.spec["Labels"][STACK_LABEL].as_str();
-    c.check(&s, p, label).await?;
-    if !c.grants.allows(p, None) {
-        check_references(&s, &c, p, &body.spec).await?;
-    }
+    check_spec(&s, &c, p, &body.spec).await?;
     // A spec read without Reveal has masked env values: keep the real ones.
     let reveal = Permission::new(Row::Containers, Verb::Reveal);
     if !c.grants.allows(reveal, None) {
@@ -488,9 +499,7 @@ pub async fn rollback_service(
                 svc.summary.name
             ))
         })?;
-        c.check(&s, p, previous["Labels"][STACK_LABEL].as_str())
-            .await?;
-        check_references(&s, &c, p, previous).await?;
+        check_spec(&s, &c, p, previous).await?;
     }
     let res = c
         .ops

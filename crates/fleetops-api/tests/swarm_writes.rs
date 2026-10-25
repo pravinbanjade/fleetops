@@ -606,6 +606,24 @@ async fn a_scoped_edit_cannot_reference_another_stacks_secret() {
     assert_eq!(edit(&sw, &bob, spec).await.status, 204);
 }
 
+/// Node pages place containers in stacks by their own stack label: a
+/// scoped edit can't move its containers into another stack.
+#[tokio::test]
+async fn a_scoped_edit_cannot_relabel_its_containers() {
+    let (sw, bob) = common::fake_swarm::with_custom_in(ALL, Some(&["blog"])).await;
+    let mut spec = blog_spec();
+    spec["TaskTemplate"]["ContainerSpec"]
+        .as_object_mut()
+        .unwrap()
+        .remove("Configs");
+    let mut moved = spec.clone();
+    moved["TaskTemplate"]["ContainerSpec"]["Labels"] =
+        json!({"com.docker.stack.namespace": "shop"});
+    assert_eq!(edit(&sw, &bob, moved).await.status, 403);
+    spec["TaskTemplate"]["ContainerSpec"]["Labels"] = json!({"com.docker.stack.namespace": "blog"});
+    assert_eq!(edit(&sw, &bob, spec).await.status, 204);
+}
+
 /// A rollback puts back Docker's previous spec: for a grant limited to
 /// stacks, it is checked as an edit to that spec would be.
 #[tokio::test]
@@ -644,6 +662,11 @@ async fn a_scoped_rollback_checks_the_previous_spec() {
     set_previous(Value::Null);
     let r = rollback().await;
     assert_eq!(r.status, 409, "{:?}", r.json);
+    let mut relabelled = spec.clone();
+    relabelled["TaskTemplate"]["ContainerSpec"]["Labels"] =
+        json!({"com.docker.stack.namespace": "shop"});
+    set_previous(relabelled);
+    assert_eq!(rollback().await.status, 403);
     set_previous(spec);
     assert_eq!(rollback().await.status, 204);
 }
