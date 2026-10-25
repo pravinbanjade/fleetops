@@ -476,7 +476,10 @@ pub async fn create_secret(
     )
     .await?;
     let data = checked_value(&body, "secret")?;
-    let res = c.ops.create_secret(&body.name, data).await;
+    let res = c
+        .ops
+        .create_secret(&body.name, data, &Default::default())
+        .await;
     c.audit(
         &s,
         "swarm.secret.create",
@@ -535,7 +538,10 @@ pub async fn create_config(
     )
     .await?;
     let data = checked_value(&body, "config")?;
-    let res = c.ops.create_config(&body.name, data).await;
+    let res = c
+        .ops
+        .create_config(&body.name, data, &Default::default())
+        .await;
     c.audit(
         &s,
         "swarm.config.create",
@@ -633,7 +639,10 @@ pub async fn create_network(
     if body.name.trim().is_empty() {
         return Err(Error::Invalid("a network needs a name".into()).into());
     }
-    let res = c.ops.create_network(&body).await;
+    let res = c
+        .ops
+        .create_network(&body, &Default::default(), &Default::default())
+        .await;
     c.audit(
         &s,
         "swarm.network.create",

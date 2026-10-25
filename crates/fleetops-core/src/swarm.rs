@@ -132,6 +132,7 @@ pub struct SecretSummary {
     pub id: String,
     pub name: String,
     pub stack: Option<String>,
+    pub labels: BTreeMap<String, String>,
     pub created_at: i64,
     pub updated_at: i64,
     /// Names of the services that mount it.
@@ -144,6 +145,7 @@ pub struct ConfigSummary {
     pub id: String,
     pub name: String,
     pub stack: Option<String>,
+    pub labels: BTreeMap<String, String>,
     pub created_at: i64,
     pub updated_at: i64,
     pub used_by: Vec<String>,
@@ -238,12 +240,28 @@ pub trait SwarmOps: Send + Sync {
     async fn create_service(&self, spec: &serde_json::Value) -> Result<String>;
     async fn update_service(&self, id: &str, change: ServiceChange) -> Result<()>;
     async fn remove_service(&self, id: &str) -> Result<()>;
-    async fn create_secret(&self, name: &str, data: &[u8]) -> Result<String>;
+    async fn create_secret(
+        &self,
+        name: &str,
+        data: &[u8],
+        labels: &BTreeMap<String, String>,
+    ) -> Result<String>;
     async fn remove_secret(&self, id: &str) -> Result<()>;
-    async fn create_config(&self, name: &str, data: &[u8]) -> Result<String>;
+    async fn create_config(
+        &self,
+        name: &str,
+        data: &[u8],
+        labels: &BTreeMap<String, String>,
+    ) -> Result<String>;
     /// `None` when the swarm has no such config.
     async fn config_data(&self, id: &str) -> Result<Option<Vec<u8>>>;
     async fn remove_config(&self, id: &str) -> Result<()>;
-    async fn create_network(&self, n: &NewSwarmNetwork) -> Result<String>;
+    /// `labels` and driver `options` come from a stack, never a request.
+    async fn create_network(
+        &self,
+        n: &NewSwarmNetwork,
+        labels: &BTreeMap<String, String>,
+        options: &BTreeMap<String, String>,
+    ) -> Result<String>;
     async fn remove_network(&self, id: &str) -> Result<()>;
 }

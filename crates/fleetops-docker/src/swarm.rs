@@ -391,6 +391,7 @@ impl SwarmOps for LocalDocker {
                     id,
                     name: spec.name.unwrap_or_default(),
                     stack: stack_of(&spec.labels),
+                    labels: spec.labels.unwrap_or_default().into_iter().collect(),
                     created_at: unix(&s.created_at),
                     updated_at: unix(&s.updated_at),
                 }
@@ -415,6 +416,7 @@ impl SwarmOps for LocalDocker {
                     id,
                     name: spec.name.unwrap_or_default(),
                     stack: stack_of(&spec.labels),
+                    labels: spec.labels.unwrap_or_default().into_iter().collect(),
                     created_at: unix(&c.created_at),
                     updated_at: unix(&c.updated_at),
                 }
@@ -550,9 +552,15 @@ impl SwarmOps for LocalDocker {
         self.client.delete_service(id).await.map_err(map_err)
     }
 
-    async fn create_secret(&self, name: &str, data: &[u8]) -> Result<String> {
+    async fn create_secret(
+        &self,
+        name: &str,
+        data: &[u8],
+        labels: &BTreeMap<String, String>,
+    ) -> Result<String> {
         let spec = SecretSpec {
             name: Some(name.into()),
+            labels: Some(labels.clone().into_iter().collect()),
             data: Some(base64::engine::general_purpose::STANDARD.encode(data)),
             ..Default::default()
         };
@@ -564,9 +572,15 @@ impl SwarmOps for LocalDocker {
         self.client.delete_secret(id).await.map_err(map_err)
     }
 
-    async fn create_config(&self, name: &str, data: &[u8]) -> Result<String> {
+    async fn create_config(
+        &self,
+        name: &str,
+        data: &[u8],
+        labels: &BTreeMap<String, String>,
+    ) -> Result<String> {
         let spec = ConfigSpec {
             name: Some(name.into()),
+            labels: Some(labels.clone().into_iter().collect()),
             data: Some(base64::engine::general_purpose::STANDARD.encode(data)),
             ..Default::default()
         };
@@ -589,16 +603,24 @@ impl SwarmOps for LocalDocker {
         self.client.delete_config(id).await.map_err(map_err)
     }
 
-    async fn create_network(&self, n: &NewSwarmNetwork) -> Result<String> {
+    async fn create_network(
+        &self,
+        n: &NewSwarmNetwork,
+        labels: &BTreeMap<String, String>,
+        options: &BTreeMap<String, String>,
+    ) -> Result<String> {
+        let mut options: HashMap<String, String> = options.clone().into_iter().collect();
+        if n.encrypted {
+            options.insert("encrypted".to_string(), String::new());
+        }
         let req = NetworkCreateRequest {
             name: n.name.clone(),
             driver: Some("overlay".into()),
             scope: Some("swarm".into()),
             attachable: Some(n.attachable),
             internal: Some(n.internal),
-            options: n
-                .encrypted
-                .then(|| HashMap::from([("encrypted".to_string(), String::new())])),
+            labels: (!labels.is_empty()).then(|| labels.clone().into_iter().collect()),
+            options: (!options.is_empty()).then_some(options),
             ipam: n.subnet.as_ref().map(|s| Ipam {
                 config: Some(vec![IpamConfig {
                     subnet: Some(s.clone()),

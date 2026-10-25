@@ -125,6 +125,38 @@ pub struct FakeSwarm {
     pub services: Mutex<Value>,
     /// Every non-GET call: method, path, JSON body (null when empty).
     pub writes: Mutex<Vec<(String, String, Value)>>,
+    /// What listing secrets, configs and swarm networks returns; creates
+    /// add to them and deletes remove from them.
+    pub secrets: Mutex<Value>,
+    pub configs: Mutex<Value>,
+    pub networks: Mutex<Value>,
+    /// The `UpdateStatus` (state, message) a service update leaves, instead
+    /// of `completed`.
+    pub update_outcome: Mutex<Option<(String, String)>>,
+    /// A task added for each service created, its `ServiceID` filled in.
+    pub on_create_task: Mutex<Option<Value>>,
+    /// Objects created so far, for their ids.
+    created: Mutex<u32>,
+}
+
+pub fn secrets_json() -> Value {
+    json!([{"ID": "sec1", "Version": {"Index": 1}, "CreatedAt": "2026-10-20T10:00:00Z", "UpdatedAt": "2026-10-20T10:00:00Z",
+        "Spec": {"Name": "blog_db", "Labels": {"com.docker.stack.namespace": "blog"}}}])
+}
+
+pub fn configs_json() -> Value {
+    json!([{"ID": "cfg1", "Version": {"Index": 1}, "Spec": {"Name": "blog_nginx", "Data": "c2VydmVyIHt9"}},
+           {"ID": "cfg2", "Version": {"Index": 1}, "Spec": {"Name": "unused", "Data": ""}}])
+}
+
+pub fn networks_json() -> Value {
+    json!([
+        {"Name": "blog_default", "Id": "net1", "Scope": "swarm", "Driver": "overlay",
+         "Attachable": false, "Internal": false, "Options": {"encrypted": ""},
+         "IPAM": {"Config": [{"Subnet": "10.0.1.0/24"}]},
+         "Labels": {"com.docker.stack.namespace": "blog"}},
+        {"Name": "bridge", "Id": "b", "Scope": "local", "Driver": "bridge"}
+    ])
 }
 
 pub fn node_json(id: &str, manager: bool) -> Value {
@@ -152,6 +184,12 @@ impl FakeSwarm {
             tasks: Mutex::new(tasks_json()),
             services: Mutex::new(services_json()),
             writes: Mutex::default(),
+            secrets: Mutex::new(secrets_json()),
+            configs: Mutex::new(configs_json()),
+            networks: Mutex::new(networks_json()),
+            update_outcome: Mutex::default(),
+            on_create_task: Mutex::default(),
+            created: Mutex::default(),
         })
     }
 
@@ -253,11 +291,11 @@ impl FakeSwarm {
         }
         if path.contains("/services/") && path.contains("/update") {
             let id = id_after("services");
-            let services = self.services.lock().unwrap();
+            let mut services = self.services.lock().unwrap();
             let Some(svc) = services
-                .as_array()
+                .as_array_mut()
                 .unwrap()
-                .iter()
+                .iter_mut()
                 .find(|s| s["ID"] == id.as_str())
             else {
                 return (
@@ -268,22 +306,78 @@ impl FakeSwarm {
             if version != svc["Version"]["Index"].as_u64() {
                 return out_of_sequence;
             }
+            if body.is_object() {
+                svc["Spec"] = body.clone();
+                let n = body["Mode"]["Replicated"]["Replicas"].as_u64().unwrap_or(1);
+                svc["ServiceStatus"] = json!({"RunningTasks": n, "DesiredTasks": n});
+            }
+            svc["Version"]["Index"] = (version.unwrap_or(0) + 1).into();
+            let (state, message) = self
+                .update_outcome
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or(("completed".into(), "update completed".into()));
+            svc["UpdateStatus"] = json!({"State": state, "Message": message});
             return (200, r#"{"Warnings":[]}"#.into());
         }
-        for (kind, id) in [
-            ("services", r#"{"ID":"service-new"}"#),
-            ("secrets", r#"{"ID":"secret-new"}"#),
-            ("configs", r#"{"ID":"config-new"}"#),
-            ("networks", r#"{"Id":"net-new","Warning":""}"#),
+        for (kind, list) in [
+            ("services", &self.services),
+            ("secrets", &self.secrets),
+            ("configs", &self.configs),
+            ("networks", &self.networks),
         ] {
-            if path.contains(&format!("/{kind}/create")) {
-                return (201, id.into());
+            if !path.contains(&format!("/{kind}/create")) {
+                continue;
             }
+            let id = {
+                let mut n = self.created.lock().unwrap();
+                *n += 1;
+                let short = kind.trim_end_matches('s').replace("network", "net");
+                if *n == 1 {
+                    format!("{short}-new")
+                } else {
+                    format!("{short}-new-{n}")
+                }
+            };
+            let object = match kind {
+                "services" => {
+                    let n = body["Mode"]["Replicated"]["Replicas"].as_u64().unwrap_or(1);
+                    if let Some(mut t) = self.on_create_task.lock().unwrap().clone() {
+                        t["ServiceID"] = id.clone().into();
+                        self.tasks.lock().unwrap().as_array_mut().unwrap().push(t);
+                    }
+                    json!({"ID": id, "Version": {"Index": 1}, "Spec": body,
+                           "ServiceStatus": {"RunningTasks": n, "DesiredTasks": n}})
+                }
+                "networks" => json!({"Name": body["Name"], "Id": id, "Scope": "swarm",
+                                     "Driver": body["Driver"], "Labels": body["Labels"],
+                                     "Options": body["Options"]}),
+                _ => json!({"ID": id, "Version": {"Index": 1}, "Spec": body}),
+            };
+            list.lock().unwrap().as_array_mut().unwrap().push(object);
+            return match kind {
+                "networks" => (201, json!({"Id": id, "Warning": ""}).to_string()),
+                _ => (201, json!({"ID": id}).to_string()),
+            };
         }
         if method == "DELETE" {
             if path.contains("/nodes/") {
                 let id = id_after("nodes");
                 self.remove(&id);
+            }
+            for (kind, list) in [
+                ("services", &self.services),
+                ("secrets", &self.secrets),
+                ("configs", &self.configs),
+                ("networks", &self.networks),
+            ] {
+                if path.contains(&format!("/{kind}/")) {
+                    let id = id_after(kind);
+                    list.lock().unwrap().as_array_mut().unwrap().retain(|o| {
+                        o["ID"] != id.as_str() && o["Id"] != id.as_str() && o["Name"] != id.as_str()
+                    });
+                }
             }
             return (200, String::new());
         }
@@ -314,47 +408,40 @@ impl FakeSwarm {
             return (200, self.tasks.lock().unwrap().to_string());
         }
         if path.contains("/secrets") {
-            return (
-            200,
-            json!([{"ID": "sec1", "CreatedAt": "2026-10-20T10:00:00Z", "UpdatedAt": "2026-10-20T10:00:00Z",
-                "Spec": {"Name": "blog_db", "Labels": {"com.docker.stack.namespace": "blog"}}}])
-            .to_string(),
-        );
+            // Docker never hands back a secret's data.
+            let mut list = self.secrets.lock().unwrap().clone();
+            for s in list.as_array_mut().unwrap() {
+                s["Spec"].as_object_mut().map(|o| o.remove("Data"));
+            }
+            return (200, list.to_string());
         }
         if let Some(id) = path.split("/configs/").nth(1) {
             let id = id.split('?').next().unwrap_or_default();
-            if id != "cfg1" {
-                return (
+            return match self
+                .configs
+                .lock()
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["ID"] == id)
+            {
+                Some(c) => (200, c.to_string()),
+                None => (
                     404,
                     json!({"message": format!("config {id} not found")}).to_string(),
-                );
-            }
-            return (
-                200,
-                json!({"ID": "cfg1", "Spec": {"Name": "blog_nginx", "Data": "c2VydmVyIHt9"}})
-                    .to_string(),
-            );
+                ),
+            };
         }
         if path.contains("/configs") {
-            return (
-                200,
-                json!([{"ID": "cfg1", "Spec": {"Name": "blog_nginx"}},
-                               {"ID": "cfg2", "Spec": {"Name": "unused"}}])
-                .to_string(),
-            );
+            let mut list = self.configs.lock().unwrap().clone();
+            for c in list.as_array_mut().unwrap() {
+                c["Spec"].as_object_mut().map(|o| o.remove("Data"));
+            }
+            return (200, list.to_string());
         }
         if path.contains("/networks") {
-            return (
-                200,
-                json!([
-                    {"Name": "blog_default", "Id": "net1", "Scope": "swarm", "Driver": "overlay",
-                     "Attachable": false, "Internal": false, "Options": {"encrypted": ""},
-                     "IPAM": {"Config": [{"Subnet": "10.0.1.0/24"}]},
-                     "Labels": {"com.docker.stack.namespace": "blog"}},
-                    {"Name": "bridge", "Id": "b", "Scope": "local", "Driver": "bridge"}
-                ])
-                .to_string(),
-            );
+            return (200, self.networks.lock().unwrap().to_string());
         }
         let nodes = self.nodes.lock().unwrap().clone();
         if let Some(id) = path.split("/nodes/").nth(1) {
