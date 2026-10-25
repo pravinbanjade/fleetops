@@ -48,21 +48,54 @@ pub async fn ctx(s: &AppState, user: CurrentUser, env_name: &str, need: Need) ->
     })
 }
 
-/// `ctx` for FleetOps stacks, which are stored per environment: a Swarm
-/// node's view shares its swarm's id, so stacks are refused there.
+/// Everything a stack handler needs: the caller, the environment, what its
+/// stacks deploy through, and the caller's grants.
+pub struct StackCtx {
+    pub user: CurrentUser,
+    pub env: Arc<dyn Environment>,
+    pub ops: crate::stacks::StackOps,
+    pub grants: Grants,
+}
+
+/// The context for FleetOps stacks, which live on a Docker host or a swarm.
+/// A Swarm node's view shares its swarm's id, so stacks are refused there.
+/// On a swarm the permission must cover the whole environment until stack
+/// scoping arrives (swarm spec §6).
 pub async fn stack_ctx(
     s: &AppState,
     user: CurrentUser,
     env_name: &str,
     need: Need,
-) -> ApiResult<EnvCtx> {
-    let c = ctx(s, user, env_name, need).await?;
-    if c.env.kind() == fleetops_core::env::EnvKind::SwarmNode {
+) -> ApiResult<StackCtx> {
+    let (env, grants) = crate::authz::env_access(s, &user, env_name, need).await?;
+    let kind = env.kind();
+    if kind == fleetops_core::env::EnvKind::SwarmNode {
         return Err(
             Error::Conflict("stacks are not available on a single swarm node".into()).into(),
         );
     }
-    Ok(c)
+    if kind.is_kube() {
+        return Err(crate::routes::kube::wrong_kind(env_name, kind).into());
+    }
+    if kind.is_swarm() {
+        if let Need::Perm(p) = need {
+            crate::authz::deny_audited(s, &user, env.id(), &p.to_string(), grants.check_env(p))
+                .await?;
+        }
+    }
+    let ops = crate::stacks::StackOps::of(&env).ok_or_else(|| {
+        Error::EnvUnavailable(if kind.is_swarm() {
+            "no manager agent is connected".to_string()
+        } else {
+            format!("environment '{env_name}' is unreachable")
+        })
+    })?;
+    Ok(StackCtx {
+        user,
+        env,
+        ops,
+        grants,
+    })
 }
 
 impl EnvCtx {

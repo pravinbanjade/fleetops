@@ -477,12 +477,12 @@ async fn deploy_route_unchanged_after_refactor() {
 
 #[tokio::test]
 async fn start_deploy_as_git_audits_system() {
-    use fleetops_api::stacks::{start_deploy, Actor, DeploySource};
+    use fleetops_api::stacks::{start_deploy, Actor, DeploySource, StackOps};
     let app = fast_app().await;
     let s = app.with_local().await;
     create(&app, &s, WEB, &[]).await;
     let env = app.state.envs.get("local").unwrap();
-    let ops = env.docker().unwrap();
+    let ops = StackOps::Docker(env.docker().unwrap());
     let stack = app.store.stack_by_name(env.id(), "shop").await.unwrap();
     let started = start_deploy(
         &app.state,

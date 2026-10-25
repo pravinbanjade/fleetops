@@ -2,7 +2,7 @@
 //! sync now, resume after a rollback, and rotate the webhook secret.
 
 use super::stacks::audit;
-use super::{stack_ctx, EnvCtx};
+use super::{stack_ctx, StackCtx};
 use crate::openapi::EnvParam;
 use crate::stacks::git::{cache_dir, remove_cache, sync_stack, SyncOutcome, SyncTrigger};
 use crate::{
@@ -131,7 +131,7 @@ fn settings(s: &AppState, b: &GitBody) -> Result<GitSettings> {
     })
 }
 
-async fn stack_of(s: &AppState, c: &EnvCtx, name: &str) -> Result<StackRecord> {
+async fn stack_of(s: &AppState, c: &StackCtx, name: &str) -> Result<StackRecord> {
     s.store.stack_by_name(c.env.id(), name).await
 }
 

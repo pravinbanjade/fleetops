@@ -8,7 +8,7 @@ use crate::openapi::EnvParam;
 use crate::{auth::extract::CurrentUser, authz::Need, extract::ApiPath, ApiResult, AppState};
 use axum::{body::Bytes, extract::State, http::StatusCode, Json};
 use fleetops_core::compose::files::{repo_path, MAX_VALUE};
-use fleetops_core::compose::{parse, parse_variables, FileKind, FileSource};
+use fleetops_core::compose::{parse_mode, parse_variables, FileKind, FileSource};
 use fleetops_core::perm::{Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::StoredFile;
@@ -116,7 +116,7 @@ pub async fn list(
     let draft = s.store.draft(stack.id).await?;
     let parsed = draft
         .as_ref()
-        .and_then(|d| parse(&d.compose, &d.variables, &stack.name).ok());
+        .and_then(|d| parse_mode(&d.compose, &d.variables, &stack.name, c.ops.mode()).ok());
     let mut out = vec![];
     let mut shown: Vec<(&str, &str, &str)> = vec![];
     if let (Some(d), Some(parsed)) = (&draft, parsed) {

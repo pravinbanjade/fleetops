@@ -5,7 +5,7 @@ use super::start::{start_deploy, Actor, DeploySource, GIT_ACTOR};
 use crate::AppState;
 use fleetops_core::compose::build::context_dir;
 use fleetops_core::compose::files::repo_path;
-use fleetops_core::compose::{parse, FileKind, FileSource};
+use fleetops_core::compose::{parse_mode, FileKind, FileSource, Mode};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::{GitRecord, NewAudit, StackRecord};
 use serde::Serialize;
@@ -181,6 +181,7 @@ async fn sync_fetched(
     };
     let commit = fetched.commit.clone();
     let short = &commit[..7];
+    let mode = super::mode_for(s, stack).await?;
     let draft = s.store.draft(stack.id).await?;
     let variables = draft
         .as_ref()
@@ -189,8 +190,8 @@ async fn sync_fetched(
     // Config files the Compose file names, from the same commit. A file
     // that does not parse is reported below, with no configs read.
     let read = async {
-        let configs = read_configs(s, git, &cache, &fetched, &variables, stack).await?;
-        let trees = read_build_trees(git, &cache, &fetched, &variables, stack).await?;
+        let configs = read_configs(s, git, &cache, &fetched, &variables, stack, mode).await?;
+        let trees = read_build_trees(git, &cache, &fetched, &variables, stack, mode).await?;
         Ok::<_, String>((configs, trees))
     };
     let (configs, trees) = match read.await {
@@ -269,7 +270,7 @@ async fn sync_fetched(
     };
     // The file is checked even when nothing deploys it, so a broken commit
     // shows on the stack straight away.
-    if let Err(issues) = parse(&fetched.content, &variables, &stack.name) {
+    if let Err(issues) = parse_mode(&fetched.content, &variables, &stack.name, mode) {
         let msg = super::start::issues_message(&issues);
         return fail(format!("{} at {short} has problems: {msg}", git.path)).await;
     }
@@ -288,7 +289,7 @@ async fn sync_fetched(
     }
     let env = s.store.get_environment(stack.env_id).await?;
     let handle = s.envs.get(&env.name)?;
-    let Some(ops) = handle.docker() else {
+    let Some(ops) = super::StackOps::of(&handle) else {
         s.store
             .record_git_error(stack.id, UNREACHABLE, now_unix())
             .await?;
@@ -330,8 +331,9 @@ async fn read_configs(
     fetched: &fleetops_git::Fetched,
     variables: &[String],
     stack: &StackRecord,
+    mode: Mode,
 ) -> std::result::Result<Vec<(String, String)>, String> {
-    let Ok(parsed) = parse(&fetched.content, variables, &stack.name) else {
+    let Ok(parsed) = parse_mode(&fetched.content, variables, &stack.name, mode) else {
         return Ok(vec![]);
     };
     let p = &parsed.project;
@@ -369,8 +371,9 @@ async fn read_build_trees(
     fetched: &fleetops_git::Fetched,
     variables: &[String],
     stack: &StackRecord,
+    mode: Mode,
 ) -> std::result::Result<BTreeMap<String, String>, String> {
-    let Ok(parsed) = parse(&fetched.content, variables, &stack.name) else {
+    let Ok(parsed) = parse_mode(&fetched.content, variables, &stack.name, mode) else {
         return Ok(BTreeMap::new());
     };
     let mut names = vec![];

@@ -444,6 +444,7 @@ impl SwarmOps for LocalDocker {
                     name: n.name.clone().unwrap_or_default(),
                     driver: n.driver.clone().unwrap_or_default(),
                     stack: stack_of(&n.labels),
+                    labels: n.labels.clone().unwrap_or_default().into_iter().collect(),
                     attachable: n.attachable.unwrap_or(false),
                     internal: n.internal.unwrap_or(false),
                     encrypted: n

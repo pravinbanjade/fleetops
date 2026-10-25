@@ -72,6 +72,13 @@ pub async fn recover_all(s: &AppState) {
         let Ok(env) = s.store.get_environment(stack.env_id).await else {
             continue;
         };
+        // A swarm deploy is not undone, so it needs no reachable swarm.
+        if env.kind == fleetops_core::env::EnvKind::SwarmAgent.as_str() {
+            if let Err(e) = super::swarm::settle_interrupted(s, &stack).await {
+                tracing::warn!(error = %e, stack = %stack.name, "recovering a deploy failed");
+            }
+            continue;
+        }
         let Some(ops) = s.envs.get(&env.name).ok().and_then(|e| e.docker()) else {
             continue;
         };

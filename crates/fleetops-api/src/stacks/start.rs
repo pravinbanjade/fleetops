@@ -2,13 +2,14 @@
 //! the deploy route and git syncs (§8).
 
 use super::build::{self as builds, BuildInputs};
-use super::{deploy_stream, recover_stack, stack_containers};
+use super::{deploy_stream, recover_stack, stack_containers, StackOps};
 use crate::tasks::{NewTask, TaskInfo, TaskStatus};
 use crate::AppState;
 use fleetops_core::compose::docker::LABEL_PROJECT;
 use fleetops_core::compose::files::{resolve, FileValues};
 use fleetops_core::compose::plan::{plan, Live, Plan};
-use fleetops_core::compose::{parse, parse_variables, ComposeIssue, FileKind, Project};
+use fleetops_core::compose::swarm_plan::plan_swarm;
+use fleetops_core::compose::{parse_mode, parse_variables, ComposeIssue, FileKind, Mode, Project};
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
 use fleetops_core::{now_unix, Error, Result};
@@ -176,28 +177,33 @@ async fn source(s: &AppState, stack: &StackRecord, from: DeploySource) -> Result
 
 /// The deployed revision: its record, variables and (if it still parses)
 /// project, with its files resolved from the revision's snapshot.
-async fn deployed(
+pub(crate) async fn deployed(
     s: &AppState,
     stack: &StackRecord,
+    mode: Mode,
 ) -> Result<Option<(RevisionRecord, Vec<String>, Option<Project>)>> {
     let Some(n) = stack.deployed_revision else {
         return Ok(None);
     };
     let r = s.store.revision(stack.id, n).await?;
     let v = s.store.revision_variables(stack.id, n).await?;
-    let mut p = parse(&r.compose, &v, &stack.name).ok().map(|p| p.project);
+    let mut p = parse_mode(&r.compose, &v, &stack.name, mode)
+        .ok()
+        .map(|p| p.project);
     if let Some(p) = p.as_mut() {
         let values = revision_values(s, stack, n).await?;
         // A file the snapshot lacks keeps an empty digest, which reads as
         // changed: the safe side.
         let _ = resolve(p, &v, &values, &s.store.file_digest_key());
-        let inputs = builds::revision_inputs(s, stack, n).await?;
-        let _ = fleetops_core::compose::build::apply(
-            p,
-            &inputs.trees,
-            inputs.git,
-            &s.store.build_key(),
-        );
+        if mode == Mode::Compose {
+            let inputs = builds::revision_inputs(s, stack, n).await?;
+            let _ = fleetops_core::compose::build::apply(
+                p,
+                &inputs.trees,
+                inputs.git,
+                &s.store.build_key(),
+            );
+        }
     }
     Ok(Some((r, v, p)))
 }
@@ -256,28 +262,34 @@ pub(crate) type Planned = (PlanResponse, Option<Ready>, Source);
 
 pub(crate) async fn make_plan(
     s: &AppState,
-    ops: &dyn DockerOps,
+    ops: &StackOps,
     stack: &StackRecord,
     from: DeploySource,
 ) -> Result<Planned> {
-    recover_stack(s, ops, stack).await?;
+    let mode = ops.mode();
+    match ops {
+        StackOps::Docker(d) => recover_stack(s, d.as_ref(), stack).await?,
+        StackOps::Swarm(_) => super::swarm::settle_interrupted(s, stack).await?,
+    }
     let src = source(s, stack, from).await?;
-    let dep = deployed(s, stack).await?;
+    let dep = deployed(s, stack, mode).await?;
     let compose_before = dep.as_ref().map(|(r, _, _)| r.compose.clone());
     let changed = variables_changed(
         dep.as_ref().map(|(_, v, _)| v.as_slice()).unwrap_or(&[]),
         &src.variables,
     );
-    let mut parsed = parse(&src.compose, &src.variables, &stack.name).and_then(|mut parsed| {
-        let files = resolve(
-            &mut parsed.project,
-            &src.variables,
-            &src.values,
-            &s.store.file_digest_key(),
-        )?;
-        Ok((parsed, files, BuildInputs::default()))
-    });
-    if let Ok((parsed_ok, _, inputs)) = &mut parsed {
+    let mut parsed =
+        parse_mode(&src.compose, &src.variables, &stack.name, mode).and_then(|mut parsed| {
+            let files = resolve(
+                &mut parsed.project,
+                &src.variables,
+                &src.values,
+                &s.store.file_digest_key(),
+            )?;
+            Ok((parsed, files, BuildInputs::default()))
+        });
+    // A Swarm stack never builds (its parser refuses `build:`).
+    if let (Ok((parsed_ok, _, inputs)), StackOps::Docker(_)) = (&mut parsed, ops) {
         let (found, issues) = match from {
             DeploySource::Draft => {
                 builds::draft_inputs(s, stack, src.commit.as_deref(), &parsed_ok.project).await?
@@ -315,12 +327,24 @@ pub(crate) async fn make_plan(
             src,
         )),
         Ok((parsed, files, inputs)) => {
-            let live = live(ops, &stack.name).await?;
             let prev = dep
                 .as_ref()
                 .and_then(|(r, _, p)| p.as_ref().map(|p| (p, r.number)));
-            let p = plan(&parsed.project, prev, &live);
-            let issues = builds::check_rebuilds(s, stack, &parsed.project, &p, &inputs).await?;
+            let (p, issues) = match ops {
+                StackOps::Docker(d) => {
+                    let live = live(d.as_ref(), &stack.name).await?;
+                    let p = plan(&parsed.project, prev, &live);
+                    let issues =
+                        builds::check_rebuilds(s, stack, &parsed.project, &p, &inputs).await?;
+                    (p, issues)
+                }
+                StackOps::Swarm(sw) => {
+                    let live = super::swarm::live(sw.as_ref(), &stack.name).await?;
+                    let mut p = plan_swarm(&parsed.project, prev, &live);
+                    super::swarm::protect(&mut p, &live, &stack.name);
+                    (p, vec![])
+                }
+            };
             if !issues.is_empty() {
                 return Ok((
                     PlanResponse {
@@ -360,14 +384,14 @@ pub(crate) async fn make_plan(
 /// reviewed plan's token; only auto-deploys pass `None`.
 pub async fn start_deploy(
     s: &AppState,
-    ops: Arc<dyn DockerOps>,
+    ops: StackOps,
     env: Arc<dyn Environment>,
     stack: &StackRecord,
     from: DeploySource,
     plan_token: Option<&str>,
     actor: Actor,
 ) -> Result<DeployStarted> {
-    let (resp, planned, src) = make_plan(s, ops.as_ref(), stack, from).await?;
+    let (resp, planned, src) = make_plan(s, &ops, stack, from).await?;
     let Source {
         variables,
         rollback_of,
@@ -391,6 +415,11 @@ pub async fn start_deploy(
     if !p.blocking.is_empty() {
         return Err(Error::Invalid(p.blocking.join("; ")));
     }
+    let StackOps::Docker(ops) = ops else {
+        return Err(Error::Conflict(
+            "deploying a Swarm stack is not available yet".into(),
+        ));
+    };
     let built: Builds = builds::builds_of(&project, &inputs);
     // Images of the deploy before this one stay, for a quick rollback.
     let mut keep: BTreeSet<String> = built.values().map(|b| b.image.clone()).collect();

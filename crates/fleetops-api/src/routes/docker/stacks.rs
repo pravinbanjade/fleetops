@@ -1,19 +1,21 @@
 //! Stacks: Compose projects FleetOps authors and deploys (stacks spec §5–§6).
 
 use super::compose::ComposeOutcome;
-use super::{stack_ctx, EnvCtx};
+use super::{stack_ctx, StackCtx};
 use crate::openapi::EnvParam;
 use crate::{
     auth::extract::CurrentUser,
     authz::Need,
     extract::{ApiJson, ApiPath, ApiQuery},
     stacks::start::{draft_values, make_plan, revision_values, start_deploy, Actor},
-    stacks::{is_old, recover_stack, stack_containers, try_lock},
+    stacks::{is_old, recover_stack, stack_containers, try_lock, StackOps},
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::compose::docker::LABEL_PROJECT;
-use fleetops_core::compose::{parse, validate_stack_name, ComposeIssue, FileKind, FileSource};
+use fleetops_core::compose::{
+    parse_mode, validate_stack_name, ComposeIssue, FileKind, FileSource, Mode,
+};
 use fleetops_core::docker::{mask_env, ContainerAction};
 use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
@@ -166,7 +168,7 @@ fn unmask_variables(lines: &mut [String], stored: &[String]) -> Result<()> {
 
 pub(super) async fn audit<T>(
     s: &AppState,
-    c: &EnvCtx,
+    c: &StackCtx,
     action: &str,
     stack: &str,
     outcome: &Result<T>,
@@ -203,8 +205,9 @@ async fn files_differ(
     stack: &StackRecord,
     draft: &Draft,
     deployed: i64,
+    mode: Mode,
 ) -> Result<bool> {
-    let Ok(parsed) = parse(&draft.compose, &draft.variables, &stack.name) else {
+    let Ok(parsed) = parse_mode(&draft.compose, &draft.variables, &stack.name, mode) else {
         return Ok(false);
     };
     let p = parsed.project;
@@ -231,7 +234,7 @@ async fn files_differ(
         .any(|key| !chosen.contains_key(key) || chosen.get(key) != ran.get(key)))
 }
 
-async fn summary(s: &AppState, stack: StackRecord) -> Result<StackSummary> {
+async fn summary(s: &AppState, stack: StackRecord, mode: Mode) -> Result<StackSummary> {
     let revs = s.store.list_revisions(stack.id).await?;
     let draft = s.store.draft(stack.id).await?;
     let latest = revs.first();
@@ -243,7 +246,7 @@ async fn summary(s: &AppState, stack: StackRecord) -> Result<StackSummary> {
         (Some(d), Some(r)) => {
             d.compose != r.compose
                 || d.variables != s.store.revision_variables(stack.id, r.number).await?
-                || files_differ(s, &stack, d, r.number).await?
+                || files_differ(s, &stack, d, r.number, mode).await?
         }
         (Some(_), None) => true,
         _ => false,
@@ -288,7 +291,7 @@ pub async fn list(
     let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     let mut out = Vec::new();
     for st in s.store.list_stacks(c.env.id()).await? {
-        out.push(summary(&s, st).await?);
+        out.push(summary(&s, st, c.ops.mode()).await?);
     }
     Ok(Json(out))
 }
@@ -324,7 +327,10 @@ pub async fn create(
         )
         .await;
     audit(&s, &c, "stack.create", &body.name, &res, None).await;
-    Ok((StatusCode::CREATED, Json(summary(&s, res?).await?)))
+    Ok((
+        StatusCode::CREATED,
+        Json(summary(&s, res?, c.ops.mode()).await?),
+    ))
 }
 
 #[utoipa::path(
@@ -343,10 +349,10 @@ pub async fn validate(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<ValidateBody>,
 ) -> ApiResult<Json<ValidateResponse>> {
-    stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     check_size(&body.compose, &body.variables)?;
     Ok(Json(
-        match parse(&body.compose, &body.variables, &body.name) {
+        match parse_mode(&body.compose, &body.variables, &body.name, c.ops.mode()) {
             Ok(p) => ValidateResponse {
                 issues: vec![],
                 warnings: p.warnings,
@@ -465,7 +471,7 @@ pub async fn plan_stack(
 ) -> ApiResult<Json<PlanResponse>> {
     let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
-    Ok(Json(make_plan(&s, c.ops.as_ref(), &stack, from).await?.0))
+    Ok(Json(make_plan(&s, &c.ops, &stack, from).await?.0))
 }
 
 #[utoipa::path(
@@ -582,17 +588,24 @@ pub async fn action(
         other => return Err(Error::NotFound(format!("unknown stack action '{other}'")).into()),
     };
     let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
+    let StackOps::Docker(ops) = &c.ops else {
+        return Err(Error::Conflict(
+            "a Swarm stack's services are scaled or redeployed one by one on the Services page"
+                .into(),
+        )
+        .into());
+    };
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
-    recover_stack(&s, c.ops.as_ref(), &stack).await?;
+    recover_stack(&s, ops.as_ref(), &stack).await?;
     let _lock = try_lock(&s, stack.id)
         .ok_or_else(|| Error::Conflict("a deploy of this stack is running".into()))?;
-    let all = c.ops.list_containers().await?;
+    let all = ops.list_containers().await?;
     let members: Vec<_> = stack_containers(&all, &name)
         .filter(|c| !is_old(c))
         .collect();
     let mut errors = Vec::new();
     for m in &members {
-        if let Err(e) = c.ops.container_action(&m.id, op).await {
+        if let Err(e) = ops.container_action(&m.id, op).await {
             errors.push(format!("{}: {e}", m.name));
         }
     }
@@ -630,7 +643,12 @@ pub async fn remove(
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let _lock = try_lock(&s, stack.id)
         .ok_or_else(|| Error::Conflict("a deploy of this stack is running".into()))?;
-    let outcome = remove_objects(&c, &name, q.volumes).await;
+    let outcome = match &c.ops {
+        StackOps::Docker(ops) => remove_objects(ops.as_ref(), &name, q.volumes).await,
+        StackOps::Swarm(_) => Err(Error::Conflict(
+            "removing a Swarm stack is not available yet".into(),
+        )),
+    };
     let outcome = match outcome {
         Ok(()) => {
             let res = s.store.delete_stack(stack.id).await;
@@ -654,28 +672,32 @@ pub async fn remove(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn remove_objects(c: &EnvCtx, stack: &str, volumes: bool) -> Result<()> {
+async fn remove_objects(
+    ops: &dyn fleetops_core::docker::DockerOps,
+    stack: &str,
+    volumes: bool,
+) -> Result<()> {
     let mut errors = Vec::new();
-    let all = c.ops.list_containers().await?;
+    let all = ops.list_containers().await?;
     for m in stack_containers(&all, stack) {
-        if let Err(e) = c.ops.remove_container(&m.id, true, false).await {
+        if let Err(e) = ops.remove_container(&m.id, true, false).await {
             errors.push(format!("{}: {e}", m.name));
         }
     }
     let ours = |labels: &std::collections::BTreeMap<String, String>| {
         labels.get(LABEL_PROJECT).map(String::as_str) == Some(stack)
     };
-    for n in c.ops.list_networks().await? {
+    for n in ops.list_networks().await? {
         if ours(&n.labels) {
-            if let Err(e) = c.ops.remove_network(&n.id).await {
+            if let Err(e) = ops.remove_network(&n.id).await {
                 errors.push(format!("network {}: {e}", n.name));
             }
         }
     }
     if volumes {
-        for v in c.ops.list_volumes().await? {
+        for v in ops.list_volumes().await? {
             if ours(&v.labels) {
-                if let Err(e) = c.ops.remove_volume(&v.name, false).await {
+                if let Err(e) = ops.remove_volume(&v.name, false).await {
                     errors.push(format!("volume {}: {e}", v.name));
                 }
             }

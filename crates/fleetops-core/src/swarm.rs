@@ -162,6 +162,7 @@ pub struct SwarmNetwork {
     pub encrypted: bool,
     pub subnets: Vec<String>,
     pub used_by: Vec<String>,
+    pub labels: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

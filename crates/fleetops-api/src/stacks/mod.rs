@@ -8,6 +8,7 @@ pub mod git;
 pub mod recover;
 pub mod restore;
 pub mod start;
+pub mod swarm;
 pub mod webhook;
 
 pub use deploy::{deploy_stream, execute, Timing};
@@ -16,6 +17,52 @@ pub use restore::{restore, RestoreReport};
 pub use start::{start_deploy, Actor, DeploySource};
 
 use fleetops_core::compose::docker::{LABEL_PROJECT, LABEL_SERVICE};
+use fleetops_core::compose::Mode;
+use fleetops_core::docker::DockerOps;
+use fleetops_core::env::{EnvKind, Environment};
+use fleetops_core::swarm::SwarmOps;
+use fleetops_store::StackRecord;
+use std::sync::Arc;
+
+/// What a stack deploys through: one Docker host's engine, or a swarm's
+/// serving manager (swarm spec §5).
+#[derive(Clone)]
+pub enum StackOps {
+    Docker(Arc<dyn DockerOps>),
+    Swarm(Arc<dyn SwarmOps>),
+}
+
+impl StackOps {
+    /// How the stack's Compose file is read.
+    pub fn mode(&self) -> Mode {
+        match self {
+            StackOps::Docker(_) => Mode::Compose,
+            StackOps::Swarm(_) => Mode::Swarm,
+        }
+    }
+
+    /// The environment's stack calls, while it is reachable.
+    pub fn of(env: &Arc<dyn Environment>) -> Option<StackOps> {
+        if env.kind().is_swarm() {
+            env.swarm().map(StackOps::Swarm)
+        } else {
+            env.docker().map(StackOps::Docker)
+        }
+    }
+}
+
+/// How `stack`'s file is read, from its environment's kind.
+pub(crate) async fn mode_for(
+    s: &crate::AppState,
+    stack: &StackRecord,
+) -> fleetops_core::Result<Mode> {
+    let env = s.store.get_environment(stack.env_id).await?;
+    Ok(if env.kind == EnvKind::SwarmAgent.as_str() {
+        Mode::Swarm
+    } else {
+        Mode::Compose
+    })
+}
 use fleetops_core::compose::plan::OLD_MARKER;
 use fleetops_core::docker::ContainerSummary;
 

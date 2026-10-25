@@ -62,6 +62,7 @@ fn network(name: &str, stack: Option<&str>) -> SwarmNetwork {
         encrypted: false,
         subnets: vec![],
         used_by: vec![],
+        labels: Default::default(),
     }
 }
 
