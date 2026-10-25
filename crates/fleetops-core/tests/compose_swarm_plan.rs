@@ -265,3 +265,21 @@ fn the_token_changes_with_the_live_version() {
     assert_ne!(a, plan_swarm(&p, Some((&p, 1)), &later).token);
     assert_eq!(a, plan_swarm(&p, Some((&p, 1)), &live).token);
 }
+
+#[test]
+fn a_network_of_another_stack_must_be_declared_external() {
+    let p = project(
+        "services:\n  web:\n    image: x\n    networks: [backend]\nnetworks:\n  backend: { name: shop_backend }\n",
+        "a",
+    );
+    for owner in [Some("shop"), None] {
+        let mut live = SwarmLive::default();
+        live.networks.push(network("shop_backend", owner));
+        let plan = plan_swarm(&p, None, &live);
+        assert_eq!(
+            plan.blocking,
+            vec!["network shop_backend already exists outside this stack; declare it external"],
+            "{owner:?}"
+        );
+    }
+}

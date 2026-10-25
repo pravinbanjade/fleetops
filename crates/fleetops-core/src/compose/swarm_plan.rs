@@ -200,11 +200,21 @@ pub fn plan_swarm(new: &Project, deployed: Option<(&Project, i64)>, live: &Swarm
     let mut wanted = BTreeSet::new();
     for net in new.networks.values() {
         wanted.insert(net.name.clone());
-        let found = live.networks.iter().any(|n| n.name == net.name);
+        let live_net = live.networks.iter().find(|n| n.name == net.name);
+        let found = live_net.is_some();
         if net.external {
             if !found {
                 blocking.push(format!("external network {} does not exist", net.name));
             }
+            continue;
+        }
+        // A stack's own network is labelled with it; joining any other one
+        // must be said, as `external`, so it is checked as one.
+        if live_net.is_some_and(|n| n.stack.as_deref() != Some(new.name.as_str())) {
+            blocking.push(format!(
+                "network {} already exists outside this stack; declare it external",
+                net.name
+            ));
             continue;
         }
         if found {
