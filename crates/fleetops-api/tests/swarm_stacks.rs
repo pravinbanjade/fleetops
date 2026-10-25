@@ -513,6 +513,9 @@ async fn git_auto_deploy_works_on_a_swarm() {
     let repo = TestRepo::new("main");
     repo.commit(&[("compose.yaml", SHOP_PLACED)], "one");
     let server = GitServer::start(&repo.root(), ServerOpts::default()).await;
+    let admin_id = send(&sw, "GET", "/api/v1/auth/me", None).await.json["user"]["id"]
+        .as_i64()
+        .unwrap();
     let stack = sw.t.store.stack_by_name(sw.env_id, "shop").await.unwrap();
     sw.t.store
         .set_stack_git(
@@ -520,7 +523,7 @@ async fn git_auto_deploy_works_on_a_swarm() {
             &common::git::settings(&server, "poll", true),
             fleetops_store::TokenChange::Keep,
             Some("hook-secret"),
-            None,
+            Some(admin_id),
             1,
         )
         .await
@@ -917,4 +920,100 @@ async fn a_scoped_plan_does_not_tell_missing_from_hidden_externals() {
         "{:?}",
         r.json
     );
+}
+
+/// Stack `blog` on a fast git-enabled swarm, its repo naming shop's secret,
+/// its git settings saved by `author`; Bob is limited to `blog`.
+async fn git_blog(author: Option<&str>) -> (Swarm, Session, fleetops_store::StackRecord) {
+    use fleetops_git::testing::{GitServer, ServerOpts, TestRepo};
+    let (sw, bob) = common::fake_swarm::with_grants_on(
+        vec![common::fake_swarm::custom_grant(
+            STACK_CELLS,
+            Some(&["blog"]),
+        )],
+        ApiConfig {
+            git_allow_http: true,
+            data_dir: Some(tempfile::tempdir().unwrap().keep()),
+            ..fast_config()
+        },
+    )
+    .await;
+    add_shop_secret(&sw);
+    create(&sw, "blog", "").await;
+    let author = match author {
+        Some("bob") => Some(
+            bob_says(&sw, &bob, "GET", "/api/v1/auth/me", None)
+                .await
+                .json["user"]["id"]
+                .as_i64()
+                .unwrap(),
+        ),
+        Some(_) => Some(
+            send(&sw, "GET", "/api/v1/auth/me", None).await.json["user"]["id"]
+                .as_i64()
+                .unwrap(),
+        ),
+        None => None,
+    };
+    let repo = TestRepo::new("main");
+    repo.commit(&[("compose.yaml", BLOG_EXTERNAL)], "one");
+    let server = GitServer::start(&repo.root(), ServerOpts::default()).await;
+    std::mem::forget(repo);
+    let stack = sw.t.store.stack_by_name(sw.env_id, "blog").await.unwrap();
+    sw.t.store
+        .set_stack_git(
+            stack.id,
+            &common::git::settings(&server, "poll", true),
+            fleetops_store::TokenChange::Keep,
+            Some("hook-secret"),
+            author,
+            1,
+        )
+        .await
+        .unwrap();
+    std::mem::forget(server);
+    let stack = sw.t.store.stack_by_id(stack.id).await.unwrap();
+    (sw, bob, stack)
+}
+
+#[tokio::test]
+async fn a_manual_sync_uses_the_callers_scope_too() {
+    use fleetops_api::stacks::git::{sync_stack, SyncOutcome, SyncTrigger};
+    let (sw, bob, stack) = git_blog(Some("admin")).await;
+    let bob_id = bob_says(&sw, &bob, "GET", "/api/v1/auth/me", None)
+        .await
+        .json["user"]["id"]
+        .as_i64()
+        .unwrap();
+    match sync_stack(&sw.t.state, &stack, SyncTrigger::Manual(bob_id))
+        .await
+        .unwrap()
+    {
+        SyncOutcome::Failed { error } => assert!(
+            error.contains("external secret shop_tls does not exist or is outside your stacks"),
+            "{error}"
+        ),
+        other => panic!("expected a refused deploy, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn an_auto_deploy_without_an_author_stops() {
+    use fleetops_api::stacks::git::{sync_stack, SyncOutcome, SyncTrigger};
+    let (sw, _, stack) = git_blog(None).await;
+    match sync_stack(&sw.t.state, &stack, SyncTrigger::Poll)
+        .await
+        .unwrap()
+    {
+        SyncOutcome::Failed { error } => assert!(
+            error.contains("save the stack's git settings again"),
+            "{error}"
+        ),
+        other => panic!("expected a refused auto-deploy, got {other:?}"),
+    }
+    assert!(!sw
+        .daemon
+        .write_paths()
+        .iter()
+        .any(|p| p.contains("/services/create")));
 }

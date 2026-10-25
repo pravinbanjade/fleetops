@@ -12,6 +12,7 @@ use fleetops_store::{GitRecord, NewAudit, StackRecord};
 use serde::Serialize;
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use utoipa::ToSchema;
 
@@ -296,26 +297,14 @@ async fn sync_fetched(
             .await?;
         return Ok(SyncOutcome::Pending { commit });
     };
-    // On a swarm an auto-deploy acts with the stack scope of whoever last
-    // saved the git settings (swarm spec §6).
+    // On a swarm a git deploy acts within the stacks of whoever last saved
+    // the git settings, and of whoever asked for this sync (swarm spec §6).
     let mut scope = None;
-    if let (true, Some(author)) = (handle.kind().is_swarm(), git.updated_by) {
-        let operate = Permission::new(Row::Stacks, Verb::Operate);
-        let grants = crate::authz::effective_grant(s, author, handle.id()).await?;
-        if !grants.allows_stack(operate, Some(&stack.name)) {
-            let who = s
-                .store
-                .get_user(author)
-                .await
-                .map(|u| u.username)
-                .unwrap_or_else(|_| format!("user {author}"));
-            return fail(format!(
-                "auto-deploy needs {who}'s access to stack '{}', which they no longer have",
-                stack.name
-            ))
-            .await;
+    if handle.kind().is_swarm() {
+        match git_scope(s, handle.id(), stack, git.updated_by, trigger.user()).await? {
+            Ok(sc) => scope = sc,
+            Err(why) => return fail(why).await,
         }
-        scope = grants.namespaces_for(operate);
     }
     match start_deploy(
         s,
@@ -352,6 +341,47 @@ async fn sync_fetched(
             .await
         }
     }
+}
+
+/// The stacks a git deploy of `stack` may use: within the scope of the
+/// git settings' author and of the person who started the sync, if any
+/// (`None`: every stack). `Err` says why it may not deploy at all. With
+/// neither, the deploy acts for nobody, so it stops.
+async fn git_scope(
+    s: &AppState,
+    env_id: i64,
+    stack: &StackRecord,
+    author: Option<i64>,
+    caller: Option<i64>,
+) -> Result<std::result::Result<Option<BTreeSet<String>>, String>> {
+    if author.is_none() && caller.is_none() {
+        return Ok(Err(
+            "auto-deploy acts for whoever saved the git settings, and they are gone: save the stack's git settings again"
+                .into(),
+        ));
+    }
+    let operate = Permission::new(Row::Stacks, Verb::Operate);
+    let mut scope: Option<BTreeSet<String>> = None;
+    for user in [author, caller].into_iter().flatten() {
+        let grants = crate::authz::effective_grant(s, user, env_id).await?;
+        if !grants.allows_stack(operate, Some(&stack.name)) {
+            let who = s
+                .store
+                .get_user(user)
+                .await
+                .map(|u| u.username)
+                .unwrap_or_else(|_| format!("user {user}"));
+            return Ok(Err(format!(
+                "deploying needs {who}'s access to stack '{}', which they no longer have",
+                stack.name
+            )));
+        }
+        scope = match (scope, grants.namespaces_for(operate)) {
+            (None, other) | (other, None) => other,
+            (Some(a), Some(b)) => Some(a.intersection(&b).cloned().collect()),
+        };
+    }
+    Ok(Ok(scope))
 }
 
 /// The `file:` configs a service of the fetched Compose file mounts, read
