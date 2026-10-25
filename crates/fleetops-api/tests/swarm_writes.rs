@@ -369,3 +369,222 @@ async fn demoting_or_relabelling_fleetops_node_needs_its_name() {
     }
     assert!(sw.daemon.write_paths().is_empty());
 }
+
+// Stack scoping (swarm spec §6).
+
+const ALL: &[(Row, Verb)] = &[
+    (Row::SwarmNodes, Verb::View),
+    (Row::SwarmNodes, Verb::Operate),
+    (Row::SwarmNodes, Verb::Delete),
+    (Row::SwarmServices, Verb::View),
+    (Row::SwarmServices, Verb::Create),
+    (Row::SwarmServices, Verb::Operate),
+    (Row::SwarmServices, Verb::Delete),
+    (Row::SwarmSecrets, Verb::View),
+    (Row::SwarmSecrets, Verb::Create),
+    (Row::SwarmSecrets, Verb::Delete),
+    (Row::SwarmConfigs, Verb::View),
+    (Row::SwarmConfigs, Verb::Create),
+    (Row::SwarmConfigs, Verb::Delete),
+    (Row::SwarmConfigs, Verb::Reveal),
+    (Row::Networks, Verb::View),
+    (Row::Networks, Verb::Create),
+    (Row::Networks, Verb::Delete),
+];
+
+async fn as_bob(sw: &Swarm, bob: &Session, method: &str, path: &str, body: Option<Value>) -> Resp {
+    sw.t.send(req(method, path, body, Some(bob))).await
+}
+
+fn ends(r: &Resp, text: &str) {
+    assert!(
+        r.json["message"]
+            .as_str()
+            .unwrap_or_default()
+            .ends_with(text),
+        "{} {:?}",
+        r.status,
+        r.json
+    );
+}
+
+const SW: &str = "/api/v1/envs/prod/swarm";
+
+#[tokio::test]
+async fn scoped_writes_follow_stacks() {
+    let (sw, bob) = common::fake_swarm::with_custom_in(ALL, Some(&["blog"])).await;
+    let scale = Some(json!({"replicas": 2}));
+    assert_eq!(
+        as_bob(
+            &sw,
+            &bob,
+            "POST",
+            &format!("{SW}/services/s1/scale"),
+            scale.clone()
+        )
+        .await
+        .status,
+        204
+    );
+    let r = as_bob(&sw, &bob, "POST", &format!("{SW}/services/s2/scale"), scale).await;
+    assert_eq!(r.status, 403);
+    ends(&r, "only access to the whole swarm covers this");
+    assert_eq!(
+        as_bob(
+            &sw,
+            &bob,
+            "POST",
+            &format!("{SW}/services/s1/redeploy"),
+            Some(json!({}))
+        )
+        .await
+        .status,
+        204
+    );
+    for (path, body) in [
+        (
+            format!("{SW}/services"),
+            json!({"spec": {"Name": "x", "Labels": {"com.docker.stack.namespace": "blog"}}}),
+        ),
+        (format!("{SW}/secrets"), json!({"name": "x", "value": "v"})),
+        (format!("{SW}/configs"), json!({"name": "x", "value": "v"})),
+        (format!("{SW}/networks"), json!({"name": "x"})),
+    ] {
+        let r = as_bob(&sw, &bob, "POST", &path, Some(body)).await;
+        assert_eq!(r.status, 403, "{path}");
+        ends(&r, "only access to the whole swarm covers this");
+    }
+    let r = as_bob(
+        &sw,
+        &bob,
+        "PATCH",
+        &format!("{SW}/nodes/n2"),
+        Some(json!({"availability": "pause"})),
+    )
+    .await;
+    assert_eq!(r.status, 403);
+    assert_eq!(
+        as_bob(&sw, &bob, "DELETE", &format!("{SW}/secrets/sec1"), None)
+            .await
+            .status,
+        204
+    );
+    let r = as_bob(&sw, &bob, "GET", &format!("{SW}/configs/cfg2/data"), None).await;
+    assert_eq!(r.status, 403);
+    assert_eq!(
+        as_bob(&sw, &bob, "DELETE", &format!("{SW}/networks/net1"), None)
+            .await
+            .status,
+        204
+    );
+    assert_eq!(
+        as_bob(&sw, &bob, "DELETE", &format!("{SW}/services/s1"), None)
+            .await
+            .status,
+        204
+    );
+    assert!(!sw
+        .daemon
+        .write_paths()
+        .iter()
+        .any(|p| p.contains("/services/s2")));
+}
+
+async fn edit(sw: &Swarm, bob: &Session, spec: Value) -> Resp {
+    as_bob(
+        sw,
+        bob,
+        "PUT",
+        &format!("{SW}/services/s1"),
+        Some(json!({"spec": spec, "version": 10})),
+    )
+    .await
+}
+
+fn blog_spec() -> Value {
+    let mut spec = common::fake_swarm::services_json()[0]["Spec"].clone();
+    spec["TaskTemplate"]["ContainerSpec"]["Image"] = json!("nginx:1.28");
+    spec
+}
+
+#[tokio::test]
+async fn a_scoped_edit_cannot_move_a_service_out() {
+    let (sw, bob) = common::fake_swarm::with_custom_in(ALL, Some(&["blog"])).await;
+    let mut spec = blog_spec();
+    spec["Labels"]["com.docker.stack.namespace"] = json!("shop");
+    let r = edit(&sw, &bob, spec).await;
+    assert_eq!(r.status, 403);
+    ends(&r, "stack 'shop' is not in your access");
+    let mut spec = blog_spec();
+    spec["Labels"]
+        .as_object_mut()
+        .unwrap()
+        .remove("com.docker.stack.namespace");
+    let r = edit(&sw, &bob, spec).await;
+    assert_eq!(r.status, 403);
+    ends(&r, "only access to the whole swarm covers this");
+    assert!(!sw
+        .daemon
+        .write_paths()
+        .iter()
+        .any(|p| p.contains("/update")));
+    assert!(sw
+        .t
+        .audit_actions()
+        .await
+        .contains(&"access.denied".to_string()));
+}
+
+#[tokio::test]
+async fn a_scoped_edit_cannot_reference_another_stacks_secret() {
+    let (sw, bob) = common::fake_swarm::with_custom_in(ALL, Some(&["blog"])).await;
+    sw.daemon.secrets.lock().unwrap().as_array_mut().unwrap().push(json!(
+        {"ID": "sec9", "Version": {"Index": 1}, "Spec": {"Name": "shop_db", "Labels": {"com.docker.stack.namespace": "shop"}}}
+    ));
+    let mut spec = blog_spec();
+    spec["TaskTemplate"]["ContainerSpec"]["Secrets"] =
+        json!([{"SecretID": "sec9", "SecretName": "shop_db"}]);
+    let r = edit(&sw, &bob, spec).await;
+    assert_eq!(r.status, 403);
+    ends(&r, "stack 'shop' is not in your access");
+    // The unlabelled config blog_nginx is outside every stack.
+    let r = edit(&sw, &bob, blog_spec()).await;
+    assert_eq!(r.status, 403, "{:?}", r.json);
+    ends(&r, "only access to the whole swarm covers this");
+    let mut spec = blog_spec();
+    spec["TaskTemplate"]["ContainerSpec"]
+        .as_object_mut()
+        .unwrap()
+        .remove("Configs");
+    assert_eq!(edit(&sw, &bob, spec).await.status, 204);
+}
+
+#[tokio::test]
+async fn mixed_grants_view_all_operate_in_scope() {
+    use common::fake_swarm::{custom_grant, with_grants};
+    let (sw, bob) = with_grants(vec![
+        fleetops_core::access::Grant::full(fleetops_core::access::EnvRole::Viewer),
+        custom_grant(&[(Row::SwarmServices, Verb::Operate)], Some(&["blog"])),
+    ])
+    .await;
+    sw.daemon.add_shop();
+    let scale = Some(json!({"replicas": 2}));
+    assert_eq!(
+        as_bob(
+            &sw,
+            &bob,
+            "POST",
+            &format!("{SW}/services/s4/scale"),
+            scale.clone()
+        )
+        .await
+        .status,
+        403
+    );
+    assert_eq!(
+        as_bob(&sw, &bob, "POST", &format!("{SW}/services/s1/scale"), scale)
+            .await
+            .status,
+        204
+    );
+}

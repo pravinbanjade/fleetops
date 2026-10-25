@@ -107,13 +107,16 @@ pub struct SwarmCtx {
     pub grants: Grants,
 }
 
+/// The context for a swarm write. `p` must be held by some grant; the
+/// route then checks the object with [`SwarmCtx::check`], or the whole
+/// swarm with [`SwarmCtx::whole`].
 pub(crate) async fn swarm_ctx(
     s: &AppState,
     user: CurrentUser,
     name: &str,
     p: Permission,
 ) -> Result<SwarmCtx> {
-    let (env, grants) = checked(s, &user, name, Need::Perm(p)).await?;
+    let (env, grants) = scoped(s, &user, name, Need::Perm(p)).await?;
     let ops = swarm_ops(&env)?;
     Ok(SwarmCtx {
         user,
@@ -121,6 +124,26 @@ pub(crate) async fn swarm_ctx(
         ops,
         grants,
     })
+}
+
+impl SwarmCtx {
+    /// `p` on an object of `stack` (`None`: in no stack); a refusal is
+    /// audited.
+    pub async fn check(&self, s: &AppState, p: Permission, stack: Option<&str>) -> Result<()> {
+        deny_audited(
+            s,
+            &self.user,
+            self.env.id(),
+            &p.to_string(),
+            self.grants.check_stack(p, stack),
+        )
+        .await
+    }
+
+    /// `p` on the whole swarm: node changes and raw creates.
+    pub async fn whole(&self, s: &AppState, p: Permission) -> Result<()> {
+        self.check(s, p, None).await
+    }
 }
 
 #[derive(Deserialize, IntoParams)]
