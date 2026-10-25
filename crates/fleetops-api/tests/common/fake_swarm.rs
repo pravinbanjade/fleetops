@@ -409,3 +409,60 @@ pub async fn connected_swarm_on(t: super::TestApp) -> Swarm {
         _agents: agents,
     }
 }
+
+/// Grants set by the test, by user id: Bob's custom role.
+#[derive(Default)]
+pub struct Fixed(std::sync::Mutex<Vec<fleetops_core::access::Grant>>);
+
+#[async_trait::async_trait]
+impl fleetops_core::access::ExtraGrants for Fixed {
+    async fn env_grants(
+        &self,
+        _: i64,
+        _: i64,
+    ) -> fleetops_core::Result<Vec<fleetops_core::access::Grant>> {
+        Ok(self.0.lock().unwrap().clone())
+    }
+    async fn user_grants(
+        &self,
+        _: i64,
+    ) -> fleetops_core::Result<std::collections::HashMap<i64, Vec<fleetops_core::access::Grant>>>
+    {
+        Ok(std::collections::HashMap::from([(
+            1,
+            self.0.lock().unwrap().clone(),
+        )]))
+    }
+}
+
+/// A swarm, and Bob with a custom role holding exactly `perms` on it,
+/// limited to `stacks` when given.
+pub async fn with_custom_in(
+    perms: &[(fleetops_core::perm::Row, fleetops_core::perm::Verb)],
+    stacks: Option<&[&str]>,
+) -> (Swarm, super::Session) {
+    use fleetops_core::perm::{PermSet, Permission};
+    let extra = std::sync::Arc::new(Fixed::default());
+    let t = super::app_with_extra_and(extra.clone(), fleetops_api::ApiConfig::default()).await;
+    let sw = connected_swarm_on(t).await;
+    sw.t.create_user(&sw.admin, "bob", "bob-password", "user")
+        .await;
+    let set: PermSet = perms.iter().map(|(r, v)| Permission::new(*r, *v)).collect();
+    *extra.0.lock().unwrap() = vec![fleetops_core::access::Grant::custom(
+        fleetops_core::access::CustomRef {
+            id: 1,
+            name: "test".into(),
+        },
+        set,
+        stacks.map(|s| s.iter().map(|n| n.to_string()).collect()),
+    )];
+    let bob = super::session_from(&sw.t.login("bob", "bob-password").await);
+    (sw, bob)
+}
+
+/// [`with_custom_in`] on the whole swarm.
+pub async fn with_custom(
+    perms: &[(fleetops_core::perm::Row, fleetops_core::perm::Verb)],
+) -> (Swarm, super::Session) {
+    with_custom_in(perms, None).await
+}

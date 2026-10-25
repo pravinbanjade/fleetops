@@ -209,3 +209,20 @@ async fn swarm_events_subscribe_without_a_manager() {
     .await;
     assert!(err.is_err(), "refused: {err:?}");
 }
+
+#[tokio::test]
+async fn swarm_events_follow_view_cells() {
+    use fleetops_core::perm::{Row, Verb};
+    let (sw, bob) = common::fake_swarm::with_custom(&[(Row::SwarmServices, Verb::View)]).await;
+    let mut ws = Ws::open(sw.t.serve().await, &bob).await;
+    ws.send(sub(1, "events", "prod", None, json!({}))).await;
+    let ev = ws.until(|v| is(v, 1, "data")).await;
+    assert_eq!(ev["data"]["kind"], "service");
+    // The swarm network's creation needs networks.view.
+    let more = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        ws.until(|v| is(v, 1, "data")),
+    )
+    .await;
+    assert!(more.is_err(), "{more:?}");
+}

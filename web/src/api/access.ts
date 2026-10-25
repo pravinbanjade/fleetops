@@ -30,7 +30,8 @@ function builtin(role: EnvRole, permission: string): boolean {
       permission.endsWith(".view") ||
       permission === "containers.reveal" ||
       permission === "helm.reveal" ||
-      permission === "stacks.reveal"
+      permission === "stacks.reveal" ||
+      permission === "swarm-configs.reveal"
     );
   return permission !== "secrets.reveal";
 }

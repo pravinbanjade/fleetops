@@ -25,10 +25,14 @@ pub enum Row {
     Storage,
     Helm,
     K8sOther,
+    SwarmNodes,
+    SwarmServices,
+    SwarmSecrets,
+    SwarmConfigs,
 }
 
 impl Row {
-    pub const ALL: [Row; 13] = [
+    pub const ALL: [Row; 17] = [
         Row::Containers,
         Row::Images,
         Row::Volumes,
@@ -42,6 +46,10 @@ impl Row {
         Row::Storage,
         Row::Helm,
         Row::K8sOther,
+        Row::SwarmNodes,
+        Row::SwarmServices,
+        Row::SwarmSecrets,
+        Row::SwarmConfigs,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -59,6 +67,10 @@ impl Row {
             Row::Storage => "storage",
             Row::Helm => "helm",
             Row::K8sOther => "k8s-other",
+            Row::SwarmNodes => "swarm-nodes",
+            Row::SwarmServices => "swarm-services",
+            Row::SwarmSecrets => "swarm-secrets",
+            Row::SwarmConfigs => "swarm-configs",
         }
     }
 
@@ -77,13 +89,18 @@ impl Row {
             Row::Storage => "Storage",
             Row::Helm => "Helm releases",
             Row::K8sOther => "Everything else",
+            Row::SwarmNodes => "Nodes",
+            Row::SwarmServices => "Services & tasks",
+            Row::SwarmSecrets => "Secrets (swarm)",
+            Row::SwarmConfigs => "Configs",
         }
     }
 
-    /// `docker` or `kubernetes`.
+    /// `docker`, `kubernetes` or `swarm`.
     pub fn group(self) -> &'static str {
         match self {
             Row::Containers | Row::Images | Row::Volumes | Row::Networks | Row::Stacks => "docker",
+            Row::SwarmNodes | Row::SwarmServices | Row::SwarmSecrets | Row::SwarmConfigs => "swarm",
             _ => "kubernetes",
         }
     }
@@ -98,6 +115,10 @@ impl Row {
             Row::Stacks => &[View, Create, Operate, Delete, Reveal],
             Row::Pods => &[View, Create, Operate, Delete, Shell],
             Row::Secrets | Row::Helm => &[View, Create, Operate, Delete, Reveal],
+            Row::SwarmNodes => &[View, Operate, Delete],
+            Row::SwarmServices => &[View, Create, Operate, Delete],
+            Row::SwarmSecrets => &[View, Create, Delete],
+            Row::SwarmConfigs => &[View, Create, Delete, Reveal],
             Row::Workloads | Row::ConfigMaps | Row::Networking | Row::Storage | Row::K8sOther => {
                 &[View, Create, Operate, Delete]
             }
@@ -274,7 +295,9 @@ impl EnvRole {
                 .with(Permission::new(Row::Helm, Verb::Reveal))
                 // Stack variables reach container env, which a Viewer may
                 // already reveal.
-                .with(Permission::new(Row::Stacks, Verb::Reveal)),
+                .with(Permission::new(Row::Stacks, Verb::Reveal))
+                // Configs are not secret material, like ConfigMaps.
+                .with(Permission::new(Row::SwarmConfigs, Verb::Reveal)),
             EnvRole::Operator => all.iter().filter(|p| *p != secrets_reveal).collect(),
         }
     }
@@ -322,7 +345,7 @@ mod tests {
 
     #[test]
     fn valid_cells_match_the_grid() {
-        assert_eq!(PermSet::all_valid().iter().count(), 56);
+        assert_eq!(PermSet::all_valid().iter().count(), 70);
         for bad in ["images.operate", "stacks.shell", "pods.reveal"] {
             assert!(bad.parse::<Permission>().is_err(), "{bad}");
         }
@@ -361,6 +384,31 @@ mod tests {
         // existing cells.
         assert_eq!(p("containers.view").bit(), 1);
         assert_eq!(p("stacks.view").bit(), 1 << (4 * Verb::ALL.len()));
+    }
+
+    #[test]
+    fn swarm_rows_append_after_k8s_other() {
+        assert_eq!(p("swarm-nodes.view").bit(), 1 << (13 * Verb::ALL.len()));
+        assert_eq!(Row::SwarmNodes.group(), "swarm");
+        for bad in ["swarm-nodes.create", "swarm-secrets.reveal"] {
+            assert!(bad.parse::<Permission>().is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn builtin_swarm_cells() {
+        let v = EnvRole::Viewer.perms();
+        for c in [
+            "swarm-nodes.view",
+            "swarm-services.view",
+            "swarm-secrets.view",
+            "swarm-configs.view",
+            "swarm-configs.reveal",
+        ] {
+            assert!(v.contains(p(c)), "{c}");
+        }
+        assert!(!v.contains(p("swarm-services.operate")));
+        assert!(EnvRole::Operator.perms().contains(p("swarm-nodes.delete")));
     }
 
     #[test]

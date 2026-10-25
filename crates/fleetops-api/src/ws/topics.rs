@@ -136,6 +136,19 @@ fn is_swarm_event(e: &fleetops_core::streams::DockerEvent) -> bool {
     e.scope.as_deref() == Some("swarm")
 }
 
+/// The view cell a swarm event's kind falls under; unknown kinds go nowhere.
+fn view_of(kind: &str) -> Option<Permission> {
+    let row = match kind {
+        "service" => Row::SwarmServices,
+        "node" => Row::SwarmNodes,
+        "secret" => Row::SwarmSecrets,
+        "config" => Row::SwarmConfigs,
+        "network" => Row::Networks,
+        _ => return None,
+    };
+    Some(Permission::new(row, Verb::View))
+}
+
 fn is_kube_env(s: &AppState, env: &Option<String>) -> bool {
     env.as_deref()
         .and_then(|n| s.envs.get(n).ok())
@@ -149,11 +162,14 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
     // A swarm's events come from its serving manager: only the cluster's
     // own kinds go on, not that one node's containers.
     let swarm_env = is_swarm_env(s, &env);
-    let env = if swarm_env {
+    let (env, grants) = if swarm_env {
         // The hub waits out a manager outage and says so (status down/up).
-        crate::routes::swarm::swarm_env_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?
+        let (env, grants) =
+            crate::routes::swarm::swarm_env_for(s, cu, required(&env, "env")?, Need::AnyGrant)
+                .await?;
+        (env, Some(grants))
     } else {
-        docker_for(s, cu, &env, Need::AnyGrant).await?.0
+        (docker_for(s, cu, &env, Need::AnyGrant).await?.0, None)
     };
     let q = c.queue(Policy::DropOldest);
     let mut rx = s
@@ -168,6 +184,12 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
                 Ok(e) => {
                     if swarm_env && !is_swarm_event(&e) {
                         continue;
+                    }
+                    // Each kind needs its view cell on the whole swarm.
+                    if let Some(g) = &grants {
+                        if !view_of(&e.kind).is_some_and(|p| g.allows(p, None)) {
+                            continue;
+                        }
                     }
                     if filter
                         .as_ref()
@@ -268,12 +290,12 @@ pub(super) async fn logs(
             .strip_prefix("service/")
             .filter(|i| !i.is_empty())
             .ok_or_else(|| Error::Invalid("a swarm logs id is service/<id>".into()))?;
-        // Logs are read as container logs are: they need Containers.View.
+        // Service logs fall under the service row's View (spec §6).
         let (_, ops) = crate::routes::swarm::swarm_for(
             s,
             cu,
             required(&env, "env")?,
-            Need::of(Row::Containers, Verb::View),
+            Need::of(Row::SwarmServices, Verb::View),
         )
         .await?;
         ops.service_logs(service, &o)
@@ -675,8 +697,13 @@ async fn audit_exec(
 pub(super) async fn swarm_tasks(c: &Ctx<'_>, env: Option<String>) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
     // The feed itself reports a manager outage, and recovers.
-    let env =
-        crate::routes::swarm::swarm_env_for(s, cu, required(&env, "env")?, Need::AnyGrant).await?;
+    let (env, _) = crate::routes::swarm::swarm_env_for(
+        s,
+        cu,
+        required(&env, "env")?,
+        Need::of(Row::SwarmServices, Verb::View),
+    )
+    .await?;
     let (snapshot, mut rx) = s.hubs.swarm_tasks.subscribe(env, s.config.swarm_task_poll);
     let q = c.queue(Policy::Block);
     let qq = q.clone();

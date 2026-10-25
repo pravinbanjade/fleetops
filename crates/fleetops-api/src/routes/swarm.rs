@@ -1,12 +1,17 @@
 //! A swarm's cluster, read through a manager's agent (swarm spec §4):
-//! nodes, services, tasks, secrets, configs and networks. Any grant on the
-//! environment may read them until Swarm permission rows arrive (plan 3).
+//! nodes, services, tasks, secrets, configs and networks, each behind its
+//! Swarm permission row (spec §6). Cluster calls need the permission on the
+//! whole environment: stack-scoped grants come with stack scoping.
 
 use crate::openapi::EnvParam;
 use crate::{
-    auth::extract::CurrentUser, authz::Need, extract::ApiPath, routes::kube::wrong_kind, ApiResult,
-    AppState,
+    auth::extract::CurrentUser,
+    authz::{deny_audited, Need},
+    extract::ApiPath,
+    routes::kube::wrong_kind,
+    ApiResult, AppState,
 };
+use fleetops_core::access::Grants;
 use axum::{
     extract::{Query, State},
     Json,
@@ -22,6 +27,24 @@ use serde::Deserialize;
 use std::sync::Arc;
 use utoipa::IntoParams;
 
+/// Resolves a swarm environment and checks `need`; a permission must be
+/// held on the whole environment.
+async fn checked(
+    s: &AppState,
+    cu: &CurrentUser,
+    name: &str,
+    need: Need,
+) -> Result<(Arc<dyn Environment>, Grants)> {
+    let (env, grants) = crate::authz::env_access(s, cu, name, need).await?;
+    if !env.kind().is_swarm() {
+        return Err(wrong_kind(name, env.kind()));
+    }
+    if let Need::Perm(p) = need {
+        deny_audited(s, cu, env.id(), &p.to_string(), grants.check_env(p)).await?;
+    }
+    Ok((env, grants))
+}
+
 /// A swarm environment the caller may use, reachable or not: for live
 /// feeds, which say themselves when no manager answers and recover.
 pub(crate) async fn swarm_env_for(
@@ -29,12 +52,8 @@ pub(crate) async fn swarm_env_for(
     cu: &CurrentUser,
     name: &str,
     need: Need,
-) -> Result<Arc<dyn Environment>> {
-    let (env, _) = crate::authz::env_access(s, cu, name, need).await?;
-    if !env.kind().is_swarm() {
-        return Err(wrong_kind(name, env.kind()));
-    }
-    Ok(env)
+) -> Result<(Arc<dyn Environment>, Grants)> {
+    checked(s, cu, name, need).await
 }
 
 fn swarm_ops(env: &Arc<dyn Environment>) -> Result<Arc<dyn SwarmOps>> {
@@ -49,14 +68,34 @@ pub(crate) async fn swarm_for(
     name: &str,
     need: Need,
 ) -> Result<(Arc<dyn Environment>, Arc<dyn SwarmOps>)> {
-    let (env, _) = crate::authz::env_access(s, cu, name, need).await?;
-    if !env.kind().is_swarm() {
-        return Err(wrong_kind(name, env.kind()));
-    }
-    let ops = env
-        .swarm()
-        .ok_or_else(|| Error::EnvUnavailable("no manager agent is connected".into()))?;
+    let (env, _) = checked(s, cu, name, need).await?;
+    let ops = swarm_ops(&env)?;
     Ok((env, ops))
+}
+
+/// Everything a swarm write needs: the caller, the environment, its
+/// cluster calls and the caller's grants.
+pub struct SwarmCtx {
+    pub user: CurrentUser,
+    pub env: Arc<dyn Environment>,
+    pub ops: Arc<dyn SwarmOps>,
+    pub grants: Grants,
+}
+
+pub(crate) async fn swarm_ctx(
+    s: &AppState,
+    user: CurrentUser,
+    name: &str,
+    p: Permission,
+) -> Result<SwarmCtx> {
+    let (env, grants) = checked(s, &user, name, Need::Perm(p)).await?;
+    let ops = swarm_ops(&env)?;
+    Ok(SwarmCtx {
+        user,
+        env,
+        ops,
+        grants,
+    })
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -86,7 +125,7 @@ pub async fn nodes(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<NodeSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::AnyGrant).await?;
+    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmNodes, Verb::View)).await?;
     Ok(Json(ops.nodes().await?))
 }
 
@@ -98,7 +137,7 @@ pub async fn node(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<NodeDetail>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::AnyGrant).await?;
+    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmNodes, Verb::View)).await?;
     let n = ops
         .node_detail(&id)
         .await?
@@ -114,7 +153,7 @@ pub async fn services(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ServiceSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::AnyGrant).await?;
+    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmServices, Verb::View)).await?;
     Ok(Json(ops.services().await?))
 }
 
@@ -126,7 +165,7 @@ pub async fn service(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<ServiceDetail>> {
-    let (env, grants) = crate::authz::env_access(&s, &cu, &env, Need::AnyGrant).await?;
+    let (env, grants) = checked(&s, &cu, &env, Need::of(Row::SwarmServices, Verb::View)).await?;
     let ops = swarm_ops(&env)?;
     let mut svc = ops
         .service(&id)
@@ -160,7 +199,7 @@ pub async fn tasks(
     ApiPath(env): ApiPath<String>,
     Query(f): Query<TaskFilter>,
 ) -> ApiResult<Json<Vec<TaskSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::AnyGrant).await?;
+    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmServices, Verb::View)).await?;
     let tasks = ops
         .tasks()
         .await?
@@ -183,7 +222,7 @@ pub async fn secrets(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<SecretSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::AnyGrant).await?;
+    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmSecrets, Verb::View)).await?;
     Ok(Json(ops.secrets().await?))
 }
 
@@ -195,7 +234,7 @@ pub async fn configs(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ConfigSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::AnyGrant).await?;
+    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmConfigs, Verb::View)).await?;
     Ok(Json(ops.configs().await?))
 }
 
@@ -207,6 +246,6 @@ pub async fn networks(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<SwarmNetwork>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::AnyGrant).await?;
+    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::Networks, Verb::View)).await?;
     Ok(Json(ops.networks().await?))
 }

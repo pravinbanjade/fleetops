@@ -11,6 +11,8 @@ describe("accessOf", () => {
     expect(viewer.can("pods.view")).toBe(true);
     expect(viewer.can("containers.reveal")).toBe(true);
     expect(viewer.can("containers.delete")).toBe(false);
+    expect(viewer.can("swarm-configs.reveal")).toBe(true);
+    expect(viewer.can("swarm-secrets.create")).toBe(false);
     const operator = accessOf({ access: { role: "operator", namespaces: null } });
     expect(operator.can("containers.delete")).toBe(true);
     expect(operator.can("secrets.reveal")).toBe(false);

@@ -3,6 +3,7 @@ import type { Catalog } from "./roles";
 const GROUPS: [string, string][] = [
   ["docker", "Docker"],
   ["kubernetes", "Kubernetes"],
+  ["swarm", "Docker Swarm"],
 ];
 
 /**

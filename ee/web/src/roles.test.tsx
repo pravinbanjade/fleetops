@@ -21,6 +21,7 @@ const CATALOG: Catalog = {
     { key: "volumes", label: "Volumes", group: "docker", cells: ["view", "create", "delete"] },
     { key: "pods", label: "Pods", group: "kubernetes", cells: ["view", "create", "operate", "delete", "shell"] },
     { key: "k8s-other", label: "Everything else", group: "kubernetes", cells: ["view", "create", "operate", "delete"] },
+    { key: "swarm-configs", label: "Configs", group: "swarm", cells: ["view", "create", "delete", "reveal"] },
   ],
   verbs: [
     { key: "view", label: "View" },
@@ -74,6 +75,15 @@ describe("roles", () => {
       description: null,
       permissions: ["containers.operate", "containers.view"],
     });
+  });
+
+  it("groups swarm rows under Docker Swarm", async () => {
+    mockFetch(routes(["rbac"]));
+    const { screen } = renderApp("/admin/roles");
+    await userEvent.click(await screen.findByRole("button", { name: "New role" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("Docker Swarm")).toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: "Configs: Reveal" })).toBeInTheDocument();
   });
 
   it("toggles a column across only the cells a row has", async () => {

@@ -1,6 +1,10 @@
 mod common;
 
-use common::{fake_swarm::connected_swarm as swarm, *};
+use common::{
+    fake_swarm::{connected_swarm as swarm, with_custom, with_custom_in},
+    *,
+};
+use fleetops_core::perm::{Row, Verb};
 
 async fn get(sw: &common::fake_swarm::Swarm, path: &str) -> Resp {
     sw.t.send(req("GET", path, None, Some(&sw.admin))).await
@@ -105,58 +109,9 @@ async fn viewers_may_read() {
     assert_eq!(r.status, 200, "{:?}", r.json);
 }
 
-/// Grants set by the test, by user id: Bob's custom role.
-#[derive(Default)]
-struct Fixed(std::sync::Mutex<Vec<fleetops_core::access::Grant>>);
-
-#[async_trait::async_trait]
-impl fleetops_core::access::ExtraGrants for Fixed {
-    async fn env_grants(
-        &self,
-        _: i64,
-        _: i64,
-    ) -> fleetops_core::Result<Vec<fleetops_core::access::Grant>> {
-        Ok(self.0.lock().unwrap().clone())
-    }
-    async fn user_grants(
-        &self,
-        _: i64,
-    ) -> fleetops_core::Result<std::collections::HashMap<i64, Vec<fleetops_core::access::Grant>>>
-    {
-        Ok(std::collections::HashMap::from([(
-            1,
-            self.0.lock().unwrap().clone(),
-        )]))
-    }
-}
-
-/// A swarm, and Bob with a custom role holding exactly `perms` on it.
-async fn with_custom(
-    perms: &[(fleetops_core::perm::Row, fleetops_core::perm::Verb)],
-) -> (common::fake_swarm::Swarm, Session) {
-    use fleetops_core::perm::{PermSet, Permission};
-    let extra = std::sync::Arc::new(Fixed::default());
-    let t = app_with_extra_and(extra.clone(), fleetops_api::ApiConfig::default()).await;
-    let sw = common::fake_swarm::connected_swarm_on(t).await;
-    sw.t.create_user(&sw.admin, "bob", "bob-password", "user")
-        .await;
-    let set: PermSet = perms.iter().map(|(r, v)| Permission::new(*r, *v)).collect();
-    *extra.0.lock().unwrap() = vec![fleetops_core::access::Grant::custom(
-        fleetops_core::access::CustomRef {
-            id: 1,
-            name: "test".into(),
-        },
-        set,
-        None,
-    )];
-    let bob = session_from(&sw.t.login("bob", "bob-password").await);
-    (sw, bob)
-}
-
 #[tokio::test]
 async fn a_service_spec_masks_env_without_reveal() {
-    use fleetops_core::perm::{Row, Verb};
-    let (sw, bob) = with_custom(&[(Row::Containers, Verb::View)]).await;
+    let (sw, bob) = with_custom(&[(Row::SwarmServices, Verb::View)]).await;
     let r =
         sw.t.send(req(
             "GET",
@@ -177,12 +132,39 @@ async fn a_service_spec_masks_env_without_reveal() {
 }
 
 #[tokio::test]
-async fn service_logs_need_containers_view() {
-    use fleetops_core::perm::{Row, Verb};
+async fn service_logs_need_service_view() {
     let (sw, bob) = with_custom(&[(Row::Images, Verb::View)]).await;
     let mut ws = Ws::open(sw.t.serve().await, &bob).await;
     ws.send(serde_json::json!({"op": "sub", "sub": 1, "topic": "logs", "env": "prod", "id": "service/s1", "opts": {}}))
         .await;
     let err = ws.until(|v| v["type"] == "error").await;
     assert_eq!(err["code"], "forbidden", "{err}");
+}
+
+async fn get_as(sw: &common::fake_swarm::Swarm, who: &Session, path: &str) -> Resp {
+    sw.t.send(req("GET", path, None, Some(who))).await
+}
+
+#[tokio::test]
+async fn swarm_reads_need_their_rows() {
+    let (sw, bob) = with_custom(&[(Row::Containers, Verb::View)]).await;
+    for what in ["nodes", "services", "tasks", "secrets", "configs", "networks"] {
+        let r = get_as(&sw, &bob, &format!("/api/v1/envs/prod/swarm/{what}")).await;
+        assert_eq!(r.status, 403, "{what}: {:?}", r.json);
+    }
+    let (sw, bob) = with_custom(&[(Row::SwarmNodes, Verb::View)]).await;
+    assert_eq!(get_as(&sw, &bob, "/api/v1/envs/prod/swarm/nodes").await.status, 200);
+    assert_eq!(get_as(&sw, &bob, "/api/v1/envs/prod/swarm/services").await.status, 403);
+}
+
+#[tokio::test]
+async fn scoped_grants_get_no_swarm_cluster_access() {
+    let (sw, bob) = with_custom_in(&[(Row::SwarmServices, Verb::View)], Some(&["blog"])).await;
+    let r = get_as(&sw, &bob, "/api/v1/envs/prod/swarm/services").await;
+    assert_eq!(r.status, 403, "{:?}", r.json);
+    assert!(sw
+        .t
+        .audit_actions()
+        .await
+        .contains(&"access.denied".to_string()));
 }
