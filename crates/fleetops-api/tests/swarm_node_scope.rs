@@ -176,3 +176,20 @@ async fn node_view_events_follow_stacks() {
     .await;
     assert!(more.is_err(), "{more:?}");
 }
+
+/// Engine info counts only the stacks' containers, and no images.
+#[tokio::test]
+async fn node_view_info_counts_only_stack_containers() {
+    let (sw, bob) = scoped().await;
+    let r = bob_get(&sw, &bob, &format!("{N}/info")).await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json["Containers"], 1, "{:?}", r.json);
+    assert_eq!(r.json["ContainersRunning"], 1);
+    assert!(r.json["Images"].is_null(), "{:?}", r.json);
+    assert_eq!(r.json["ServerVersion"], "27.3.1");
+    let r =
+        sw.t.send(req("GET", &format!("{N}/info"), None, Some(&sw.admin)))
+            .await;
+    assert_eq!(r.json["Containers"], 2);
+    assert_eq!(r.json["Images"], 12);
+}

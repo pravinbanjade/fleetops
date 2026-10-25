@@ -2474,7 +2474,7 @@
         "tags": [
           "environments"
         ],
-        "summary": "Docker's `/info`, verbatim",
+        "summary": "Docker's `/info`; for a grant limited to stacks, counting their containers and no images",
         "operationId": "getEngineInfo",
         "parameters": [
           {

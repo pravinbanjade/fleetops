@@ -22,7 +22,7 @@ pub const RECENT_EVENTS_DEFAULT_AGE: i64 = 900;
     path = "/envs/{env}/info",
     operation_id = "getEngineInfo",
     tag = "environments",
-    summary = "Docker's `/info`, verbatim",
+    summary = "Docker's `/info`; for a grant limited to stacks, counting their containers and no images",
     params(EnvParam),
     responses((status = 200, description = "Engine information", body = Object))
 )]
@@ -32,7 +32,34 @@ pub async fn info(
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Value>> {
     let c = ctx(&s, cu, &env, Need::AnyGrant).await?;
-    Ok(Json(c.ops.info().await?))
+    let mut info = c.ops.info().await?;
+    // A grant limited to stacks counts its stacks' containers, and no
+    // images: those are the node's.
+    if c.stacks.is_some() {
+        let seen: Vec<_> = c
+            .ops
+            .list_containers()
+            .await?
+            .into_iter()
+            .filter(|x| c.sees(&x.labels))
+            .collect();
+        let count = |states: &[&str]| {
+            seen.iter()
+                .filter(|x| states.is_empty() || states.contains(&x.state.as_str()))
+                .count()
+        };
+        if let Some(o) = info.as_object_mut() {
+            o.insert("Containers".into(), count(&[]).into());
+            o.insert("ContainersRunning".into(), count(&["running"]).into());
+            o.insert("ContainersPaused".into(), count(&["paused"]).into());
+            o.insert(
+                "ContainersStopped".into(),
+                count(&["exited", "created", "dead"]).into(),
+            );
+            o.remove("Images");
+        }
+    }
+    Ok(Json(info))
 }
 
 #[utoipa::path(

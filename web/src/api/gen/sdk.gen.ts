@@ -671,7 +671,7 @@ export const tagImage = <ThrowOnError extends boolean = true>(options: Options<T
 });
 
 /**
- * Docker's `/info`, verbatim
+ * Docker's `/info`; for a grant limited to stacks, counting their containers and no images
  */
 export const getEngineInfo = <ThrowOnError extends boolean = true>(options: Options<GetEngineInfoData, ThrowOnError>): RequestResult<GetEngineInfoResponses, GetEngineInfoErrors, ThrowOnError> => (options.client ?? client).get<GetEngineInfoResponses, GetEngineInfoErrors, ThrowOnError>({
     security: [{

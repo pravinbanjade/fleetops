@@ -654,6 +654,16 @@ impl FakeSwarm {
                 };
             }
         }
+        if path.ends_with("/info") {
+            let n = self.containers.lock().unwrap().as_array().unwrap().len();
+            return (
+                200,
+                json!({"Name": "host", "Containers": n, "ContainersRunning": n,
+                       "ContainersPaused": 0, "ContainersStopped": 0, "Images": 12,
+                       "ServerVersion": "27.3.1"})
+                .to_string(),
+            );
+        }
         if path.contains("/swarm") {
             return (
                 200,
