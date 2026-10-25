@@ -389,6 +389,7 @@ pub(crate) async fn make_plan(
 
 /// Plans `from` again and deploys it in the background. `plan_token` is the
 /// reviewed plan's token; only auto-deploys pass `None`.
+#[allow(clippy::too_many_arguments)]
 pub async fn start_deploy(
     s: &AppState,
     ops: StackOps,
