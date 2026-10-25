@@ -318,7 +318,7 @@ pub async fn recreate_container(
     // A spec read without Reveal carries masked values: keep the live ones.
     if spec.env.iter().any(|e| e.ends_with(MASK)) {
         let live = c.ops.container_spec(&id).await?;
-        unmask_env(&mut spec.env, &live.env);
+        unmask_env(&mut spec.env, &live.env)?;
     }
     let res = recreate(&*c.ops, &id, &spec, now_unix()).await;
     c.audit(&s, "container.recreate", "container", &id, &res)

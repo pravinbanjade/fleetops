@@ -113,11 +113,7 @@ async fn recreate_with_masked_env_keeps_values() {
     let r = rig().await;
     r.give(&["containers.view", "containers.create", "containers.delete"]);
     let mut spec = r.get("/api/v1/envs/local/containers/c1/spec").await.json;
-    spec["env"] = json!([
-        format!("DB_PASSWORD={MASK}"),
-        "MODE=dev",
-        format!("GONE={MASK}")
-    ]);
+    spec["env"] = json!([format!("DB_PASSWORD={MASK}"), "MODE=dev"]);
     let resp =
         r.t.send(req(
             "POST",
@@ -137,6 +133,33 @@ async fn recreate_with_masked_env_keeps_values() {
             .cloned()
             .unwrap();
     assert_eq!(created.env, ["DB_PASSWORD=s3cret", "MODE=dev"]);
+}
+
+/// A masked key the container lacks (renamed, say) has no value to keep:
+/// refused, not dropped.
+#[tokio::test]
+async fn recreate_with_an_unknown_masked_key_is_refused() {
+    let r = rig().await;
+    r.give(&["containers.view", "containers.create", "containers.delete"]);
+    let mut spec = r.get("/api/v1/envs/local/containers/c1/spec").await.json;
+    spec["env"] = json!([format!("DB_PASS={MASK}"), "MODE=dev"]);
+    let resp =
+        r.t.send(req(
+            "POST",
+            "/api/v1/envs/local/containers/c1/recreate",
+            Some(spec),
+            Some(&r.bob),
+        ))
+        .await;
+    assert_eq!(resp.status, 400, "{:?}", resp.json);
+    assert!(
+        resp.json["message"]
+            .as_str()
+            .unwrap()
+            .contains("DB_PASS has a hidden value"),
+        "{:?}",
+        resp.json
+    );
 }
 
 #[tokio::test]

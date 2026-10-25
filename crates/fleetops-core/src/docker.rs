@@ -24,22 +24,25 @@ pub fn mask_env(env: &mut [String]) {
 }
 
 /// Puts back each masked value from `live`, so a recreate submitted from a
-/// masked spec keeps the real ones. A masked key `live` lacks is dropped.
-pub fn unmask_env(env: &mut Vec<String>, live: &[String]) {
+/// masked spec keeps the real ones. A masked key `live` lacks (renamed, or
+/// added with the mask as its value) has no value to keep: refused.
+pub fn unmask_env(env: &mut [String], live: &[String]) -> crate::Result<()> {
     let masked = format!("={}", crate::kube::MASK);
-    env.retain_mut(|e| {
+    for e in env.iter_mut() {
         let Some(key) = e.strip_suffix(masked.as_str()) else {
-            return true;
+            continue;
         };
         let prefix = format!("{key}=");
         match live.iter().find(|l| l.starts_with(&prefix)) {
-            Some(l) => {
-                *e = l.clone();
-                true
+            Some(l) => *e = l.clone(),
+            None => {
+                return Err(crate::Error::Invalid(format!(
+                    "{key} has a hidden value but is not set now, so there is no value to keep; give it a value or remove it"
+                )))
             }
-            None => false,
         }
-    });
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

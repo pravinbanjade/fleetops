@@ -200,7 +200,10 @@ fn fake_manager(dir: &std::path::Path) -> PathBuf {
                     }
                     let method = req.split_whitespace().next().unwrap_or_default();
                     let body = req.split_once("\r\n\r\n").map_or("", |(_, b)| b);
-                    WRITES.lock().unwrap().push(format!("{method} {path}\n{body}"));
+                    WRITES
+                        .lock()
+                        .unwrap()
+                        .push(format!("{method} {path}\n{body}"));
                 }
                 if path.contains("/logs") {
                     let line = b"hello from blog_web.1\n";
@@ -520,7 +523,9 @@ async fn an_update_sends_the_whole_version_and_every_field() {
     use fleetops_core::swarm::ServiceChange;
     let dir = tempfile::tempdir().unwrap();
     let d = manager(dir.path());
-    d.update_service("s3", ServiceChange::Scale(2)).await.unwrap();
+    d.update_service("s3", ServiceChange::Scale(2))
+        .await
+        .unwrap();
     let writes = WRITES.lock().unwrap().clone();
     let w = writes
         .iter()
@@ -529,5 +534,8 @@ async fn an_update_sends_the_whole_version_and_every_field() {
     assert!(w.contains("version=3000000000"), "{w}");
     let body: serde_json::Value = serde_json::from_str(w.split_once('\n').unwrap().1).unwrap();
     assert_eq!(body["Mode"]["Replicated"]["Replicas"], 2, "{body}");
-    assert_eq!(body["TaskTemplate"]["ContainerSpec"]["Future"]["Kept"], true, "{body}");
+    assert_eq!(
+        body["TaskTemplate"]["ContainerSpec"]["Future"]["Kept"], true,
+        "{body}"
+    );
 }

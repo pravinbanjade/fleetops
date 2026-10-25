@@ -366,7 +366,7 @@ pub async fn edit_service(
         let live = strings(svc.spec.pointer(path));
         if let Some(vars) = body.spec.pointer_mut(path) {
             let mut env = strings(Some(vars));
-            fleetops_core::docker::unmask_env(&mut env, &live);
+            fleetops_core::docker::unmask_env(&mut env, &live)?;
             *vars = json!(env);
         }
     }

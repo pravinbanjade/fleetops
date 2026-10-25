@@ -283,6 +283,45 @@ async fn an_edit_without_reveal_keeps_real_env_values() {
             .is_some_and(|d| d.to_string().contains("hunter2"))));
 }
 
+/// A masked value can't follow its key to a new name: the edit is refused
+/// rather than dropping the variable.
+#[tokio::test]
+async fn renaming_a_masked_variable_is_refused() {
+    let (sw, bob) = with_custom(&[
+        (Row::SwarmServices, Verb::View),
+        (Row::SwarmServices, Verb::Operate),
+    ])
+    .await;
+    let r =
+        sw.t.send(req("GET", &format!("{S}/s1"), None, Some(&bob)))
+            .await;
+    let mut spec = r.json["spec"].clone();
+    let env = spec["TaskTemplate"]["ContainerSpec"]["Env"]
+        .as_array_mut()
+        .unwrap();
+    let masked = env[0].as_str().unwrap().replace("DB_PASSWORD=", "DB_PASS=");
+    env[0] = json!(masked);
+    let r =
+        sw.t.send(req(
+            "PUT",
+            &format!("{S}/s1"),
+            Some(json!({"spec": spec, "version": r.json["version"]})),
+            Some(&bob),
+        ))
+        .await;
+    assert_eq!(r.status, 400, "{:?}", r.json);
+    assert!(
+        r.json["message"].as_str().unwrap().contains("DB_PASS"),
+        "{:?}",
+        r.json
+    );
+    assert!(!sw
+        .daemon
+        .write_paths()
+        .iter()
+        .any(|p| p.contains("/services/s1/update")));
+}
+
 #[tokio::test]
 async fn a_stale_edit_is_refused() {
     let sw = swarm().await;
