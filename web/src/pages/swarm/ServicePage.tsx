@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { FileText, ListChecks, ScrollText } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { useEnvAccess } from "@/api/access";
 import { swarmServiceQuery } from "@/api/queries";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,7 @@ export function ServicePage() {
   useSwarmEvents(env);
   const svc = useQuery(swarmServiceQuery(env, id));
   const { tasks, paused } = useSwarmTasks(env);
-  const [cols] = useState(() => taskColumns(env));
+  const cols = useMemo(() => taskColumns(env), [env]);
   const [tab, setTab] = useState("tasks");
   const [editing, setEditing] = useState(false);
   const { can } = useEnvAccess(env);

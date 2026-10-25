@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { networksQuery } from "@/api/queries";
 import type { NetworkSummary } from "@/api/gen/types.gen";
 import { columns, DataTable, type Column } from "@/components/DataTable";
@@ -50,7 +50,7 @@ export function NetworksPage() {
   const { can } = useEnvAccess(env);
   const canDelete = can("networks.delete");
   const list = useQuery(networksQuery(env));
-  const [cols] = useState(() => networkColumns(env));
+  const cols = useMemo(() => networkColumns(env), [env]);
   const [removing, setRemoving] = useState<NetworkSummary[] | null>(null);
   const [pruning, setPruning] = useState(false);
   const [creating, setCreating] = useState(false);

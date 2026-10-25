@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { Activity, ArrowUpRight, Plus, ScrollText, SquareTerminal, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { containersQuery, keys } from "@/api/queries";
 import { containerAction, pruneContainers } from "@/api/gen/sdk.gen";
@@ -132,7 +132,7 @@ export function ContainersPage() {
   const { q } = route.useSearch();
   const qc = useQueryClient();
   const list = useQuery(containersQuery(env));
-  const [cols] = useState(() => containerColumns(env));
+  const cols = useMemo(() => containerColumns(env), [env]);
   const [removing, setRemoving] = useState<ContainerSummary[] | null>(null);
   const [pruning, setPruning] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: keys.containers(env) });

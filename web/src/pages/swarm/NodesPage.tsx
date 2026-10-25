@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useEnvAccess } from "@/api/access";
 import { envStatusQuery, envsQuery } from "@/api/queries";
@@ -158,11 +158,10 @@ export function NodesPage({ env }: { env: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status.dataUpdatedAt]);
   const [confirm, setConfirm] = useState<"finish" | "retrust" | null>(null);
-  const [cols] = useState(() => nodeColumns(env));
+  const cols = useMemo(() => nodeColumns(env), [env]);
   const rows = agents.data ?? [];
-  // The key from before the last rotation still works until then.
-  const ends = useQuery(envsQuery).data?.find((e) => e.name === env)?.agent?.rotation_ends_at;
-  const rotating = ends != null && ends * 1000 > Date.now();
+  // Set while the key from before the last rotation still works.
+  const rotating = useQuery(envsQuery).data?.find((e) => e.name === env)?.agent?.rotation_ends_at != null;
   const covered = rows.filter((n) => n.connected).length;
   const down = status.data?.state === "down" ? status.data.reason : null;
   return (

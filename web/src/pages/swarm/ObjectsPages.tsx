@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ConfigSummary, SecretSummary, SwarmNetwork } from "@/api/gen/types.gen";
 import { swarmConfigsQuery, swarmNetworksQuery, swarmSecretsQuery } from "@/api/queries";
 import { columns, DataTable, type Column } from "@/components/DataTable";
@@ -29,7 +29,7 @@ export function SecretsPage() {
   const env = useEnv();
   useSwarmEvents(env);
   const q = useQuery(swarmSecretsQuery(env));
-  const [cols] = useState(() => namedColumns<SecretSummary>(env, "secret"));
+  const cols = useMemo(() => namedColumns<SecretSummary>(env, "secret"), [env]);
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
@@ -44,7 +44,7 @@ export function ConfigsPage() {
   const env = useEnv();
   useSwarmEvents(env);
   const q = useQuery(swarmConfigsQuery(env));
-  const [cols] = useState(() => namedColumns<ConfigSummary>(env, "config"));
+  const cols = useMemo(() => namedColumns<ConfigSummary>(env, "config"), [env]);
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
@@ -70,7 +70,7 @@ export function NetworksPage() {
   const env = useEnv();
   useSwarmEvents(env);
   const q = useQuery(swarmNetworksQuery(env));
-  const [cols] = useState(() => networkColumns(env));
+  const cols = useMemo(() => networkColumns(env), [env]);
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (

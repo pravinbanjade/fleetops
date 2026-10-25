@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo } from "react";
 import type { TaskSummary } from "@/api/gen/types.gen";
 import { swarmNodesQuery } from "@/api/queries";
 import { columns, DataTable, type Column } from "@/components/DataTable";
@@ -42,7 +42,7 @@ export function FeedPaused({ reason }: { reason: string | null }) {
 export function TasksPage() {
   const env = useEnv();
   const { tasks, paused } = useSwarmTasks(env);
-  const [cols] = useState(() => taskColumns(env));
+  const cols = useMemo(() => taskColumns(env), [env]);
   return (
     <Page title="Tasks">
       <FeedPaused reason={paused} />

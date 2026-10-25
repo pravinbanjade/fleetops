@@ -63,7 +63,7 @@ export function VolumesPage() {
   const canDelete = can("volumes.delete");
   const list = useQuery(volumesQuery(env));
   const containers = useQuery(containersQuery(env));
-  const [cols] = useState(() => volumeColumns(env));
+  const cols = useMemo(() => volumeColumns(env), [env]);
   const rows = useMemo(() => {
     if (!list.data) return undefined;
     const users = volumeUsers(containers.data);

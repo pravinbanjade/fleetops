@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { imagesQuery } from "@/api/queries";
 import type { ImageSummary } from "@/api/gen/types.gen";
 import { columns, DataTable, type Column } from "@/components/DataTable";
@@ -57,7 +57,7 @@ export function ImagesPage() {
   const canCreate = can("images.create");
   const canDelete = can("images.delete");
   const list = useQuery(imagesQuery(env));
-  const [cols] = useState(() => imageColumns(env));
+  const cols = useMemo(() => imageColumns(env), [env]);
   const [removing, setRemoving] = useState<ImageSummary[] | null>(null);
   const [pruning, setPruning] = useState(false);
   const [pulling, setPulling] = useState(false);

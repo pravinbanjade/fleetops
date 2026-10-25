@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ServiceSummary } from "@/api/gen/types.gen";
 import { swarmServicesQuery } from "@/api/queries";
 import { columns, DataTable, type Column } from "@/components/DataTable";
@@ -42,7 +42,7 @@ export function ServicesPage() {
   const env = useEnv();
   useSwarmEvents(env);
   const services = useQuery(swarmServicesQuery(env));
-  const [cols] = useState(() => serviceColumns(env));
+  const cols = useMemo(() => serviceColumns(env), [env]);
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (

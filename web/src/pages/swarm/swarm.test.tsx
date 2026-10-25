@@ -140,6 +140,24 @@ const nodeRoutes = {
   [`GET /api/v1/envs/${NODE}/events`]: { json: [] },
 };
 
+describe("Swarm list pages", () => {
+  it("follow a switch to another swarm", async () => {
+    const svc = { id: "s1", name: "blog_web", stack: "blog", mode: "replicated", replicas_desired: 1, tasks_running: 1, tasks_desired: 1, image: "nginx", ports: [], update_state: null, updated_at: 0, labels: {} };
+    const status = routes["GET /api/v1/envs/prod/status"];
+    mockFetch({
+      ...routes,
+      "GET /api/v1/envs": { json: [...ENVS, SWARM, { ...SWARM, id: 8, name: "stage" }] },
+      "GET /api/v1/envs/stage/status": status,
+      "GET /api/v1/envs/prod/swarm/services": { json: [svc] },
+      "GET /api/v1/envs/stage/swarm/services": { json: [svc] },
+    });
+    const { screen, history } = renderApp("/envs/prod/swarm/services");
+    expect(await screen.findByRole("link", { name: "blog_web" })).toHaveAttribute("href", "/envs/prod/swarm/services/s1");
+    history.push("/envs/stage/swarm/services");
+    await waitFor(() => expect(screen.getByRole("link", { name: "blog_web" })).toHaveAttribute("href", "/envs/stage/swarm/services/s1"));
+  });
+});
+
 describe("Swarm key rotation on the Nodes page", () => {
   it("offers no Finish key rotation with none pending", async () => {
     mockFetch(routes);

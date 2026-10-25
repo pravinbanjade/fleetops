@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo } from "react";
 import { swarmNodeQuery } from "@/api/queries";
 import { DataTable } from "@/components/DataTable";
 import { Page } from "@/components/Page";
@@ -16,7 +16,7 @@ export function NodePage() {
   const { env = "", id = "" } = useParams({ strict: false }) as { env?: string; id?: string };
   const node = useQuery(swarmNodeQuery(env, id));
   const { tasks, paused } = useSwarmTasks(env);
-  const [cols] = useState(() => taskColumns(env));
+  const cols = useMemo(() => taskColumns(env), [env]);
   const n = node.data;
   if (node.error) return <Page title={id}>{<p role="alert" className="text-sm text-destructive">{errorMessage(node.error)}</p>}</Page>;
   return (
