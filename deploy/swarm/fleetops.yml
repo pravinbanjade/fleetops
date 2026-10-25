@@ -19,10 +19,10 @@ services:
     ports:
       - "9000:9000"
       - "9443:9443"
-    volumes:
+    # FleetOps manages this engine through its socket.
+    volumes: # nosemgrep: yaml.docker-compose.security.exposing-docker-socket-volume.exposing-docker-socket-volume
       - fleetops-data:/data
-      # FleetOps manages this engine through its socket.
-      - /var/run/docker.sock:/var/run/docker.sock # nosemgrep
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - fleetops
     deploy:
