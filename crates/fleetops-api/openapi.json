@@ -8011,11 +8011,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Confirm"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Confirm"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "204": {
@@ -8081,11 +8087,17 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Confirm"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Confirm"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "204": {

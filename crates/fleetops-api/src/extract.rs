@@ -41,6 +41,29 @@ where
     }
 }
 
+/// `ApiJson`, or `T::default()` for a request with no body.
+pub struct ApiJsonOr<T>(pub T);
+
+impl<S, T> FromRequest<S> for ApiJsonOr<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned + Default,
+{
+    type Rejection = Response;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Response> {
+        let bytes = axum::body::Bytes::from_request(req, state)
+            .await
+            .map_err(|r| rejection(r.status(), r.body_text()))?;
+        if bytes.is_empty() {
+            return Ok(ApiJsonOr(T::default()));
+        }
+        Json::<T>::from_bytes(&bytes)
+            .map(|Json(v)| ApiJsonOr(v))
+            .map_err(|r: JsonRejection| rejection(r.status(), r.body_text()))
+    }
+}
+
 pub struct ApiPath<T>(pub T);
 
 impl<S, T> FromRequestParts<S> for ApiPath<T>

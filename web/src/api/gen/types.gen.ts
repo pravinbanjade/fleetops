@@ -6710,7 +6710,7 @@ export type EditSwarmServiceResponses = {
 export type EditSwarmServiceResponse = EditSwarmServiceResponses[keyof EditSwarmServiceResponses];
 
 export type RedeploySwarmServiceData = {
-    body: Confirm;
+    body?: Confirm | null;
     path: {
         /**
          * Environment name.
@@ -6748,7 +6748,7 @@ export type RedeploySwarmServiceResponses = {
 export type RedeploySwarmServiceResponse = RedeploySwarmServiceResponses[keyof RedeploySwarmServiceResponses];
 
 export type RollbackSwarmServiceData = {
-    body: Confirm;
+    body?: Confirm | null;
     path: {
         /**
          * Environment name.

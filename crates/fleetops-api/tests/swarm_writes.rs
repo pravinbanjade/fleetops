@@ -236,6 +236,15 @@ async fn redeploy_and_rollback() {
 }
 
 #[tokio::test]
+async fn redeploy_and_rollback_need_no_body() {
+    let sw = swarm().await;
+    for a in ["redeploy", "rollback"] {
+        let r = send(&sw, "POST", &format!("{S}/s1/{a}"), None).await;
+        assert_eq!(r.status, 204, "{a}: {:?}", r.json);
+    }
+}
+
+#[tokio::test]
 async fn an_edit_without_reveal_keeps_real_env_values() {
     let (sw, bob) = with_custom(&[
         (Row::SwarmServices, Verb::View),

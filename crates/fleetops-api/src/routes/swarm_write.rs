@@ -6,7 +6,7 @@ use super::swarm::{swarm_ctx, EnvIdPath, SwarmCtx};
 use super::swarm_protect;
 use crate::{
     auth::extract::CurrentUser,
-    extract::{ApiJson, ApiPath},
+    extract::{ApiJson, ApiJsonOr, ApiPath},
     ApiResult, AppState,
 };
 use axum::{
@@ -447,13 +447,13 @@ async fn simple_change(
 }
 
 #[utoipa::path(post, path = "/envs/{env}/swarm/services/{id}/redeploy", operation_id = "redeploySwarmService", tag = "swarm",
-    summary = "Restart every task with the same spec (force update)", params(EnvIdPath), request_body = Confirm,
+    summary = "Restart every task with the same spec (force update)", params(EnvIdPath), request_body = Option<Confirm>,
     responses((status = 204, description = "Redeploying"), (status = 409, description = "`confirm_required`", body = crate::error::ErrorBody)))]
 pub async fn redeploy_service(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
-    ApiJson(body): ApiJson<Confirm>,
+    ApiJsonOr(body): ApiJsonOr<Confirm>,
 ) -> ApiResult<StatusCode> {
     use fleetops_core::swarm::ServiceChange::Redeploy;
     simple_change(
@@ -469,13 +469,13 @@ pub async fn redeploy_service(
 }
 
 #[utoipa::path(post, path = "/envs/{env}/swarm/services/{id}/rollback", operation_id = "rollbackSwarmService", tag = "swarm",
-    summary = "Go back to the service's previous spec", params(EnvIdPath), request_body = Confirm,
+    summary = "Go back to the service's previous spec", params(EnvIdPath), request_body = Option<Confirm>,
     responses((status = 204, description = "Rolling back"), (status = 409, description = "`confirm_required`", body = crate::error::ErrorBody)))]
 pub async fn rollback_service(
     State(s): State<AppState>,
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
-    ApiJson(body): ApiJson<Confirm>,
+    ApiJsonOr(body): ApiJsonOr<Confirm>,
 ) -> ApiResult<StatusCode> {
     use fleetops_core::swarm::ServiceChange::Rollback;
     simple_change(
