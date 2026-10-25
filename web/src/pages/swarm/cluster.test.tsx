@@ -60,6 +60,24 @@ describe("Swarm cluster pages", () => {
     expect(screen.getByText(/Serving manager/)).toHaveTextContent("mgr-1");
   });
 
+  it("the overview counts running tasks from the task feed", async () => {
+    mockFetch(routes);
+    renderApp("/envs/prod");
+    const { sock, sub } = await feedTasks();
+    const attention = await screen.findByRole("region", { name: "Needs attention" });
+    await waitFor(() => expect(attention).toHaveTextContent("blog_web has 2 of 3 tasks running"));
+    act(() => sock.receive({ sub, type: "data", data: { type: "changes", upsert: [task("t4", "s1", "n2", "running")], remove: [] } }));
+    await waitFor(() => expect(attention).not.toHaveTextContent("blog_web has"));
+  });
+
+  it("the overview says when the task feed is paused", async () => {
+    mockFetch(routes);
+    renderApp("/envs/prod");
+    const { sock, sub } = await feedTasks();
+    act(() => sock.receive({ sub, type: "data", data: { type: "paused", reason: "no manager agent is connected" } }));
+    expect(await screen.findByText(/Live updates paused/)).toHaveTextContent("no manager agent is connected");
+  });
+
   it("the visualizer places tasks on their nodes", async () => {
     mockFetch(routes);
     renderApp("/envs/prod/swarm/visualizer");

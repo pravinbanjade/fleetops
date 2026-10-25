@@ -9,6 +9,7 @@ import { formatAgo } from "@/lib/format";
 import { useSwarmEvents } from "@/live/swarmEvents";
 import { useSwarmTasks } from "@/live/swarmTasks";
 import { TrustCard } from "./NodesPage";
+import { FeedPaused } from "./TasksPage";
 import { failed, taskName } from "./shared";
 
 /** How far back a failed task still needs attention. */
@@ -21,16 +22,19 @@ export function SwarmOverviewPage({ env }: { env: string }) {
   const status = useQuery(envStatusQuery(env, true));
   const nodes = useQuery(swarmNodesQuery(env));
   const services = useQuery(swarmServicesQuery(env));
-  const { tasks } = useSwarmTasks(env);
+  const { tasks, paused } = useSwarmTasks(env);
   const events = useQuery<DockerEvent[]>({ queryKey: swarmKeys.events(env), queryFn: () => [], staleTime: Infinity });
   // Read once per mount: "the last hour" needs no ticking clock.
   const [now] = useState(() => Date.now() / 1000);
+  // The feed is live; the service list's counts change only with its events.
+  const runningOf = (id: string) => tasks && tasks.filter((t) => t.service_id === id && t.state === "running").length;
   const hostOf = (id?: string | null) => nodes.data?.find((n) => n.id === id)?.hostname ?? id ?? "";
   const items: { key: string; text: string; to?: string }[] = [
     ...(nodes.data ?? []).filter((n) => n.state !== "ready").map((n) => ({ key: `n-${n.id}`, text: `${n.hostname} is ${n.state}` })),
     ...(services.data ?? [])
-      .filter((s) => s.tasks_running < s.tasks_desired)
-      .map((s) => ({ key: `s-${s.id}`, text: `${s.name} has ${s.tasks_running} of ${s.tasks_desired} tasks running`, to: s.id })),
+      .map((s) => ({ s, running: runningOf(s.id) ?? s.tasks_running }))
+      .filter(({ s, running }) => running < s.tasks_desired)
+      .map(({ s, running }) => ({ key: `s-${s.id}`, text: `${s.name} has ${running} of ${s.tasks_desired} tasks running`, to: s.id })),
     ...(tasks ?? [])
       .filter((t) => failed(t) && now - t.updated_at < RECENT_SECS)
       .map((t) => ({ key: `t-${t.id}`, text: `${taskName(t)} ${t.state} on ${hostOf(t.node_id)}: ${t.error ?? t.message}`, to: t.service_id })),
@@ -39,6 +43,7 @@ export function SwarmOverviewPage({ env }: { env: string }) {
   return (
     <Page title="Overview" meta={v && `${v.managers} managers, ${v.workers} workers · Docker ${v.engine}`}>
       <TrustCard env={env} admin={user.role === "admin"} />
+      <FeedPaused reason={paused} />
       {status.data?.state === "down" && (
         <p role="status" className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
           {status.data.reason}
