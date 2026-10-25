@@ -360,3 +360,158 @@ pub async fn remove_service(
     res?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// Docker's limit on a secret or config.
+const MAX_VALUE: usize = 500 * 1024;
+
+#[derive(Deserialize, ToSchema)]
+pub struct NewSwarmObject {
+    pub name: String,
+    /// Write-only for secrets: neither Docker nor FleetOps shows it again.
+    pub value: String,
+}
+
+fn checked_value<'a>(o: &'a NewSwarmObject, what: &str) -> Result<&'a [u8]> {
+    if o.name.trim().is_empty() {
+        return Err(Error::Invalid(format!("a {what} needs a name")));
+    }
+    if o.value.len() > MAX_VALUE {
+        return Err(Error::Invalid(format!("a {what} value is at most 500 KiB")));
+    }
+    Ok(o.value.as_bytes())
+}
+
+#[utoipa::path(post, path = "/envs/{env}/swarm/secrets", operation_id = "createSwarmSecret", tag = "swarm",
+    summary = "Create a secret (its value is write-only)", params(crate::openapi::EnvParam), request_body = NewSwarmObject,
+    responses((status = 201, description = "Created", body = Created)))]
+pub async fn create_secret(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(env): ApiPath<String>,
+    ApiJson(body): ApiJson<NewSwarmObject>,
+) -> ApiResult<(StatusCode, axum::Json<Created>)> {
+    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmSecrets, Verb::Create)).await?;
+    let data = checked_value(&body, "secret")?;
+    let res = c.ops.create_secret(&body.name, data).await;
+    c.audit(&s, "swarm.secret.create", "swarm-secret", &body.name, &res, json!({}))
+        .await;
+    Ok((StatusCode::CREATED, axum::Json(Created { id: res? })))
+}
+
+#[utoipa::path(delete, path = "/envs/{env}/swarm/secrets/{id}", operation_id = "removeSwarmSecret", tag = "swarm",
+    summary = "Remove a secret no service uses", params(EnvIdPath),
+    responses((status = 204, description = "Removed")))]
+pub async fn remove_secret(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath((env, id)): ApiPath<(String, String)>,
+) -> ApiResult<StatusCode> {
+    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmSecrets, Verb::Delete)).await?;
+    let res = c.ops.remove_secret(&id).await;
+    c.audit(&s, "swarm.secret.remove", "swarm-secret", &id, &res, json!({}))
+        .await;
+    res?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(post, path = "/envs/{env}/swarm/configs", operation_id = "createSwarmConfig", tag = "swarm",
+    summary = "Create a config", params(crate::openapi::EnvParam), request_body = NewSwarmObject,
+    responses((status = 201, description = "Created", body = Created)))]
+pub async fn create_config(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(env): ApiPath<String>,
+    ApiJson(body): ApiJson<NewSwarmObject>,
+) -> ApiResult<(StatusCode, axum::Json<Created>)> {
+    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmConfigs, Verb::Create)).await?;
+    let data = checked_value(&body, "config")?;
+    let res = c.ops.create_config(&body.name, data).await;
+    c.audit(&s, "swarm.config.create", "swarm-config", &body.name, &res, json!({}))
+        .await;
+    Ok((StatusCode::CREATED, axum::Json(Created { id: res? })))
+}
+
+#[derive(serde::Serialize, ToSchema)]
+pub struct ConfigData {
+    /// Null when the content is not UTF-8.
+    pub text: Option<String>,
+    pub size: u64,
+}
+
+#[utoipa::path(get, path = "/envs/{env}/swarm/configs/{id}/data", operation_id = "getSwarmConfigData", tag = "swarm",
+    summary = "A config's content (needs Reveal)", params(EnvIdPath),
+    responses((status = 200, description = "The content", body = ConfigData)))]
+pub async fn config_data(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath((env, id)): ApiPath<(String, String)>,
+) -> ApiResult<axum::Json<ConfigData>> {
+    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmConfigs, Verb::Reveal)).await?;
+    let data = c
+        .ops
+        .config_data(&id)
+        .await?
+        .ok_or_else(|| Error::NotFound(format!("no such config '{id}'")))?;
+    c.audit(&s, "swarm.config.reveal", "swarm-config", &id, &Ok(()), json!({}))
+        .await;
+    Ok(axum::Json(ConfigData {
+        size: data.len() as u64,
+        text: String::from_utf8(data).ok(),
+    }))
+}
+
+#[utoipa::path(delete, path = "/envs/{env}/swarm/configs/{id}", operation_id = "removeSwarmConfig", tag = "swarm",
+    summary = "Remove a config no service uses", params(EnvIdPath),
+    responses((status = 204, description = "Removed")))]
+pub async fn remove_config(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath((env, id)): ApiPath<(String, String)>,
+) -> ApiResult<StatusCode> {
+    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::SwarmConfigs, Verb::Delete)).await?;
+    let res = c.ops.remove_config(&id).await;
+    c.audit(&s, "swarm.config.remove", "swarm-config", &id, &res, json!({}))
+        .await;
+    res?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[utoipa::path(post, path = "/envs/{env}/swarm/networks", operation_id = "createSwarmNetwork", tag = "swarm",
+    summary = "Create an overlay network", params(crate::openapi::EnvParam),
+    request_body = fleetops_core::swarm::NewSwarmNetwork,
+    responses((status = 201, description = "Created", body = Created)))]
+pub async fn create_network(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath(env): ApiPath<String>,
+    ApiJson(body): ApiJson<fleetops_core::swarm::NewSwarmNetwork>,
+) -> ApiResult<(StatusCode, axum::Json<Created>)> {
+    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::Networks, Verb::Create)).await?;
+    if body.name.trim().is_empty() {
+        return Err(Error::Invalid("a network needs a name".into()).into());
+    }
+    let res = c.ops.create_network(&body).await;
+    c.audit(&s, "swarm.network.create", "swarm-network", &body.name, &res, json!({}))
+        .await;
+    Ok((StatusCode::CREATED, axum::Json(Created { id: res? })))
+}
+
+#[utoipa::path(delete, path = "/envs/{env}/swarm/networks/{id}", operation_id = "removeSwarmNetwork", tag = "swarm",
+    summary = "Remove a swarm-scoped network", params(EnvIdPath),
+    responses((status = 204, description = "Removed")))]
+pub async fn remove_network(
+    State(s): State<AppState>,
+    cu: CurrentUser,
+    ApiPath((env, id)): ApiPath<(String, String)>,
+) -> ApiResult<StatusCode> {
+    let c = swarm_ctx(&s, cu, &env, Permission::new(Row::Networks, Verb::Delete)).await?;
+    // Only the swarm's own networks: a node's local ones go through its view.
+    if !c.ops.networks().await?.iter().any(|n| n.id == id || n.name == id) {
+        return Err(Error::NotFound(format!("no such swarm network '{id}'")).into());
+    }
+    let res = c.ops.remove_network(&id).await;
+    c.audit(&s, "swarm.network.remove", "swarm-network", &id, &res, json!({}))
+        .await;
+    res?;
+    Ok(StatusCode::NO_CONTENT)
+}
