@@ -219,10 +219,15 @@ pub async fn stack_ctx(
             )
             .await?;
         }
-        scope = grants.namespaces_for(fleetops_core::perm::Permission::new(
-            fleetops_core::perm::Row::Stacks,
-            fleetops_core::perm::Verb::Operate,
-        ));
+        // Deploys act within the stacks Operate covers; a preview by
+        // someone who cannot deploy, within those they may view.
+        let p = |verb| fleetops_core::perm::Permission::new(fleetops_core::perm::Row::Stacks, verb);
+        let operate = p(fleetops_core::perm::Verb::Operate);
+        scope = if grants.holds(operate) {
+            grants.namespaces_for(operate)
+        } else {
+            grants.namespaces_for(p(fleetops_core::perm::Verb::View))
+        };
     }
     let ops = crate::stacks::StackOps::of(&env).ok_or_else(|| {
         Error::EnvUnavailable(if kind.is_swarm() {

@@ -1017,3 +1017,44 @@ async fn an_auto_deploy_without_an_author_stops() {
         .iter()
         .any(|p| p.contains("/services/create")));
 }
+
+#[tokio::test]
+async fn previews_follow_the_viewers_scope() {
+    use common::fake_swarm::{custom_grant, with_grants};
+    use fleetops_core::access::{EnvRole, Grant};
+    // A Viewer of the whole swarm previews the real plan.
+    let (sw, viewer) = with_grants(vec![Grant::full(EnvRole::Viewer)]).await;
+    add_shop_secret(&sw);
+    create(&sw, "blog", BLOG_EXTERNAL).await;
+    let r =
+        sw.t.send(req(
+            "POST",
+            &format!("{STACKS}/blog/plan"),
+            Some(json!({"source": "draft"})),
+            Some(&viewer),
+        ))
+        .await;
+    assert_eq!(r.json["plan"]["blocking"], json!([]), "{:?}", r.json);
+    // One limited to blog sees nothing of shop's, even in a preview.
+    let (sw, viewer) = with_grants(vec![custom_grant(
+        &[(Row::Stacks, Verb::View)],
+        Some(&["blog"]),
+    )])
+    .await;
+    add_shop_secret(&sw);
+    create(&sw, "blog", BLOG_EXTERNAL).await;
+    let r =
+        sw.t.send(req(
+            "POST",
+            &format!("{STACKS}/blog/plan"),
+            Some(json!({"source": "draft"})),
+            Some(&viewer),
+        ))
+        .await;
+    assert_eq!(
+        r.json["plan"]["blocking"],
+        json!(["external secret shop_tls does not exist or is outside your stacks"]),
+        "{:?}",
+        r.json
+    );
+}
