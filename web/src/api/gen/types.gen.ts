@@ -1926,6 +1926,10 @@ export type StatsSample = {
  */
 export type SwarmAgentView = {
     agent_version?: string | null;
+    /**
+     * `active`, `pause` or `drain`; null when no manager answered.
+     */
+    availability?: string | null;
     connected: boolean;
     hostname?: string | null;
     /**

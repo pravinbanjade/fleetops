@@ -12,7 +12,7 @@ const NODE_N1 = {
   id: "n1", hostname: "mgr-1", role: "manager", state: "ready", availability: "active", leader: true,
   labels: {}, engine: "27.3.1", os: "linux", arch: "x86_64", nano_cpus: 2e9, memory_bytes: 4 * 1024 ** 3, addr: "10.0.0.1", manager_addr: "10.0.0.1:2377", reachability: "reachable",
 };
-const agent = (node_id: string, hostname: string, role: string, state: string) => ({ node_id, hostname, role, state, connected: true, agent_version: "0.7.0", last_seen_at: 1, last_error: null });
+const agent = (node_id: string, hostname: string, role: string, state: string, availability = "active") => ({ node_id, hostname, role, state, availability, connected: true, agent_version: "0.7.0", last_seen_at: 1, last_error: null });
 
 const routes = {
   ...loggedIn,
@@ -60,6 +60,16 @@ describe("Swarm node actions", () => {
     const item = within(await screen.findByRole("menu")).getByRole("menuitem", { name: /Remove/ });
     expect(item).toHaveAttribute("aria-disabled", "true");
     expect(item).toHaveTextContent("only a node that is down");
+  });
+
+  it("the list offers only the availabilities a node is not in", async () => {
+    mockFetch(routes);
+    renderApp("/envs/prod/swarm/nodes");
+    await userEvent.click(await screen.findByRole("button", { name: "Actions for wrk-1" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).queryByRole("menuitem", { name: "Activate" })).not.toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Pause" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Drain" })).toBeInTheDocument();
   });
 
   it("labels are sent as a map", async () => {

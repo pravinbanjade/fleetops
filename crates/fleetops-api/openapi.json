@@ -14192,6 +14192,13 @@
               "null"
             ]
           },
+          "availability": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`active`, `pause` or `drain`; null when no manager answered."
+          },
           "connected": {
             "type": "boolean"
           },

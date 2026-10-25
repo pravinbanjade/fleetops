@@ -302,6 +302,7 @@ async fn agents_list_merges_nodes_without_agents() {
     assert_eq!(rows.len(), 3);
     assert_eq!(rows[0]["node_id"], "n1");
     assert_eq!(rows[0]["role"], "manager");
+    assert_eq!(rows[0]["availability"], "active");
     assert_eq!(rows[0]["connected"], true);
     assert_eq!(rows[0]["agent_version"], "0.7.0-test");
     assert_eq!(rows[1]["connected"], true);

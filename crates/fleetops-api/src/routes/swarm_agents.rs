@@ -38,6 +38,8 @@ pub struct SwarmAgentView {
     pub role: Option<NodeRole>,
     /// `ready`, `down`, ...; null when no manager answered.
     pub state: Option<String>,
+    /// `active`, `pause` or `drain`; null when no manager answered.
+    pub availability: Option<String>,
     pub connected: bool,
     pub agent_version: Option<String>,
     pub last_seen_at: Option<i64>,
@@ -97,6 +99,7 @@ pub async fn agents(
                         hostname: Some(n.hostname),
                         role: Some(n.role),
                         state: Some(n.state),
+                        availability: Some(n.availability),
                         connected: false,
                         agent_version: None,
                         last_seen_at: None,
@@ -114,6 +117,7 @@ pub async fn agents(
                 hostname: None,
                 role: None,
                 state: None,
+                availability: None,
                 connected: false,
                 agent_version: None,
                 last_seen_at: None,

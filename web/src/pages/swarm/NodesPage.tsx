@@ -62,7 +62,7 @@ const nodeColumns = (env: string): Column<SwarmAgentView>[] => [
     header: "",
     cell: (c) => {
       const n = c.row.original;
-      return <NodeActions env={env} node={{ id: n.node_id, hostname: n.hostname ?? n.node_id, role: n.role, state: n.state }} />;
+      return <NodeActions env={env} node={{ id: n.node_id, hostname: n.hostname ?? n.node_id, role: n.role, state: n.state, availability: n.availability }} />;
     },
   }),
 ];
