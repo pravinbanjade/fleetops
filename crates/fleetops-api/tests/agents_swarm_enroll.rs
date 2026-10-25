@@ -317,6 +317,60 @@ async fn retrust_clears_the_pin_and_drops_sessions() {
         .contains(&"swarm.retrust".to_string()));
 }
 
+/// A handshake checked against the root a re-trust then forgets must not
+/// stay connected under it.
+#[tokio::test]
+async fn a_handshake_racing_a_retrust_is_dropped() {
+    let t = app().await;
+    let admin = t.setup_admin().await;
+    let key = create(&t, &admin).await.json["swarm_enrollment"]["agent_key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true)]);
+    trust(&t, env_id(&t), &pki, &daemon).await;
+    *daemon.slow_node_lookup.lock().unwrap() = std::time::Duration::from_millis(500);
+    let base = format!("http://{}", t.serve().await);
+    let c = SwarmClaim {
+        node_id: "n1".into(),
+        cluster_id: pki.cluster_id.clone(),
+        manager: true,
+    };
+    let mut a = TestAgent::connect_swarm(&base, &key, daemon.clone())
+        .await
+        .unwrap();
+    a.hello_swarm(c.clone()).await;
+    a.answer_challenge(&pki.node("n1", true), &c).await;
+    // The proof passed; the membership check is under way.
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    let r = t
+        .send(req(
+            "POST",
+            "/api/v1/envs/prod/swarm/retrust",
+            None,
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, 204, "{:?}", r.json);
+    loop {
+        match a.next().await {
+            Some(Msg::Welcome { .. } | Msg::Ping { .. }) => continue,
+            other => {
+                assert_eq!(
+                    other,
+                    Some(Msg::Bye {
+                        reason: ByeReason::Revoked
+                    })
+                );
+                break;
+            }
+        }
+    }
+    let id = env_id(&t);
+    eventually("dropped", || t.state.agents.nodes(id).is_empty()).await;
+}
+
 #[tokio::test]
 async fn docker_routes_refuse_a_swarm_environment() {
     let t = app().await;

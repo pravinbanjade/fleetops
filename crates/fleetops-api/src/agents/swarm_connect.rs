@@ -387,6 +387,16 @@ pub(super) async fn serve(
         say_bye(c, session, ByeReason::Revoked).await;
         return "key revoked during the handshake".into();
     }
+    // Likewise a re-trust: the root the proof was checked against must
+    // still be the trusted one.
+    let still = s.store.get_swarm_cluster(env.id).await.ok().flatten();
+    if !still.is_some_and(|p| {
+        p.confirmed_at.is_some() && p.cluster_id == claim.cluster_id && p.trust_root == root
+    }) {
+        s.agents.remove_node(env.id, &node, id, "swarm re-trusted");
+        say_bye(c, session, ByeReason::Revoked).await;
+        return "the swarm was re-trusted during the handshake".into();
+    }
     let record = |last_error: Option<String>| SwarmAgentRecord {
         node_id: node.clone(),
         hostname: Some(info.host.hostname.clone()),

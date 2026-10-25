@@ -157,6 +157,8 @@ pub struct FakeSwarm {
     blip: std::sync::atomic::AtomicU32,
     /// Answers as a worker's engine: the swarm's own state is refused.
     pub worker_engine: std::sync::atomic::AtomicBool,
+    /// How long a node lookup takes, to land something mid-handshake.
+    pub slow_node_lookup: Mutex<std::time::Duration>,
 }
 
 pub fn secrets_json() -> Value {
@@ -255,6 +257,7 @@ impl FakeSwarm {
             blip_after_write: Default::default(),
             blip: Default::default(),
             worker_engine: Default::default(),
+            slow_node_lookup: Mutex::default(),
         })
     }
 
@@ -766,6 +769,10 @@ impl FakeSwarm {
                 let _ = s.write_all(&body).await;
                 let _ = s.shutdown().await;
                 return;
+            }
+            let slow = *me.slow_node_lookup.lock().unwrap();
+            if path.contains("/nodes/") && !slow.is_zero() {
+                tokio::time::sleep(slow).await;
             }
             if path.contains("/tasks") && me.fail_tasks.load(std::sync::atomic::Ordering::SeqCst) {
                 let body = r#"{"message":"manager unavailable"}"#;
