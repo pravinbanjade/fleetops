@@ -98,11 +98,13 @@ pub fn tasks_json() -> serde_json::Value {
     json!([
         {
             "ID": "t1", "Version": {"Index": 20}, "ServiceID": "s1", "Slot": 1, "NodeID": "n1",
+            "Spec": {"ContainerSpec": {"Labels": {"com.docker.stack.namespace": "blog"}}},
             "UpdatedAt": "2026-10-21T10:00:00Z", "DesiredState": "running",
             "Status": {"State": "running", "Message": "started", "ContainerStatus": {"ContainerID": "c1"}}
         },
         {
             "ID": "t2", "Version": {"Index": 21}, "ServiceID": "s1", "Slot": 2, "NodeID": "n3",
+            "Spec": {"ContainerSpec": {"Labels": {"com.docker.stack.namespace": "blog"}}},
             "UpdatedAt": "2026-10-21T10:01:00Z", "DesiredState": "shutdown",
             "Status": {"State": "rejected", "Message": "preparing", "Err": "No such image: nginx:9"}
         }
@@ -761,23 +763,67 @@ pub async fn with_custom_in(
     perms: &[(fleetops_core::perm::Row, fleetops_core::perm::Verb)],
     stacks: Option<&[&str]>,
 ) -> (Swarm, super::Session) {
+    with_grants(vec![custom_grant(perms, stacks)]).await
+}
+
+/// A custom grant holding exactly `perms`, limited to `stacks` when given.
+pub fn custom_grant(
+    perms: &[(fleetops_core::perm::Row, fleetops_core::perm::Verb)],
+    stacks: Option<&[&str]>,
+) -> fleetops_core::access::Grant {
     use fleetops_core::perm::{PermSet, Permission};
-    let extra = std::sync::Arc::new(Fixed::default());
-    let t = super::app_with_extra_and(extra.clone(), fleetops_api::ApiConfig::default()).await;
-    let sw = connected_swarm_on(t).await;
-    sw.t.create_user(&sw.admin, "bob", "bob-password", "user")
-        .await;
     let set: PermSet = perms.iter().map(|(r, v)| Permission::new(*r, *v)).collect();
-    *extra.0.lock().unwrap() = vec![fleetops_core::access::Grant::custom(
+    fleetops_core::access::Grant::custom(
         fleetops_core::access::CustomRef {
             id: 1,
             name: "test".into(),
         },
         set,
         stacks.map(|s| s.iter().map(|n| n.to_string()).collect()),
-    )];
+    )
+}
+
+/// A swarm, and Bob holding exactly `grants` on it.
+pub async fn with_grants(grants: Vec<fleetops_core::access::Grant>) -> (Swarm, super::Session) {
+    let extra = std::sync::Arc::new(Fixed::default());
+    let t = super::app_with_extra_and(extra.clone(), fleetops_api::ApiConfig::default()).await;
+    let sw = connected_swarm_on(t).await;
+    sw.t.create_user(&sw.admin, "bob", "bob-password", "user")
+        .await;
+    *extra.0.lock().unwrap() = grants;
     let bob = super::session_from(&sw.t.login("bob", "bob-password").await);
     (sw, bob)
+}
+
+impl FakeSwarm {
+    /// Adds service `shop_api` (`s4`, stack `shop`) with a task `t4`.
+    pub fn add_shop(&self) {
+        self.services
+            .lock()
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "ID": "s4", "Version": {"Index": 3},
+                "Spec": {
+                    "Name": "shop_api",
+                    "Labels": {"com.docker.stack.namespace": "shop"},
+                    "TaskTemplate": {"ContainerSpec": {"Image": "api:1"}},
+                    "Mode": {"Replicated": {"Replicas": 1}}
+                },
+                "ServiceStatus": {"RunningTasks": 1, "DesiredTasks": 1}
+            }));
+        self.tasks
+            .lock()
+            .unwrap()
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "ID": "t4", "Version": {"Index": 40}, "ServiceID": "s4", "Slot": 1, "NodeID": "n2",
+                "Spec": {"ContainerSpec": {"Labels": {"com.docker.stack.namespace": "shop"}}},
+                "DesiredState": "running", "Status": {"State": "running", "Message": "started"}
+            }));
+    }
 }
 
 /// [`with_custom_in`] on the whole swarm.

@@ -1,7 +1,8 @@
 //! A swarm's cluster, read through a manager's agent (swarm spec §4):
 //! nodes, services, tasks, secrets, configs and networks, each behind its
-//! Swarm permission row (spec §6). Cluster calls need the permission on the
-//! whole environment: stack-scoped grants come with stack scoping.
+//! Swarm permission row (spec §6). A grant limited to stacks sees the
+//! objects of those stacks, and the nodes as a list; node details need the
+//! whole swarm.
 
 use crate::openapi::EnvParam;
 use crate::{
@@ -27,9 +28,9 @@ use serde::Deserialize;
 use std::sync::Arc;
 use utoipa::IntoParams;
 
-/// Resolves a swarm environment and checks `need`; a permission must be
-/// held on the whole environment.
-async fn checked(
+/// Resolves a swarm environment and checks `need` is held by some grant,
+/// wherever it applies; the route checks the objects it touches.
+async fn scoped(
     s: &AppState,
     cu: &CurrentUser,
     name: &str,
@@ -39,10 +40,34 @@ async fn checked(
     if !env.kind().is_swarm() {
         return Err(wrong_kind(name, env.kind()));
     }
+    Ok((env, grants))
+}
+
+/// [`scoped`], with the permission held on the whole swarm.
+async fn checked(
+    s: &AppState,
+    cu: &CurrentUser,
+    name: &str,
+    need: Need,
+) -> Result<(Arc<dyn Environment>, Grants)> {
+    let (env, grants) = scoped(s, cu, name, need).await?;
     if let Need::Perm(p) = need {
-        deny_audited(s, cu, env.id(), &p.to_string(), grants.check_env(p)).await?;
+        deny_audited(s, cu, env.id(), &p.to_string(), grants.check_stack(p, None)).await?;
     }
     Ok((env, grants))
+}
+
+/// The cluster calls and the caller's grants, for a route that filters or
+/// checks by stack itself.
+async fn scoped_for(
+    s: &AppState,
+    cu: &CurrentUser,
+    name: &str,
+    p: Permission,
+) -> Result<(Arc<dyn Environment>, Arc<dyn SwarmOps>, Grants)> {
+    let (env, grants) = scoped(s, cu, name, Need::Perm(p)).await?;
+    let ops = swarm_ops(&env)?;
+    Ok((env, ops, grants))
 }
 
 /// A swarm environment the caller may use, reachable or not: for live
@@ -125,7 +150,10 @@ pub async fn nodes(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<NodeSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmNodes, Verb::View)).await?;
+    // Any grant holding the row sees the list, so a stack's visualizer
+    // has its columns; the summary carries nothing more.
+    let (_, ops, _) =
+        scoped_for(&s, &cu, &env, Permission::new(Row::SwarmNodes, Verb::View)).await?;
     Ok(Json(ops.nodes().await?))
 }
 
@@ -153,8 +181,11 @@ pub async fn services(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ServiceSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmServices, Verb::View)).await?;
-    Ok(Json(ops.services().await?))
+    let view = Permission::new(Row::SwarmServices, Verb::View);
+    let (_, ops, grants) = scoped_for(&s, &cu, &env, view).await?;
+    let mut list = ops.services().await?;
+    list.retain(|x| grants.allows_stack(view, x.stack.as_deref()));
+    Ok(Json(list))
 }
 
 #[utoipa::path(get, path = "/envs/{env}/swarm/services/{id}", operation_id = "getSwarmService", tag = "swarm",
@@ -165,12 +196,21 @@ pub async fn service(
     cu: CurrentUser,
     ApiPath((env, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<ServiceDetail>> {
-    let (env, grants) = checked(&s, &cu, &env, Need::of(Row::SwarmServices, Verb::View)).await?;
-    let ops = swarm_ops(&env)?;
+    let view = Permission::new(Row::SwarmServices, Verb::View);
+    let (env, ops, grants) = scoped_for(&s, &cu, &env, view).await?;
     let mut svc = ops
         .service(&id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("no such service '{id}'")))?;
+    let stack = svc.summary.stack.as_deref();
+    deny_audited(
+        &s,
+        &cu,
+        env.id(),
+        &view.to_string(),
+        grants.check_stack(view, stack),
+    )
+    .await?;
     // As for containers: env values are secret material without Reveal.
     let reveal = Permission::new(Row::Containers, Verb::Reveal);
     if !grants.allows(reveal, None) {
@@ -199,11 +239,13 @@ pub async fn tasks(
     ApiPath(env): ApiPath<String>,
     Query(f): Query<TaskFilter>,
 ) -> ApiResult<Json<Vec<TaskSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmServices, Verb::View)).await?;
+    let view = Permission::new(Row::SwarmServices, Verb::View);
+    let (_, ops, grants) = scoped_for(&s, &cu, &env, view).await?;
     let tasks = ops
         .tasks()
         .await?
         .into_iter()
+        .filter(|t| grants.allows_stack(view, t.stack.as_deref()))
         .filter(|t| f.service.as_ref().is_none_or(|s| *s == t.service_id))
         .filter(|t| {
             f.node
@@ -222,8 +264,11 @@ pub async fn secrets(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<SecretSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmSecrets, Verb::View)).await?;
-    Ok(Json(ops.secrets().await?))
+    let view = Permission::new(Row::SwarmSecrets, Verb::View);
+    let (_, ops, grants) = scoped_for(&s, &cu, &env, view).await?;
+    let mut list = ops.secrets().await?;
+    list.retain(|x| grants.allows_stack(view, x.stack.as_deref()));
+    Ok(Json(list))
 }
 
 #[utoipa::path(get, path = "/envs/{env}/swarm/configs", operation_id = "listSwarmConfigs", tag = "swarm",
@@ -234,8 +279,11 @@ pub async fn configs(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<ConfigSummary>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::SwarmConfigs, Verb::View)).await?;
-    Ok(Json(ops.configs().await?))
+    let view = Permission::new(Row::SwarmConfigs, Verb::View);
+    let (_, ops, grants) = scoped_for(&s, &cu, &env, view).await?;
+    let mut list = ops.configs().await?;
+    list.retain(|x| grants.allows_stack(view, x.stack.as_deref()));
+    Ok(Json(list))
 }
 
 #[utoipa::path(get, path = "/envs/{env}/swarm/networks", operation_id = "listSwarmNetworks", tag = "swarm",
@@ -246,6 +294,9 @@ pub async fn networks(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<SwarmNetwork>>> {
-    let (_, ops) = swarm_for(&s, &cu, &env, Need::of(Row::Networks, Verb::View)).await?;
-    Ok(Json(ops.networks().await?))
+    let view = Permission::new(Row::Networks, Verb::View);
+    let (_, ops, grants) = scoped_for(&s, &cu, &env, view).await?;
+    let mut list = ops.networks().await?;
+    list.retain(|x| grants.allows_stack(view, x.stack.as_deref()));
+    Ok(Json(list))
 }

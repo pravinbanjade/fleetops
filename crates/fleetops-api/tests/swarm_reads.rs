@@ -169,14 +169,94 @@ async fn swarm_reads_need_their_rows() {
     );
 }
 
+const READS: &[(Row, Verb)] = &[
+    (Row::SwarmNodes, Verb::View),
+    (Row::SwarmServices, Verb::View),
+    (Row::SwarmSecrets, Verb::View),
+    (Row::SwarmConfigs, Verb::View),
+    (Row::Networks, Verb::View),
+];
+
+fn names(r: &Resp, key: &str) -> Vec<String> {
+    r.json
+        .as_array()
+        .unwrap_or_else(|| panic!("{:?}", r.json))
+        .iter()
+        .map(|o| o[key].as_str().unwrap().to_string())
+        .collect()
+}
+
 #[tokio::test]
-async fn scoped_grants_get_no_swarm_cluster_access() {
-    let (sw, bob) = with_custom_in(&[(Row::SwarmServices, Verb::View)], Some(&["blog"])).await;
-    let r = get_as(&sw, &bob, "/api/v1/envs/prod/swarm/services").await;
-    assert_eq!(r.status, 403, "{:?}", r.json);
+async fn scoped_grants_see_their_stacks() {
+    let (sw, bob) = with_custom_in(READS, Some(&["blog"])).await;
+    sw.daemon.add_shop();
+    let p = "/api/v1/envs/prod/swarm";
+    let r = get_as(&sw, &bob, &format!("{p}/services")).await;
+    assert_eq!(names(&r, "name"), ["blog_web"]);
+    let r = get_as(&sw, &bob, &format!("{p}/services/s2")).await;
+    assert_eq!(r.status, 403);
+    assert!(
+        r.json["message"]
+            .as_str()
+            .unwrap()
+            .ends_with("only access to the whole swarm covers this"),
+        "{:?}",
+        r.json
+    );
+    let r = get_as(&sw, &bob, &format!("{p}/services/s4")).await;
+    assert_eq!(r.status, 403);
+    assert!(
+        r.json["message"]
+            .as_str()
+            .unwrap()
+            .ends_with("stack 'shop' is not in your access"),
+        "{:?}",
+        r.json
+    );
+    assert_eq!(
+        get_as(&sw, &bob, &format!("{p}/services/s1")).await.status,
+        200
+    );
+    let r = get_as(&sw, &bob, &format!("{p}/tasks")).await;
+    assert_eq!(names(&r, "id"), ["t1", "t2"]);
+    let r = get_as(&sw, &bob, &format!("{p}/secrets")).await;
+    assert_eq!(names(&r, "name"), ["blog_db"]);
+    let r = get_as(&sw, &bob, &format!("{p}/configs")).await;
+    assert!(names(&r, "name").is_empty());
+    let r = get_as(&sw, &bob, &format!("{p}/networks")).await;
+    assert_eq!(names(&r, "name"), ["blog_default"]);
     assert!(sw
         .t
         .audit_actions()
         .await
         .contains(&"access.denied".to_string()));
+}
+
+#[tokio::test]
+async fn scoped_grants_list_nodes_but_not_their_detail() {
+    let (sw, bob) = with_custom_in(READS, Some(&["blog"])).await;
+    let r = get_as(&sw, &bob, "/api/v1/envs/prod/swarm/nodes").await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json.as_array().unwrap().len(), 2);
+    let r = get_as(&sw, &bob, "/api/v1/envs/prod/swarm/nodes/n1").await;
+    assert_eq!(r.status, 403, "{:?}", r.json);
+}
+
+#[tokio::test]
+async fn mixed_grants_view_everything() {
+    use common::fake_swarm::{custom_grant, with_grants};
+    let (sw, bob) = with_grants(vec![
+        fleetops_core::access::Grant::full(fleetops_core::access::EnvRole::Viewer),
+        custom_grant(&[(Row::SwarmServices, Verb::Operate)], Some(&["blog"])),
+    ])
+    .await;
+    sw.daemon.add_shop();
+    let r = get_as(&sw, &bob, "/api/v1/envs/prod/swarm/services").await;
+    assert_eq!(names(&r, "name").len(), 3, "{:?}", r.json);
+    assert_eq!(
+        get_as(&sw, &bob, "/api/v1/envs/prod/swarm/services/s4")
+            .await
+            .status,
+        200
+    );
 }
