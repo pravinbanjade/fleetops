@@ -163,3 +163,58 @@ describe("Swarm service actions", () => {
     expect(screen.queryByRole("button", { name: "Create service" })).not.toBeInTheDocument();
   });
 });
+
+describe("Swarm secrets, configs and networks", () => {
+  const objRoutes = {
+    ...routes,
+    "GET /api/v1/envs/prod/swarm/secrets": { json: [] },
+    "GET /api/v1/envs/prod/swarm/configs": { json: [{ id: "cfg1", name: "blog_nginx", stack: null, created_at: 1, updated_at: 1, used_by: [] }] },
+    "GET /api/v1/envs/prod/swarm/configs/cfg1/data": { json: { text: "server {}", size: 9 } },
+    "GET /api/v1/envs/prod/swarm/networks": { json: [] },
+  };
+
+  it("secret create sends the value once and closes", async () => {
+    const calls = mockFetch({ ...objRoutes, "POST /api/v1/envs/prod/swarm/secrets": { status: 201, json: { id: "x" } } });
+    renderApp("/envs/prod/swarm/secrets");
+    await userEvent.click(await screen.findByRole("button", { name: "Create secret" }));
+    const d = await screen.findByRole("dialog", { name: "Create secret" });
+    expect(d).toHaveTextContent("write-only");
+    await userEvent.type(within(d).getByLabelText("Name"), "db_password");
+    await userEvent.type(within(d).getByLabelText("Value"), "hunter2");
+    await userEvent.click(within(d).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "db_password", value: "hunter2" });
+  });
+
+  it("config content shows text, needs reveal", async () => {
+    mockFetch(objRoutes);
+    renderApp("/envs/prod/swarm/configs");
+    await userEvent.click(await screen.findByRole("button", { name: "Actions for blog_nginx" }));
+    await userEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "View content" }));
+    expect(await screen.findByText("server {}")).toBeInTheDocument();
+  });
+
+  it("config content is not offered without reveal", async () => {
+    const noReveal = { ...SWARM, access: { role: "operator", namespaces: null, grants: [{ namespaces: null, permissions: ["swarm-configs.view", "swarm-configs.delete"] }] } };
+    mockFetch({ ...objRoutes, "GET /api/v1/envs": { json: [...ENVS, noReveal] } });
+    renderApp("/envs/prod/swarm/configs");
+    await userEvent.click(await screen.findByRole("button", { name: "Actions for blog_nginx" }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).queryByRole("menuitem", { name: "View content" })).not.toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  it("network create sends the flags", async () => {
+    const calls = mockFetch({ ...objRoutes, "POST /api/v1/envs/prod/swarm/networks": { status: 201, json: { id: "n" } } });
+    renderApp("/envs/prod/swarm/networks");
+    await userEvent.click(await screen.findByRole("button", { name: "Create network" }));
+    const d = await screen.findByRole("dialog", { name: "Create network" });
+    await userEvent.type(within(d).getByLabelText("Name"), "backend");
+    await userEvent.type(within(d).getByLabelText("Subnet (optional)"), "10.20.0.0/24");
+    await userEvent.click(within(d).getByRole("checkbox", { name: /Attachable/ }));
+    await userEvent.click(within(d).getByRole("checkbox", { name: /Encrypted/ }));
+    await userEvent.click(within(d).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "backend", subnet: "10.20.0.0/24", attachable: true, internal: false, encrypted: true });
+  });
+});
