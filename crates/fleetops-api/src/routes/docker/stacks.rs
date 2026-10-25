@@ -288,9 +288,14 @@ pub async fn list(
     cu: CurrentUser,
     ApiPath(env): ApiPath<String>,
 ) -> ApiResult<Json<Vec<StackSummary>>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View), None).await?;
+    let view = Permission::new(Row::Stacks, Verb::View);
     let mut out = Vec::new();
     for st in s.store.list_stacks(c.env.id()).await? {
+        // A grant limited to stacks lists those only (swarm spec §6).
+        if c.ops.mode() == Mode::Swarm && !c.grants.allows_stack(view, Some(&st.name)) {
+            continue;
+        }
         out.push(summary(&s, st, c.ops.mode()).await?);
     }
     Ok(Json(out))
@@ -312,7 +317,14 @@ pub async fn create(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<CreateStackBody>,
 ) -> ApiResult<(StatusCode, Json<StackSummary>)> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Create),
+        Some(&body.name),
+    )
+    .await?;
     validate_stack_name(&body.name).map_err(Error::Invalid)?;
     check_size(&body.compose, &body.variables)?;
     let res = s
@@ -349,7 +361,7 @@ pub async fn validate(
     ApiPath(env): ApiPath<String>,
     ApiJson(body): ApiJson<ValidateBody>,
 ) -> ApiResult<Json<ValidateResponse>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View), None).await?;
     check_size(&body.compose, &body.variables)?;
     Ok(Json(
         match parse_mode(&body.compose, &body.variables, &body.name, c.ops.mode()) {
@@ -379,7 +391,7 @@ pub async fn get(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<StackDetail>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View), Some(&name)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let mut draft = s.store.draft(stack.id).await?.unwrap_or(Draft {
         compose: String::new(),
@@ -417,7 +429,14 @@ pub async fn save_draft(
     ApiPath((env, name)): ApiPath<(String, String)>,
     ApiJson(mut body): ApiJson<DraftBody>,
 ) -> ApiResult<StatusCode> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Create),
+        Some(&name),
+    )
+    .await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     check_size(&body.compose, &body.variables)?;
     let stored = s.store.draft(stack.id).await?;
@@ -469,9 +488,13 @@ pub async fn plan_stack(
     ApiPath((env, name)): ApiPath<(String, String)>,
     ApiJson(from): ApiJson<DeploySource>,
 ) -> ApiResult<Json<PlanResponse>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View), Some(&name)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
-    Ok(Json(make_plan(&s, &c.ops, &stack, from).await?.0))
+    Ok(Json(
+        make_plan(&s, &c.ops, &stack, from, c.scope.as_ref())
+            .await?
+            .0,
+    ))
 }
 
 #[utoipa::path(
@@ -491,7 +514,14 @@ pub async fn deploy(
     ApiPath((env, name)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<DeployBody>,
 ) -> ApiResult<(StatusCode, Json<DeployStarted>)> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Operate),
+        Some(&name),
+    )
+    .await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let started = start_deploy(
         &s,
@@ -501,6 +531,7 @@ pub async fn deploy(
         body.from,
         Some(&body.plan_token),
         Actor::User(c.user.user.id),
+        c.scope.as_ref(),
     )
     .await?;
     Ok((StatusCode::ACCEPTED, Json(started)))
@@ -520,7 +551,7 @@ pub async fn revisions(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Vec<RevisionRecord>>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View), Some(&name)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     Ok(Json(s.store.list_revisions(stack.id).await?))
 }
@@ -539,7 +570,7 @@ pub async fn revision(
     cu: CurrentUser,
     ApiPath((env, name, n)): ApiPath<(String, String, i64)>,
 ) -> ApiResult<Json<RevisionDetail>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View), Some(&name)).await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let revision = s.store.revision(stack.id, n).await?;
     let mut variables = s.store.revision_variables(stack.id, n).await?;
@@ -587,7 +618,14 @@ pub async fn action(
         "restart" => ContainerAction::Restart,
         other => return Err(Error::NotFound(format!("unknown stack action '{other}'")).into()),
     };
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Operate),
+        Some(&name),
+    )
+    .await?;
     let StackOps::Docker(ops) = &c.ops else {
         return Err(Error::Conflict(
             "a Swarm stack's services are scaled or redeployed one by one on the Services page"
@@ -641,7 +679,7 @@ pub async fn services(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<Vec<StackService>>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View), Some(&name)).await?;
     let StackOps::Swarm(ops) = &c.ops else {
         return Err(Error::Conflict(
             "stack services are listed per container on a Docker host".into(),
@@ -654,7 +692,7 @@ pub async fn services(
         &c.user,
         c.env.id(),
         &p.to_string(),
-        c.grants.check_env(p),
+        c.grants.check_stack(p, Some(&name)),
     )
     .await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
@@ -678,7 +716,14 @@ pub async fn remove(
     ApiPath((env, name)): ApiPath<(String, String)>,
     ApiQuery(q): ApiQuery<RemoveQuery>,
 ) -> ApiResult<StatusCode> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Delete)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Delete),
+        Some(&name),
+    )
+    .await?;
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let _lock = try_lock(&s, stack.id)
         .ok_or_else(|| Error::Conflict("a deploy of this stack is running".into()))?;

@@ -8,7 +8,7 @@ use crate::AppState;
 use fleetops_core::compose::docker::LABEL_PROJECT;
 use fleetops_core::compose::files::{resolve, FileValues};
 use fleetops_core::compose::plan::{plan, Live, Plan};
-use fleetops_core::compose::swarm_plan::plan_swarm;
+use fleetops_core::compose::swarm_plan::{outside_scope, plan_swarm};
 use fleetops_core::compose::{parse_mode, parse_variables, ComposeIssue, FileKind, Mode, Project};
 use fleetops_core::docker::DockerOps;
 use fleetops_core::env::Environment;
@@ -260,11 +260,14 @@ pub(crate) struct Ready {
 /// no value, or a build cannot be made.
 pub(crate) type Planned = (PlanResponse, Option<Ready>, Source);
 
+/// `scope`: on a swarm, the stacks the deployer may use (swarm spec §6);
+/// `None` is every stack.
 pub(crate) async fn make_plan(
     s: &AppState,
     ops: &StackOps,
     stack: &StackRecord,
     from: DeploySource,
+    scope: Option<&BTreeSet<String>>,
 ) -> Result<Planned> {
     let mode = ops.mode();
     match ops {
@@ -342,6 +345,10 @@ pub(crate) async fn make_plan(
                     let live = super::swarm::live(sw.as_ref(), &stack.name).await?;
                     let mut p = plan_swarm(&parsed.project, prev, &live);
                     super::swarm::protect(&mut p, &live, &stack.name);
+                    if let Some(scope) = scope {
+                        p.blocking
+                            .extend(outside_scope(&parsed.project, &live, scope));
+                    }
                     (p, vec![])
                 }
             };
@@ -390,8 +397,9 @@ pub async fn start_deploy(
     from: DeploySource,
     plan_token: Option<&str>,
     actor: Actor,
+    scope: Option<&BTreeSet<String>>,
 ) -> Result<DeployStarted> {
-    let (resp, planned, src) = make_plan(s, &ops, stack, from).await?;
+    let (resp, planned, src) = make_plan(s, &ops, stack, from, scope).await?;
     let Source {
         variables,
         rollback_of,

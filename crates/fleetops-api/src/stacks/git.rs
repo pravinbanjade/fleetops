@@ -6,6 +6,7 @@ use crate::AppState;
 use fleetops_core::compose::build::context_dir;
 use fleetops_core::compose::files::repo_path;
 use fleetops_core::compose::{parse_mode, FileKind, FileSource, Mode};
+use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::{GitRecord, NewAudit, StackRecord};
 use serde::Serialize;
@@ -295,7 +296,39 @@ async fn sync_fetched(
             .await?;
         return Ok(SyncOutcome::Pending { commit });
     };
-    match start_deploy(s, ops, handle, stack, DeploySource::Draft, None, Actor::Git).await {
+    // On a swarm an auto-deploy acts with the stack scope of whoever last
+    // saved the git settings (swarm spec §6).
+    let mut scope = None;
+    if let (true, Some(author)) = (handle.kind().is_swarm(), git.updated_by) {
+        let operate = Permission::new(Row::Stacks, Verb::Operate);
+        let grants = crate::authz::effective_grant(s, author, handle.id()).await?;
+        if !grants.allows_stack(operate, Some(&stack.name)) {
+            let who = s
+                .store
+                .get_user(author)
+                .await
+                .map(|u| u.username)
+                .unwrap_or_else(|_| format!("user {author}"));
+            return fail(format!(
+                "auto-deploy needs {who}'s access to stack '{}', which they no longer have",
+                stack.name
+            ))
+            .await;
+        }
+        scope = grants.namespaces_for(operate);
+    }
+    match start_deploy(
+        s,
+        ops,
+        handle,
+        stack,
+        DeploySource::Draft,
+        None,
+        Actor::Git,
+        scope.as_ref(),
+    )
+    .await
+    {
         Ok(d) => Ok(SyncOutcome::Deploying {
             commit,
             task_id: d.task_id,

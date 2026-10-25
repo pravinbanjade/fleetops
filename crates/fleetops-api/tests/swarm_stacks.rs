@@ -122,13 +122,6 @@ async fn plan_on_a_swarm() {
 }
 
 #[tokio::test]
-async fn scoped_stack_grants_are_refused_on_a_swarm() {
-    let (sw, bob) = with_custom_in(&[(Row::Stacks, Verb::View)], Some(&["blog"])).await;
-    let r = sw.t.send(req("GET", STACKS, None, Some(&bob))).await;
-    assert_eq!(r.status, 403, "{:?}", r.json);
-}
-
-#[tokio::test]
 async fn a_protected_service_blocks_the_plan() {
     let sw = swarm().await;
     sw.daemon.add_fleetops_server("n1");
@@ -709,4 +702,190 @@ async fn removing_a_stack_that_runs_fleetops_is_refused() {
         r.json
     );
     assert_eq!(sw.daemon.write_paths().len(), before);
+}
+
+// Stack scoping (swarm spec §6).
+
+const STACK_CELLS: &[(Row, Verb)] = &[
+    (Row::Stacks, Verb::View),
+    (Row::Stacks, Verb::Create),
+    (Row::Stacks, Verb::Operate),
+    (Row::Stacks, Verb::Delete),
+];
+
+async fn bob_says(
+    sw: &Swarm,
+    bob: &Session,
+    method: &str,
+    path: &str,
+    body: Option<Value>,
+) -> Resp {
+    sw.t.send(req(method, path, body, Some(bob))).await
+}
+
+#[tokio::test]
+async fn scoped_stack_lists_and_routes() {
+    let (sw, bob) = with_custom_in(STACK_CELLS, Some(&["blog", "news"])).await;
+    create(&sw, "blog", FILE).await;
+    create(&sw, "shop", FILE).await;
+    let r = bob_says(&sw, &bob, "GET", STACKS, None).await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    let names: Vec<&str> = r
+        .json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["blog"]);
+    let r = bob_says(&sw, &bob, "GET", &format!("{STACKS}/shop"), None).await;
+    assert_eq!(r.status, 403, "{:?}", r.json);
+    assert!(r.json["message"]
+        .as_str()
+        .unwrap()
+        .ends_with("stack 'shop' is not in your access"));
+    let r = bob_says(
+        &sw,
+        &bob,
+        "POST",
+        &format!("{STACKS}/shop/plan"),
+        Some(json!({"source": "draft"})),
+    )
+    .await;
+    assert_eq!(r.status, 403);
+    let new = |n: &str| Some(json!({"name": n, "compose": FILE, "variables": []}));
+    assert_eq!(
+        bob_says(&sw, &bob, "POST", STACKS, new("other"))
+            .await
+            .status,
+        403
+    );
+    assert_eq!(
+        bob_says(&sw, &bob, "POST", STACKS, new("news"))
+            .await
+            .status,
+        201
+    );
+    assert_eq!(
+        bob_says(&sw, &bob, "GET", &format!("{STACKS}/blog"), None)
+            .await
+            .status,
+        200
+    );
+}
+
+const BLOG_EXTERNAL: &str = r#"
+services:
+  web:
+    image: nginx:1.27
+    secrets: [tls]
+secrets:
+  tls: { external: true, name: shop_tls }
+"#;
+
+fn add_shop_secret(sw: &Swarm) {
+    sw.daemon.secrets.lock().unwrap().as_array_mut().unwrap().push(json!(
+        {"ID": "sec9", "Version": {"Index": 1}, "Spec": {"Name": "shop_tls", "Labels": {"com.docker.stack.namespace": "shop"}}}
+    ));
+}
+
+#[tokio::test]
+async fn scoped_deploys_cannot_use_other_stacks_externals() {
+    let (sw, bob) = with_custom_in(STACK_CELLS, Some(&["blog"])).await;
+    add_shop_secret(&sw);
+    create(&sw, "blog", BLOG_EXTERNAL).await;
+    let r = bob_says(
+        &sw,
+        &bob,
+        "POST",
+        &format!("{STACKS}/blog/plan"),
+        Some(json!({"source": "draft"})),
+    )
+    .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(
+        r.json["plan"]["blocking"],
+        json!(["external secret shop_tls is outside your stacks"])
+    );
+    let p = plan(&sw, "blog").await;
+    assert_eq!(p["plan"]["blocking"], json!([]), "{p}");
+}
+
+#[tokio::test]
+async fn git_auto_deploys_use_the_authors_scope() {
+    use fleetops_api::stacks::git::{sync_stack, SyncOutcome, SyncTrigger};
+    use fleetops_git::testing::{GitServer, ServerOpts, TestRepo};
+    let (sw, bob) = common::fake_swarm::with_grants_on(
+        vec![common::fake_swarm::custom_grant(
+            STACK_CELLS,
+            Some(&["blog"]),
+        )],
+        ApiConfig {
+            git_allow_http: true,
+            data_dir: Some(tempfile::tempdir().unwrap().keep()),
+            ..fast_config()
+        },
+    )
+    .await;
+    add_shop_secret(&sw);
+    create(&sw, "blog", "").await;
+    let bob_id = bob_says(&sw, &bob, "GET", "/api/v1/auth/me", None)
+        .await
+        .json["user"]["id"]
+        .as_i64()
+        .unwrap();
+    let repo = TestRepo::new("main");
+    repo.commit(&[("compose.yaml", BLOG_EXTERNAL)], "one");
+    let server = GitServer::start(&repo.root(), ServerOpts::default()).await;
+    let stack = sw.t.store.stack_by_name(sw.env_id, "blog").await.unwrap();
+    sw.t.store
+        .set_stack_git(
+            stack.id,
+            &common::git::settings(&server, "poll", true),
+            fleetops_store::TokenChange::Keep,
+            Some("hook-secret"),
+            Some(bob_id),
+            1,
+        )
+        .await
+        .unwrap();
+    let stack = sw.t.store.stack_by_id(stack.id).await.unwrap();
+    match sync_stack(&sw.t.state, &stack, SyncTrigger::Poll)
+        .await
+        .unwrap()
+    {
+        SyncOutcome::Failed { error } => {
+            assert!(
+                error.contains("external secret shop_tls is outside your stacks"),
+                "{error}"
+            )
+        }
+        other => panic!("expected a refused auto-deploy, got {other:?}"),
+    }
+    assert!(!sw
+        .daemon
+        .write_paths()
+        .iter()
+        .any(|p| p.contains("/services/create")));
+}
+
+#[tokio::test]
+async fn scoped_stack_services_follow_the_stack() {
+    let mut cells = STACK_CELLS.to_vec();
+    cells.push((Row::SwarmServices, Verb::View));
+    let (sw, bob) = with_custom_in(&cells, Some(&["blog"])).await;
+    create(&sw, "blog", FILE).await;
+    create(&sw, "shop", FILE).await;
+    assert_eq!(
+        bob_says(&sw, &bob, "GET", &format!("{STACKS}/blog/services"), None)
+            .await
+            .status,
+        200
+    );
+    assert_eq!(
+        bob_says(&sw, &bob, "GET", &format!("{STACKS}/shop/services"), None)
+            .await
+            .status,
+        403
+    );
 }

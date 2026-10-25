@@ -785,8 +785,16 @@ pub fn custom_grant(
 
 /// A swarm, and Bob holding exactly `grants` on it.
 pub async fn with_grants(grants: Vec<fleetops_core::access::Grant>) -> (Swarm, super::Session) {
+    with_grants_on(grants, fleetops_api::ApiConfig::default()).await
+}
+
+/// [`with_grants`] on a server with `config`.
+pub async fn with_grants_on(
+    grants: Vec<fleetops_core::access::Grant>,
+    config: fleetops_api::ApiConfig,
+) -> (Swarm, super::Session) {
     let extra = std::sync::Arc::new(Fixed::default());
-    let t = super::app_with_extra_and(extra.clone(), fleetops_api::ApiConfig::default()).await;
+    let t = super::app_with_extra_and(extra.clone(), config).await;
     let sw = connected_swarm_on(t).await;
     sw.t.create_user(&sw.admin, "bob", "bob-password", "user")
         .await;

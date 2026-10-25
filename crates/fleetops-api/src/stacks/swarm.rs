@@ -53,11 +53,19 @@ pub(crate) async fn live(ops: &dyn SwarmOps, stack: &str) -> Result<SwarmLive> {
             .filter(|s| ours(&s.stack))
             .map(|s| s.name.clone())
             .collect(),
+        secret_stacks: secrets
+            .iter()
+            .map(|s| (s.name.clone(), s.stack.clone()))
+            .collect(),
         secrets: secrets.into_iter().map(|s| s.name).collect(),
         stack_configs: configs
             .iter()
             .filter(|c| ours(&c.stack))
             .map(|c| c.name.clone())
+            .collect(),
+        config_stacks: configs
+            .iter()
+            .map(|c| (c.name.clone(), c.stack.clone()))
             .collect(),
         configs: configs.into_iter().map(|c| c.name).collect(),
         network_hashes: networks

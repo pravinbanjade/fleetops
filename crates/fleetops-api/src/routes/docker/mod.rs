@@ -55,17 +55,21 @@ pub struct StackCtx {
     pub env: Arc<dyn Environment>,
     pub ops: crate::stacks::StackOps,
     pub grants: Grants,
+    /// On a swarm, the stacks the caller may deploy (`None`: every stack).
+    pub scope: Option<std::collections::BTreeSet<String>>,
 }
 
 /// The context for FleetOps stacks, which live on a Docker host or a swarm.
 /// A Swarm node's view shares its swarm's id, so stacks are refused there.
-/// On a swarm the permission must cover the whole environment until stack
-/// scoping arrives (swarm spec §6).
+/// On a swarm, a grant may be limited to stacks (swarm spec §6): `stack`
+/// names the one the request is about, and `None` (lists, validation) only
+/// needs the permission held somewhere.
 pub async fn stack_ctx(
     s: &AppState,
     user: CurrentUser,
     env_name: &str,
     need: Need,
+    stack: Option<&str>,
 ) -> ApiResult<StackCtx> {
     let (env, grants) = crate::authz::env_access(s, &user, env_name, need).await?;
     let kind = env.kind();
@@ -77,11 +81,22 @@ pub async fn stack_ctx(
     if kind.is_kube() {
         return Err(crate::routes::kube::wrong_kind(env_name, kind).into());
     }
+    let mut scope = None;
     if kind.is_swarm() {
-        if let Need::Perm(p) = need {
-            crate::authz::deny_audited(s, &user, env.id(), &p.to_string(), grants.check_env(p))
-                .await?;
+        if let (Need::Perm(p), Some(stack)) = (need, stack) {
+            crate::authz::deny_audited(
+                s,
+                &user,
+                env.id(),
+                &p.to_string(),
+                grants.check_stack(p, Some(stack)),
+            )
+            .await?;
         }
+        scope = grants.namespaces_for(fleetops_core::perm::Permission::new(
+            fleetops_core::perm::Row::Stacks,
+            fleetops_core::perm::Verb::Operate,
+        ));
     }
     let ops = crate::stacks::StackOps::of(&env).ok_or_else(|| {
         Error::EnvUnavailable(if kind.is_swarm() {
@@ -95,6 +110,7 @@ pub async fn stack_ctx(
         env,
         ops,
         grants,
+        scope,
     })
 }
 

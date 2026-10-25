@@ -24,6 +24,9 @@ pub struct SwarmLive {
     /// The names of those labelled with this stack.
     pub stack_secrets: Vec<String>,
     pub stack_configs: Vec<String>,
+    /// Every secret's and config's stack, by name (`None`: in no stack).
+    pub secret_stacks: BTreeMap<String, Option<String>>,
+    pub config_stacks: BTreeMap<String, Option<String>>,
     /// Every swarm-scoped network.
     pub networks: Vec<SwarmNetwork>,
     /// This stack's networks' config-hash label, by name.
@@ -70,6 +73,50 @@ pub fn drift(live: &Value, deployed: Option<&Project>, key: &str) -> Vec<String>
     } else {
         changes
     }
+}
+
+/// Blocking lines for the external secrets, configs and networks `project`
+/// names that belong to no stack in `scope` (swarm spec §6): a grant
+/// limited to stacks lends a stack nothing of another's.
+pub fn outside_scope(project: &Project, live: &SwarmLive, scope: &BTreeSet<String>) -> Vec<String> {
+    let inside = |stack: Option<&String>| stack.is_some_and(|s| scope.contains(s));
+    let mut out = Vec::new();
+    for (kind, decls, stacks) in [
+        (FileKind::Secret, &project.secrets, &live.secret_stacks),
+        (FileKind::Config, &project.configs, &live.config_stacks),
+    ] {
+        let used: BTreeSet<&String> = project
+            .services
+            .values()
+            .flat_map(|s| &s.files)
+            .filter(|f| f.kind == kind)
+            .map(|f| &f.source)
+            .collect();
+        for key in used {
+            if let Some(FileSource::External { name }) = decls.get(key) {
+                if !inside(stacks.get(name).and_then(Option::as_ref)) {
+                    out.push(format!(
+                        "external {} {name} is outside your stacks",
+                        kind.as_str()
+                    ));
+                }
+            }
+        }
+    }
+    for net in project.networks.values().filter(|n| n.external) {
+        let stack = live
+            .networks
+            .iter()
+            .find(|n| n.name == net.name)
+            .and_then(|n| n.stack.as_ref());
+        if !inside(stack) {
+            out.push(format!(
+                "external network {} is outside your stacks",
+                net.name
+            ));
+        }
+    }
+    out
 }
 
 pub fn plan_swarm(new: &Project, deployed: Option<(&Project, i64)>, live: &SwarmLive) -> Plan {

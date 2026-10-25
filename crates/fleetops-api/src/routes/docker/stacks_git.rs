@@ -149,7 +149,7 @@ pub async fn get(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<GitStatus>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View)).await?;
+    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::View), Some(&name)).await?;
     let stack = stack_of(&s, &c, &name).await?;
     Ok(Json(status(&s, git_of(&s, &stack).await?)))
 }
@@ -171,7 +171,14 @@ pub async fn set(
     ApiPath((env, name)): ApiPath<(String, String)>,
     ApiJson(body): ApiJson<GitBody>,
 ) -> ApiResult<Json<GitSaved>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Create),
+        Some(&name),
+    )
+    .await?;
     // Create authors and Operate ships: a source that deploys itself is both.
     if body.auto_deploy
         && !c
@@ -289,7 +296,14 @@ pub async fn detach(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<StatusCode> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Create),
+        Some(&name),
+    )
+    .await?;
     let stack = stack_of(&s, &c, &name).await?;
     git_of(&s, &stack).await?;
     let res = s.store.detach_stack_git(stack.id).await;
@@ -321,7 +335,14 @@ pub async fn sync(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<SyncOutcome>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Operate),
+        Some(&name),
+    )
+    .await?;
     let stack = stack_of(&s, &c, &name).await?;
     git_of(&s, &stack).await?;
     Ok(Json(
@@ -344,7 +365,14 @@ pub async fn resume(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<SyncOutcome>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Operate)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Operate),
+        Some(&name),
+    )
+    .await?;
     let stack = stack_of(&s, &c, &name).await?;
     git_of(&s, &stack).await?;
     let res = s.store.set_git_paused(stack.id, false).await;
@@ -378,7 +406,14 @@ pub async fn rotate_secret(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<SecretRotated>> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Create),
+        Some(&name),
+    )
+    .await?;
     let stack = stack_of(&s, &c, &name).await?;
     git_of(&s, &stack).await?;
     let secret = new_secret();
@@ -413,7 +448,14 @@ pub async fn reset_host_key(
     cu: CurrentUser,
     ApiPath((env, name)): ApiPath<(String, String)>,
 ) -> ApiResult<StatusCode> {
-    let c = stack_ctx(&s, cu, &env, Need::of(Row::Stacks, Verb::Create)).await?;
+    let c = stack_ctx(
+        &s,
+        cu,
+        &env,
+        Need::of(Row::Stacks, Verb::Create),
+        Some(&name),
+    )
+    .await?;
     let stack = stack_of(&s, &c, &name).await?;
     let git = git_of(&s, &stack).await?;
     let res = s.store.set_git_host_key(stack.id, None).await;
