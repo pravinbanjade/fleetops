@@ -686,3 +686,27 @@ async fn an_update_that_rolls_back_after_the_first_look_fails_the_deploy() {
         "{task}"
     );
 }
+
+#[tokio::test]
+async fn removing_a_stack_that_runs_fleetops_is_refused() {
+    let sw = fast().await;
+    sw.daemon.add_fleetops_server("n1");
+    create(
+        &sw,
+        "fleetops",
+        "services:\n  fleetops:\n    image: registry.example/ops/fleetops-server:2\n",
+    )
+    .await;
+    let before = sw.daemon.write_paths().len();
+    let r = send(&sw, "DELETE", &format!("{STACKS}/fleetops"), None).await;
+    assert_eq!(r.status, 409, "{:?}", r.json);
+    assert!(
+        r.json["message"]
+            .as_str()
+            .unwrap()
+            .ends_with("service 'fleetops_fleetops' runs FleetOps; remove it outside FleetOps"),
+        "{:?}",
+        r.json
+    );
+    assert_eq!(sw.daemon.write_paths().len(), before);
+}

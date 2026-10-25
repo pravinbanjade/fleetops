@@ -653,8 +653,22 @@ pub(crate) fn deploy_stream(
 /// each node and stay.
 pub(crate) async fn remove(ops: &dyn SwarmOps, stack: &str, timing: &Timing) -> Result<()> {
     let ours = |s: &Option<String>| s.as_deref() == Some(stack);
+    let services: Vec<ServiceSummary> = ops
+        .services()
+        .await?
+        .into_iter()
+        .filter(|s| ours(&s.stack))
+        .collect();
+    // Removing FleetOps' own service or the agents would cut the removal
+    // off half way, and FleetOps with it.
+    if let Some(svc) = services.iter().find(|s| service_guard(s).is_some()) {
+        return Err(Error::Conflict(format!(
+            "service '{}' runs FleetOps; remove it outside FleetOps",
+            svc.name
+        )));
+    }
     let mut errors = Vec::new();
-    for svc in ops.services().await?.into_iter().filter(|s| ours(&s.stack)) {
+    for svc in services {
         if let Err(e) = ops.remove_service(&svc.id).await {
             errors.push(format!("{}: {e}", svc.name));
         }

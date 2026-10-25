@@ -142,7 +142,7 @@ A stack on a Swarm environment deploys its Compose file as Swarm services. Every
 
 **Stopping and starting.** There is no start, stop or restart for a Swarm stack. Scale or redeploy its services on the Services page.
 
-**What FleetOps will not deploy.** A plan that would update or remove FleetOps' own service or the agent service is refused. Change those outside FleetOps: the deploy could stop itself half way.
+**What FleetOps will not change.** A plan that would update or remove FleetOps' own service or the agent service is refused, and so is removing a stack that holds one. Change those outside FleetOps: the change could stop FleetOps half way.
 
 ## Node pages
 
