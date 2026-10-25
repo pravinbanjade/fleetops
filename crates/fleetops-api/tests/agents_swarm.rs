@@ -456,6 +456,31 @@ async fn a_worker_claiming_manager_before_the_pin_is_refused() {
         .contains(&"agent.reject".to_string()));
 }
 
+/// An autolocked manager can't sign: its agent says why instead of a
+/// proof, and the environment shows it.
+#[tokio::test]
+async fn an_agent_that_cannot_prove_says_why() {
+    let t = app().await;
+    let (env_id, key) = swarm_env(&t).await;
+    let base = base(&t).await;
+    let pki = SwarmPki::new("c1");
+    let daemon = FakeSwarm::new(&pki, &[("n1", true)]);
+    let mut a = TestAgent::connect_swarm(&base, &key, daemon.clone())
+        .await
+        .unwrap();
+    a.hello_swarm(claim(&pki, "n1", true)).await;
+    assert!(matches!(a.next().await, Some(Msg::Challenge { .. })));
+    let why = fleetops_tunnel::swarm_proof::ProofError::Autolocked.to_string();
+    a.send(&Msg::CannotProve {
+        reason: why.clone(),
+    })
+    .await;
+    assert_eq!(a.next().await, bye(ByeReason::Incompatible));
+    let rec = t.store.get_agent(env_id).await.unwrap().unwrap();
+    let err = rec.last_error.unwrap_or_default();
+    assert!(err.contains(&why), "{err}");
+}
+
 #[tokio::test]
 async fn a_proof_from_another_swarm_is_refused() {
     let t = app().await;

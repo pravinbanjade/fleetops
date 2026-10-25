@@ -218,6 +218,11 @@ pub(super) async fn serve(
             cert_chain_pem,
             signature,
         }))) => (cert_chain_pem, signature),
+        Ok(Ok(Some(Msg::CannotProve { reason }))) => no!(
+            format!("node {} cannot prove its identity: {reason}", claim.node_id),
+            Incompatible,
+            false
+        ),
         other => return format!("expected a proof, got {other:?}"),
     };
     let own: Arc<dyn SwarmOps> = match through(session.clone()) {

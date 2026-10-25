@@ -306,3 +306,31 @@ async fn not_yet_backs_off_and_retries() {
     )));
     eventually("both nodes", || srv.state.agents.nodes(env_id).len() == 2).await;
 }
+
+/// An autolocked manager's key is encrypted: the agent can't prove its
+/// node, says why to the server, and stops.
+#[tokio::test]
+async fn an_autolocked_manager_says_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let pki = Pki::new();
+    let store = Store::in_memory().await.unwrap();
+    let (env_id, key) = swarm_env(&store, dir.path()).await;
+    let srv = server(store.clone()).await;
+    let docker = fake_node(dir.path(), "n1", true, "active", pki.root.clone());
+    let certs = pki.node_certs(dir.path(), "n1", true);
+    std::fs::write(
+        certs.join("swarm-node.key"),
+        "-----BEGIN EC PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nkek-version: 1\n\nAAAA\n-----END EC PRIVATE KEY-----\n",
+    )
+    .unwrap();
+    let err = tokio::time::timeout(
+        Duration::from_secs(10),
+        fleetops_agent::run(config(&srv.base, &docker, &key, &certs)),
+    )
+    .await
+    .expect("returns")
+    .unwrap_err();
+    assert!(format!("{err:#}").contains("autolock"), "{err:#}");
+    let why = store.get_agent(env_id).await.unwrap().unwrap().last_error;
+    assert!(why.is_some_and(|w| w.contains("autolock")));
+}

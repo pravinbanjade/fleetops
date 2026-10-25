@@ -111,7 +111,17 @@ async fn control(
         let (cert_chain_pem, signature) = match crate::swarm::prove(&node.certs, nonce, &node.claim)
         {
             Ok(p) => p,
-            Err(e) => return Ended::Fatal(e.context("cannot prove this node's identity")),
+            Err(e) => {
+                // Said to the server too, so the admin sees why.
+                let why = Msg::CannotProve {
+                    reason: format!("{e:#}"),
+                };
+                if write_msg(&mut tx, &why).await.is_ok() {
+                    // Its bye says the server has it.
+                    let _ = tokio::time::timeout(Duration::from_secs(10), read_msg(&mut rx)).await;
+                }
+                return Ended::Fatal(e.context("cannot prove this node's identity"));
+            }
         };
         let proof = Msg::Proof {
             cert_chain_pem,

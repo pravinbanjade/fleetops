@@ -163,8 +163,11 @@ export function NodesPage({ env }: { env: string }) {
   const [confirm, setConfirm] = useState<"finish" | "retrust" | null>(null);
   const cols = useMemo(() => nodeColumns(env), [env]);
   const rows = agents.data ?? [];
+  const agent = useQuery(envsQuery).data?.find((e) => e.name === env)?.agent;
   // Set while the key from before the last rotation still works.
-  const rotating = useQuery(envsQuery).data?.find((e) => e.name === env)?.agent?.rotation_ends_at != null;
+  const rotating = agent?.rotation_ends_at != null;
+  // An agent refused before it proved its node (autolock, say) has no row.
+  const refused = agent?.last_error;
   const covered = rows.filter((n) => n.connected).length;
   const down = status.data?.state === "down" ? status.data.reason : null;
   return (
@@ -190,6 +193,11 @@ export function NodesPage({ env }: { env: string }) {
       {down && (
         <p role="status" className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
           {down}
+        </p>
+      )}
+      {refused && (
+        <p role="status" className="mb-3 rounded-md border p-3 text-sm">
+          Last refused agent: {refused}
         </p>
       )}
       <DataTable label="Nodes" data={agents.data} error={agents.error} columns={cols} getRowId={(n) => n.node_id} empty="No nodes yet." />

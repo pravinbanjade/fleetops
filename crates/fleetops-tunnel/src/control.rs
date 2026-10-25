@@ -95,6 +95,11 @@ pub enum Msg {
         cert_chain_pem: String,
         signature: String,
     },
+    /// Swarm agent to server, instead of a proof: why it can't give one
+    /// (an autolocked manager's key is encrypted), for the admin to see.
+    CannotProve {
+        reason: String,
+    },
     Ping {
         n: u64,
     },

@@ -173,6 +173,13 @@ describe("Swarm key rotation on the Nodes page", () => {
     expect(await screen.findByRole("button", { name: "Finish key rotation" })).toBeInTheDocument();
   });
 
+  it("shows why the last agent was refused", async () => {
+    const refused = { ...SWARM, agent: { ...SWARM.agent, last_error: "node n9 cannot prove its identity: swarm autolock is on" } };
+    mockFetch({ ...routes, "GET /api/v1/envs": { json: [...ENVS, refused] } });
+    const { screen } = renderApp("/envs/prod/swarm/nodes");
+    expect(await screen.findByText(/swarm autolock is on/)).toHaveTextContent("Last refused agent: node n9 cannot prove its identity");
+  });
+
   it("says when only workers are connected", async () => {
     const workers = { ...SWARM, agent: { ...SWARM.agent, connected: false } };
     mockFetch({ ...routes, "GET /api/v1/envs": { json: [...ENVS, workers] } });

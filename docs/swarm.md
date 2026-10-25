@@ -44,7 +44,7 @@ FleetOps remembers the swarm's managers (its known managers) and refreshes the l
 
 After rotating the swarm's root CA (`docker swarm ca --rotate`), agents are refused until you click **Re-trust swarm** on the Nodes page. Every agent then reconnects, and the first manager pins the new root CA.
 
-**Autolock is not supported.** With `docker swarm update --autolock=true`, a manager's node key is encrypted on disk, so its agent cannot prove which node it runs on. It stops with a message saying so.
+**Autolock is not supported.** With `docker swarm update --autolock=true`, a manager's node key is encrypted on disk, so its agent cannot prove which node it runs on. It stops, and the Nodes page shows why.
 
 ## Cluster pages
 
