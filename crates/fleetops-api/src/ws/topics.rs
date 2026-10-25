@@ -171,13 +171,56 @@ fn view_of(kind: &str) -> Option<Permission> {
 
 /// Which stack each swarm object is in, for one subscriber limited to
 /// stacks (swarm spec §6). Swarm events carry no labels, so the lists are
-/// read when the subscription starts and again (at most once a second per
-/// kind) for an id not seen yet. Nothing is forgotten, so an object in
-/// scope is still announced when it is removed.
-#[derive(Default)]
+/// read when the subscription starts, and again (at most once per `window`
+/// per kind, waiting it out) for an id not seen yet or an update, which
+/// may have moved the object to another stack. Nothing is forgotten, so an
+/// object in scope is still announced when it is removed; one made and
+/// removed before a read could see it can't be placed, and is not.
 struct StackCache {
     known: HashMap<(String, String), Option<String>>,
     refreshed: HashMap<String, std::time::Instant>,
+    window: std::time::Duration,
+}
+
+impl Default for StackCache {
+    fn default() -> Self {
+        Self {
+            known: HashMap::new(),
+            refreshed: HashMap::new(),
+            window: std::time::Duration::from_secs(1),
+        }
+    }
+}
+
+type StackList = Vec<(String, Option<String>)>;
+
+/// Every object of `kind` with its stack; `None` without a manager or on a
+/// failed read.
+async fn stack_list(ops: Option<Arc<dyn SwarmOps>>, kind: &str) -> Option<StackList> {
+    let ops = ops?;
+    match kind {
+        "service" => ops
+            .services()
+            .await
+            .ok()
+            .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect()),
+        "secret" => ops
+            .secrets()
+            .await
+            .ok()
+            .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect()),
+        "config" => ops
+            .configs()
+            .await
+            .ok()
+            .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect()),
+        "network" => ops
+            .networks()
+            .await
+            .ok()
+            .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect()),
+        _ => None,
+    }
 }
 
 impl StackCache {
@@ -191,52 +234,44 @@ impl StackCache {
         self.known.get(&(kind.to_string(), id.to_string())).cloned()
     }
 
-    async fn refresh(&mut self, ops: &dyn SwarmOps, kind: &str) {
+    /// Reads `kind` again, once its window since the last read has passed.
+    async fn refresh<F, Fut>(&mut self, kind: &str, fetch: F)
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Option<StackList>>,
+    {
+        if let Some(t) = self.refreshed.get(kind) {
+            let wait = self.window.saturating_sub(t.elapsed());
+            if !wait.is_zero() {
+                tokio::time::sleep(wait).await;
+            }
+        }
         self.refreshed
             .insert(kind.to_string(), std::time::Instant::now());
-        let items: Vec<(String, Option<String>)> = match kind {
-            "service" => ops
-                .services()
-                .await
-                .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect())
-                .unwrap_or_default(),
-            "secret" => ops
-                .secrets()
-                .await
-                .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect())
-                .unwrap_or_default(),
-            "config" => ops
-                .configs()
-                .await
-                .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect())
-                .unwrap_or_default(),
-            "network" => ops
-                .networks()
-                .await
-                .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect())
-                .unwrap_or_default(),
-            _ => vec![],
-        };
-        self.learn(kind, items);
+        if let Some(items) = fetch().await {
+            self.learn(kind, items);
+        }
     }
 
-    /// The stack of `kind` `id`; `None` when it is in no stack or unknown.
-    async fn stack(
+    /// The stack of `kind` `id` as of an event with `action`; `None` when
+    /// it is in no stack or unknown.
+    async fn stack<F, Fut>(
         &mut self,
-        ops: Option<Arc<dyn SwarmOps>>,
         kind: &str,
         id: &str,
-    ) -> Option<String> {
-        if let Some(stack) = self.get(kind, id) {
-            return stack;
+        action: &str,
+        fetch: F,
+    ) -> Option<String>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Option<StackList>>,
+    {
+        if action != "update" {
+            if let Some(stack) = self.get(kind, id) {
+                return stack;
+            }
         }
-        let recent = self
-            .refreshed
-            .get(kind)
-            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
-        if let (false, Some(ops)) = (recent, ops) {
-            self.refresh(ops.as_ref(), kind).await;
-        }
+        self.refresh(kind, fetch).await;
         self.get(kind, id).flatten()
     }
 }
@@ -281,10 +316,10 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
         if let Some(g) = &grants {
             // Only a grant limited to stacks needs to know them.
             if g.0.iter().any(|g| g.namespaces.is_some()) {
-                if let Some(ops) = swarm.swarm() {
-                    for kind in ["service", "secret", "config", "network"] {
-                        cache.refresh(ops.as_ref(), kind).await;
-                    }
+                for kind in ["service", "secret", "config", "network"] {
+                    cache
+                        .refresh(kind, || stack_list(swarm.swarm(), kind))
+                        .await;
                 }
             }
         }
@@ -308,7 +343,11 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
                             let pass = if e.kind == "node" {
                                 g.holds(p)
                             } else {
-                                let stack = cache.stack(swarm.swarm(), &e.kind, &e.id).await;
+                                let stack = cache
+                                    .stack(&e.kind, &e.id, &e.action, || {
+                                        stack_list(swarm.swarm(), &e.kind)
+                                    })
+                                    .await;
                                 g.allows_stack(p, stack.as_deref())
                             };
                             if !pass {
@@ -948,5 +987,54 @@ mod stack_cache_tests {
         assert_eq!(c.get("service", "s1"), Some(Some("blog".into())));
         assert_eq!(c.get("service", "s2"), Some(None));
         assert_eq!(c.get("service", "s9"), None);
+    }
+
+    type List = Vec<(String, Option<String>)>;
+
+    fn list(items: &[(&str, &str)]) -> Option<List> {
+        Some(
+            items
+                .iter()
+                .map(|(id, st)| (id.to_string(), Some(st.to_string())))
+                .collect(),
+        )
+    }
+
+    fn quick() -> StackCache {
+        StackCache {
+            window: std::time::Duration::from_millis(50),
+            ..Default::default()
+        }
+    }
+
+    /// An admin may move a service to another stack: its update event is
+    /// placed by what it is in now.
+    #[tokio::test]
+    async fn an_update_reads_the_stack_again() {
+        let mut c = quick();
+        c.learn("service", list(&[("s1", "blog")]).unwrap());
+        let got = c
+            .stack("service", "s1", "update", || async {
+                list(&[("s1", "shop")])
+            })
+            .await;
+        assert_eq!(got.as_deref(), Some("shop"));
+    }
+
+    /// An object made just after a refresh is still found: the next read
+    /// waits out the rate limit instead of giving up.
+    #[tokio::test]
+    async fn a_new_object_right_after_a_refresh_is_found() {
+        let mut c = quick();
+        let first = c
+            .stack("secret", "a", "create", || async { list(&[("a", "blog")]) })
+            .await;
+        assert_eq!(first.as_deref(), Some("blog"));
+        let second = c
+            .stack("secret", "b", "create", || async {
+                list(&[("a", "blog"), ("b", "blog")])
+            })
+            .await;
+        assert_eq!(second.as_deref(), Some("blog"));
     }
 }
