@@ -121,12 +121,17 @@ pub struct FakeSwarm {
     pub fail_tasks: std::sync::atomic::AtomicBool,
     /// What listing tasks returns; starts as `tasks_json()`.
     pub tasks: Mutex<Value>,
+    /// What listing services returns; starts as `services_json()`.
+    pub services: Mutex<Value>,
+    /// Every non-GET call: method, path, JSON body (null when empty).
+    pub writes: Mutex<Vec<(String, String, Value)>>,
 }
 
 pub fn node_json(id: &str, manager: bool) -> Value {
     let mut n = json!({
         "ID": id,
         "Description": {"Hostname": format!("host-{id}")},
+        "Version": {"Index": 5},
         "Spec": {"Role": if manager { "manager" } else { "worker" }, "Availability": "active"},
         "Status": {"State": "ready"},
     });
@@ -145,6 +150,8 @@ impl FakeSwarm {
             requests: Mutex::default(),
             fail_tasks: Default::default(),
             tasks: Mutex::new(tasks_json()),
+            services: Mutex::new(services_json()),
+            writes: Mutex::default(),
         })
     }
 
@@ -160,10 +167,121 @@ impl FakeSwarm {
         self.nodes.lock().unwrap().retain(|n| n["ID"] != id);
     }
 
+    /// Sets node `id`'s status (`ready`, `down`, ...).
+    pub fn set_state(&self, id: &str, state: &str) {
+        let mut nodes = self.nodes.lock().unwrap();
+        if let Some(n) = nodes.iter_mut().find(|n| n["ID"] == id) {
+            n["Status"]["State"] = state.into();
+        }
+    }
+
+    /// FleetOps' own service `s3` (`fleetops_fleetops`, labelled), with a
+    /// running task on `node`.
+    pub fn add_fleetops_server(&self, node: &str) {
+        self.services.lock().unwrap().as_array_mut().unwrap().push(json!({
+            "ID": "s3", "Version": {"Index": 7},
+            "Spec": {
+                "Name": "fleetops_fleetops",
+                "Labels": {"io.fleetops.role": "server", "com.docker.stack.namespace": "fleetops"},
+                "TaskTemplate": {"ContainerSpec": {"Image": "registry.example/ops/fleetops-server:1"}},
+                "Mode": {"Replicated": {"Replicas": 1}}
+            },
+            "ServiceStatus": {"RunningTasks": 1, "DesiredTasks": 1}
+        }));
+        self.tasks.lock().unwrap().as_array_mut().unwrap().push(json!({
+            "ID": "t3", "Version": {"Index": 30}, "ServiceID": "s3", "Slot": 1, "NodeID": node,
+            "DesiredState": "running", "Status": {"State": "running", "Message": "started"}
+        }));
+    }
+
+    /// The non-GET calls so far, as `METHOD path`.
+    pub fn write_paths(&self) -> Vec<String> {
+        self.writes
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(m, p, _)| format!("{m} {p}"))
+            .collect()
+    }
+
+    /// The body of the last write whose path contains `part`.
+    pub fn body_of(&self, part: &str) -> Value {
+        self.writes
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|(_, p, _)| p.contains(part))
+            .map(|(_, _, b)| b.clone())
+            .unwrap_or_else(|| panic!("no write to {part}: {:?}", self.write_paths()))
+    }
+
+    fn answer_write(&self, method: &str, path: &str, body: &Value) -> (u16, String) {
+        let version = path
+            .split("version=")
+            .nth(1)
+            .and_then(|v| v.split('&').next())
+            .and_then(|v| v.parse::<u64>().ok());
+        let out_of_sequence = (500, r#"{"message":"update out of sequence"}"#.to_string());
+        let id_after = |kind: &str| {
+            path.split(&format!("/{kind}/"))
+                .nth(1)
+                .and_then(|r| r.split(['/', '?']).next())
+                .unwrap_or_default()
+                .to_string()
+        };
+        if path.contains("/nodes/") && path.contains("/update") {
+            let id = id_after("nodes");
+            let mut nodes = self.nodes.lock().unwrap();
+            let Some(n) = nodes.iter_mut().find(|n| n["ID"] == id.as_str()) else {
+                return (404, json!({"message": format!("node {id} not found")}).to_string());
+            };
+            if version != n["Version"]["Index"].as_u64() {
+                return out_of_sequence;
+            }
+            n["Spec"] = body.clone();
+            n["Version"]["Index"] = (version.unwrap_or(0) + 1).into();
+            return (200, String::new());
+        }
+        if path.contains("/services/") && path.contains("/update") {
+            let id = id_after("services");
+            let services = self.services.lock().unwrap();
+            let Some(svc) = services.as_array().unwrap().iter().find(|s| s["ID"] == id.as_str())
+            else {
+                return (404, json!({"message": format!("service {id} not found")}).to_string());
+            };
+            if version != svc["Version"]["Index"].as_u64() {
+                return out_of_sequence;
+            }
+            return (200, r#"{"Warnings":[]}"#.into());
+        }
+        for (kind, id) in [
+            ("services", r#"{"ID":"service-new"}"#),
+            ("secrets", r#"{"ID":"secret-new"}"#),
+            ("configs", r#"{"ID":"config-new"}"#),
+            ("networks", r#"{"Id":"net-new","Warning":""}"#),
+        ] {
+            if path.contains(&format!("/{kind}/create")) {
+                return (201, id.into());
+            }
+        }
+        if method == "DELETE" {
+            if path.contains("/nodes/") {
+                let id = id_after("nodes");
+                self.remove(&id);
+            }
+            return (200, String::new());
+        }
+        (404, json!({"message": format!("unexpected {method} {path}")}).to_string())
+    }
+
     fn answer(&self, path: &str) -> (u16, String) {
         if let Some(rest) = path.split("/services/").nth(1) {
             let id = rest.split(['?', '/']).next().unwrap();
-            return match services_json()
+            return match self
+                .services
+                .lock()
+                .unwrap()
                 .as_array()
                 .unwrap()
                 .iter()
@@ -174,7 +292,7 @@ impl FakeSwarm {
             };
         }
         if path.contains("/services") {
-            return (200, services_json().to_string());
+            return (200, self.services.lock().unwrap().to_string());
         }
         if path.contains("/tasks") {
             return (200, self.tasks.lock().unwrap().to_string());
@@ -186,6 +304,17 @@ impl FakeSwarm {
                 "Spec": {"Name": "blog_db", "Labels": {"com.docker.stack.namespace": "blog"}}}])
             .to_string(),
         );
+        }
+        if let Some(id) = path.split("/configs/").nth(1) {
+            let id = id.split('?').next().unwrap_or_default();
+            if id != "cfg1" {
+                return (404, json!({"message": format!("config {id} not found")}).to_string());
+            }
+            return (
+                200,
+                json!({"ID": "cfg1", "Spec": {"Name": "blog_nginx", "Data": "c2VydmVyIHt9"}})
+                    .to_string(),
+            );
         }
         if path.contains("/configs") {
             return (
@@ -252,13 +381,56 @@ impl FakeSwarm {
     pub fn serve(self: &Arc<Self>, mut s: StreamHandle) {
         let me = self.clone();
         tokio::spawn(async move {
-            let mut buf = vec![0u8; 8192];
-            let Ok(n) = s.read(&mut buf).await else {
-                return;
+            // The head, then as many body bytes as it announces.
+            let mut buf = Vec::new();
+            let mut chunk = vec![0u8; 8192];
+            let head_end = loop {
+                let Ok(n) = s.read(&mut chunk).await else {
+                    return;
+                };
+                if n == 0 {
+                    return;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+                if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break i + 4;
+                }
             };
-            let req = String::from_utf8_lossy(&buf[..n]).to_string();
-            let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
+            let head = String::from_utf8_lossy(&buf[..head_end]).to_string();
+            let len = head
+                .lines()
+                .find_map(|l| {
+                    let (k, v) = l.split_once(':')?;
+                    k.eq_ignore_ascii_case("content-length")
+                        .then(|| v.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+            while buf.len() < head_end + len {
+                let Ok(n) = s.read(&mut chunk).await else {
+                    return;
+                };
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+            }
+            let method = head.split_whitespace().next().unwrap_or("GET").to_string();
+            let path = head.split_whitespace().nth(1).unwrap_or("/").to_string();
             me.requests.lock().unwrap().push(path.clone());
+            if method != "GET" {
+                let body: Value =
+                    serde_json::from_slice(&buf[head_end..]).unwrap_or(Value::Null);
+                let (status, out) = me.answer_write(&method, &path, &body);
+                me.writes.lock().unwrap().push((method, path, body));
+                let resp = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{out}",
+                    out.len()
+                );
+                let _ = s.write_all(resp.as_bytes()).await;
+                let _ = s.shutdown().await;
+                return;
+            }
             if path.contains("/events") {
                 // A service update, a container start (the manager's own),
                 // a swarm network's creation, then silence.

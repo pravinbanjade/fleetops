@@ -12,6 +12,9 @@ use utoipa::ToSchema;
 /// stack's services, networks, secrets and configs.
 pub const STACK_LABEL: &str = "com.docker.stack.namespace";
 
+/// What a FleetOps service is: `server` or `agent` (self-protection).
+pub const ROLE_LABEL: &str = "io.fleetops.role";
+
 /// What an up Swarm environment reports about itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SwarmVersion {
@@ -88,13 +91,13 @@ pub struct ServiceSummary {
     pub update_state: Option<String>,
     /// Unix seconds.
     pub updated_at: i64,
+    pub labels: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ServiceDetail {
     #[serde(flatten)]
     pub summary: ServiceSummary,
-    pub labels: BTreeMap<String, String>,
     /// Docker's ServiceSpec, verbatim. It never holds secret values: Swarm
     /// keeps those in secrets.
     #[schema(value_type = Object)]

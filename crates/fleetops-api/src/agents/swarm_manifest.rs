@@ -89,6 +89,9 @@ pub fn swarm_stack(server_url: &str, secret: &str, ca_pem: Option<&str>) -> Stri
     y.push_str(&format!(
         "    deploy:\n      \
            mode: global\n      \
+           # FleetOps asks for the name before changing this service.\n      \
+           labels:\n        \
+             io.fleetops.role: agent\n      \
            restart_policy:\n        \
              condition: any\n        \
              delay: 5s\n\
@@ -148,6 +151,7 @@ mod tests {
         ));
         let agent = &v["services"]["agent"];
         assert_eq!(agent["deploy"]["mode"], "global");
+        assert_eq!(agent["deploy"]["labels"]["io.fleetops.role"], "agent");
         assert_eq!(agent["user"], "0");
         assert_eq!(
             agent["command"],

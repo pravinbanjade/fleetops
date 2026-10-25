@@ -133,6 +133,7 @@ fn service_summary(svc: &Service) -> ServiceSummary {
         ports,
         update_state: svc.update_status.as_ref().and_then(|u| name(&u.state)),
         updated_at: unix(&svc.updated_at),
+        labels: spec.labels.clone().unwrap_or_default().into_iter().collect(),
     }
 }
 
@@ -334,12 +335,6 @@ impl SwarmOps for LocalDocker {
         let spec = svc.spec.clone().unwrap_or_default();
         Ok(Some(ServiceDetail {
             summary: service_summary(&svc),
-            labels: spec
-                .labels
-                .clone()
-                .unwrap_or_default()
-                .into_iter()
-                .collect(),
             spec: serde_json::to_value(&spec).map_err(|e| Error::Internal(e.to_string()))?,
             update_status: svc
                 .update_status

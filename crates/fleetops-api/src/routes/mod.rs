@@ -11,6 +11,8 @@ pub(crate) mod kube_generic;
 pub mod stack_hooks;
 pub mod swarm;
 pub mod swarm_agents;
+pub mod swarm_protect;
+pub mod swarm_write;
 pub mod tasks;
 pub mod users;
 
@@ -80,7 +82,11 @@ fn env_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(swarm_agents::retrust))
         .routes(routes!(swarm_agents::trust, swarm_agents::trust_swarm))
         .routes(routes!(swarm::nodes))
-        .routes(routes!(swarm::node))
+        .routes(routes!(
+            swarm::node,
+            swarm_write::update_node,
+            swarm_write::remove_node
+        ))
         .routes(routes!(swarm::services))
         .routes(routes!(swarm::service))
         .routes(routes!(swarm::tasks))

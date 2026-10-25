@@ -28,6 +28,10 @@ services:
       # One server: its SQLite database lives in the local volume, so it stays
       # on the labelled manager.
       replicas: 1
+      # FleetOps asks for the name before scaling or removing this service,
+      # or draining its node.
+      labels:
+        io.fleetops.role: server
       placement:
         constraints:
           - node.role == manager
