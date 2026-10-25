@@ -17,10 +17,12 @@ use fleetops_core::env::Environment;
 use fleetops_core::kube::{KubeFilter, KubeKind};
 use fleetops_core::perm::{row_of, Permission, Row, Verb};
 use fleetops_core::streams::{BoxStream, ExecOptions, LogLine, LogOptions};
+use fleetops_core::swarm::SwarmOps;
 use fleetops_core::{now_unix, Error, Result, Role};
 use fleetops_store::NewAudit;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{broadcast::error::RecvError, Notify};
 
@@ -167,6 +169,78 @@ fn view_of(kind: &str) -> Option<Permission> {
     Some(Permission::new(row, Verb::View))
 }
 
+/// Which stack each swarm object is in, for one subscriber limited to
+/// stacks (swarm spec §6). Swarm events carry no labels, so the lists are
+/// read when the subscription starts and again (at most once a second per
+/// kind) for an id not seen yet. Nothing is forgotten, so an object in
+/// scope is still announced when it is removed.
+#[derive(Default)]
+struct StackCache {
+    known: HashMap<(String, String), Option<String>>,
+    refreshed: HashMap<String, std::time::Instant>,
+}
+
+impl StackCache {
+    fn learn(&mut self, kind: &str, items: impl IntoIterator<Item = (String, Option<String>)>) {
+        for (id, stack) in items {
+            self.known.insert((kind.to_string(), id), stack);
+        }
+    }
+
+    fn get(&self, kind: &str, id: &str) -> Option<Option<String>> {
+        self.known.get(&(kind.to_string(), id.to_string())).cloned()
+    }
+
+    async fn refresh(&mut self, ops: &dyn SwarmOps, kind: &str) {
+        self.refreshed
+            .insert(kind.to_string(), std::time::Instant::now());
+        let items: Vec<(String, Option<String>)> = match kind {
+            "service" => ops
+                .services()
+                .await
+                .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect())
+                .unwrap_or_default(),
+            "secret" => ops
+                .secrets()
+                .await
+                .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect())
+                .unwrap_or_default(),
+            "config" => ops
+                .configs()
+                .await
+                .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect())
+                .unwrap_or_default(),
+            "network" => ops
+                .networks()
+                .await
+                .map(|l| l.into_iter().map(|x| (x.id, x.stack)).collect())
+                .unwrap_or_default(),
+            _ => vec![],
+        };
+        self.learn(kind, items);
+    }
+
+    /// The stack of `kind` `id`; `None` when it is in no stack or unknown.
+    async fn stack(
+        &mut self,
+        ops: Option<Arc<dyn SwarmOps>>,
+        kind: &str,
+        id: &str,
+    ) -> Option<String> {
+        if let Some(stack) = self.get(kind, id) {
+            return stack;
+        }
+        let recent = self
+            .refreshed
+            .get(kind)
+            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
+        if let (false, Some(ops)) = (recent, ops) {
+            self.refresh(ops.as_ref(), kind).await;
+        }
+        self.get(kind, id).flatten()
+    }
+}
+
 fn is_kube_env(s: &AppState, env: &Option<String>) -> bool {
     env.as_deref()
         .and_then(|n| s.envs.get(n).ok())
@@ -186,7 +260,7 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
     let (env, grants) = if swarm_env {
         // The hub waits out a manager outage and says so (status down/up).
         let (env, grants) =
-            crate::routes::swarm::swarm_env_for(s, cu, required(&env, "env")?, Need::AnyGrant)
+            crate::routes::swarm::swarm_env_scoped(s, cu, required(&env, "env")?, Need::AnyGrant)
                 .await?;
         (env, Some(grants))
     } else {
@@ -198,10 +272,22 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
     let mut rx = s
         .hubs
         .events(&env)
-        .subscribe(env, s.hubs.status(), s.config.ws_backoff);
+        .subscribe(env.clone(), s.hubs.status(), s.config.ws_backoff);
     let filter = id.filter(|i| !i.is_empty());
     let qq = q.clone();
+    let swarm = env;
     let task = tokio::spawn(async move {
+        let mut cache = StackCache::default();
+        if let Some(g) = &grants {
+            // Only a grant limited to stacks needs to know them.
+            if g.0.iter().any(|g| g.namespaces.is_some()) {
+                if let Some(ops) = swarm.swarm() {
+                    for kind in ["service", "secret", "config", "network"] {
+                        cache.refresh(ops.as_ref(), kind).await;
+                    }
+                }
+            }
+        }
         loop {
             match rx.recv().await {
                 Ok(e) => {
@@ -214,10 +300,20 @@ pub(super) async fn events(c: &Ctx<'_>, env: Option<String>, id: Option<String>)
                             continue;
                         }
                     }
-                    // Each kind needs its view cell on the whole swarm.
+                    // Each kind needs its view cell: nodes anywhere, the rest
+                    // on the object's stack.
                     if let Some(g) = &grants {
-                        if !view_of(&e.kind).is_some_and(|p| g.allows(p, None)) {
-                            continue;
+                        let Some(p) = view_of(&e.kind) else { continue };
+                        if !g.allows(p, None) {
+                            let pass = if e.kind == "node" {
+                                g.holds(p)
+                            } else {
+                                let stack = cache.stack(swarm.swarm(), &e.kind, &e.id).await;
+                                g.allows_stack(p, stack.as_deref())
+                            };
+                            if !pass {
+                                continue;
+                            }
                         }
                     }
                     if filter
@@ -327,14 +423,26 @@ pub(super) async fn logs(
             .strip_prefix("service/")
             .filter(|i| !i.is_empty())
             .ok_or_else(|| Error::Invalid("a swarm logs id is service/<id>".into()))?;
-        // Service logs fall under the service row's View (spec §6).
-        let (_, ops) = crate::routes::swarm::swarm_for(
-            s,
-            cu,
-            required(&env, "env")?,
-            Need::of(Row::SwarmServices, Verb::View),
-        )
-        .await?;
+        // Service logs fall under the service row's View, on its stack
+        // (spec §6).
+        let view = Permission::new(Row::SwarmServices, Verb::View);
+        let (env, grants) =
+            crate::routes::swarm::swarm_env_scoped(s, cu, required(&env, "env")?, Need::Perm(view))
+                .await?;
+        let ops = env
+            .swarm()
+            .ok_or_else(|| Error::EnvUnavailable("no manager agent is connected".into()))?;
+        if !grants.allows(view, None) {
+            let stack = ops.service(service).await?.and_then(|d| d.summary.stack);
+            crate::authz::deny_audited(
+                s,
+                cu,
+                env.id(),
+                &view.to_string(),
+                grants.check_stack(view, stack.as_deref()),
+            )
+            .await?;
+        }
         ops.service_logs(service, &o)
     } else {
         let id = required(&id, "id")?;
@@ -743,14 +851,39 @@ async fn audit_exec(
 pub(super) async fn swarm_tasks(c: &Ctx<'_>, env: Option<String>) -> Result<Sub> {
     let (s, cu, sub) = (c.s, c.cu, c.sub);
     // The feed itself reports a manager outage, and recovers.
-    let (env, _) = crate::routes::swarm::swarm_env_for(
-        s,
-        cu,
-        required(&env, "env")?,
-        Need::of(Row::SwarmServices, Verb::View),
-    )
-    .await?;
+    let view = Permission::new(Row::SwarmServices, Verb::View);
+    let (env, grants) =
+        crate::routes::swarm::swarm_env_scoped(s, cu, required(&env, "env")?, Need::Perm(view))
+            .await?;
     let (snapshot, mut rx) = s.hubs.swarm_tasks.subscribe(env, s.config.swarm_task_poll);
+    // A grant limited to stacks sees their tasks only, and hears of no
+    // other task's removal.
+    let mut sent: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut scoped = move |m: crate::ws::swarm_tasks::FeedMsg| {
+        use crate::ws::swarm_tasks::FeedMsg;
+        if grants.allows(view, None) {
+            return m;
+        }
+        let ok =
+            |t: &fleetops_core::swarm::TaskSummary| grants.allows_stack(view, t.stack.as_deref());
+        match m {
+            FeedMsg::Snapshot { mut tasks } => {
+                tasks.retain(|t| ok(t));
+                sent = tasks.iter().map(|t| t.id.clone()).collect();
+                FeedMsg::Snapshot { tasks }
+            }
+            FeedMsg::Changes {
+                mut upsert,
+                mut remove,
+            } => {
+                upsert.retain(|t| ok(t));
+                sent.extend(upsert.iter().map(|t| t.id.clone()));
+                remove.retain(|id| sent.remove(id));
+                FeedMsg::Changes { upsert, remove }
+            }
+            paused => paused,
+        }
+    };
     let q = c.queue(Policy::Block);
     let qq = q.clone();
     let task = tokio::spawn(async move {
@@ -760,15 +893,15 @@ pub(super) async fn swarm_tasks(c: &Ctx<'_>, env: Option<String>) -> Result<Sub>
         let data = |m: &crate::ws::swarm_tasks::FeedMsg| {
             protocol::data(sub, serde_json::to_value(m).unwrap_or(Value::Null))
         };
-        if let Some(m) = &snapshot {
-            if !qq.push_wait(data(m)).await {
+        if let Some(m) = snapshot {
+            if !qq.push_wait(data(&scoped(m))).await {
                 return;
             }
         }
         loop {
             match rx.recv().await {
                 Ok(m) => {
-                    if !qq.push_wait(data(&m)).await {
+                    if !qq.push_wait(data(&scoped(m))).await {
                         return;
                     }
                 }
@@ -790,4 +923,23 @@ pub(super) async fn swarm_tasks(c: &Ctx<'_>, env: Option<String>) -> Result<Sub>
         keep_on_access: false,
         exec: None,
     })
+}
+
+#[cfg(test)]
+mod stack_cache_tests {
+    use super::StackCache;
+
+    #[test]
+    fn an_object_once_seen_keeps_its_stack() {
+        let mut c = StackCache::default();
+        c.learn(
+            "service",
+            [("s1".into(), Some("blog".into())), ("s2".into(), None)],
+        );
+        // A later read no longer lists s1: it was removed.
+        c.learn("service", [("s2".into(), None)]);
+        assert_eq!(c.get("service", "s1"), Some(Some("blog".into())));
+        assert_eq!(c.get("service", "s2"), Some(None));
+        assert_eq!(c.get("service", "s9"), None);
+    }
 }

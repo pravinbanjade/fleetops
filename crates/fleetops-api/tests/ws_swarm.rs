@@ -226,3 +226,102 @@ async fn swarm_events_follow_view_cells() {
     .await;
     assert!(more.is_err(), "{more:?}");
 }
+
+// Stack scoping (swarm spec §6).
+
+fn event(kind: &str, action: &str, id: &str) -> serde_json::Value {
+    json!({"Type": kind, "Action": action, "Actor": {"ID": id, "Attributes": {"name": id}},
+           "scope": "swarm", "time": 1_792_576_800, "timeNano": 1_792_576_800_000_000_000i64})
+}
+
+async fn scoped_bob() -> (common::fake_swarm::Swarm, Session) {
+    use fleetops_core::perm::{Row, Verb};
+    common::fake_swarm::with_custom_in(
+        &[
+            (Row::SwarmServices, Verb::View),
+            (Row::SwarmNodes, Verb::View),
+        ],
+        Some(&["blog"]),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn scoped_events_follow_the_stack_cache() {
+    let (sw, bob) = scoped_bob().await;
+    *sw.daemon.events.lock().unwrap() = vec![
+        event("service", "update", "s2"),
+        event("service", "update", "s1"),
+        event("node", "update", "n1"),
+        event("service", "update", "s9"),
+        event("service", "remove", "s1"),
+    ];
+    let mut ws = Ws::open(sw.t.serve().await, &bob).await;
+    ws.send(sub(1, "events", "prod", None, json!({}))).await;
+    let mut seen = vec![];
+    for _ in 0..3 {
+        let ev = ws.until(|v| is(v, 1, "data")).await;
+        seen.push(format!(
+            "{} {} {}",
+            ev["data"]["kind"].as_str().unwrap(),
+            ev["data"]["action"].as_str().unwrap(),
+            ev["data"]["id"].as_str().unwrap()
+        ));
+    }
+    assert_eq!(
+        seen,
+        ["service update s1", "node update n1", "service remove s1"]
+    );
+    let more = tokio::time::timeout(
+        std::time::Duration::from_millis(500),
+        ws.until(|v| is(v, 1, "data")),
+    )
+    .await;
+    assert!(more.is_err(), "{more:?}");
+}
+
+#[tokio::test]
+async fn scoped_task_feed() {
+    let (sw, bob) = scoped_bob().await;
+    sw.daemon.add_shop();
+    let mut ws = Ws::open(sw.t.serve().await, &bob).await;
+    ws.send(sub(1, "swarm-tasks", "prod", None, json!({})))
+        .await;
+    let snap = ws.until(|v| is(v, 1, "data")).await;
+    let ids: Vec<&str> = snap["data"]["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["t1", "t2"], "{snap}");
+}
+
+#[tokio::test]
+async fn scoped_service_logs() {
+    let (sw, bob) = scoped_bob().await;
+    let mut ws = Ws::open(sw.t.serve().await, &bob).await;
+    ws.send(sub(
+        1,
+        "logs",
+        "prod",
+        Some("service/s1"),
+        json!({"follow": false}),
+    ))
+    .await;
+    ws.until(|v| is(v, 1, "data")).await;
+    ws.send(sub(
+        2,
+        "logs",
+        "prod",
+        Some("service/s2"),
+        json!({"follow": false}),
+    ))
+    .await;
+    let err = ws.until(|v| v["sub"] == 2 && v["type"] == "error").await;
+    assert!(
+        err.to_string()
+            .contains("only access to the whole swarm covers this"),
+        "{err}"
+    );
+}

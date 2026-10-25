@@ -70,15 +70,15 @@ async fn scoped_for(
     Ok((env, ops, grants))
 }
 
-/// A swarm environment the caller may use, reachable or not: for live
-/// feeds, which say themselves when no manager answers and recover.
-pub(crate) async fn swarm_env_for(
+/// [`swarm_env_for`] for a feed that filters by stack itself: `need` held
+/// by some grant, wherever it applies.
+pub(crate) async fn swarm_env_scoped(
     s: &AppState,
     cu: &CurrentUser,
     name: &str,
     need: Need,
 ) -> Result<(Arc<dyn Environment>, Grants)> {
-    checked(s, cu, name, need).await
+    scoped(s, cu, name, need).await
 }
 
 fn swarm_ops(env: &Arc<dyn Environment>) -> Result<Arc<dyn SwarmOps>> {
