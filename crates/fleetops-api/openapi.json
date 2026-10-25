@@ -7241,7 +7241,14 @@
             "description": "Removed"
           },
           "409": {
-            "description": "The node is up or a manager, or `confirm_required`"
+            "description": "The node is up or a manager, or `confirm_required`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error: `{code, message, request_id}`",
@@ -7302,7 +7309,14 @@
             "description": "Changed"
           },
           "409": {
-            "description": "`confirm_required`: FleetOps runs on this node"
+            "description": "`confirm_required`: FleetOps runs on this node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error: `{code, message, request_id}`",
@@ -7811,7 +7825,14 @@
             "description": "Updated"
           },
           "409": {
-            "description": "Changed since `version`, or `confirm_required`"
+            "description": "Changed since `version`, or `confirm_required`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error: `{code, message, request_id}`",
@@ -7871,7 +7892,14 @@
             "description": "Removed"
           },
           "409": {
-            "description": "`confirm_required`"
+            "description": "`confirm_required`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error: `{code, message, request_id}`",
@@ -7934,7 +7962,14 @@
             "description": "Redeploying"
           },
           "409": {
-            "description": "`confirm_required`"
+            "description": "`confirm_required`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error: `{code, message, request_id}`",
@@ -7997,7 +8032,14 @@
             "description": "Rolling back"
           },
           "409": {
-            "description": "`confirm_required`"
+            "description": "`confirm_required`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error: `{code, message, request_id}`",
@@ -8060,7 +8102,14 @@
             "description": "Scaled"
           },
           "409": {
-            "description": "`confirm_required`"
+            "description": "`confirm_required`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error: `{code, message, request_id}`",

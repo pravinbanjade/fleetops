@@ -6177,7 +6177,7 @@ export type RemoveSwarmNodeErrors = {
     /**
      * The node is up or a manager, or `confirm_required`
      */
-    409: unknown;
+    409: ErrorBody;
     /**
      * Error: `{code, message, request_id}`
      */
@@ -6249,7 +6249,7 @@ export type UpdateSwarmNodeErrors = {
     /**
      * `confirm_required`: FleetOps runs on this node
      */
-    409: unknown;
+    409: ErrorBody;
     /**
      * Error: `{code, message, request_id}`
      */
@@ -6536,7 +6536,7 @@ export type RemoveSwarmServiceErrors = {
     /**
      * `confirm_required`
      */
-    409: unknown;
+    409: ErrorBody;
     /**
      * Error: `{code, message, request_id}`
      */
@@ -6608,7 +6608,7 @@ export type EditSwarmServiceErrors = {
     /**
      * Changed since `version`, or `confirm_required`
      */
-    409: unknown;
+    409: ErrorBody;
     /**
      * Error: `{code, message, request_id}`
      */
@@ -6646,7 +6646,7 @@ export type RedeploySwarmServiceErrors = {
     /**
      * `confirm_required`
      */
-    409: unknown;
+    409: ErrorBody;
     /**
      * Error: `{code, message, request_id}`
      */
@@ -6684,7 +6684,7 @@ export type RollbackSwarmServiceErrors = {
     /**
      * `confirm_required`
      */
-    409: unknown;
+    409: ErrorBody;
     /**
      * Error: `{code, message, request_id}`
      */
@@ -6722,7 +6722,7 @@ export type ScaleSwarmServiceErrors = {
     /**
      * `confirm_required`
      */
-    409: unknown;
+    409: ErrorBody;
     /**
      * Error: `{code, message, request_id}`
      */

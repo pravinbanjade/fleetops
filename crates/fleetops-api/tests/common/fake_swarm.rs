@@ -287,10 +287,8 @@ impl FakeSwarm {
             }
             return (200, String::new());
         }
-        (
-            404,
-            json!({"message": format!("unexpected {method} {path}")}).to_string(),
-        )
+        // Anything else (a node view's container actions): as for reads.
+        self.answer(path)
     }
 
     fn answer(&self, path: &str) -> (u16, String) {

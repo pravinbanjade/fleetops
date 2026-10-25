@@ -89,7 +89,7 @@ pub struct NodeUpdate {
 #[utoipa::path(patch, path = "/envs/{env}/swarm/nodes/{id}", operation_id = "updateSwarmNode", tag = "swarm",
     summary = "Set a node's availability, role or labels", params(EnvIdPath), request_body = NodeUpdate,
     responses((status = 204, description = "Changed"),
-        (status = 409, description = "`confirm_required`: FleetOps runs on this node")))]
+        (status = 409, description = "`confirm_required`: FleetOps runs on this node", body = crate::error::ErrorBody)))]
 pub async fn update_node(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -128,7 +128,7 @@ pub async fn update_node(
 #[utoipa::path(delete, path = "/envs/{env}/swarm/nodes/{id}", operation_id = "removeSwarmNode", tag = "swarm",
     summary = "Remove a worker that is down", params(EnvIdPath, ConfirmQuery),
     responses((status = 204, description = "Removed"),
-        (status = 409, description = "The node is up or a manager, or `confirm_required`")))]
+        (status = 409, description = "The node is up or a manager, or `confirm_required`", body = crate::error::ErrorBody)))]
 pub async fn remove_node(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -254,7 +254,7 @@ pub async fn create_service(
 #[utoipa::path(put, path = "/envs/{env}/swarm/services/{id}", operation_id = "editSwarmService", tag = "swarm",
     summary = "Replace a service's spec", params(EnvIdPath), request_body = ServiceEdit,
     responses((status = 204, description = "Updated"),
-        (status = 409, description = "Changed since `version`, or `confirm_required`")))]
+        (status = 409, description = "Changed since `version`, or `confirm_required`", body = crate::error::ErrorBody)))]
 pub async fn edit_service(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -304,7 +304,7 @@ pub async fn edit_service(
 
 #[utoipa::path(post, path = "/envs/{env}/swarm/services/{id}/scale", operation_id = "scaleSwarmService", tag = "swarm",
     summary = "Set a replicated service's replicas", params(EnvIdPath), request_body = Scale,
-    responses((status = 204, description = "Scaled"), (status = 409, description = "`confirm_required`")))]
+    responses((status = 204, description = "Scaled"), (status = 409, description = "`confirm_required`", body = crate::error::ErrorBody)))]
 pub async fn scale_service(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -359,7 +359,7 @@ async fn simple_change(
 
 #[utoipa::path(post, path = "/envs/{env}/swarm/services/{id}/redeploy", operation_id = "redeploySwarmService", tag = "swarm",
     summary = "Restart every task with the same spec (force update)", params(EnvIdPath), request_body = Confirm,
-    responses((status = 204, description = "Redeploying"), (status = 409, description = "`confirm_required`")))]
+    responses((status = 204, description = "Redeploying"), (status = 409, description = "`confirm_required`", body = crate::error::ErrorBody)))]
 pub async fn redeploy_service(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -381,7 +381,7 @@ pub async fn redeploy_service(
 
 #[utoipa::path(post, path = "/envs/{env}/swarm/services/{id}/rollback", operation_id = "rollbackSwarmService", tag = "swarm",
     summary = "Go back to the service's previous spec", params(EnvIdPath), request_body = Confirm,
-    responses((status = 204, description = "Rolling back"), (status = 409, description = "`confirm_required`")))]
+    responses((status = 204, description = "Rolling back"), (status = 409, description = "`confirm_required`", body = crate::error::ErrorBody)))]
 pub async fn rollback_service(
     State(s): State<AppState>,
     cu: CurrentUser,
@@ -403,7 +403,7 @@ pub async fn rollback_service(
 
 #[utoipa::path(delete, path = "/envs/{env}/swarm/services/{id}", operation_id = "removeSwarmService", tag = "swarm",
     summary = "Remove a service", params(EnvIdPath, ConfirmQuery),
-    responses((status = 204, description = "Removed"), (status = 409, description = "`confirm_required`")))]
+    responses((status = 204, description = "Removed"), (status = 409, description = "`confirm_required`", body = crate::error::ErrorBody)))]
 pub async fn remove_service(
     State(s): State<AppState>,
     cu: CurrentUser,

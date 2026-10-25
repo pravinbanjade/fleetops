@@ -264,7 +264,7 @@ async fn the_catalog_is_the_grid() {
         .iter()
         .map(|r| r["cells"].as_array().unwrap().len())
         .sum();
-    assert_eq!(cells, 56);
+    assert_eq!(cells, 70);
     assert_eq!(
         c["rows"][0],
         json!({"key": "containers", "label": "Containers", "group": "docker",
