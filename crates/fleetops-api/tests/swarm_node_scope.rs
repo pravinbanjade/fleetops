@@ -193,3 +193,12 @@ async fn node_view_info_counts_only_stack_containers() {
     assert_eq!(r.json["Containers"], 2);
     assert_eq!(r.json["Images"], 12);
 }
+
+/// Reveal held on a stack shows its containers' env values.
+#[tokio::test]
+async fn node_view_reveal_follows_stacks() {
+    let (sw, bob) = scoped().await;
+    let r = bob_get(&sw, &bob, &format!("{N}/containers/c0ffee")).await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(r.json["Config"]["Env"], json!(["TOKEN=t0p"]));
+}

@@ -362,8 +362,9 @@ pub async fn edit_service(
     let (svc, confirmed) = guarded_service(&s, &c, p, &id, body.confirm.as_deref()).await?;
     check_spec(&s, &c, p, &body.spec).await?;
     // A spec read without Reveal has masked env values: keep the real ones.
+    // Masked as the service was shown: Reveal on its stack, or everywhere.
     let reveal = Permission::new(Row::Containers, Verb::Reveal);
-    if !c.grants.allows(reveal, None) {
+    if !c.grants.allows_stack(reveal, svc.summary.stack.as_deref()) {
         let strings = |v: Option<&Value>| -> Vec<String> {
             v.and_then(Value::as_array)
                 .map(|a| {

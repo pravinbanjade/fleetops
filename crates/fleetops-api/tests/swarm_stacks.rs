@@ -832,6 +832,31 @@ async fn bob_says(
     sw.t.send(req(method, path, body, Some(bob))).await
 }
 
+/// Reveal held on a stack shows that stack's variable values.
+#[tokio::test]
+async fn reveal_on_a_stack_shows_its_variables() {
+    let (sw, bob) = with_custom_in(
+        &[(Row::Stacks, Verb::View), (Row::Stacks, Verb::Reveal)],
+        Some(&["blog"]),
+    )
+    .await;
+    let r = send(
+        &sw,
+        "POST",
+        STACKS,
+        Some(json!({"name": "blog", "compose": FILE, "variables": ["TOKEN=t0p"]})),
+    )
+    .await;
+    assert_eq!(r.status, 201, "{:?}", r.json);
+    let r = bob_says(&sw, &bob, "GET", &format!("{STACKS}/blog"), None).await;
+    assert_eq!(
+        r.json["draft"]["variables"],
+        json!(["TOKEN=t0p"]),
+        "{:?}",
+        r.json
+    );
+}
+
 #[tokio::test]
 async fn scoped_stack_lists_and_routes() {
     let (sw, bob) = with_custom_in(STACK_CELLS, Some(&["blog", "news"])).await;

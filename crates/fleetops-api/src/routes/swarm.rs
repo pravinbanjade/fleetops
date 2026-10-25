@@ -257,7 +257,7 @@ pub async fn service(
     .await?;
     // As for containers: env values are secret material without Reveal.
     let reveal = Permission::new(Row::Containers, Verb::Reveal);
-    if !grants.allows(reveal, None) {
+    if !grants.allows_stack(reveal, stack) {
         if let Some(vars) = svc
             .spec
             .pointer_mut("/TaskTemplate/ContainerSpec/Env")

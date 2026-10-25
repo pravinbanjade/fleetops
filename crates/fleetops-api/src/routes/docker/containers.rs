@@ -145,7 +145,11 @@ pub async fn inspect(
     c.check_container(&s, Permission::new(Row::Containers, Verb::View), &id)
         .await?;
     let mut v = c.ops.inspect_container(&id).await?;
-    if !c.grants.allows(REVEAL, None) {
+    // Reveal held on the container's stack shows its values too.
+    let stack = v["Config"]["Labels"][fleetops_core::swarm::STACK_LABEL]
+        .as_str()
+        .map(str::to_string);
+    if !c.grants.allows(REVEAL, stack.as_deref()) {
         if let Some(env) = v.pointer_mut("/Config/Env").and_then(Value::as_array_mut) {
             let mut text: Vec<String> = env
                 .iter()
@@ -176,7 +180,7 @@ pub async fn spec(
     c.check_container(&s, Permission::new(Row::Containers, Verb::View), &id)
         .await?;
     let mut spec = c.ops.container_spec(&id).await?;
-    if !c.grants.allows(REVEAL, None) {
+    if !c.grants.allows(REVEAL, super::stack_of(&spec.labels)) {
         mask_env(&mut spec.env);
     }
     Ok(Json(spec))

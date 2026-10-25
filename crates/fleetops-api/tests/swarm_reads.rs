@@ -268,3 +268,29 @@ async fn agents_and_trust_need_the_nodes_row() {
         assert_eq!(r.status, 200, "{p}: {:?}", r.json);
     }
 }
+
+/// Reveal held on a stack shows its services' env values.
+#[tokio::test]
+async fn reveal_on_a_stack_shows_its_services_env() {
+    let (sw, bob) = with_custom_in(
+        &[
+            (Row::SwarmServices, Verb::View),
+            (Row::Containers, Verb::Reveal),
+        ],
+        Some(&["blog"]),
+    )
+    .await;
+    let r =
+        sw.t.send(req(
+            "GET",
+            "/api/v1/envs/prod/swarm/services/s1",
+            None,
+            Some(&bob),
+        ))
+        .await;
+    assert_eq!(r.status, 200, "{:?}", r.json);
+    assert_eq!(
+        r.json["spec"]["TaskTemplate"]["ContainerSpec"]["Env"],
+        serde_json::json!(["DB_PASSWORD=hunter2", "MODE=prod"])
+    );
+}

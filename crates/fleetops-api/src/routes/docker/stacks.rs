@@ -398,7 +398,7 @@ pub async fn get(
         variables: vec![],
         updated_at: stack.created_at,
     });
-    if !c.grants.allows(REVEAL, None) {
+    if !c.grants.allows(REVEAL, Some(&name)) {
         mask_env(&mut draft.variables);
     }
     let deployed = match stack.deployed_revision {
@@ -574,7 +574,7 @@ pub async fn revision(
     let stack = s.store.stack_by_name(c.env.id(), &name).await?;
     let revision = s.store.revision(stack.id, n).await?;
     let mut variables = s.store.revision_variables(stack.id, n).await?;
-    if !c.grants.allows(REVEAL, None) {
+    if !c.grants.allows(REVEAL, Some(&name)) {
         mask_env(&mut variables);
     }
     let files = s

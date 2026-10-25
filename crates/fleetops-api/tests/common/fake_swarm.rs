@@ -642,7 +642,7 @@ impl FakeSwarm {
                     Some(c) => (
                         200,
                         json!({"Id": id, "Name": c["Names"][0], "Image": "sha256:1",
-                               "Config": {"Labels": c["Labels"], "Image": c["Image"]},
+                               "Config": {"Labels": c["Labels"], "Image": c["Image"], "Env": ["TOKEN=t0p"]},
                                "State": {"Status": "running", "Running": true},
                                "HostConfig": {}, "Mounts": [], "NetworkSettings": {"Networks": {}}})
                         .to_string(),
