@@ -75,6 +75,9 @@ export function TrustCard({ env, admin }: { env: string; admin: boolean }) {
     queryKey: ["env", env, "swarm", "trust"],
     // The server answers only grants holding the nodes row.
     enabled: can("swarm-nodes.view"),
+    // Until trusted, a manager may propose the swarm, or another admin
+    // trust it, while this page is open.
+    refetchInterval: (q) => (q.state.data?.confirmed ? false : 15_000),
     queryFn: async () => {
       try {
         return (await getSwarmTrust({ path: { env }, throwOnError: true })).data;

@@ -1,6 +1,6 @@
 import { waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mockFetch } from "@/test/fetch";
 import { ADMIN, ENVS, loggedIn, renderApp } from "@/test/app";
 
@@ -198,6 +198,25 @@ describe("Swarm trust and node views", () => {
     await waitFor(() =>
       expect(calls.find((c) => c.method === "POST" && c.path.endsWith("/swarm/trust"))?.body).toEqual({ cluster_id: "c1", fingerprint: "AB:CD:EF" }),
     );
+  });
+
+  it("a swarm proposed while the page is open shows up", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let n = 0;
+      mockFetch({
+        ...routes,
+        "GET /api/v1/envs/prod/swarm/trust": () => (n++ === 0 ? { status: 404, json: { code: "not_found", message: "none" } } : { json: TRUST }),
+      });
+      const { screen } = renderApp("/envs/prod");
+      await screen.findByRole("heading", { name: "Overview" });
+      await waitFor(() => expect(n).toBe(1));
+      expect(screen.queryByRole("region", { name: "Trust this swarm" })).not.toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect(await screen.findByRole("region", { name: "Trust this swarm" })).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("non admins see waiting", async () => {
