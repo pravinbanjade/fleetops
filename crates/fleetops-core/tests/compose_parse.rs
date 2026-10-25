@@ -89,6 +89,7 @@ volumes:
             published: Some(8080),
             host_ip: None,
             protocol: "tcp".into(),
+            mode: None,
         }],
         mounts: vec![Mount::Volume {
             source: "data".into(),
@@ -139,6 +140,7 @@ volumes:
         replicas: 1,
         files: vec![],
         build: None,
+        swarm: None,
     };
     assert_eq!(web, &expected);
 }
@@ -171,25 +173,29 @@ volumes:
                 target: 80,
                 published: Some(8080),
                 host_ip: None,
-                protocol: "tcp".into()
+                protocol: "tcp".into(),
+                mode: None,
             },
             Port {
                 target: 53,
                 published: Some(53),
                 host_ip: Some("127.0.0.1".into()),
-                protocol: "udp".into()
+                protocol: "udp".into(),
+                mode: None,
             },
             Port {
                 target: 80,
                 published: None,
                 host_ip: None,
-                protocol: "tcp".into()
+                protocol: "tcp".into(),
+                mode: None,
             },
             Port {
                 target: 443,
                 published: Some(8443),
                 host_ip: None,
-                protocol: "tcp".into()
+                protocol: "tcp".into(),
+                mode: None,
             },
         ]
     );

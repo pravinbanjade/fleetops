@@ -21,12 +21,13 @@ pub struct StackFile {
     pub kind: FileKind,
     /// The top-level Compose key.
     pub name: String,
-    /// `fleetops` (a Secrets-tab value), `variable`, `inline` or `repo`.
+    /// `fleetops` (a Secrets-tab value), `variable`, `inline`, `repo`, or
+    /// `external` (a Swarm object the stack only names).
     pub source: &'static str,
     /// The stack variable, for a `variable` source.
     pub variable: Option<String>,
-    /// The `file:` path as written, or for a `repo` source the path in the
-    /// repository.
+    /// The `file:` path as written; for a `repo` source the path in the
+    /// repository; for an `external` one, the Swarm object's name.
     pub path: Option<String>,
     /// Services that mount it.
     pub used_by: Vec<String>,
@@ -178,6 +179,11 @@ pub async fn list(
                     FileSource::Content { .. } => {
                         item.source = "inline";
                         item.set = true;
+                    }
+                    FileSource::External { name } => {
+                        item.source = "external";
+                        item.set = true;
+                        item.path = Some(name.clone());
                     }
                 }
                 out.push(item);

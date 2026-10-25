@@ -9,6 +9,16 @@ use super::ComposeIssue;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// What a file is parsed for: a Compose project on one host, or a Swarm
+/// stack (swarm spec §5), which honours `deploy:` and ignores what
+/// `docker stack deploy` ignores.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Mode {
+    #[default]
+    Compose,
+    Swarm,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parsed {
     pub project: Project,
@@ -72,6 +82,36 @@ const SERVICE_KEYS: &[&str] = &[
     "build",
 ];
 
+/// Service keys a Swarm stack ignores, as `docker stack deploy` does, with
+/// a hint where there is a Swarm way to say it.
+const SWARM_IGNORED: &[(&str, &str)] = &[
+    ("container_name", ""),
+    ("depends_on", ""),
+    ("links", ""),
+    ("external_links", ""),
+    ("network_mode", ""),
+    ("devices", ""),
+    ("tmpfs", ""),
+    ("privileged", ""),
+    ("pull_policy", ""),
+    ("shm_size", ""),
+    ("cgroup_parent", ""),
+    ("security_opt", ""),
+    ("userns_mode", ""),
+    ("restart", ": use deploy.restart_policy"),
+    ("mem_limit", ": use deploy.resources.limits"),
+    ("cpus", ": use deploy.resources.limits"),
+];
+
+fn ignored_in_swarm(key: &str) -> String {
+    let hint = SWARM_IGNORED
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, h)| *h)
+        .unwrap_or_default();
+    format!("'{key}' is ignored in a Swarm stack{hint}")
+}
+
 /// Why a well-known Compose key is refused, for a clearer message than
 /// "unknown key".
 fn unsupported_reason(key: &str) -> Option<&'static str> {
@@ -85,6 +125,7 @@ fn unsupported_reason(key: &str) -> Option<&'static str> {
 
 struct Cx<'a> {
     vars: &'a BTreeMap<String, String>,
+    mode: Mode,
     /// Top-level secret and config keys, valid or not, so a service naming
     /// a broken declaration gets one issue rather than two.
     declared: BTreeSet<(FileKind, String)>,
@@ -95,6 +136,48 @@ struct Cx<'a> {
 impl Cx<'_> {
     fn err(&mut self, path: &str, msg: impl Into<String>) {
         self.issues.push(ComposeIssue::new(path, msg));
+    }
+
+    fn warn(&mut self, path: &str, msg: impl Into<String>) {
+        self.warnings.push(ComposeIssue::new(path, msg));
+    }
+
+    fn swarm(&self) -> bool {
+        self.mode == Mode::Swarm
+    }
+
+    /// A whole number, written as a number or a string.
+    fn uint(&mut self, m: &Map<String, Value>, key: &str, path: &str) -> Option<u64> {
+        let v = m.get(key).filter(|v| !v.is_null())?;
+        match v.as_u64().or_else(|| scalar(v).and_then(|s| s.parse().ok())) {
+            Some(n) => Some(n),
+            None => {
+                self.err(&join(path, key), "must be a whole number");
+                None
+            }
+        }
+    }
+
+    /// One of `allowed`, or an issue naming them.
+    fn one_of(
+        &mut self,
+        m: &Map<String, Value>,
+        key: &str,
+        path: &str,
+        allowed: &[&str],
+    ) -> Option<String> {
+        let v = self.opt_string(m, key, path)?;
+        if allowed.contains(&v.as_str()) {
+            Some(v)
+        } else {
+            let list = match allowed {
+                [a, b] => format!("{a} or {b}"),
+                [rest @ .., last] => format!("{}, or {last}", rest.join(", ")),
+                [] => String::new(),
+            };
+            self.err(&join(path, key), format!("must be {list}"));
+            None
+        }
     }
 
     /// Reports every key of `map` not in `allowed`. `x-*` keys are allowed.
@@ -386,9 +469,20 @@ pub fn shell_split(s: &str) -> Result<Vec<String>, String> {
 /// Parses a Compose file for the stack `stack`, with `variables` as
 /// `KEY=value` lines.
 pub fn parse(yaml: &str, variables: &[String], stack: &str) -> Result<Parsed, Vec<ComposeIssue>> {
+    parse_mode(yaml, variables, stack, Mode::Compose)
+}
+
+/// [`parse`] for a Compose project or a Swarm stack.
+pub fn parse_mode(
+    yaml: &str,
+    variables: &[String],
+    stack: &str,
+    mode: Mode,
+) -> Result<Parsed, Vec<ComposeIssue>> {
     let vars = parse_variables(variables).map_err(|e| vec![e])?;
     let mut cx = Cx {
         vars: &vars,
+        mode,
         declared: BTreeSet::new(),
         issues: vec![],
         warnings: vec![],
@@ -523,6 +617,9 @@ fn file_decl(cx: &mut Cx, kind: FileKind, key: &str, v: &Value) -> Option<FileSo
         FileKind::Secret => &["file", "environment"],
         FileKind::Config => &["file", "environment", "content"],
     };
+    if cx.swarm() {
+        return swarm_file_decl(cx, m, key, &path, sources);
+    }
     for k in m.keys().filter(|k| SWARM_FILE_KEYS.contains(&k.as_str())) {
         cx.err(
             &join(&path, k),
@@ -554,6 +651,74 @@ fn file_decl(cx: &mut Cx, kind: FileKind, key: &str, v: &Value) -> Option<FileSo
         }
         _ => {
             cx.err(&path, format!("set only one of {}", given.join(", ")));
+            None
+        }
+    }
+}
+
+/// A top-level secret or config of a Swarm stack: one of `sources`, or an
+/// existing object (`external: true`, named by `name:` or its key).
+fn swarm_file_decl(
+    cx: &mut Cx,
+    m: &Map<String, Value>,
+    key: &str,
+    path: &str,
+    sources: &[&str],
+) -> Option<FileSource> {
+    for k in ["driver", "driver_opts", "template_driver"] {
+        if m.contains_key(k) {
+            cx.err(
+                &join(path, k),
+                format!(
+                    "'{k}' is not supported: FleetOps holds the value itself; use {}, or external: true",
+                    sources.join(", ")
+                ),
+            );
+        }
+    }
+    let allowed: Vec<&str> = sources.iter().chain(SWARM_FILE_KEYS).copied().collect();
+    cx.keys(m, &allowed, path);
+    let external = cx.bool(m, "external", path).unwrap_or(false);
+    let name = cx.opt_string(m, "name", path);
+    let given: Vec<&str> = sources
+        .iter()
+        .copied()
+        .filter(|k| m.contains_key(*k))
+        .collect();
+    if external {
+        if let Some(k) = given.first() {
+            cx.err(&join(path, k), "an external secret or config has no value here");
+            return None;
+        }
+        return Some(FileSource::External {
+            name: name.unwrap_or_else(|| key.to_string()),
+        });
+    }
+    if name.is_some() {
+        cx.err(
+            &join(path, "name"),
+            "name is only supported with external: true; FleetOps names the stack's secrets and configs itself",
+        );
+        return None;
+    }
+    match given.as_slice() {
+        [] => {
+            cx.err(
+                path,
+                format!("needs one source: {}, or external: true", sources.join(", ")),
+            );
+            None
+        }
+        [k] => {
+            let val = cx.opt_string(m, k, path)?;
+            Some(match *k {
+                "file" => FileSource::File { path: val },
+                "environment" => FileSource::Environment { var: val },
+                _ => FileSource::Content { text: val },
+            })
+        }
+        _ => {
+            cx.err(path, format!("set only one of {}", given.join(", ")));
             None
         }
     }
@@ -669,7 +834,8 @@ fn check_files(
     mount_targets: &[String],
     read_only: bool,
 ) {
-    if read_only && !files.is_empty() {
+    // Swarm mounts them itself, so a read-only container is fine there.
+    if read_only && !files.is_empty() && cx.mode == Mode::Compose {
         let key = if files.iter().any(|(_, f)| f.kind == FileKind::Secret) {
             "secrets"
         } else {
@@ -735,10 +901,17 @@ fn network(cx: &mut Cx, stack: &str, key: &str, v: &Value) -> Option<Network> {
             format!("{stack}_{key}")
         }
     });
+    let driver = cx.opt_string(m, "driver", &path);
+    if cx.swarm() && !external && driver.as_deref().is_some_and(|d| d != "overlay") {
+        cx.err(
+            &join(&path, "driver"),
+            "a Swarm stack's networks use the overlay driver",
+        );
+    }
     Some(Network {
         external,
         name,
-        driver: cx.opt_string(m, "driver", &path),
+        driver,
         driver_opts: cx.string_map(m.get("driver_opts"), &join(&path, "driver_opts")),
         internal: cx.bool(m, "internal", &path).unwrap_or(false),
         attachable: cx.bool(m, "attachable", &path).unwrap_or(false),
@@ -798,6 +971,30 @@ fn command(cx: &mut Cx, m: &Map<String, Value>, key: &str, path: &str) -> Option
 fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
     let path = join("services", name);
     let m = cx.map(v, &path)?;
+    // A Swarm stack drops what `docker stack deploy` ignores, saying so,
+    // and cannot build.
+    let kept: Map<String, Value>;
+    let m = if cx.swarm() {
+        for (k, _) in SWARM_IGNORED {
+            if m.contains_key(*k) {
+                cx.warn(&join(&path, k), ignored_in_swarm(k));
+            }
+        }
+        if m.get("build").is_some_and(|v| !v.is_null()) {
+            cx.err(
+                &join(&path, "build"),
+                "Swarm cannot build images; push the image to a registry and name it in image:",
+            );
+        }
+        kept = m
+            .iter()
+            .filter(|(k, _)| k.as_str() != "build" && !SWARM_IGNORED.iter().any(|(i, _)| i == k))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        &kept
+    } else {
+        m
+    };
     cx.keys(m, SERVICE_KEYS, &path);
     let image = cx.opt_string(m, "image", &path).unwrap_or_default();
     let build = m
@@ -900,12 +1097,19 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
                     other => match cx.map(other, &np) {
                         Some(o) => {
                             cx.keys(o, &["aliases", "ipv4_address"], &np);
+                            let mut ipv4_address = cx.opt_string(o, "ipv4_address", &np);
+                            if cx.swarm() && ipv4_address.take().is_some() {
+                                cx.warn(
+                                    &join(&np, "ipv4_address"),
+                                    ignored_in_swarm("ipv4_address"),
+                                );
+                            }
                             ServiceNetwork {
                                 aliases: o
                                     .get("aliases")
                                     .map(|a| cx.string_list(a, &join(&np, "aliases")))
                                     .unwrap_or_default(),
-                                ipv4_address: cx.opt_string(o, "ipv4_address", &np),
+                                ipv4_address,
                             }
                         }
                         None => continue,
@@ -1019,7 +1223,17 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
         .opt_string(m, "cpus", &path)
         .and_then(|c| cpus(cx, &c, &join(&path, "cpus")));
     let mut replicas = 1u32;
-    if let Some(dv) = m.get("deploy").filter(|v| !v.is_null()) {
+    let mut swarm = None;
+    if cx.swarm() {
+        swarm = Some(swarm_deploy(
+            cx,
+            m.get("deploy").filter(|v| !v.is_null()),
+            &join(&path, "deploy"),
+            &mut replicas,
+            &mut memory_bytes,
+            &mut nano_cpus,
+        ));
+    } else if let Some(dv) = m.get("deploy").filter(|v| !v.is_null()) {
         let dp = join(&path, "deploy");
         if let Some(dm) = cx.map(dv, &dp) {
             cx.keys(dm, &["replicas", "resources"], &dp);
@@ -1137,6 +1351,191 @@ fn service(cx: &mut Cx, name: &str, v: &Value) -> Option<Service> {
         replicas,
         files: files.into_iter().map(|(_, f)| f).collect(),
         build,
+        swarm,
+    })
+}
+
+/// A Swarm stack's `deploy:` block (absent: the defaults). Sets `replicas`
+/// and the limits it carries.
+fn swarm_deploy(
+    cx: &mut Cx,
+    v: Option<&Value>,
+    path: &str,
+    replicas: &mut u32,
+    memory_bytes: &mut Option<i64>,
+    nano_cpus: &mut Option<i64>,
+) -> SwarmDeploy {
+    let mut d = SwarmDeploy::default();
+    let Some(m) = v.and_then(|v| cx.map(v, path)) else {
+        return d;
+    };
+    cx.keys(
+        m,
+        &[
+            "mode",
+            "replicas",
+            "placement",
+            "resources",
+            "restart_policy",
+            "update_config",
+            "rollback_config",
+            "labels",
+            "endpoint_mode",
+        ],
+        path,
+    );
+    if let Some(mode) = cx.one_of(
+        m,
+        "mode",
+        path,
+        &["replicated", "global", "replicated-job", "global-job"],
+    ) {
+        d.mode = match mode.as_str() {
+            "global" => SwarmMode::Global,
+            "replicated-job" => SwarmMode::ReplicatedJob,
+            "global-job" => SwarmMode::GlobalJob,
+            _ => SwarmMode::Replicated,
+        };
+    }
+    if let Some(n) = cx.uint(m, "replicas", path) {
+        if matches!(d.mode, SwarmMode::Global | SwarmMode::GlobalJob) {
+            cx.err(
+                &join(path, "replicas"),
+                "replicas cannot be set with mode global",
+            );
+        }
+        *replicas = n as u32;
+    }
+    if let Some(pv) = m.get("placement").filter(|v| !v.is_null()) {
+        let pp = join(path, "placement");
+        if let Some(pm) = cx.map(pv, &pp) {
+            cx.keys(
+                pm,
+                &["constraints", "preferences", "max_replicas_per_node"],
+                &pp,
+            );
+            d.constraints = pm
+                .get("constraints")
+                .map(|c| cx.string_list(c, &join(&pp, "constraints")))
+                .unwrap_or_default();
+            if let Some(prefs) = pm.get("preferences").filter(|v| !v.is_null()) {
+                let prp = join(&pp, "preferences");
+                match prefs {
+                    Value::Array(items) => {
+                        for (i, item) in items.iter().enumerate() {
+                            let ip = idx(&prp, i);
+                            if let Some(o) = cx.map(item, &ip) {
+                                cx.keys(o, &["spread"], &ip);
+                                match cx.opt_string(o, "spread", &ip) {
+                                    Some(s) => d.preferences.push(s),
+                                    None => cx.err(&ip, "needs spread"),
+                                }
+                            }
+                        }
+                    }
+                    _ => cx.err(&prp, "must be a list"),
+                }
+            }
+            d.max_replicas_per_node = cx.uint(pm, "max_replicas_per_node", &pp);
+        }
+    }
+    if let Some(rv) = m.get("resources").filter(|v| !v.is_null()) {
+        let rp = join(path, "resources");
+        if let Some(rm) = cx.map(rv, &rp) {
+            cx.keys(rm, &["limits", "reservations"], &rp);
+            if let Some(lv) = rm.get("limits").filter(|v| !v.is_null()) {
+                let lp = join(&rp, "limits");
+                if let Some(lm) = cx.map(lv, &lp) {
+                    cx.keys(lm, &["memory", "cpus", "pids"], &lp);
+                    *memory_bytes = cx.size(lm, "memory", &lp);
+                    *nano_cpus = cx
+                        .opt_string(lm, "cpus", &lp)
+                        .and_then(|c| cpus(cx, &c, &join(&lp, "cpus")));
+                    d.pids_limit = cx.uint(lm, "pids", &lp).map(|n| n as i64);
+                }
+            }
+            if let Some(rv) = rm.get("reservations").filter(|v| !v.is_null()) {
+                let p = join(&rp, "reservations");
+                if let Some(r) = cx.map(rv, &p) {
+                    cx.keys(r, &["memory", "cpus"], &p);
+                    d.reserve_memory_bytes = cx.size(r, "memory", &p);
+                    d.reserve_nano_cpus = cx
+                        .opt_string(r, "cpus", &p)
+                        .and_then(|c| cpus(cx, &c, &join(&p, "cpus")));
+                }
+            }
+        }
+    }
+    if let Some(rv) = m.get("restart_policy").filter(|v| !v.is_null()) {
+        let rp = join(path, "restart_policy");
+        if let Some(r) = cx.map(rv, &rp) {
+            cx.keys(r, &["condition", "delay", "max_attempts", "window"], &rp);
+            d.restart_policy = Some(RestartPolicy {
+                condition: cx.one_of(r, "condition", &rp, &["none", "on-failure", "any"]),
+                delay_secs: cx.duration(r, "delay", &rp),
+                max_attempts: cx.uint(r, "max_attempts", &rp),
+                window_secs: cx.duration(r, "window", &rp),
+            });
+        }
+    }
+    d.update_config = update_policy(cx, m, "update_config", path);
+    d.rollback_config = update_policy(cx, m, "rollback_config", path);
+    d.labels = cx.string_map(m.get("labels"), &join(path, "labels"));
+    d.endpoint_mode = cx.one_of(m, "endpoint_mode", path, &["vip", "dnsrr"]);
+    d
+}
+
+/// `update_config` or `rollback_config`; only an update can roll back.
+fn update_policy(
+    cx: &mut Cx,
+    m: &Map<String, Value>,
+    key: &str,
+    path: &str,
+) -> Option<UpdatePolicy> {
+    let v = m.get(key).filter(|v| !v.is_null())?;
+    let p = join(path, key);
+    let u = cx.map(v, &p)?;
+    cx.keys(
+        u,
+        &[
+            "parallelism",
+            "delay",
+            "failure_action",
+            "monitor",
+            "max_failure_ratio",
+            "order",
+        ],
+        &p,
+    );
+    let actions: &[&str] = if key == "update_config" {
+        &["continue", "pause", "rollback"]
+    } else {
+        &["continue", "pause"]
+    };
+    let max_failure_ratio = match u.get("max_failure_ratio").filter(|v| !v.is_null()) {
+        None => None,
+        Some(r) => match r
+            .as_f64()
+            .or_else(|| scalar(r).and_then(|s| s.parse().ok()))
+            .filter(|f| (0.0..=1.0).contains(f))
+        {
+            Some(f) => Some(f),
+            None => {
+                cx.err(
+                    &join(&p, "max_failure_ratio"),
+                    "must be a number from 0 to 1",
+                );
+                None
+            }
+        },
+    };
+    Some(UpdatePolicy {
+        parallelism: cx.uint(u, "parallelism", &p),
+        delay_secs: cx.duration(u, "delay", &p),
+        failure_action: cx.one_of(u, "failure_action", &p, actions),
+        monitor_secs: cx.duration(u, "monitor", &p),
+        max_failure_ratio,
+        order: cx.one_of(u, "order", &p, &["stop-first", "start-first"]),
     })
 }
 
@@ -1276,11 +1675,20 @@ fn port(cx: &mut Cx, v: &Value, path: &str) -> Option<Port> {
         let protocol = cx
             .opt_string(m, "protocol", path)
             .unwrap_or_else(|| "tcp".into());
+        let mut host_ip = cx.opt_string(m, "host_ip", path);
+        let mut mode = None;
+        if cx.swarm() {
+            if host_ip.take().is_some() {
+                cx.warn(&join(path, "host_ip"), ignored_in_swarm("host_ip"));
+            }
+            mode = cx.one_of(m, "mode", path, &["ingress", "host"]);
+        }
         return port_protocol(cx, protocol, path).map(|protocol| Port {
             target,
             published,
-            host_ip: cx.opt_string(m, "host_ip", path),
+            host_ip,
             protocol,
+            mode,
         });
     }
     let s = cx.string(v, path)?;
@@ -1315,11 +1723,16 @@ fn port(cx: &mut Cx, v: &Value, path: &str) -> Option<Port> {
         Some(p) => Some(port_number(cx, p, path)?),
         None => None,
     };
+    let mut host_ip = host_ip;
+    if cx.swarm() && host_ip.take().is_some() {
+        cx.warn(path, ignored_in_swarm("host_ip"));
+    }
     Some(Port {
         target,
         published,
         host_ip,
         protocol,
+        mode: None,
     })
 }
 

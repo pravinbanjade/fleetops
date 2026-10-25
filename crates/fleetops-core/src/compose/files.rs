@@ -96,6 +96,8 @@ pub fn resolve(
                 }
             },
             Some(FileSource::Content { text }) => text.clone(),
+            // Swarm holds an external object's content; it keeps no digest.
+            Some(FileSource::External { .. }) => continue,
             // The parser refuses a mount of an undeclared source.
             None => continue,
         };
@@ -128,8 +130,9 @@ pub fn resolve(
     }
     for svc in project.services.values_mut() {
         for f in &mut svc.files {
-            let content = &out[&(f.kind, f.source.clone())];
-            f.digest = digest(key, f.kind, &f.source, content);
+            if let Some(content) = out.get(&(f.kind, f.source.clone())) {
+                f.digest = digest(key, f.kind, &f.source, content);
+            }
         }
     }
     Ok(out)

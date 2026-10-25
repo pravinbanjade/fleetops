@@ -64,6 +64,64 @@ pub struct Service {
     /// absent, so a service without one hashes as before.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub build: Option<Build>,
+    /// The `deploy:` block of a Swarm stack's service; always set in Swarm
+    /// mode, never in Compose mode, so a Compose service hashes as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub swarm: Option<SwarmDeploy>,
+}
+
+/// How Swarm schedules a service.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SwarmMode {
+    #[default]
+    Replicated,
+    Global,
+    ReplicatedJob,
+    GlobalJob,
+}
+
+/// What a Swarm stack's `deploy:` adds to a service. Limits stay in
+/// `Service::memory_bytes` and `Service::nano_cpus`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SwarmDeploy {
+    pub mode: SwarmMode,
+    pub constraints: Vec<String>,
+    /// Spread descriptors, such as `node.labels.zone`.
+    pub preferences: Vec<String>,
+    pub max_replicas_per_node: Option<u64>,
+    pub pids_limit: Option<i64>,
+    pub reserve_nano_cpus: Option<i64>,
+    pub reserve_memory_bytes: Option<i64>,
+    pub restart_policy: Option<RestartPolicy>,
+    pub update_config: Option<UpdatePolicy>,
+    pub rollback_config: Option<UpdatePolicy>,
+    /// The service's own labels (`labels:` are its containers').
+    pub labels: BTreeMap<String, String>,
+    /// `vip` or `dnsrr`.
+    pub endpoint_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RestartPolicy {
+    /// `none`, `on-failure` or `any`.
+    pub condition: Option<String>,
+    pub delay_secs: Option<i64>,
+    pub max_attempts: Option<u64>,
+    pub window_secs: Option<i64>,
+}
+
+/// `update_config` or `rollback_config`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct UpdatePolicy {
+    pub parallelism: Option<u64>,
+    pub delay_secs: Option<i64>,
+    /// `continue`, `pause`, or (updates only) `rollback`.
+    pub failure_action: Option<String>,
+    pub monitor_secs: Option<i64>,
+    pub max_failure_ratio: Option<f64>,
+    /// `stop-first` or `start-first`.
+    pub order: Option<String>,
 }
 
 /// A service's `build:`. `image` is set from its hash once the context is
@@ -128,6 +186,10 @@ pub enum FileSource {
     Content {
         text: String,
     },
+    /// Swarm stacks only: an existing secret or config, by its Docker name.
+    External {
+        name: String,
+    },
 }
 
 /// One secret or config attached to a service.
@@ -171,6 +233,9 @@ pub struct Port {
     pub published: Option<u16>,
     pub host_ip: Option<String>,
     pub protocol: String,
+    /// Swarm stacks only: `ingress` or `host`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
