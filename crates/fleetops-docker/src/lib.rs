@@ -25,9 +25,9 @@ use fleetops_core::{Error, Result};
 /// A connection to one Docker (or Podman) API endpoint.
 pub struct LocalDocker {
     client: Docker,
-    /// Raw reads where bollard's model loses data; `None` over TCP, where
-    /// those reads fall back to bollard.
-    raw: Option<raw::RawGet>,
+    /// Raw requests where bollard's model loses data; `None` over TCP,
+    /// where those fall back to bollard.
+    raw: Option<raw::Raw>,
 }
 
 impl LocalDocker {

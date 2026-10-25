@@ -1,28 +1,56 @@
-//! Raw JSON reads beside bollard, for the answers its model loses: Docker
+//! Raw JSON requests beside bollard, for what its model loses: Docker
 //! returns a service's healthcheck as `Healthcheck`, while bollard's model
-//! names it `HealthCheck` and drops it on read. One HTTP/1.0 GET per stream,
-//! so Docker answers without chunking and closes when done.
+//! names it `HealthCheck` and drops it on read; a service update's version
+//! is 64-bit where bollard's is 32; and fields bollard doesn't model are
+//! dropped on write. One HTTP/1.0 request per stream, so Docker answers
+//! without chunking and closes when done.
 
 use fleetops_core::{Error, Result};
 use futures_util::future::BoxFuture;
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-/// GETs a Docker API path: (status, body).
-pub(crate) type RawGet =
-    Arc<dyn Fn(String) -> BoxFuture<'static, Result<(u16, Vec<u8>)>> + Send + Sync>;
+/// One request to Docker's API.
+pub(crate) struct Req {
+    pub method: &'static str,
+    pub path: String,
+    /// JSON.
+    pub body: Option<Vec<u8>>,
+}
+
+impl Req {
+    pub fn get(path: String) -> Self {
+        Self {
+            method: "GET",
+            path,
+            body: None,
+        }
+    }
+}
+
+/// Sends a request to Docker's API: (status, body).
+pub(crate) type Raw = Arc<dyn Fn(Req) -> BoxFuture<'static, Result<(u16, Vec<u8>)>> + Send + Sync>;
 
 /// Answers bigger than this are refused: a service is a few KiB.
 const MAX: usize = 4 * 1024 * 1024;
 
-pub(crate) async fn get_over<S: AsyncRead + AsyncWrite + Unpin>(
+pub(crate) async fn send_over<S: AsyncRead + AsyncWrite + Unpin>(
     mut s: S,
-    path: &str,
+    req: &Req,
 ) -> Result<(u16, Vec<u8>)> {
     let io = |e: std::io::Error| Error::EnvUnavailable(format!("docker: {e}"));
-    s.write_all(format!("GET {path} HTTP/1.0\r\nHost: docker\r\n\r\n").as_bytes())
-        .await
-        .map_err(io)?;
+    let mut head = format!("{} {} HTTP/1.0\r\nHost: docker\r\n", req.method, req.path);
+    if let Some(b) = &req.body {
+        head.push_str(&format!(
+            "Content-Type: application/json\r\nContent-Length: {}\r\n",
+            b.len()
+        ));
+    }
+    head.push_str("\r\n");
+    s.write_all(head.as_bytes()).await.map_err(io)?;
+    if let Some(b) = &req.body {
+        s.write_all(b).await.map_err(io)?;
+    }
     s.flush().await.map_err(io)?;
     let mut buf = Vec::new();
     let mut chunk = [0u8; 8192];
@@ -72,28 +100,28 @@ fn content_length(head: &[u8]) -> Option<usize> {
 }
 
 /// Over a unix socket.
-pub(crate) fn unix(path: std::path::PathBuf) -> RawGet {
-    Arc::new(move |p: String| {
+pub(crate) fn unix(path: std::path::PathBuf) -> Raw {
+    Arc::new(move |r: Req| {
         let path = path.clone();
         Box::pin(async move {
             let s = tokio::net::UnixStream::connect(&path)
                 .await
                 .map_err(|e| Error::EnvUnavailable(format!("docker: {e}")))?;
-            get_over(s, &p).await
+            send_over(s, &r).await
         })
     })
 }
 
 /// Over a fresh agent tunnel stream.
-pub(crate) fn tunnel(opener: Arc<dyn fleetops_tunnel::StreamOpener>) -> RawGet {
-    Arc::new(move |p: String| {
+pub(crate) fn tunnel(opener: Arc<dyn fleetops_tunnel::StreamOpener>) -> Raw {
+    Arc::new(move |r: Req| {
         let opener = opener.clone();
         Box::pin(async move {
             let s = opener
                 .open()
                 .await
                 .map_err(|e| Error::EnvUnavailable(format!("agent stream: {e}")))?;
-            get_over(s, &p).await
+            send_over(s, &r).await
         })
     })
 }

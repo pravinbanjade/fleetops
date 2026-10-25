@@ -1,6 +1,6 @@
 //! Swarm cluster calls on a manager's engine.
 
-use crate::{error::map_err, LocalDocker};
+use crate::{error::map_err, raw::Req, LocalDocker};
 use async_trait::async_trait;
 use base64::Engine;
 use bollard::models::{
@@ -257,7 +257,7 @@ impl LocalDocker {
                 .map(|s| to_value(&s))
                 .transpose();
         };
-        let (status, body) = get(format!("/services/{id}")).await?;
+        let (status, body) = get(Req::get(format!("/services/{id}"))).await?;
         let parsed: Option<Value> = serde_json::from_slice(&body).ok();
         match status {
             200..=299 => {
@@ -287,24 +287,57 @@ impl LocalDocker {
     }
 
     async fn put_service(&self, id: &str, spec: Value, version: u64, rollback: bool) -> Result<()> {
-        let mut o = UpdateServiceOptionsBuilder::new().version(version as i32);
-        if rollback {
-            o = o.rollback("previous");
-        }
-        match self
-            .client
-            .update_service(id, service_spec(spec)?, o.build(), None)
-            .await
-            .map_err(map_err)
-        {
-            Ok(_) => Ok(()),
+        let res = match &self.raw {
+            // Raw, so the 64-bit version and fields bollard lacks go through.
+            Some(send) => {
+                service_spec(spec.clone())?;
+                let mut path = format!("/services/{id}/update?version={version}");
+                if rollback {
+                    path.push_str("&rollback=previous");
+                }
+                let body = serde_json::to_vec(&spec).map_err(|e| Error::Internal(e.to_string()))?;
+                let (status, answer) = send(Req {
+                    method: "POST",
+                    path,
+                    body: Some(body),
+                })
+                .await?;
+                match status {
+                    200..=299 => Ok(()),
+                    status => Err(Error::Upstream {
+                        status,
+                        message: serde_json::from_slice::<Value>(&answer)
+                            .ok()
+                            .and_then(|v| v["message"].as_str().map(str::to_string))
+                            .unwrap_or_else(|| format!("docker answered {status}")),
+                    }),
+                }
+            }
+            None => {
+                let version = i32::try_from(version).map_err(|_| {
+                    Error::Invalid(format!(
+                        "the swarm's version index {version} is too large to send over TCP; connect over a socket or an agent"
+                    ))
+                })?;
+                let mut o = UpdateServiceOptionsBuilder::new().version(version);
+                if rollback {
+                    o = o.rollback("previous");
+                }
+                self.client
+                    .update_service(id, service_spec(spec)?, o.build(), None)
+                    .await
+                    .map(|_| ())
+                    .map_err(map_err)
+            }
+        };
+        match res {
             // Someone changed it since this version was read.
             Err(Error::Upstream { message, .. }) if message.contains("out of sequence") => {
                 Err(Error::Conflict(format!(
                     "the service changed since it was read; reload and try again ({message})"
                 )))
             }
-            Err(e) => Err(e),
+            r => r,
         }
     }
 

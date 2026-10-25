@@ -59,9 +59,20 @@ fn services_json() -> serde_json::Value {
                 "Mode": {"Global": {}}
             },
             "ServiceStatus": {"RunningTasks": 3, "DesiredTasks": 3}
+        },
+        {
+            "ID": "s3", "Version": {"Index": 3_000_000_000u64},
+            "Spec": {
+                "Name": "busy",
+                "TaskTemplate": {"ContainerSpec": {"Image": "nginx", "Future": {"Kept": true}}},
+                "Mode": {"Replicated": {"Replicas": 1}}
+            }
         }
     ])
 }
+
+/// Requests the fake manager received that were not GETs: "METHOD path\nbody".
+static WRITES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 fn tasks_json() -> serde_json::Value {
     serde_json::json!([
@@ -167,8 +178,30 @@ fn fake_manager(dir: &std::path::Path) -> PathBuf {
             tokio::spawn(async move {
                 let mut buf = vec![0u8; 8192];
                 let n = c.read(&mut buf).await.unwrap_or(0);
-                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let mut req = String::from_utf8_lossy(&buf[..n]).to_string();
                 let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
+                if !req.starts_with("GET ") {
+                    // The body may follow the head in a later read.
+                    let len = req
+                        .lines()
+                        .find_map(|l| {
+                            let (k, v) = l.split_once(':')?;
+                            k.eq_ignore_ascii_case("content-length")
+                                .then(|| v.trim().parse::<usize>().ok())
+                                .flatten()
+                        })
+                        .unwrap_or(0);
+                    while req.split_once("\r\n\r\n").map_or(0, |(_, b)| b.len()) < len {
+                        let n = c.read(&mut buf).await.unwrap_or(0);
+                        if n == 0 {
+                            break;
+                        }
+                        req.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    }
+                    let method = req.split_whitespace().next().unwrap_or_default();
+                    let body = req.split_once("\r\n\r\n").map_or("", |(_, b)| b);
+                    WRITES.lock().unwrap().push(format!("{method} {path}\n{body}"));
+                }
                 if path.contains("/logs") {
                     let line = b"hello from blog_web.1\n";
                     let mut body = vec![1u8, 0, 0, 0];
@@ -351,7 +384,7 @@ async fn services_report_running_and_desired_and_their_stack() {
     let dir = tempfile::tempdir().unwrap();
     let d = manager(dir.path());
     let svcs = d.services().await.unwrap();
-    assert_eq!(svcs.len(), 2);
+    assert_eq!(svcs.len(), 3);
     let web = &svcs[0];
     assert_eq!(web.name, "blog_web");
     assert_eq!(web.stack.as_deref(), Some("blog"));
@@ -478,4 +511,23 @@ async fn tasks_carry_their_stack() {
     let tasks = d.tasks().await.unwrap();
     assert_eq!(tasks[0].stack.as_deref(), Some("blog"));
     assert_eq!(tasks[1].stack, None);
+}
+
+/// Docker's version index is 64-bit, and a busy swarm's can pass 2^31: an
+/// update sends it whole, and keeps fields the Docker library doesn't model.
+#[tokio::test]
+async fn an_update_sends_the_whole_version_and_every_field() {
+    use fleetops_core::swarm::ServiceChange;
+    let dir = tempfile::tempdir().unwrap();
+    let d = manager(dir.path());
+    d.update_service("s3", ServiceChange::Scale(2)).await.unwrap();
+    let writes = WRITES.lock().unwrap().clone();
+    let w = writes
+        .iter()
+        .find(|w| w.contains("/services/s3/update"))
+        .unwrap_or_else(|| panic!("no update sent: {writes:?}"));
+    assert!(w.contains("version=3000000000"), "{w}");
+    let body: serde_json::Value = serde_json::from_str(w.split_once('\n').unwrap().1).unwrap();
+    assert_eq!(body["Mode"]["Replicated"]["Replicas"], 2, "{body}");
+    assert_eq!(body["TaskTemplate"]["ContainerSpec"]["Future"]["Kept"], true, "{body}");
 }
