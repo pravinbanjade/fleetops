@@ -150,7 +150,7 @@ async fn control(
             }
             tracing::info!(env = %env_name, "connected");
         }
-        Ok(Ok(Some(Msg::Bye { reason }))) => return bye(reason),
+        Ok(Ok(Some(Msg::Bye { reason }))) => return bye(reason, swarm.is_some()),
         _ => return Ended::Dropped,
     }
     loop {
@@ -167,29 +167,67 @@ async fn control(
                     return Ended::Dropped;
                 }
             }
-            Ok(Some(Msg::Bye { reason })) => return bye(reason),
+            Ok(Some(Msg::Bye { reason })) => return bye(reason, swarm.is_some()),
             Ok(Some(_)) => {}
             Ok(None) | Err(_) => return Ended::Dropped,
         }
     }
 }
 
-fn bye(reason: ByeReason) -> Ended {
-    match reason {
-        ByeReason::Shutdown => Ended::Dropped,
-        ByeReason::NotYet => {
+/// What the server's bye means here; a Swarm agent is one of many, one
+/// per node, all on the environment's key.
+fn bye(reason: ByeReason, swarm: bool) -> Ended {
+    match (reason, swarm) {
+        (ByeReason::Shutdown, _) => Ended::Dropped,
+        (ByeReason::NotYet, _) => {
             tracing::info!("the server is not ready for this node yet; retrying");
             Ended::Dropped
         }
-        ByeReason::Revoked => Ended::Fatal(anyhow!(
+        (ByeReason::Revoked, false) => Ended::Fatal(anyhow!(
             "the server revoked this agent's key; re-enroll with a new join command"
         )),
-        ByeReason::Replaced => Ended::Fatal(anyhow!(
+        (ByeReason::Revoked, true) => Ended::Fatal(anyhow!(
+            "the server no longer accepts this key (rotated, re-trusted or removed); \
+             deploy the agent stack from the environment's key dialog again"
+        )),
+        (ByeReason::Replaced, false) => Ended::Fatal(anyhow!(
             "another agent connected with this key; only one may run per environment"
         )),
-        ByeReason::Incompatible => Ended::Fatal(anyhow!(
+        (ByeReason::Replaced, true) => Ended::Fatal(anyhow!(
+            "another agent connected for this node; only one may run per node"
+        )),
+        (ByeReason::Incompatible, false) => Ended::Fatal(anyhow!(
             "this agent's protocol version is not supported by the server; \
              use the image tag from the server's command"
         )),
+        (ByeReason::Incompatible, true) => Ended::Fatal(anyhow!(
+            "the server refused this node; the environment's Nodes page says why"
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fatal(e: Ended) -> String {
+        match e {
+            Ended::Fatal(e) => e.to_string(),
+            _ => panic!("not fatal"),
+        }
+    }
+
+    /// A Swarm environment has an agent per node, one key for all, and
+    /// refusals the Nodes page explains.
+    #[test]
+    fn swarm_byes_speak_of_nodes() {
+        let replaced = fatal(bye(ByeReason::Replaced, true));
+        assert!(replaced.contains("for this node"), "{replaced}");
+        let revoked = fatal(bye(ByeReason::Revoked, true));
+        assert!(revoked.contains("agent stack"), "{revoked}");
+        let refused = fatal(bye(ByeReason::Incompatible, true));
+        assert!(refused.contains("Nodes page"), "{refused}");
+        let docker = fatal(bye(ByeReason::Replaced, false));
+        assert!(docker.contains("per environment"), "{docker}");
     }
 }
