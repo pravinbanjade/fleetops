@@ -30,8 +30,12 @@ function Field({ id, label, children }: { id: string; label: string; children: R
 export function ServiceDialog({ env, target, onClose }: { env: string; target: Target; onClose: () => void }) {
   const qc = useQueryClient();
   const { run, dialog } = useGuarded();
-  const base = (target.mode === "edit" ? target.service.spec : {}) as Record<string, unknown>;
-  const [form, setForm] = useState<ServiceForm>(() => (target.mode === "edit" ? formFromSpec(base) : EMPTY_FORM));
+  // The spec and version as the dialog opened: a refetch underneath must
+  // not move the version this edit is saved against.
+  const [opened] = useState(() => (target.mode === "edit" ? { spec: target.service.spec as Record<string, unknown>, version: target.service.version } : { spec: {}, version: 0 }));
+  // What the form edits on top of: the opened spec, or the raw spec last switched from.
+  const [base, setBase] = useState<Record<string, unknown>>(opened.spec);
+  const [form, setForm] = useState<ServiceForm>(() => (target.mode === "edit" ? formFromSpec(opened.spec) : EMPTY_FORM));
   const [raw, setRaw] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -57,7 +61,9 @@ export function ServiceDialog({ env, target, onClose }: { env: string; target: T
   };
   const toForm = () => {
     try {
-      setForm(formFromSpec(current()));
+      const spec = current();
+      setBase(spec);
+      setForm(formFromSpec(spec));
       setRaw(null);
       setError(null);
     } catch (e) {
@@ -80,7 +86,8 @@ export function ServiceDialog({ env, target, onClose }: { env: string; target: T
         await createSwarmService({ path: { env }, body: { spec }, throwOnError: true });
         toast.success(`${String(spec.Name)} created`);
       } else {
-        const { id, name, version } = target.service;
+        const { id, name } = target.service;
+        const version = opened.version;
         const ran = await run((confirm) => editSwarmService({ path: { env, id }, body: { spec, version, confirm }, throwOnError: true }), name);
         if (!ran) return;
         toast.success(`${name} updated`);

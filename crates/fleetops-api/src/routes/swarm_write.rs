@@ -108,7 +108,13 @@ pub async fn update_node(
         .node(&id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("no such node '{id}'")))?;
-    let reason = if body.change.availability == Some(Availability::Drain) {
+    // Draining, demoting or relabelling can each take FleetOps off its
+    // node: its stack places it by role and label.
+    let c_ = &body.change;
+    let risky = c_.availability == Some(Availability::Drain)
+        || c_.role == Some(NodeRole::Worker)
+        || c_.labels.is_some();
+    let reason = if risky {
         swarm_protect::node_guard(&*c.ops, &id, &node.hostname).await?
     } else {
         None

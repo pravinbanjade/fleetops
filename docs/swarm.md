@@ -87,7 +87,7 @@ FleetOps asks you to type the name before a change that could stop FleetOps or c
 
 - any change to the **agent service** (scale, edit, redeploy, roll back, remove);
 - any change to **FleetOps' own service**, when FleetOps runs inside the swarm;
-- **draining or removing the node** that runs FleetOps' own service.
+- **draining, demoting, relabelling or removing the node** that runs FleetOps' own service: its stack places it by role and label.
 
 Both services are known by the label `io.fleetops.role` (`agent` or `server`), which the generated agent stack and `deploy/swarm/fleetops.yml` set, or by their image (`fleets/fleetops-agent`, `fleets/fleetops`) for stacks deployed before the label existed. If you run FleetOps from another image, add `io.fleetops.role: server` under `deploy: labels:` in your stack file.
 

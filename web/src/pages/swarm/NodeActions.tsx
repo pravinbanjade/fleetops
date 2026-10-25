@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useEnvAccess } from "@/api/access";
 import { removeSwarmNode, updateSwarmNode } from "@/api/gen/sdk.gen";
 import type { NodeChange } from "@/api/gen/types.gen";
-import { swarmKeys } from "@/api/queries";
+import { swarmKeys, swarmNodeQuery } from "@/api/queries";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RowMenu, type QuickItem } from "@/components/RowMenu";
 import { Label } from "@/components/ui/label";
@@ -83,8 +83,15 @@ export function NodeActions({ env, node }: { env: string; node: NodeRef }) {
       label: "Edit labels",
       icon: Tags,
       onSelect: () => {
-        setLabels(Object.entries(node.labels ?? {}).map(([k, v]) => `${k}=${v}`).join("\n"));
-        setAsking("labels");
+        // Saving replaces every label, so start from the node's current ones,
+        // fetched fresh: a list row may not carry them.
+        void qc
+          .fetchQuery({ ...swarmNodeQuery(env, node.id), staleTime: 0 })
+          .then((n) => {
+            setLabels(Object.entries(n?.labels ?? {}).map(([k, v]) => `${k}=${v}`).join("\n"));
+            setAsking("labels");
+          })
+          .catch((e) => toast.error(errorMessage(e)));
       },
     });
   }

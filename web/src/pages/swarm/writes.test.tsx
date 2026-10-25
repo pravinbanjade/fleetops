@@ -1,6 +1,7 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { FakeWebSocket } from "@/test/fake-ws";
 import { mockFetch } from "@/test/fetch";
 import { ENVS, loggedIn, renderApp } from "@/test/app";
 
@@ -216,5 +217,65 @@ describe("Swarm secrets, configs and networks", () => {
     await userEvent.click(within(d).getByRole("button", { name: "Create" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "backend", subnet: "10.20.0.0/24", attachable: true, internal: false, encrypted: true });
+  });
+});
+
+/** Sends a swarm event on the page's events subscription. */
+async function swarmEvent(data: object) {
+  let sub: number | undefined;
+  await vi.waitFor(() => {
+    const sock = FakeWebSocket.latest();
+    if (sock.readyState !== FakeWebSocket.OPEN) act(() => sock.open());
+    sub = sock.frames().find((f) => f.topic === "events" && f.env === "prod")?.sub;
+    expect(sub).toBeDefined();
+  });
+  act(() => FakeWebSocket.latest().receive({ sub, type: "data", data }));
+}
+
+describe("Swarm review fixes", () => {
+  it("an edit keeps the version it opened with when the service changes underneath", async () => {
+    let version = 10;
+    const calls = mockFetch({
+      ...svcRoutes,
+      "GET /api/v1/envs/prod/swarm/services/s1": () => ({ json: { ...S1, version } }),
+      "PUT /api/v1/envs/prod/swarm/services/s1": { status: 204 },
+    });
+    renderApp("/envs/prod/swarm/services/s1");
+    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByRole("dialog", { name: "Edit blog_web" });
+    version = 11;
+    await swarmEvent({ kind: "service", action: "update", id: "s1", name: "blog_web", time: 1 });
+    await waitFor(() => expect(calls.filter((c) => c.path.endsWith("/services/s1") && c.method === "GET").length).toBeGreaterThan(1));
+    const d = screen.getByRole("dialog", { name: "Edit blog_web" });
+    await userEvent.click(within(d).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "PUT")).toBeDefined());
+    expect((calls.find((c) => c.method === "PUT")?.body as { version: number }).version).toBe(10);
+  });
+
+  it("edit labels on the nodes list starts from the node's labels", async () => {
+    mockFetch({ ...routes, "GET /api/v1/envs/prod/swarm/nodes/n1": { json: { ...NODE_N1, labels: { fleetops: "true" } } } });
+    renderApp("/envs/prod/swarm/nodes");
+    await userEvent.click(await screen.findByRole("button", { name: "Actions for mgr-1" }));
+    await userEvent.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Edit labels" }));
+    const d = await screen.findByRole("dialog", { name: "Labels on mgr-1" });
+    await waitFor(() => expect((within(d).getByLabelText("Labels") as HTMLTextAreaElement).value).toBe("fleetops=true"));
+  });
+
+  it("raw edits survive switching back to the form", async () => {
+    const calls = mockFetch({ ...svcRoutes, "PUT /api/v1/envs/prod/swarm/services/s1": { status: 204 } });
+    renderApp("/envs/prod/swarm/services/s1");
+    await userEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const d = await screen.findByRole("dialog", { name: "Edit blog_web" });
+    await userEvent.click(within(d).getByRole("button", { name: "Raw spec" }));
+    const raw = within(d).getByLabelText("ServiceSpec (JSON)");
+    fireEvent.change(raw, { target: { value: JSON.stringify({ ...S1.spec, Labels: { team: "web" } }) } });
+    await userEvent.click(within(d).getByRole("button", { name: "Form" }));
+    await userEvent.clear(within(d).getByLabelText("Replicas"));
+    await userEvent.type(within(d).getByLabelText("Replicas"), "4");
+    await userEvent.click(within(d).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "PUT")).toBeDefined());
+    const spec = (calls.find((c) => c.method === "PUT")?.body as { spec: { Labels: object; Mode: object } }).spec;
+    expect(spec.Labels).toEqual({ team: "web" });
+    expect(spec.Mode).toEqual({ Replicated: { Replicas: 4 } });
   });
 });

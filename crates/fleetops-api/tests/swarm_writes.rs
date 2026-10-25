@@ -357,3 +357,15 @@ async fn service_writes_need_their_cells() {
         assert_eq!(r.status, 403, "{m} {p}: {:?}", r.json);
     }
 }
+
+#[tokio::test]
+async fn demoting_or_relabelling_fleetops_node_needs_its_name() {
+    let sw = swarm().await;
+    sw.daemon.add_fleetops_server("n1");
+    for change in [json!({"role": "worker"}), json!({"labels": {"zone": "a"}})] {
+        let r = send(&sw, "PATCH", &format!("{N}/n1"), Some(change.clone())).await;
+        assert_eq!(r.status, 409, "{change}: {:?}", r.json);
+        assert_eq!(r.json["code"], "confirm_required");
+    }
+    assert!(sw.daemon.write_paths().is_empty());
+}

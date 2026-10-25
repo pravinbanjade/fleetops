@@ -44,4 +44,18 @@ describe("service spec form", () => {
   it("rejects a bad port line", () => {
     expect(() => specFromForm({ ...formFromSpec(SPEC), ports: "80" })).toThrow("line 1: use published:target or published:target/udp");
   });
+
+  it("leaves untouched fields exactly as they were", () => {
+    const base = {
+      Name: "dns",
+      TaskTemplate: { ContainerSpec: { Image: "coredns:1", Env: ["PAD= x "] } },
+      Mode: { ReplicatedJob: { MaxConcurrent: 1 } },
+      EndpointSpec: { Ports: [{ Protocol: "udp", TargetPort: 53, PublishedPort: 53, PublishMode: "host", Name: "dns" }] },
+    };
+    const spec = specFromForm({ ...formFromSpec(base), image: "coredns:2" }, base);
+    expect(spec.EndpointSpec).toEqual(base.EndpointSpec);
+    expect(spec.TaskTemplate.ContainerSpec.Env).toEqual(["PAD= x "]);
+    expect(spec.Mode).toEqual(base.Mode);
+    expect(spec.TaskTemplate.ContainerSpec.Image).toBe("coredns:2");
+  });
 });

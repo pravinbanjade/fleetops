@@ -53,23 +53,38 @@ function parsePorts(text: string): Port[] {
   });
 }
 
-/** `base` (deep-copied) with the form's fields written in; throws on a bad port line. */
+/**
+ * `base` (deep-copied) with the form's changes written in: a field the user
+ * left as it was is not rewritten, so what the form cannot show (port publish
+ * modes, job modes, spacing in values) survives. Throws on a bad port line.
+ */
 export function specFromForm(form: ServiceForm, base: Spec = {}): Spec {
   const spec: Spec = structuredClone(base);
-  spec.Name = form.name.trim();
+  // A new spec gets every field; an edit only the ones that changed.
+  const was: ServiceForm | null = Object.keys(base).length ? formFromSpec(base) : null;
+  const changed = (...k: (keyof ServiceForm)[]) => !was || k.some((key) => form[key] !== was[key]);
   spec.TaskTemplate ??= {};
   spec.TaskTemplate.ContainerSpec ??= {};
   const cs = spec.TaskTemplate.ContainerSpec;
-  cs.Image = form.image.trim();
-  const env = lines(form.env);
-  if (env.length) cs.Env = env;
-  else delete cs.Env;
-  spec.Mode = form.mode === "global" ? { Global: {} } : { Replicated: { Replicas: form.replicas } };
-  const ports = parsePorts(form.ports);
-  if (ports.length) spec.EndpointSpec = { ...spec.EndpointSpec, Ports: ports };
-  else if (spec.EndpointSpec) delete spec.EndpointSpec.Ports;
-  const constraints = lines(form.constraints);
-  if (constraints.length) spec.TaskTemplate.Placement = { ...spec.TaskTemplate.Placement, Constraints: constraints };
-  else if (spec.TaskTemplate.Placement) delete spec.TaskTemplate.Placement.Constraints;
+  if (changed("name")) spec.Name = form.name.trim();
+  if (changed("image")) cs.Image = form.image.trim();
+  if (changed("env")) {
+    const env = lines(form.env);
+    if (env.length) cs.Env = env;
+    else delete cs.Env;
+  }
+  if (changed("mode", "replicas")) spec.Mode = form.mode === "global" ? { Global: {} } : { Replicated: { Replicas: form.replicas } };
+  if (changed("ports")) {
+    const old: Port[] = base.EndpointSpec?.Ports ?? [];
+    // Keep what the form does not show (publish mode, name) on ports it still lists.
+    const ports = parsePorts(form.ports).map((p) => ({ ...old.find((o) => o.TargetPort === p.TargetPort && (o.Protocol ?? "tcp") === p.Protocol), ...p }));
+    if (ports.length) spec.EndpointSpec = { ...spec.EndpointSpec, Ports: ports };
+    else if (spec.EndpointSpec) delete spec.EndpointSpec.Ports;
+  }
+  if (changed("constraints")) {
+    const constraints = lines(form.constraints);
+    if (constraints.length) spec.TaskTemplate.Placement = { ...spec.TaskTemplate.Placement, Constraints: constraints };
+    else if (spec.TaskTemplate.Placement) delete spec.TaskTemplate.Placement.Constraints;
+  }
   return spec;
 }
