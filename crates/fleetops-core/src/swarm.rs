@@ -106,6 +106,9 @@ pub struct ServiceDetail {
     pub update_status: Option<serde_json::Value>,
     /// Swarm's object version; an edit names the version it was made from.
     pub version: u64,
+    /// The spec a rollback puts back; never sent, as it holds env values.
+    #[serde(skip)]
+    pub previous_spec: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

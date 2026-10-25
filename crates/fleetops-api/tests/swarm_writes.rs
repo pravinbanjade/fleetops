@@ -606,6 +606,48 @@ async fn a_scoped_edit_cannot_reference_another_stacks_secret() {
     assert_eq!(edit(&sw, &bob, spec).await.status, 204);
 }
 
+/// A rollback puts back Docker's previous spec: for a grant limited to
+/// stacks, it is checked as an edit to that spec would be.
+#[tokio::test]
+async fn a_scoped_rollback_checks_the_previous_spec() {
+    let (sw, bob) = common::fake_swarm::with_custom_in(ALL, Some(&["blog"])).await;
+    sw.daemon.secrets.lock().unwrap().as_array_mut().unwrap().push(json!(
+        {"ID": "sec9", "Version": {"Index": 1}, "Spec": {"Name": "shop_db", "Labels": {"com.docker.stack.namespace": "shop"}}}
+    ));
+    let set_previous = |previous: Value| {
+        let mut services = sw.daemon.services.lock().unwrap();
+        let s1 = services
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|s| s["ID"] == "s1")
+            .unwrap();
+        s1["PreviousSpec"] = previous;
+    };
+    let path = format!("{SW}/services/s1/rollback");
+    let rollback = || as_bob(&sw, &bob, "POST", &path, None);
+    let mut spec = blog_spec();
+    spec["TaskTemplate"]["ContainerSpec"]
+        .as_object_mut()
+        .unwrap()
+        .remove("Configs");
+    let mut other = spec.clone();
+    other["TaskTemplate"]["ContainerSpec"]["Secrets"] =
+        json!([{"SecretID": "sec9", "SecretName": "shop_db"}]);
+    set_previous(other);
+    let r = rollback().await;
+    assert_eq!(r.status, 403, "{:?}", r.json);
+    let mut moved = spec.clone();
+    moved["Labels"]["com.docker.stack.namespace"] = json!("shop");
+    set_previous(moved);
+    assert_eq!(rollback().await.status, 403);
+    set_previous(Value::Null);
+    let r = rollback().await;
+    assert_eq!(r.status, 409, "{:?}", r.json);
+    set_previous(spec);
+    assert_eq!(rollback().await.status, 204);
+}
+
 #[tokio::test]
 async fn mixed_grants_view_all_operate_in_scope() {
     use common::fake_swarm::{custom_grant, with_grants};

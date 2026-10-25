@@ -477,17 +477,37 @@ pub async fn rollback_service(
     ApiPath((env, id)): ApiPath<(String, String)>,
     ApiJsonOr(body): ApiJsonOr<Confirm>,
 ) -> ApiResult<StatusCode> {
-    use fleetops_core::swarm::ServiceChange::Rollback;
-    simple_change(
-        s,
-        cu,
-        env,
-        id,
-        body.confirm,
-        Rollback,
+    let p = operate();
+    let c = swarm_ctx(&s, cu, &env, p).await?;
+    let (svc, confirmed) = guarded_service(&s, &c, p, &id, body.confirm.as_deref()).await?;
+    // The spec it puts back is checked as an edit to it would be.
+    if !c.grants.allows(p, None) {
+        let previous = svc.previous_spec.as_ref().ok_or_else(|| {
+            Error::Conflict(format!(
+                "service '{}' has no previous spec to roll back to",
+                svc.summary.name
+            ))
+        })?;
+        c.check(&s, p, previous["Labels"][STACK_LABEL].as_str())
+            .await?;
+        check_references(&s, &c, p, previous).await?;
+    }
+    let res = c
+        .ops
+        .update_service(&id, fleetops_core::swarm::ServiceChange::Rollback)
+        .await;
+    let detail = with_confirmed(json!({ "name": svc.summary.name }), confirmed);
+    c.audit(
+        &s,
         "swarm.service.rollback",
+        "swarm-service",
+        &id,
+        &res,
+        detail,
     )
-    .await
+    .await;
+    res?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[utoipa::path(delete, path = "/envs/{env}/swarm/services/{id}", operation_id = "removeSwarmService", tag = "swarm",

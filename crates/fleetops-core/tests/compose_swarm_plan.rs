@@ -48,6 +48,7 @@ fn detail(spec: Value, version: u64) -> ServiceDetail {
         spec,
         update_status: None,
         version,
+        previous_spec: None,
     }
 }
 

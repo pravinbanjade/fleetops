@@ -436,6 +436,9 @@ impl SwarmOps for LocalDocker {
                 .as_ref()
                 .and_then(|u| serde_json::to_value(u).ok()),
             version: svc.version.as_ref().and_then(|v| v.index).unwrap_or(0),
+            previous_spec: raw["PreviousSpec"]
+                .is_object()
+                .then(|| raw["PreviousSpec"].clone()),
         }))
     }
 
