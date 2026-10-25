@@ -121,7 +121,8 @@ export const envRoute = createRoute({
     const envs = await context.queryClient.ensureQueryData(envsQuery);
     const env = findEnv(envs, params.env);
     if (!env) return;
-    const rest = location.pathname.slice(`/envs/${encodeURIComponent(params.env)}`.length);
+    // Whatever follows the environment segment, however it was encoded.
+    const rest = location.pathname.replace(/^\/envs\/[^/]+/, "");
     const home = rest === "" || rest === "/";
     const page = rest.startsWith("/k8s/") ? "kube" : rest.startsWith("/swarm/") ? "swarm" : "docker";
     const family = envFamily(env.kind);

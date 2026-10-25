@@ -250,6 +250,12 @@ describe("Swarm trust and node views", () => {
     expect(history.location.pathname).toBe("/envs/prod@n2/containers");
   });
 
+  it("a node view's raw @ link to a swarm page goes home", async () => {
+    mockFetch(nodeRoutes);
+    const { history } = renderApp("/envs/prod@n2/swarm/nodes");
+    await waitFor(() => expect(decodeURIComponent(history.location.pathname)).toBe("/envs/prod@n2"));
+  });
+
   it("without the nodes row, the overview asks for neither trust nor agents", async () => {
     const scoped = { ...SWARM, access: { role: "viewer", grants: [{ namespaces: null, permissions: ["swarm-services.view"] }] } };
     const calls = mockFetch({
