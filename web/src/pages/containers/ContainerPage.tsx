@@ -142,7 +142,7 @@ const TABS: [ContainerTab, string, typeof Info][] = [
   ["files", "Files", FolderTree],
 ];
 
-function ContainerActions({ env, c, name, can }: { env: string; c: ContainerInspect; name: string; can: (p: string) => boolean }) {
+function ContainerActions({ env, c, name, can }: { env: string; c: ContainerInspect; name: string; can: (p: string, ns?: string | null) => boolean }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [renaming, setRenaming] = useState(false);
