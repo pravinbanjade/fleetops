@@ -46,6 +46,25 @@ pub(crate) async fn live(ops: &dyn SwarmOps, stack: &str) -> Result<SwarmLive> {
     let secrets = ops.secrets().await?;
     let configs = ops.configs().await?;
     let networks = ops.networks().await?;
+    // Networks the services join that the swarm's list lacks, such as its
+    // own `host` network: named, so their specs read as rendered.
+    let mut other_networks = BTreeMap::new();
+    let targets: BTreeSet<&str> = services
+        .iter()
+        .flat_map(|d| {
+            d.spec["TaskTemplate"]["Networks"]
+                .as_array()
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|n| n["Target"].as_str())
+        .filter(|id| !networks.iter().any(|n| n.id == *id || n.name == *id))
+        .collect();
+    for id in targets {
+        if let Some(name) = ops.network_name(id).await? {
+            other_networks.insert(id.to_string(), name);
+        }
+    }
     Ok(SwarmLive {
         services,
         stack_secrets: secrets
@@ -74,6 +93,7 @@ pub(crate) async fn live(ops: &dyn SwarmOps, stack: &str) -> Result<SwarmLive> {
             .filter_map(|n| Some((n.name.clone(), n.labels.get(LABEL_HASH)?.clone())))
             .collect(),
         networks,
+        other_networks,
     })
 }
 

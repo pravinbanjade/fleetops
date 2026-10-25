@@ -283,3 +283,42 @@ fn a_network_of_another_stack_must_be_declared_external() {
         );
     }
 }
+
+const HOST: &str = r#"
+services:
+  web:
+    image: nginx:1.27
+    networks: [hostnet]
+networks:
+  hostnet: { external: true, name: host }
+"#;
+
+/// Docker's predefined networks are on every node and in no stack: like
+/// `docker stack deploy`, a plan neither looks them up nor scopes them, and
+/// gives them no aliases.
+#[test]
+fn the_host_network_needs_no_lookup() {
+    let p = project(HOST, "x");
+    let mut plan = plan_swarm(&p, None, &SwarmLive::default());
+    apply_scope(&mut plan, &p, &SwarmLive::default(), &Default::default());
+    assert!(plan.blocking.is_empty(), "{:?}", plan.blocking);
+    let spec = service_spec(&p, "web");
+    assert_eq!(
+        spec["TaskTemplate"]["Networks"],
+        json!([{"Target": "host"}])
+    );
+}
+
+/// Docker stores the id of the swarm's own `host` network, which its
+/// network list lacks: read back by name, the spec is unchanged.
+#[test]
+fn a_service_on_the_host_network_is_unchanged() {
+    let p = project(HOST, "x");
+    let mut stored = service_spec(&p, "web");
+    stored["TaskTemplate"]["Networks"][0]["Target"] = json!("hostid");
+    let mut live = SwarmLive::default();
+    live.services.push(detail(stored, 10));
+    live.other_networks.insert("hostid".into(), "host".into());
+    let plan = plan_swarm(&p, Some((&p, 1)), &live);
+    assert_eq!(action(&plan, "web"), ServiceAction::Unchanged);
+}

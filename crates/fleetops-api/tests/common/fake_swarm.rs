@@ -158,6 +158,9 @@ pub fn configs_json() -> Value {
            {"ID": "cfg2", "Version": {"Index": 1}, "Spec": {"Name": "unused", "Data": ""}}])
 }
 
+/// The id of the swarm's own `host` network, which network lists lack.
+pub const SWARM_HOST_ID: &str = "swarmhost";
+
 pub fn networks_json() -> Value {
     json!([
         {"Name": "blog_default", "Id": "net1", "Scope": "swarm", "Driver": "overlay",
@@ -319,6 +322,21 @@ impl FakeSwarm {
     }
 
     fn answer_write(&self, method: &str, path: &str, body: &Value) -> (u16, String) {
+        // As Docker does, a service names the swarm's own `host` network by
+        // an id its network list lacks.
+        let mut body = body.clone();
+        if path.contains("/services/") {
+            for n in body["TaskTemplate"]["Networks"]
+                .as_array_mut()
+                .into_iter()
+                .flatten()
+            {
+                if n["Target"] == "host" {
+                    n["Target"] = json!(SWARM_HOST_ID);
+                }
+            }
+        }
+        let body = &body;
         let version = path
             .split("version=")
             .nth(1)
@@ -524,6 +542,13 @@ impl FakeSwarm {
                 c["Spec"].as_object_mut().map(|o| o.remove("Data"));
             }
             return (200, list.to_string());
+        }
+        if path.contains(&format!("/networks/{SWARM_HOST_ID}")) {
+            return (
+                200,
+                json!({"Name": "host", "Id": SWARM_HOST_ID, "Scope": "swarm", "Driver": "host"})
+                    .to_string(),
+            );
         }
         if path.contains("/networks") {
             return (200, self.networks.lock().unwrap().to_string());

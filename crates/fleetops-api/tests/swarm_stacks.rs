@@ -286,6 +286,29 @@ async fn a_second_deploy_of_the_same_file_changes_nothing() {
     assert_eq!(after.len(), before, "{:?}", &after[before..]);
 }
 
+const HOSTED: &str = r#"
+services:
+  web:
+    image: nginx:1.27
+    networks: [hostnet]
+networks:
+  hostnet: { external: true, name: host }
+"#;
+
+#[tokio::test]
+async fn a_stack_on_the_host_network_deploys_and_stays_unchanged() {
+    let sw = fast().await;
+    shop(&sw, HOSTED, "a").await;
+    let (task, _) = deploy(&sw).await;
+    assert_eq!(task["status"], "succeeded", "{task}");
+    let r = send(&sw, "GET", &format!("{SHOP_STACKS}/services"), None).await;
+    assert_eq!(r.json[0]["drift"], json!([]), "{:?}", r.json);
+    let before = sw.daemon.write_paths().len();
+    assert_eq!(deploy(&sw).await.0["status"], "succeeded");
+    let after = sw.daemon.write_paths();
+    assert_eq!(after.len(), before, "{:?}", &after[before..]);
+}
+
 #[tokio::test]
 async fn a_changed_value_makes_a_new_secret_and_removes_the_old() {
     let sw = fast().await;

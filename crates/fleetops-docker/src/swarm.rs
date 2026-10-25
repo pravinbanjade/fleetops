@@ -504,6 +504,16 @@ impl SwarmOps for LocalDocker {
             .collect())
     }
 
+    async fn network_name(&self, id: &str) -> Result<Option<String>> {
+        let n = found(
+            self.client
+                .inspect_network(id, None::<bollard::query_parameters::InspectNetworkOptions>)
+                .await
+                .map_err(map_err),
+        )?;
+        Ok(n.and_then(|n| n.name))
+    }
+
     async fn networks(&self) -> Result<Vec<SwarmNetwork>> {
         let uses = Uses::of(&self.list_services().await?);
         let filters = HashMap::from([("scope", vec!["swarm"])]);

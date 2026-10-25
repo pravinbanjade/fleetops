@@ -233,6 +233,9 @@ pub trait SwarmOps: Send + Sync {
     async fn configs(&self) -> Result<Vec<ConfigSummary>>;
     /// Swarm-scoped networks only.
     async fn networks(&self) -> Result<Vec<SwarmNetwork>>;
+    /// Any network's name by id, such as the swarm's own `host` network,
+    /// which [`networks`](Self::networks) lacks; `None` for an unknown id.
+    async fn network_name(&self, id: &str) -> Result<Option<String>>;
     fn service_logs(&self, id: &str, opts: &LogOptions) -> BoxStream<LogLine>;
     /// The manager's own event stream: cluster events and its local ones.
     fn events(&self) -> BoxStream<DockerEvent>;

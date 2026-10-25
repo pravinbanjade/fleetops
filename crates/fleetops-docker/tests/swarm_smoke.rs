@@ -188,3 +188,61 @@ services:
     let _ = d.remove_network(&net_id).await;
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
+
+/// A service on the swarm's own `host` network: Docker stores an id its
+/// network list lacks, which `network_name` must name back.
+#[tokio::test]
+#[ignore = "needs a Swarm manager on DOCKER_HOST"]
+async fn a_host_network_service_reads_back_without_drift() {
+    let d = LocalDocker::connect(&host()).unwrap();
+    let stack = format!("fohost{}", std::process::id());
+    let yaml = r#"
+services:
+  web:
+    image: nginx:1.27
+    networks: [hostnet]
+networks:
+  hostnet: { external: true, name: host }
+"#;
+    let mut p = parse_mode(yaml, &[], &stack, Mode::Swarm).unwrap().project;
+    resolve(&mut p, &[], &Default::default(), &[7; 32]).unwrap();
+    let spec = service_spec(&p, "web");
+    let created = d.create_service(&spec).await;
+    let read = match &created {
+        Ok(id) => d.service(id).await,
+        Err(_) => Ok(None),
+    };
+    let mut names: BTreeMap<String, String> = d
+        .networks()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|n| (n.id, n.name))
+        .collect();
+    if let Ok(Some(live)) = &read {
+        for n in live.spec["TaskTemplate"]["Networks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let id = n["Target"].as_str().unwrap_or_default();
+            if !names.contains_key(id) {
+                if let Some(name) = d.network_name(id).await.unwrap() {
+                    names.insert(id.to_string(), name);
+                }
+            }
+        }
+    }
+    if let Ok(id) = &created {
+        let _ = d.remove_service(id).await;
+    }
+    created.expect("the service is created");
+    let live = named(&read.unwrap().expect("the service reads back").spec, &names);
+    let changes = spec_changes(&canonical(&spec), &canonical(&live));
+    assert!(
+        changes.is_empty(),
+        "{changes:?}\nsent: {}\nread: {}",
+        canonical(&spec),
+        canonical(&live)
+    );
+}

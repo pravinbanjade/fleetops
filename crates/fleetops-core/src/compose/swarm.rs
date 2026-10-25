@@ -269,8 +269,15 @@ pub fn service_spec(project: &Project, key: &str) -> Value {
                 .get(k)
                 .map(|net| net.name.clone())
                 .unwrap_or_else(|| k.clone());
-            let aliases: Vec<&String> = std::iter::once(&svc.name).chain(&n.aliases).collect();
-            json!({"Target": target, "Aliases": aliases})
+            // As `docker stack deploy`: a predefined network takes no
+            // service-name alias.
+            let own = (!predefined(&target)).then_some(&svc.name);
+            let aliases: Vec<&String> = own.into_iter().chain(&n.aliases).collect();
+            if aliases.is_empty() {
+                json!({"Target": target})
+            } else {
+                json!({"Target": target, "Aliases": aliases})
+            }
         })
         .collect();
     if !networks.is_empty() {
@@ -455,6 +462,12 @@ fn is_default(path: &str, key: &str, v: &Value) -> bool {
         ("UpdateConfig" | "RollbackConfig", "Order") => v == "stop-first",
         _ => false,
     }
+}
+
+/// Docker's own networks, on every node and in no stack: `docker stack
+/// deploy` neither looks them up nor aliases services on them.
+pub fn predefined(network: &str) -> bool {
+    matches!(network, "host" | "bridge" | "none")
 }
 
 /// A live spec with its networks named, as rendered specs name them:

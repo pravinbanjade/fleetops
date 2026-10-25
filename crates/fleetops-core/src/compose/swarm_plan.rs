@@ -5,7 +5,7 @@ use super::docker::network_hash;
 use super::model::*;
 use super::plan::{Plan, ResourceAction, ResourcePlan, ServiceAction, ServicePlan};
 use super::swarm::{
-    canonical, named, object_name, service_name, service_spec, spec_changes, spec_hash,
+    canonical, named, object_name, predefined, service_name, service_spec, spec_changes, spec_hash,
     LABEL_SPEC_HASH,
 };
 use crate::swarm::{ServiceDetail, SwarmNetwork};
@@ -31,6 +31,9 @@ pub struct SwarmLive {
     pub networks: Vec<SwarmNetwork>,
     /// This stack's networks' config-hash label, by name.
     pub network_hashes: BTreeMap<String, String>,
+    /// Names, by id, of networks the stack's services join that `networks`
+    /// lacks, such as the swarm's own `host` network.
+    pub other_networks: BTreeMap<String, String>,
 }
 
 impl SwarmLive {
@@ -39,6 +42,7 @@ impl SwarmLive {
         self.networks
             .iter()
             .map(|n| (n.id.clone(), n.name.clone()))
+            .chain(self.other_networks.clone())
             .collect()
     }
 
@@ -120,7 +124,11 @@ fn outside_scope(project: &Project, live: &SwarmLive, scope: &BTreeSet<String>) 
             }
         }
     }
-    for net in project.networks.values().filter(|n| n.external) {
+    for net in project
+        .networks
+        .values()
+        .filter(|n| n.external && !predefined(&n.name))
+    {
         let stack = live
             .networks
             .iter()
@@ -220,7 +228,7 @@ pub fn plan_swarm(new: &Project, deployed: Option<(&Project, i64)>, live: &Swarm
         let live_net = live.networks.iter().find(|n| n.name == net.name);
         let found = live_net.is_some();
         if net.external {
-            if !found {
+            if !found && !predefined(&net.name) {
                 blocking.push(format!("external network {} does not exist", net.name));
             }
             continue;
