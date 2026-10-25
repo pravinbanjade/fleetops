@@ -47,12 +47,20 @@ async fn a_deployed_spec_reads_back_without_drift() {
         .unwrap();
     let secret = object_name(&p, FileKind::Secret, "db");
     let secret_id = d
-        .create_secret(&secret, values[&(FileKind::Secret, "db".into())].as_bytes(), &ours)
+        .create_secret(
+            &secret,
+            values[&(FileKind::Secret, "db".into())].as_bytes(),
+            &ours,
+        )
         .await
         .unwrap();
     let config = object_name(&p, FileKind::Config, "site");
     let config_id = d
-        .create_config(&config, values[&(FileKind::Config, "site".into())].as_bytes(), &ours)
+        .create_config(
+            &config,
+            values[&(FileKind::Config, "site".into())].as_bytes(),
+            &ours,
+        )
         .await
         .unwrap();
 
