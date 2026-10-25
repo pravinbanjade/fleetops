@@ -545,7 +545,7 @@ async fn a_scoped_edit_cannot_reference_another_stacks_secret() {
         json!([{"SecretID": "sec9", "SecretName": "shop_db"}]);
     let r = edit(&sw, &bob, spec).await;
     assert_eq!(r.status, 403);
-    ends(&r, "stack 'shop' is not in your access");
+    ends(&r, "only access to the whole swarm covers this");
     // The unlabelled config blog_nginx is outside every stack.
     let r = edit(&sw, &bob, blog_spec()).await;
     assert_eq!(r.status, 403, "{:?}", r.json);
@@ -643,4 +643,48 @@ async fn hidden_objects_read_as_missing_to_writes() {
         .audit_actions()
         .await
         .contains(&"access.denied".to_string()));
+}
+
+#[tokio::test]
+async fn a_scoped_edit_checks_every_reference() {
+    let (sw, bob) = common::fake_swarm::with_custom_in(ALL, Some(&["blog"])).await;
+    sw.daemon
+        .networks
+        .lock()
+        .unwrap()
+        .as_array_mut()
+        .unwrap()
+        .push(json!(
+            {"Name": "shop_backend", "Id": "net9", "Scope": "swarm", "Driver": "overlay",
+             "Labels": {"com.docker.stack.namespace": "shop"}}
+        ));
+    sw.daemon.configs.lock().unwrap().as_array_mut().unwrap().push(json!(
+        {"ID": "cfg9", "Version": {"Index": 1}, "Spec": {"Name": "shop_cred", "Labels": {"com.docker.stack.namespace": "shop"}}}
+    ));
+    let base = || {
+        let mut spec = blog_spec();
+        spec["TaskTemplate"]["ContainerSpec"]
+            .as_object_mut()
+            .unwrap()
+            .remove("Configs");
+        spec
+    };
+    // The deprecated top-level Networks still attaches a service.
+    for target in ["shop_backend", "net9", "nope"] {
+        let mut spec = base();
+        spec["Networks"] = json!([{"Target": target}]);
+        let r = edit(&sw, &bob, spec).await;
+        assert_eq!(r.status, 403, "{target}: {:?}", r.json);
+        ends(&r, "only access to the whole swarm covers this");
+    }
+    let mut spec = base();
+    spec["TaskTemplate"]["ContainerSpec"]["Privileges"] =
+        json!({"CredentialSpec": {"Config": "cfg9"}});
+    let r = edit(&sw, &bob, spec).await;
+    assert_eq!(r.status, 403, "{:?}", r.json);
+    assert!(!sw
+        .daemon
+        .write_paths()
+        .iter()
+        .any(|p| p.contains("/update")));
 }

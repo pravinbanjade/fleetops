@@ -237,8 +237,23 @@ async fn check_references(s: &AppState, c: &SwarmCtx, p: Permission, spec: &Valu
             .collect()
     };
     let secret_ids = ids("/TaskTemplate/ContainerSpec/Secrets", "SecretID");
-    let config_ids = ids("/TaskTemplate/ContainerSpec/Configs", "ConfigID");
-    let network_ids = ids("/TaskTemplate/Networks", "Target");
+    let mut config_ids = ids("/TaskTemplate/ContainerSpec/Configs", "ConfigID");
+    // A credential spec may name a config too.
+    if let Some(id) = spec
+        .pointer("/TaskTemplate/ContainerSpec/Privileges/CredentialSpec/Config")
+        .and_then(Value::as_str)
+    {
+        config_ids.push(id.to_string());
+    }
+    let mut network_ids = ids("/TaskTemplate/Networks", "Target");
+    // Docker still honours the deprecated top-level list.
+    network_ids.extend(
+        spec.get("Networks")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|r| r["Target"].as_str().map(str::to_string)),
+    );
     let mut stacks: Vec<Option<String>> = Vec::new();
     if !secret_ids.is_empty() {
         let all = c.ops.secrets().await?;
@@ -270,8 +285,13 @@ async fn check_references(s: &AppState, c: &SwarmCtx, p: Permission, spec: &Valu
             );
         }
     }
+    // Another stack's object and an unknown one read the same.
     for stack in stacks {
-        c.check(s, p, stack.as_deref()).await?;
+        let r = c
+            .grants
+            .check_stack(p, stack.as_deref())
+            .map_err(|_| fleetops_core::access::swarm_wide_denied());
+        crate::authz::deny_audited(s, &c.user, c.env.id(), &p.to_string(), r).await?;
     }
     Ok(())
 }
