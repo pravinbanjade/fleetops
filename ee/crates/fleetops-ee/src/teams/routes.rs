@@ -12,7 +12,7 @@ use fleetops_api::{
     extract::{ApiJson, ApiPath},
     AccessEntry, ApiResult, AppState, SetAccess, Wanted,
 };
-use fleetops_core::access::{normalize_namespaces, CustomRef, EnvRole, Grant};
+use fleetops_core::access::{normalize_scope, CustomRef, EnvRole, Grant};
 use fleetops_core::{edition::Feature, now_unix, Role, User};
 use fleetops_store::NewAudit;
 use serde::{Deserialize, Serialize};
@@ -363,9 +363,12 @@ pub async fn set_access(
 ) -> ApiResult<Json<AccessEntry>> {
     let p = s.store.pool();
     let team = db::get(p, id).await?;
-    s.store.get_environment(env_id).await?;
+    let env = s.store.get_environment(env_id).await?;
     let wanted = body.wanted()?;
-    let ns = body.namespaces.map(normalize_namespaces).transpose()?;
+    let ns = body
+        .namespaces
+        .map(|v| normalize_scope(&env.kind, v))
+        .transpose()?;
     let new = match wanted {
         Wanted::Builtin(role) => Grant::builtin(role, ns),
         Wanted::Custom(role_id) => {

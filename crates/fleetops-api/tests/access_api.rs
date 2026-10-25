@@ -168,3 +168,50 @@ async fn community_refuses_a_custom_role() {
         assert_eq!(r.json["message"], "invalid input: give a role or a role_id");
     }
 }
+
+#[tokio::test]
+async fn swarm_bindings_take_stacks() {
+    let (t, admin, bob) = setup().await;
+    let swarm = t
+        .store
+        .create_swarm_environment("prod", "hash", 0)
+        .await
+        .unwrap()
+        .id;
+    let path = format!("/api/v1/users/{bob}/access/{swarm}");
+    let r = t
+        .send(req(
+            "PUT",
+            &path,
+            Some(json!({"role": "operator", "namespaces": ["blog", "shop_2"]})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json);
+    assert_eq!(r.json["namespaces"], json!(["blog", "shop_2"]));
+    let r = t
+        .send(req(
+            "PUT",
+            &path,
+            Some(json!({"role": "operator", "namespaces": ["Not A Stack"]})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{:?}", r.json);
+    let local = env_id(&t, "local");
+    let r = t
+        .send(req(
+            "PUT",
+            &format!("/api/v1/users/{bob}/access/{local}"),
+            Some(json!({"role": "viewer", "namespaces": ["blog"]})),
+            Some(&admin),
+        ))
+        .await;
+    assert!(
+        r.json["message"].as_str().unwrap().ends_with(
+            "only Kubernetes and Swarm environments can be limited to namespaces or stacks"
+        ),
+        "{:?}",
+        r.json
+    );
+}

@@ -525,3 +525,39 @@ async fn env_team_access_lists_teams_and_members() {
             .await;
     assert_eq!(r.status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn team_bindings_on_a_swarm_take_stacks() {
+    let f = fx().await;
+    let t = f.team("ops").await;
+    let swarm =
+        f.ee.store
+            .create_swarm_environment("s", "hash", 0)
+            .await
+            .unwrap()
+            .id;
+    let r = f
+        .grant(
+            t,
+            swarm,
+            json!({"role": "operator", "namespaces": ["blog"]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let r = f
+        .grant(
+            t,
+            f.env,
+            json!({"role": "operator", "namespaces": ["blog"]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+    let r = f
+        .grant(
+            t,
+            swarm,
+            json!({"role": "operator", "namespaces": ["Bad Name"]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+}

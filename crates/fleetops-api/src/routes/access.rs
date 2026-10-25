@@ -6,7 +6,7 @@ use crate::{
     ApiResult, AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
-use fleetops_core::access::{normalize_namespaces, EnvRole, Grant};
+use fleetops_core::access::{normalize_scope, EnvRole, Grant};
 use fleetops_core::{now_unix, Error, Role};
 use fleetops_store::{BindingRecord, NewAudit};
 use serde::{Deserialize, Serialize};
@@ -178,7 +178,11 @@ pub async fn set(
         return Err(Error::Invalid("admins already have full access".into()).into());
     }
     let wanted = body.wanted()?;
-    let ns = body.namespaces.map(normalize_namespaces).transpose()?;
+    let env = s.store.get_environment(env_id).await?;
+    let ns = body
+        .namespaces
+        .map(|v| normalize_scope(&env.kind, v))
+        .transpose()?;
     let entry = match wanted {
         Wanted::Builtin(role) => {
             let b = s
@@ -189,13 +193,6 @@ pub async fn set(
             AccessEntry::from(&b)
         }
         Wanted::Custom(role_id) => {
-            let env = s.store.get_environment(env_id).await?;
-            if ns.is_some() && !env.kind.starts_with("kube-") {
-                return Err(Error::Invalid(
-                    "only a Kubernetes environment takes namespaces".into(),
-                )
-                .into());
-            }
             let g = s
                 .custom_roles
                 .assign(id, env_id, role_id, ns.as_ref(), now_unix())

@@ -109,9 +109,10 @@ impl Store {
     ) -> Result<BindingRecord> {
         self.get_user(user_id).await?;
         let env = self.get_environment(env_id).await?;
-        if namespaces.is_some() && !env.kind.starts_with("kube-") {
+        if namespaces.is_some() && !env.kind.starts_with("kube-") && env.kind != "swarm-agent" {
             return Err(Error::Invalid(
-                "only a Kubernetes environment takes namespaces".into(),
+                "only Kubernetes and Swarm environments can be limited to namespaces or stacks"
+                    .into(),
             ));
         }
         let ns = namespaces.map(|n| serde_json::to_string(n).expect("names serialise"));
