@@ -2,7 +2,7 @@ import { useEnvAccess } from "@/api/access";
 import { useQuery } from "@tanstack/react-query";
 import { listSwarmAgents } from "@/api/gen/sdk.gen";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
-import { Boxes, Check, ChevronRight, ChevronsUpDown, LogOut, Menu, Monitor, Moon, Network, RefreshCw, Settings2, Sun, X } from "lucide-react";
+import { Boxes, Check, ChevronRight, ChevronsUpDown, LogOut, Menu, Network, RefreshCw, Settings2, X } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { accessOf } from "@/api/access";
@@ -14,8 +14,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -25,7 +23,6 @@ import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { CommandPalette, typing } from "./CommandPalette";
 import { useWalkKeys } from "./walk";
 import { KUBE_SIDEBAR, NAV, NODE_NAV, SWARM_NAV, isGroup, kubeGroupOf, navHref, navOf, type NavItem } from "./nav";
-import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
 import { CustomResourcesNav } from "@/pages/kube/generic/CustomResourcesNav";
 import { LINK, useGroupToggles } from "./sidebar";
@@ -51,8 +48,8 @@ export function Shell() {
       </aside>
       <DialogPrimitive.Root open={drawer} onOpenChange={setDrawer}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[oklch(0.1_0.01_255/0.6)] data-[state=open]:animate-in data-[state=open]:fade-in-0 md:hidden" />
-          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] border-r bg-rail shadow-2xl outline-none data-[state=open]:animate-in data-[state=open]:slide-in-from-left md:hidden">
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[oklch(0.1_0.01_255/0.6)] duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 md:hidden" />
+          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] border-r bg-rail shadow-2xl outline-none duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:slide-in-from-left md:hidden">
             <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">Pages and environments</DialogPrimitive.Description>
             <DialogPrimitive.Close asChild>
@@ -94,7 +91,7 @@ function Rail({ env, family }: { env?: string; family: EnvFamily }) {
       <EnvBand env={env} />
       <Link to="/" className="flex items-center gap-2 px-1.5 pt-1" aria-label="FleetOps home">
         <Mark />
-        <span className="font-callsign text-[15px] font-semibold">FleetOps</span>
+        <span className="text-[15px] font-semibold tracking-tight">FleetOps</span>
       </Link>
       <EnvSwitcher current={env} family={family} />
       {env && (
@@ -370,7 +367,7 @@ export function EnvTag({ name, size = "md" }: { name: string; size?: "sm" | "md"
       aria-hidden
       style={{ "--env-h": envHue(name) } as CSSProperties}
       className={cn(
-        "font-holder inline-flex shrink-0 items-center justify-center rounded-xs bg-[oklch(0.5_0.14_var(--env-h))] font-bold text-white",
+        "inline-flex shrink-0 items-center justify-center rounded-xs bg-[oklch(0.5_0.14_var(--env-h))] font-bold text-white",
         size === "sm" ? "size-5 text-[9px]" : "size-7 text-[11px]",
       )}
     >
@@ -389,7 +386,7 @@ function EnvSwitcher({ current, family }: { current?: string; family: EnvFamily 
           type="button"
           style={current ? ({ "--env-h": envHue(current) } as CSSProperties) : undefined}
           className={cn(
-            "flex h-12 w-full items-center gap-2.5 rounded-lg border bg-card px-2 text-left text-sm transition-colors outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35",
+            "flex h-12 w-full items-center gap-2.5 rounded-lg border bg-card px-2 text-left text-sm press outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35",
             current && "bg-[oklch(0.5_0.14_var(--env-h)/0.1)] hover:bg-[oklch(0.5_0.14_var(--env-h)/0.16)]",
           )}
         >
@@ -448,12 +445,6 @@ function StatusDot({ state }: { state: "up" | "down" }) {
   );
 }
 
-const THEMES: { value: Theme; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
-];
-
 function UserMenu() {
   const { data } = useQuery(meQuery);
   if (!data) return null;
@@ -461,7 +452,6 @@ function UserMenu() {
 }
 
 function UserMenuFor({ user }: { user: { username: string; role: string } }) {
-  const { theme, setTheme } = useTheme();
   const logout = useLogout();
   const navigate = useNavigate();
   return (
@@ -479,16 +469,6 @@ function UserMenuFor({ user }: { user: { username: string; role: string } }) {
           {user.username} <span className="font-normal text-muted-foreground">({user.role})</span>
         </DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => void navigate({ to: "/account" })}>Account</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Theme</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as Theme)}>
-          {THEMES.map(({ value, label, icon: Icon }) => (
-            <DropdownMenuRadioItem key={value} value={value}>
-              <Icon className="size-4" />
-              {label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => logout.mutate()}>
           <LogOut className="size-4" />

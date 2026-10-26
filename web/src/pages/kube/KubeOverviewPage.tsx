@@ -293,7 +293,7 @@ function AttentionPanel({
     <section aria-labelledby={id} className="overflow-hidden rounded-lg border bg-card">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b px-4 py-2.5">
         <Icon aria-hidden className={cn("size-4.5", trouble.length ? "text-state-fail" : "text-state-run")} />
-        <h2 id={id} className="font-callsign text-base font-semibold">
+        <h2 id={id} className="tracking-tight text-base font-semibold">
           {headline}
         </h2>
         {shown.length > 1 && (
@@ -326,7 +326,7 @@ function AttentionPanel({
                       type="button"
                       onClick={() => setParking(t.suspend!)}
                       aria-label={`Suspend ${t.what.toLowerCase()} ${t.name}`}
-                      className="-my-1 inline-flex h-7 items-center gap-1 rounded-sm px-1.5 text-xs text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35"
+                      className="-my-1 inline-flex h-7 items-center gap-1 rounded-sm px-1.5 text-xs text-muted-foreground press outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35"
                     >
                       <Pause aria-hidden className="size-3.5" strokeWidth={2} />
                       {/* Icon only on a narrow bay: the meta line keeps its namespace. */}
@@ -364,7 +364,7 @@ function AttentionPanel({
                   search={{ q: phase }}
                   className="inline-flex h-8 items-center gap-2 rounded-md px-1.5 text-sm transition-colors hover:bg-accent"
                 >
-                  <span className="font-callsign text-base font-semibold tabular-nums">{n}</span>
+                  <span className="tracking-tight text-base font-semibold tabular-nums">{n}</span>
                   <StateBadge state={phase} tone={TONE[health]} />
                 </Link>
               </li>
@@ -393,7 +393,7 @@ function WorkloadsPanel({ env, workloads }: { env: string; workloads: [KubeKind,
               <Link to="/envs/$env/k8s/$kind" params={{ env, kind }} className="font-medium hover:underline">
                 {KIND_LABEL[kind]}
               </Link>
-              <span className="font-callsign text-right text-base font-semibold tabular-nums @lg:text-left">
+              <span className="tracking-tight text-right text-base font-semibold tabular-nums @lg:text-left">
                 {l.forbidden ? "—" : l.q.isPending ? "" : rows.length}
               </span>
               <span aria-hidden className="col-span-2 flex h-1.5 gap-px overflow-hidden rounded-full bg-muted @lg:col-span-1">
@@ -632,7 +632,7 @@ function BusiestPanel({ env, rows }: { env: string; rows: KubeUsageRow[] }) {
               type="button"
               aria-pressed={by === k}
               onClick={() => setBy(k)}
-              className="inline-flex h-8 items-center rounded-sm px-2.5 transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 aria-pressed:bg-accent aria-pressed:text-foreground"
+              className="inline-flex h-8 items-center rounded-sm px-2.5 press outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 aria-pressed:bg-accent aria-pressed:text-foreground"
             >
               {k === "cpu" ? "CPU" : "Memory"}
             </button>
@@ -705,7 +705,7 @@ function InventoryPanel({ env, ns, helm }: { env: string; ns?: string; helm: Use
           >
             <Icon aria-hidden className="size-4 shrink-0" strokeWidth={1.75} />
             <span className="min-w-0 truncate">{label}</span>
-            <span className="font-callsign ml-auto text-base font-semibold text-foreground tabular-nums">{n}</span>
+            <span className="tracking-tight ml-auto text-base font-semibold text-foreground tabular-nums">{n}</span>
             {link}
           </li>
         ))}

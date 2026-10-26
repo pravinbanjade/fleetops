@@ -159,7 +159,7 @@ function Strip({ name, children, actions, tone, field }: { name: ReactNode; chil
     <li
       className={cn(
         "grid grid-cols-[minmax(0,1fr)_auto] border-b last:border-b-0 sm:grid-cols-[minmax(9rem,16rem)_minmax(0,1fr)_auto]",
-        tone === "changed" && "bg-cord-soft",
+        tone === "changed" && "bg-selected",
       )}
     >
       {/* Beside a 32px field the name drops 6px, so the two share a centre line. */}

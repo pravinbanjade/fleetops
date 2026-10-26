@@ -26,13 +26,14 @@ describe("shell", () => {
     expect(calls.find((c) => c.path === "/api/v1/auth/logout")?.headers.get("x-csrf-token")).toBe("csrf-1");
   });
 
-  it("switches the theme from the user menu", async () => {
+  it("has no theme choice in the user menu: the app is dark only", async () => {
     mockFetch(loggedIn);
     const { screen } = renderApp("/envs/local");
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "admin" }));
-    await user.click(await screen.findByRole("menuitemradio", { name: "Dark" }));
-    expect(document.documentElement).toHaveClass("dark");
+    expect(await screen.findByRole("menuitem", { name: "Log out" })).toBeInTheDocument();
+    expect(screen.queryByText("Theme")).toBeNull();
+    expect(screen.queryByRole("menuitemradio")).toBeNull();
   });
 
   it("warns while the live connection is down and refetches after it returns", async () => {

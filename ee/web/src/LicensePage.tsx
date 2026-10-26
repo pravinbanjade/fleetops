@@ -201,7 +201,7 @@ function Plans({ current }: { current: boolean }) {
               aria-pressed={yearly === y}
               onClick={() => setYearly(y)}
               className={cn(
-                "rounded-sm px-2 py-1 font-medium transition-colors",
+                "rounded-sm px-2 py-1 font-medium press",
                 yearly === y ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
               )}
             >

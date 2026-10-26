@@ -10,11 +10,11 @@ export function AuthLayout({ title, description, children }: { title: string; de
             <path d="M8 10h16v3H11.5v3H21v3h-9.5v5H8z" className="fill-background" />
             <rect x="21" y="21" width="4" height="4" rx="1" className="fill-primary" />
           </svg>
-          <span className="font-callsign text-lg font-semibold">FleetOps</span>
+          <span className="tracking-tight text-lg font-semibold">FleetOps</span>
         </div>
         <div className="grid gap-5 rounded-xl border bg-card p-6 shadow-[0_12px_40px_-16px_oklch(0_0_0/0.35)]">
           <div className="grid gap-1.5">
-            <h1 className="font-callsign text-xl leading-tight font-semibold">{title}</h1>
+            <h1 className="tracking-tight text-xl leading-tight font-semibold">{title}</h1>
             {description && <p className="text-sm text-muted-foreground">{description}</p>}
           </div>
           {children}

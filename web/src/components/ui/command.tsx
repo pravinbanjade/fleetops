@@ -40,7 +40,7 @@ function CommandDialog({
 }) {
   return (
     <Dialog {...props}>
-      <DialogContent className={cn("top-[18%] translate-y-0 overflow-hidden p-0 sm:max-w-xl", className)} showCloseButton={showCloseButton}>
+      <DialogContent className={cn("top-[18%] translate-y-0 overflow-hidden p-0 sm:max-w-xl", className)} showCloseButton={showCloseButton} animated={false}>
         {/* Inside the content, so the title only exists while the dialog is open. */}
         <DialogHeader className="sr-only">
           <DialogTitle>{title}</DialogTitle>
@@ -102,7 +102,7 @@ function CommandItem({ className, ...props }: React.ComponentProps<typeof Comman
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-cord-soft data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-selected data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       {...props}

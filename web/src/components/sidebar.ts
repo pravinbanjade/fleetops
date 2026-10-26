@@ -2,7 +2,7 @@ import { useState } from "react";
 
 /** A sidebar row: icon, label, and the active page's cord highlight. */
 export const LINK =
-  "group/link relative flex h-8 items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-cord-soft data-[status=active]:font-medium data-[status=active]:text-foreground [&[data-status=active]_svg]:text-primary";
+  "group/link relative flex h-8 items-center gap-2.5 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-selected data-[status=active]:font-medium data-[status=active]:text-foreground [&[data-status=active]_svg]:text-primary";
 
 const GROUPS_KEY = "fleetops.nav.groups";
 

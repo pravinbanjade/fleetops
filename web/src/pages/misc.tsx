@@ -11,7 +11,7 @@ function Notice({ icon: Icon, title, children }: { icon: LucideIcon; title: stri
         <span className="flex size-11 items-center justify-center rounded-lg border bg-card text-muted-foreground">
           <Icon aria-hidden className="size-5" strokeWidth={1.75} />
         </span>
-        <h1 className="font-callsign text-xl font-semibold">{title}</h1>
+        <h1 className="tracking-tight text-xl font-semibold">{title}</h1>
         {children}
       </div>
     </div>

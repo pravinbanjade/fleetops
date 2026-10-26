@@ -1,105 +1,60 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "@fontsource-variable/mona-sans/wdth.css";
+@import "@fontsource-variable/inter/wght.css";
 @import "@fontsource-variable/jetbrains-mono/wght.css";
 
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Strip Bay. Chrome is three greys per theme: the bay (page), the strip
- * (rows, panels) and the rule (every divider). One amber "cord" marks the
- * primary action, selection and focus. Every other hue is a reading.
+ * Night panels. Dark only: the window is true black, every region is a
+ * #121212 panel with a 10px corner and an 8px gap, and depth is a step in
+ * lightness, never a border or a shadow. One green marks live data and
+ * nothing else; the primary action is a white pill. Live figures are
+ * mono, and when one changes only its changed digits light up.
  */
 :root {
-  --radius: 0.375rem;
-  --background: oklch(0.967 0.004 255);
-  --foreground: oklch(0.205 0.015 255);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.205 0.015 255);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.205 0.015 255);
-  /* The cord: dark amber so white text and the ring hold AA on paper. */
-  --primary: oklch(0.53 0.125 62);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.935 0.006 255);
-  --secondary-foreground: oklch(0.205 0.015 255);
-  --muted: oklch(0.935 0.006 255);
-  --muted-foreground: oklch(0.47 0.016 255);
-  --accent: oklch(0.935 0.006 255);
-  --accent-foreground: oklch(0.205 0.015 255);
-  --destructive: oklch(0.54 0.2 27);
-  --border: oklch(0.885 0.006 255);
-  --input: oklch(0.84 0.008 255);
-  --ring: oklch(0.53 0.125 62);
-  /* A tint of the cord for selected rows and the active nav row. */
-  --cord-soft: oklch(0.53 0.125 62 / 0.1);
-  /* The rail sits on the bay; a rule, not a fourth grey, separates it. */
-  --rail: var(--background);
+  color-scheme: dark;
+  --radius: 0.625rem;
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #121212;
+  --card-foreground: #ffffff;
+  --popover: #1c1c1c;
+  --popover-foreground: #ffffff;
+  /* The primary action is inverted: a white pill with black text. */
+  --primary: #ffffff;
+  --primary-foreground: #000000;
+  --secondary: #232323;
+  --secondary-foreground: #ffffff;
+  --muted: #232323;
+  --muted-foreground: #b4b4b4;
+  --accent: #232323;
+  --accent-foreground: #ffffff;
+  --destructive: #ff6b6b;
+  --border: #262626;
+  --input: #3a3a3a;
+  --ring: #ffffff99;
+  /* A raised step inside a panel: the selected row, the active nav row. */
+  --selected: #2a2a2a;
+  /* Meta text: dates, counts, axis ticks. 4.5:1 even on --selected. */
+  --meta: #949494;
+  --rail: var(--card);
 
-  /* State holders: fill and ink, each pair at least 4.5:1. */
-  --state-run: oklch(0.5 0.115 158);
-  --state-run-ink: oklch(1 0 0);
-  --state-wait: oklch(0.75 0.155 62);
-  --state-wait-ink: oklch(0.25 0.07 50);
-  --state-fail: oklch(0.52 0.19 27);
-  --state-fail-ink: oklch(1 0 0);
-  /* A state's word on its own tint: darker than the hue so it holds 4.5:1. */
-  --state-run-text: oklch(0.45 0.11 158);
-  --state-wait-text: oklch(0.47 0.11 55);
-  --state-fail-text: oklch(0.49 0.19 27);
-  --live: oklch(0.6 0.14 158);
+  /* Live data: the one hue, and the colours a changed digit takes. */
+  --live: #2fe08a;
+  --rise: #2fe08a;
+  --fall: #ff6b6b;
 
-  /* ANSI colours 0–15 for log lines: darker shades that read on a light background. */
-  --ansi-0: #000000;
-  --ansi-1: #c0262d;
-  --ansi-2: #1d7a24;
-  --ansi-3: #8a6d00;
-  --ansi-4: #1f4fbf;
-  --ansi-5: #9b2a9e;
-  --ansi-6: #0b7285;
-  --ansi-7: #6b6b6b;
-  --ansi-8: #555555;
-  --ansi-9: #e03131;
-  --ansi-10: #2b8a3e;
-  --ansi-11: #a87d00;
-  --ansi-12: #3b5bdb;
-  --ansi-13: #ae3ec9;
-  --ansi-14: #1098ad;
-  --ansi-15: #333333;
-}
-
-.dark {
-  --background: oklch(0.158 0.008 255);
-  --foreground: oklch(0.945 0.006 90);
-  --card: oklch(0.198 0.01 255);
-  --card-foreground: oklch(0.945 0.006 90);
-  --popover: oklch(0.215 0.011 255);
-  --popover-foreground: oklch(0.945 0.006 90);
-  --primary: oklch(0.82 0.15 78);
-  --primary-foreground: oklch(0.21 0.045 60);
-  --secondary: oklch(0.25 0.012 255);
-  --secondary-foreground: oklch(0.945 0.006 90);
-  --muted: oklch(0.25 0.012 255);
-  --muted-foreground: oklch(0.72 0.014 255);
-  --accent: oklch(0.25 0.012 255);
-  --accent-foreground: oklch(0.945 0.006 90);
-  --destructive: oklch(0.7 0.18 25);
-  --border: oklch(0.285 0.012 255);
-  --input: oklch(0.33 0.013 255);
-  --ring: oklch(0.82 0.15 78);
-  --cord-soft: oklch(0.82 0.15 78 / 0.1);
-  --rail: var(--background);
-
-  --state-run: oklch(0.76 0.15 158);
-  --state-run-ink: oklch(0.2 0.05 158);
-  --state-wait: oklch(0.78 0.15 60);
-  --state-wait-ink: oklch(0.22 0.06 50);
-  --state-fail: oklch(0.68 0.19 25);
-  --state-fail-ink: oklch(0.15 0.04 25);
-  --state-run-text: oklch(0.8 0.14 158);
-  --state-wait-text: oklch(0.82 0.13 65);
-  --state-fail-text: oklch(0.76 0.16 25);
-  --live: oklch(0.76 0.15 158);
+  /* State holders: fill and ink, and the word on its own. */
+  --state-run: #2fe08a;
+  --state-run-ink: #04250e;
+  --state-wait: #e5a93b;
+  --state-wait-ink: #2b1d05;
+  --state-fail: #ff6b6b;
+  --state-fail-ink: #2a0606;
+  --state-run-text: #2fe08a;
+  --state-wait-text: #e5a93b;
+  --state-fail-text: #ff8a8a;
 
   --ansi-0: #3b3b3b;
   --ansi-1: #ff6b6b;
@@ -120,13 +75,13 @@
 }
 
 @theme inline {
-  --font-sans: "Mona Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --radius-xs: 2px;
-  --radius-sm: calc(var(--radius) - 3px);
-  --radius-md: calc(var(--radius) - 2px);
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 2px);
+  --radius-xl: 12px;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -145,8 +100,12 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-cord-soft: var(--cord-soft);
+  --color-selected: var(--selected);
+  --color-meta: var(--meta);
   --color-rail: var(--rail);
+  --color-live: var(--live);
+  --color-rise: var(--rise);
+  --color-fall: var(--fall);
   --color-state-run: var(--state-run);
   --color-state-run-ink: var(--state-run-ink);
   --color-state-wait: var(--state-wait);
@@ -156,18 +115,25 @@
   --color-state-run-text: var(--state-run-text);
   --color-state-wait-text: var(--state-wait-text);
   --color-state-fail-text: var(--state-fail-text);
-  --color-live: var(--live);
 }
 
 /*
- * Strip fields: the interface face at its normal width with readout numerals. Condensing it made
- * names and tags read as one cramped run; identifiers carry the density instead, in mono.
+ * Motion. The built-in curves are too soft to read as a response, so
+ * `ease-out` is redefined as a strong one: it moves at once and settles, the
+ * way a menu or a dialog should land under the click. `ease-drawer` is the
+ * iOS sheet curve, for the rail sliding in from the edge. Nothing uses
+ * ease-in: a slow start reads as lag.
  */
+@theme {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 /*
  * A strip that holds a keyboard-walked link (`data-strip`): the link covers
- * the strip, hover takes the wash, and the focused strip takes the
- * cord-soft wash plus a 1px cord edge, so focus reads at 3:1 in both themes
- * (the wash alone does not).
+ * the strip, hover takes the wash, and the focused strip takes the selected
+ * step plus a 1px ring, so focus reads at 3:1 (the step alone does not).
  */
 @utility strip-focus {
   position: relative;
@@ -182,7 +148,7 @@
     background-color: color-mix(in oklch, var(--accent) 60%, transparent);
   }
   &:has(a:focus-visible) {
-    background-color: var(--cord-soft);
+    background-color: var(--selected);
     box-shadow: inset 0 0 0 1px var(--ring);
   }
 }
@@ -203,7 +169,7 @@
       var(--card);
   }
   tr[data-state="selected"] > & {
-    background: linear-gradient(var(--cord-soft), var(--cord-soft)), var(--card);
+    background: var(--selected);
   }
   thead tr > & {
     background:
@@ -226,12 +192,16 @@
   font-variant-ligatures: none;
 }
 
-/* State holders and environment tags: small caps cut narrow so a long state fits the holder. */
-@utility font-holder {
-  font-stretch: 88%;
+/*
+ * Live and tabular figures: mono with stacking digits and no ligatures, so a
+ * ticking value never shifts its neighbours.
+ */
+@utility font-figure {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
 }
 
-/* Headlines: the face widened, like a printed callsign. */
 /*
  * The fill of a share track (usage, disk, progress). It scales instead of
  * changing width, so a refresh moves on the compositor without layout, and
@@ -250,9 +220,20 @@
   }
 }
 
-@utility font-callsign {
-  font-stretch: 112%;
-  letter-spacing: -0.012em;
+/*
+ * Anything pressable: it gives a little under the pointer, so the press
+ * lands before the request does. Colours ease alongside. With reduced motion
+ * the colours still change; the control holds its size.
+ */
+@utility press {
+  transition-property: color, background-color, border-color, box-shadow, scale;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out);
+  @media (prefers-reduced-motion: no-preference) {
+    &:active:not(:disabled) {
+      scale: 0.97;
+    }
+  }
 }
 
 @layer base {
@@ -295,12 +276,23 @@
     scrollbar-width: thin;
     scrollbar-color: var(--input) transparent;
   }
+  /*
+   * Reduced motion keeps the fades, which say something opened or closed,
+   * and drops the travel: menus, dialogs and the drawer appear in place.
+   */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
     *::after {
-      animation-duration: 0.01ms !important;
-      transition-duration: 0.01ms !important;
+      --tw-enter-scale: 1 !important;
+      --tw-exit-scale: 1 !important;
+      --tw-enter-rotate: 0 !important;
+      --tw-exit-rotate: 0 !important;
+      --tw-enter-translate-x: 0 !important;
+      --tw-enter-translate-y: 0 !important;
+      --tw-exit-translate-x: 0 !important;
+      --tw-exit-translate-y: 0 !important;
+      scroll-behavior: auto !important;
     }
   }
 }

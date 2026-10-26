@@ -5,7 +5,6 @@ import { Toaster } from "sonner";
 import { configureApi, setCsrfToken } from "@/api/client";
 import { toastError } from "@/lib/errors";
 import { createAppRouter } from "@/router";
-import { ThemeProvider, useTheme } from "@/theme";
 
 /**
  * Mutations with no error handling of their own (no `onError`, and not
@@ -40,16 +39,10 @@ export function createApp(history?: RouterHistory) {
 export function App({ history }: { history?: RouterHistory }) {
   const [{ queryClient, router }] = useState(() => createApp(history));
   return (
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <ThemedToaster />
-      </QueryClientProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+      <Toaster theme="dark" richColors closeButton />
+    </QueryClientProvider>
   );
 }
 
-function ThemedToaster() {
-  const { theme } = useTheme();
-  return <Toaster theme={theme} richColors closeButton />;
-}

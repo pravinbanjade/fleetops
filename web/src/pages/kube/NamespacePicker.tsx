@@ -65,7 +65,7 @@ export function NamespacePicker({ env, value, onChange }: { env: string; value?:
           aria-label="Namespace"
           aria-expanded={open}
           aria-haspopup="listbox"
-          className="inline-flex h-8 max-w-80 min-w-0 items-center gap-2 rounded-md border border-input bg-card pr-2 pl-2.5 text-sm shadow-[0_1px_1px_oklch(0_0_0/0.04)] transition-colors outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/35 aria-expanded:bg-accent"
+          className="inline-flex h-8 max-w-80 min-w-0 items-center gap-2 rounded-md border border-input bg-card pr-2 pl-2.5 text-sm shadow-[0_1px_1px_oklch(0_0_0/0.04)] press outline-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/35 aria-expanded:bg-accent"
         >
           <FolderTree aria-hidden className="size-3.5 shrink-0 text-muted-foreground" strokeWidth={1.75} />
           <span className="text-muted-foreground max-sm:sr-only">Namespace</span>
@@ -78,7 +78,7 @@ export function NamespacePicker({ env, value, onChange }: { env: string; value?:
           align="end"
           sideOffset={6}
           collisionPadding={16}
-          className="z-50 w-[min(18rem,calc(100vw-2rem))] origin-(--radix-popover-content-transform-origin) overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-[0_12px_32px_-8px_oklch(0_0_0/0.35),0_1px_3px_oklch(0_0_0/0.12)] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+          className="z-50 w-[min(18rem,calc(100vw-2rem))] origin-(--radix-popover-content-transform-origin) overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-[0_12px_32px_-8px_oklch(0_0_0/0.35),0_1px_3px_oklch(0_0_0/0.12)] ease-out data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
           {/* cmdk names its input from `label`. */}
           <Command loop label="Search namespaces">

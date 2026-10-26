@@ -429,7 +429,7 @@ function KindPicker({ kind, onChange }: { kind: EnvKind; onChange: (k: EnvKind) 
               key={p.id}
               className={
                 "relative grid cursor-pointer gap-3 rounded-lg border p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
-                (on ? "border-primary bg-cord-soft" : "bg-background/40 hover:bg-accent")
+                (on ? "border-primary bg-selected" : "bg-background/40 hover:bg-accent")
               }
             >
               <input
@@ -471,8 +471,8 @@ function KindPicker({ kind, onChange }: { kind: EnvKind; onChange: (k: EnvKind) 
             <label
               key={k}
               className={
-                "flex h-8 cursor-pointer items-center justify-center rounded-sm px-2 text-sm transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
-                (kind === k ? "bg-cord-soft font-medium text-foreground shadow-[inset_0_0_0_1px_var(--primary)]" : "text-muted-foreground hover:bg-accent hover:text-foreground")
+                "flex h-8 cursor-pointer items-center justify-center rounded-sm px-2 text-sm press has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
+                (kind === k ? "bg-selected font-medium text-foreground shadow-[inset_0_0_0_1px_var(--primary)]" : "text-muted-foreground hover:bg-accent hover:text-foreground")
               }
             >
               <input type="radio" name="env-kind" className="sr-only" checked={kind === k} onChange={() => onChange(k)} />

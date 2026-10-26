@@ -100,7 +100,7 @@ export function TrustCard({ env, admin }: { env: string; admin: boolean }) {
   }
   const refresh = () => qc.invalidateQueries({ queryKey: ["env", env, "swarm"] });
   return (
-    <section aria-label="Trust this swarm" className="mb-4 grid gap-3 rounded-md border border-primary/40 bg-cord-soft p-4 text-sm">
+    <section aria-label="Trust this swarm" className="mb-4 grid gap-3 rounded-md border border-primary/40 bg-selected p-4 text-sm">
       <p>
         <strong>{t.pinned_by ?? "A manager"}</strong> reports swarm <strong>{t.cluster_id}</strong>. Before FleetOps trusts its agents, check the
         root CA on a manager:

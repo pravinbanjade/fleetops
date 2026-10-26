@@ -174,7 +174,7 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
         {list.length > 0 && (
           <Icon aria-hidden className={cn("size-4.5", attention.length ? "text-state-fail" : "text-state-run")} />
         )}
-        <h2 id={id} className="font-callsign text-base font-semibold">
+        <h2 id={id} className="tracking-tight text-base font-semibold">
           {headline}
         </h2>
         {attention.length > 1 && (
@@ -230,7 +230,7 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
                   search={{ q: state }}
                   className="inline-flex h-8 items-center gap-2 rounded-md px-1.5 text-sm transition-colors hover:bg-accent"
                 >
-                  <span className="font-callsign text-base font-semibold tabular-nums">{n}</span> <StateBadge state={state} />
+                  <span className="tracking-tight text-base font-semibold tabular-nums">{n}</span> <StateBadge state={state} />
                 </Link>
               </li>
             ))}

@@ -27,7 +27,7 @@ export function Page({
     <div className="grid grid-cols-[minmax(0,1fr)] gap-5 px-4 pt-5 pb-10 md:px-6">
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div className="grid min-w-0 gap-1">
-          <h1 className="font-callsign min-w-0 truncate text-[1.375rem] leading-tight font-semibold">{title}</h1>
+          <h1 className="tracking-tight min-w-0 truncate text-[1.375rem] leading-tight font-semibold">{title}</h1>
           {meta && <div className="text-sm text-muted-foreground">{meta}</div>}
         </div>
         {actions && <div className="ml-auto flex flex-wrap items-center justify-end gap-2">{actions}</div>}
