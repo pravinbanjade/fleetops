@@ -310,3 +310,16 @@
   font-family: var(--font-mono);
   color: var(--foreground);
 }
+
+/*
+ * A digit that just changed: the rise or fall colour, applied at once. The
+ * `Tick` span transitions back to the ink when the class comes off.
+ */
+@utility tick-rise {
+  color: var(--rise);
+  transition-duration: 0s;
+}
+@utility tick-fall {
+  color: var(--fall);
+  transition-duration: 0s;
+}
