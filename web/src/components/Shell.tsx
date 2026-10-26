@@ -19,6 +19,7 @@ import { Library, EnvTile } from "./shell/Library";
 import { navParams } from "./shell/EnvPages";
 import { NowHost, SHEET_QUERY, useNowFrame } from "./shell/now";
 import { useMedia } from "./useMedia";
+import { Tape } from "./shell/Tape";
 
 export { EnvTile } from "./shell/Library";
 
@@ -58,6 +59,7 @@ function Frame() {
       data-edition={ee.id}
       className={cn(
         "min-h-svh bg-background md:grid md:h-svh md:gap-2 md:p-2",
+        env ? "md:grid-rows-[minmax(0,1fr)_34px]" : "md:grid-rows-[minmax(0,1fr)]",
         collapsed ? "md:grid-cols-[4.5rem_minmax(0,1fr)_24rem]" : beside ? "md:grid-cols-[15rem_minmax(0,1fr)_24rem]" : "md:grid-cols-[15rem_minmax(0,1fr)]",
       )}
     >
@@ -93,6 +95,11 @@ function Frame() {
         aria-label="Selected"
         className={cn("min-h-0 overflow-hidden rounded-[10px] bg-card", beside ? "hidden md:block" : "hidden")}
       />
+      {env && (
+        <div className="min-w-0 bg-card max-md:sticky max-md:bottom-0 max-md:border-t md:col-span-full md:rounded-[10px]">
+          <Tape env={env} family={family} />
+        </div>
+      )}
     </div>
   );
 }

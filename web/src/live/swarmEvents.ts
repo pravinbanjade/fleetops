@@ -33,7 +33,9 @@ export function useSwarmEvents(env: string) {
       onData: (d) => {
         const ev = d as DockerEvent;
         for (const key of staleFor(env, ev)) void qc.invalidateQueries({ queryKey: key });
-        qc.setQueryData<DockerEvent[]>(swarmKeys.events(env), (old = []) => [ev, ...old].slice(0, SWARM_EVENTS_KEPT));
+        // The shell's tape and a page may both listen: keep each event once.
+        const same = (e: DockerEvent) => e.time === ev.time && e.id === ev.id && e.action === ev.action;
+        qc.setQueryData<DockerEvent[]>(swarmKeys.events(env), (old = []) => (old.some(same) ? old : [ev, ...old].slice(0, SWARM_EVENTS_KEPT)));
       },
       onEnd: () => {},
       onError: () => {},
