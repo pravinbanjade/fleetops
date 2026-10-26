@@ -33,6 +33,7 @@ export function NetworkPage() {
   const ipam = n.IPAM?.Config ?? [];
   return (
     <Page
+      kicker="Network"
       title={n.Name}
       actions={
         can("networks.delete") &&

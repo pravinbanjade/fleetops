@@ -12,7 +12,7 @@ export function AuthLayout({ title, description, children }: { title: string; de
           </svg>
           <span className="tracking-tight text-lg font-semibold">FleetOps</span>
         </div>
-        <div className="grid gap-5 rounded-xl border bg-card p-6 shadow-[0_12px_40px_-16px_oklch(0_0_0/0.35)]">
+        <div className="grid gap-5 rounded-xl bg-[#1c1c1c] p-6 shadow-[0_12px_40px_-16px_oklch(0_0_0/0.35)]">
           <div className="grid gap-1.5">
             <h1 className="tracking-tight text-xl leading-tight font-semibold">{title}</h1>
             {description && <p className="text-sm text-muted-foreground">{description}</p>}
@@ -28,7 +28,7 @@ export function AuthLayout({ title, description, children }: { title: string; de
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p role="alert" className="rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm text-destructive">
+    <p role="alert" className="rounded-md bg-destructive/8 px-3 py-2 text-sm text-destructive">
       {message}
     </p>
   );

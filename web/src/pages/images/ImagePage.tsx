@@ -35,6 +35,7 @@ export function ImagePage() {
   const name = imageName(img.RepoTags, img.Id);
   return (
     <Page
+      kicker="Image"
       title={name}
       actions={
         <>

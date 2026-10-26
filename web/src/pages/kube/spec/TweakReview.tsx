@@ -109,7 +109,7 @@ export function TweakReview({
         <DialogTitle>{revert ? `Revert ${name}?` : `Review changes to ${name}`}</DialogTitle>
         <DialogDescription>Nothing is written until you apply.</DialogDescription>
 
-        <ul aria-label="Changes" className="font-strip overflow-hidden rounded-md border text-sm">
+        <ul aria-label="Changes" className="font-strip overflow-hidden rounded-md bg-[#1c1c1c] text-sm">
           {changes.map(({ op, verb, subject, where, before, after }) => (
             <li key={`${op.op}:${op.op === "env" ? `${op.container}/${op.name}` : op.key}`} className="grid gap-1 border-b px-3 py-2.5 last:border-b-0">
               <span className="font-medium">
@@ -144,7 +144,7 @@ export function TweakReview({
           </p>
         )}
         {(error || failed) && (
-          <div role="alert" className="flex gap-2 rounded-md border border-destructive/40 bg-destructive/8 px-3 py-2 text-sm">
+          <div role="alert" className="flex gap-2 rounded-md bg-destructive/8 px-3 py-2 text-sm">
             <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-destructive" />
             <p className="min-w-0 font-mono text-xs break-words">{error ?? failed?.message}</p>
           </div>

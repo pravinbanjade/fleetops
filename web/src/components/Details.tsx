@@ -10,7 +10,7 @@ export function Details({ items, label }: { items: [string, ReactNode][]; label?
   return (
     <dl
       aria-label={label}
-      className="grid overflow-hidden rounded-lg border bg-card text-sm sm:grid-cols-[minmax(8rem,max-content)_minmax(0,1fr)]"
+      className="grid overflow-hidden rounded-lg bg-[#1c1c1c] text-sm sm:grid-cols-[minmax(8rem,max-content)_minmax(0,1fr)]"
     >
       {shown.map(([k, v]) => (
         <div key={k} className="contents">
@@ -34,7 +34,7 @@ export function DetailError({ error, what, back }: { error: unknown; what: strin
   const What = what.charAt(0).toUpperCase() + what.slice(1);
   useDocumentTitle(gone ? `${What} not found` : `${What} unavailable`);
   return (
-    <div role="alert" className="m-4 grid max-w-xl gap-1.5 rounded-lg border border-destructive/40 bg-destructive/8 p-4 md:m-6">
+    <div role="alert" className="m-4 grid max-w-xl gap-1.5 rounded-lg bg-destructive/8 p-4 md:m-6">
       {/* Ink text on the tint: destructive text on it falls just under 4.5:1 in light. */}
       <h1 className="flex items-start gap-2 text-sm font-semibold">
         <CircleAlert aria-hidden className="mt-px size-4 shrink-0 text-destructive" />

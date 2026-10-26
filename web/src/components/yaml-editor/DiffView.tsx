@@ -4,7 +4,7 @@ import { diffLines } from "diff";
 export function DiffView({ before, after, label }: { before?: string | null; after?: string | null; label: string }) {
   const parts = diffLines(before ?? "", after ?? "");
   return (
-    <pre aria-label={label} className="max-h-[50vh] overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">
+    <pre aria-label={label} className="max-h-[50vh] overflow-auto rounded-md bg-[#0a0a0a] p-3 font-mono text-xs">
       {parts.flatMap((p, i) =>
         p.value
           .replace(/\n$/, "")

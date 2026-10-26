@@ -65,6 +65,7 @@ export function ContainerPage() {
   const name = c.Name.replace(/^\//, "");
   return (
     <Page
+      kicker="Container"
       title={
         <span className="flex items-center gap-3">
           <span className="truncate">{name}</span> <StateBadge state={c.State.Health?.Status ?? c.State.Status} />

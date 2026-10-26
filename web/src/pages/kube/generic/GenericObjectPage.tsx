@@ -83,7 +83,7 @@ export function GenericObjectPage() {
     <Page title={name} meta={o && <KubeHealth health={o.row.health} label={o.row.status || "—"} />} actions={actions}>
       {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}
       {gone && (
-        <p role="status" className="mb-3 rounded-md border border-state-fail/40 bg-state-fail/10 px-3 py-2 text-sm">
+        <p role="status" className="mb-3 rounded-md bg-state-fail/10 px-3 py-2 text-sm">
           This object was deleted. {back}
         </p>
       )}
@@ -149,7 +149,7 @@ export function GenericObjectPage() {
         </TabsContent>
         <TabsContent value="yaml">
           {o && (
-            <pre aria-label="Object YAML" className="overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">
+            <pre aria-label="Object YAML" className="overflow-x-auto rounded-md bg-[#0a0a0a] p-3 font-mono text-xs">
               {o.yaml}
             </pre>
           )}

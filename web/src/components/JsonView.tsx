@@ -29,7 +29,7 @@ export function JsonView({ value, masked, label }: { value: unknown; masked?: un
           Copy
         </Button>
       </div>
-      <pre aria-label={label} className="max-h-[70vh] overflow-auto rounded-md border bg-muted/40 p-4 font-mono text-xs">
+      <pre aria-label={label} className="max-h-[70vh] overflow-auto rounded-md bg-[#0a0a0a] p-4 font-mono text-xs">
         {text}
       </pre>
     </div>

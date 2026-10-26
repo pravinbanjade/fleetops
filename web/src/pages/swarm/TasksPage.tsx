@@ -35,7 +35,7 @@ export function taskColumns(env: string): Column<TaskSummary>[] {
 export function FeedPaused({ reason }: { reason: string | null }) {
   if (!reason) return null;
   return (
-    <p role="status" className="mb-3 rounded-md border border-state-wait/40 bg-state-wait/10 px-3 py-2 text-sm">
+    <p role="status" className="mb-3 rounded-md bg-state-wait/10 px-3 py-2 text-sm">
       Live updates paused — {reason}
     </p>
   );

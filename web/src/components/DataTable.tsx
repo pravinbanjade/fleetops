@@ -255,7 +255,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
         )}
         {props.selectable && selected.length > 0 && (
           <div
-            className="flex flex-wrap items-center gap-2 rounded-md border border-primary/40 bg-selected py-1 pr-1 pl-2.5"
+            className="flex flex-wrap items-center gap-2 rounded-md bg-selected py-1 pr-1 pl-2.5"
             role="group"
             aria-label="Selected"
           >

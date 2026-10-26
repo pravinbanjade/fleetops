@@ -85,7 +85,7 @@ export function RevisionsTab({
           <DialogHeader>
             <DialogTitle>Revision {viewing}</DialogTitle>
           </DialogHeader>
-          <pre aria-label="Compose file" className="max-h-[60vh] overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">
+          <pre aria-label="Compose file" className="max-h-[60vh] overflow-auto rounded-md bg-[#0a0a0a] p-3 font-mono text-xs">
             {shown.data?.revision.compose ?? "Loading…"}
           </pre>
           {shown.data && shown.data.variables.length > 0 && (

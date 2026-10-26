@@ -4,6 +4,19 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
+/** The editor a step below its dialog, gutters in the meta grey, the caret in the live green. */
+const EDITOR_THEME = EditorView.theme(
+  {
+    "&": { backgroundColor: "#0a0a0a", color: "#e6e6e6" },
+    ".cm-content": { caretColor: "#2fe08a" },
+    ".cm-cursor": { borderLeftColor: "#2fe08a" },
+    ".cm-gutters": { backgroundColor: "#0a0a0a", color: "#949494", border: "none" },
+    ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "#ffffff0a" },
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": { backgroundColor: "#ffffff30" },
+  },
+  { dark: true },
+);
+
 /** CodeMirror 6 for YAML. Loaded only with the editor dialog. */
 export default function CodeMirrorField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -22,6 +35,7 @@ export default function CodeMirrorField({ value, onChange, label }: { value: str
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           yaml(),
+          EDITOR_THEME,
           EditorView.contentAttributes.of({ "aria-label": label }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) change.current(u.state.doc.toString());
@@ -38,5 +52,5 @@ export default function CodeMirrorField({ value, onChange, label }: { value: str
     const v = view.current;
     if (v && v.state.doc.toString() !== value) v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: value } });
   }, [value]);
-  return <div ref={host} className="max-h-[60vh] overflow-auto rounded-md border font-mono text-xs" />;
+  return <div ref={host} className="max-h-[60vh] overflow-auto rounded-md bg-[#0a0a0a] font-mono text-xs" />;
 }

@@ -217,7 +217,7 @@ function MembersDialog({ team, frozen, onClose }: { team: TeamSummary; frozen: b
           {members.map((m) => {
             const via = detail.data?.synced.find((s) => s.user_id === m.id)?.connection;
             return (
-              <li key={m.id} className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm">
+              <li key={m.id} className="flex items-center justify-between rounded-md bg-[#1c1c1c] px-3 py-1.5 text-sm">
                 <span>
                   {m.username}
                   {via && <span className="ml-2 text-xs text-muted-foreground">via {via}</span>}

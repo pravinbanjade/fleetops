@@ -82,7 +82,7 @@ export function KubeObjectPage() {
     ...(isPod && canShell ? ([["terminal", "Terminal", TerminalSquare]] as [KubeTab, string, typeof Info][]) : []),
   ];
   return (
-    <Page title={name} meta={o && <Meta env={env} ns={ns} health={<KubeHealth health={o.row.health} label={o.row.status} />} owners={o.owners} />} actions={
+    <Page kicker={KIND_LABEL[kind]} title={name} meta={o && <Meta env={env} ns={ns} health={<KubeHealth health={o.row.health} label={o.row.status} />} owners={o.owners} />} actions={
         o && (
           <div className="flex items-center gap-2">
             {isWorkload && canShell && <WorkloadTerminal env={env} kind={kind} ns={ns} name={name} />}
@@ -92,7 +92,7 @@ export function KubeObjectPage() {
       }>
       {live.paused && <LivePaused paused={live.paused} onRetry={live.retry} />}
       {gone && (
-        <p role="status" className="mb-3 rounded-md border border-state-fail/40 bg-state-fail/10 px-3 py-2 text-sm">
+        <p role="status" className="mb-3 rounded-md bg-state-fail/10 px-3 py-2 text-sm">
           This object was deleted.{" "}
           <Link to="/envs/$env/k8s/$kind" params={{ env, kind }} className="underline">
             Back to {KIND_LABEL[kind]}
@@ -123,7 +123,7 @@ export function KubeObjectPage() {
           )}
         </TabsContent>
         <TabsContent value="yaml">
-          {o && <pre aria-label="Object YAML" className="overflow-x-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">{o.yaml}</pre>}
+          {o && <pre aria-label="Object YAML" className="overflow-x-auto rounded-md bg-[#0a0a0a] p-3 font-mono text-xs">{o.yaml}</pre>}
         </TabsContent>
         <TabsContent value="events">
           <EventStrips events={events.data} pending={events.isPending} error={events.error} />

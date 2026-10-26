@@ -26,7 +26,7 @@ const TABS: [HelmTab, string][] = [
 
 function Text({ label, text, empty }: { label: string; text: string; empty: string }) {
   return text ? (
-    <pre aria-label={label} className="max-h-[70vh] overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">
+    <pre aria-label={label} className="max-h-[70vh] overflow-auto rounded-md bg-[#0a0a0a] p-3 font-mono text-xs">
       {text}
     </pre>
   ) : (
@@ -49,6 +49,7 @@ export function ReleasePage() {
   const HIDDEN = "Values are hidden: your role lacks Reveal on Helm releases.";
   return (
     <Page
+      kicker="Helm release"
       title={name}
       meta={
         r && (

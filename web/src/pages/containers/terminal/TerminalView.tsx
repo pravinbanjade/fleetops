@@ -10,12 +10,12 @@ export type SessionEnd =
   | { kind: "lost" }
   | { kind: "error"; message: string };
 
-/** A terminal is dark in both themes; the palette is the dark log palette. */
+/** The terminal sits a step below its panel, with the live green caret. */
 const THEME = {
-  background: "#0c0c0d",
+  background: "#0a0a0a",
   foreground: "#e5e5e5",
-  cursor: "#e5e5e5",
-  selectionBackground: "#3b5bdb80",
+  cursor: "#2fe08a",
+  selectionBackground: "#ffffff40",
   black: "#3b3b3b",
   red: "#ff6b6b",
   green: "#69db7c",

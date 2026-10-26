@@ -82,7 +82,7 @@ export function ReviewDeployDialog({
         </DialogHeader>
         {task ? (
           <TaskView task={task} onClose={close}>
-            <ol aria-label="Deploy log" className="max-h-[40vh] overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">
+            <ol aria-label="Deploy log" className="max-h-[40vh] overflow-auto rounded-md bg-[#0a0a0a] p-3 font-mono text-xs">
               {task.messages.map((m, i) => {
                 const msg = m as { step?: string; message?: string; error?: string };
                 return (

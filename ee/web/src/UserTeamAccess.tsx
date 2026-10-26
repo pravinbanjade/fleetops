@@ -14,7 +14,7 @@ export function UserTeamAccess({ userId }: SlotProps["user.access"]) {
       </h3>
       <ul className="grid gap-1 text-sm">
         {viaTeams.map((e) => (
-          <li key={e.env_id} className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border px-3 py-1.5">
+          <li key={e.env_id} className="flex flex-wrap items-baseline justify-between gap-2 rounded-md bg-[#1c1c1c] px-3 py-1.5">
             <span>
               <span className="font-medium">{e.env_name}</span> · {e.role}
               {e.namespaces && <span className="font-mono text-xs"> {e.namespaces.join(", ")}</span>}
@@ -44,7 +44,7 @@ export function EnvTeamAccess({ env }: SlotProps["env.access"]) {
       </h3>
       <ul className="grid gap-1 text-sm">
         {data.map((t) => (
-          <li key={t.team_id} className="grid gap-0.5 rounded-md border px-3 py-1.5">
+          <li key={t.team_id} className="grid gap-0.5 rounded-md bg-[#1c1c1c] px-3 py-1.5">
             <span>
               <span className="font-medium">{t.team_name}</span> · {t.role_name ?? t.role}
               <span className="font-mono text-xs"> {t.namespaces ? t.namespaces.join(", ") : "Entire environment"}</span>

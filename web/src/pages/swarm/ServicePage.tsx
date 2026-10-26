@@ -32,6 +32,7 @@ export function ServicePage() {
   if (svc.error) return <Page title={id}>{<p role="alert" className="text-sm text-destructive">{errorMessage(svc.error)}</p>}</Page>;
   return (
     <Page
+      kicker="Service"
       title={s?.name ?? id}
       meta={s && `${s.mode} · ${s.tasks_running}/${s.tasks_desired} running · ${s.image}${s.stack ? ` · stack ${s.stack}` : ""}`}
       actions={
@@ -49,7 +50,7 @@ export function ServicePage() {
     >
       {editing && s && <ServiceDialog env={env} target={{ mode: "edit", service: s }} onClose={() => setEditing(false)} />}
       {s?.stack && s.labels["io.fleetops.stack.spec-hash"] && (
-        <p className="rounded-md border px-3 py-2 text-sm">
+        <p className="rounded-md bg-[#1c1c1c] px-3 py-2 text-sm">
           Managed by stack{" "}
           <Link to="/envs/$env/stacks/$stack" params={{ env, stack: s.stack }} className="font-ident font-medium hover:underline">
             {s.stack}

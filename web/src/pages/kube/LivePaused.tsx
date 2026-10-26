@@ -5,7 +5,7 @@ import type { WatchPause } from "@/live/kubeWatch";
 export function LivePaused({ paused, onRetry }: { paused: WatchPause; onRetry: () => void }) {
   const time = new Date(paused.at).toLocaleTimeString([], { hour12: false });
   return (
-    <div role="status" className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-state-wait/40 bg-state-wait/10 px-3 py-2 text-sm">
+    <div role="status" className="mb-3 flex flex-wrap items-center gap-3 rounded-md bg-state-wait/10 px-3 py-2 text-sm">
       <span>
         Live updates paused — showing data from {time}. <span className="text-muted-foreground">{paused.message}</span>
       </span>

@@ -21,7 +21,7 @@ export function VisualizerPage() {
             key={n.id}
             role="group"
             aria-label={n.hostname}
-            className={cn("grid w-56 shrink-0 content-start gap-2 rounded-lg border p-3", n.state !== "ready" && "opacity-60")}
+            className={cn("grid w-56 shrink-0 content-start gap-2 rounded-lg bg-[#1c1c1c] p-3", n.state !== "ready" && "opacity-60")}
           >
             <header className="grid">
               <span className="font-medium">{n.hostname}</span>
@@ -38,7 +38,7 @@ export function VisualizerPage() {
                 <div
                   key={t.id}
                   className={cn(
-                    "rounded-md border px-2 py-1.5 text-sm",
+                    "rounded-md bg-[#1c1c1c] px-2 py-1.5 text-sm",
                     t.state === "running" ? "border-live/50 bg-live/10" : "border-state-wait/50 bg-state-wait/10 opacity-70",
                   )}
                 >

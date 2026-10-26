@@ -178,7 +178,7 @@ export function ActDialog({
             min={0}
             step={1}
             autoFocus
-            className="h-9 rounded-md border px-2"
+            className="h-9 rounded-md bg-[#1c1c1c] px-2"
             value={count}
             onChange={(e) => setCount(e.target.value)}
           />

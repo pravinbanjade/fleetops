@@ -50,12 +50,12 @@ export function SwarmOverviewPage({ env }: { env: string }) {
       <TrustCard env={env} admin={user.role === "admin"} />
       <FeedPaused reason={paused} />
       {status.data?.state === "down" && (
-        <p role="status" className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+        <p role="status" className="mb-3 rounded-md bg-destructive/5 p-3 text-sm">
           {status.data.reason}
         </p>
       )}
       <div className="grid gap-4 lg:grid-cols-2">
-        <section aria-label="Needs attention" className="grid content-start gap-2 rounded-lg border p-4">
+        <section aria-label="Needs attention" className="grid content-start gap-2 rounded-lg bg-[#1c1c1c] p-4">
           <h2 className="text-sm font-semibold">Needs attention</h2>
           {items.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nothing needs attention.</p>
@@ -75,7 +75,7 @@ export function SwarmOverviewPage({ env }: { env: string }) {
             </ul>
           )}
         </section>
-        <section aria-label="Recent events" className="grid content-start gap-2 rounded-lg border p-4">
+        <section aria-label="Recent events" className="grid content-start gap-2 rounded-lg bg-[#1c1c1c] p-4">
           <h2 className="text-sm font-semibold">Recent events</h2>
           {(events.data ?? []).length === 0 ? (
             <p className="text-sm text-muted-foreground">No events since this page opened.</p>

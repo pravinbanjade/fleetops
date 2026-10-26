@@ -31,6 +31,7 @@ export function VolumePage() {
   const users = volumeUsers(containers.data).get(v.Name) ?? [];
   return (
     <Page
+      kicker="Volume"
       title={v.Name}
       actions={
         can("volumes.delete") && (

@@ -60,7 +60,7 @@ export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; 
     setTyped("");
   };
   return (
-    <div role="group" aria-label={env.name} className="grid gap-2 rounded-md border p-3">
+    <div role="group" aria-label={env.name} className="grid gap-2 rounded-md bg-[#1c1c1c] p-3">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium">{env.name}</span>
         <NativeSelect

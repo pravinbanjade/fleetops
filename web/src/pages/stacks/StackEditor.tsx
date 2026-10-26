@@ -133,7 +133,7 @@ export function StackEditor({
           <CodeMirrorField label="Compose file" value={compose} onChange={setCompose} />
         </Suspense>
       ) : (
-        <pre aria-label="Compose file" className="overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs">
+        <pre aria-label="Compose file" className="overflow-auto rounded-md bg-[#0a0a0a] p-3 font-mono text-xs">
           {compose}
         </pre>
       )}

@@ -21,6 +21,7 @@ export function NodePage() {
   if (node.error) return <Page title={id}>{<p role="alert" className="text-sm text-destructive">{errorMessage(node.error)}</p>}</Page>;
   return (
     <Page
+      kicker="Swarm node"
       title={n?.hostname ?? id}
       meta={n && `${n.role}${n.leader ? " (leader)" : ""} · ${n.state} · ${n.availability} · Docker ${n.engine} · ${n.os}/${n.arch}`}
       actions={

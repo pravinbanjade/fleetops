@@ -8,7 +8,7 @@ function Notice({ icon: Icon, title, children }: { icon: LucideIcon; title: stri
   return (
     <div className="grid min-h-[60svh] place-items-center p-6">
       <div className="grid max-w-md justify-items-center gap-3 text-center">
-        <span className="flex size-11 items-center justify-center rounded-lg border bg-card text-muted-foreground">
+        <span className="flex size-11 items-center justify-center rounded-lg bg-[#1c1c1c] text-muted-foreground">
           <Icon aria-hidden className="size-5" strokeWidth={1.75} />
         </span>
         <h1 className="tracking-tight text-xl font-semibold">{title}</h1>

@@ -22,13 +22,13 @@ export function Panel({
 }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="grid content-start overflow-clip rounded-lg border bg-card">
-      <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1 border-b px-4 py-1.5">
+    <section aria-labelledby={id} className="grid content-start overflow-clip rounded-lg bg-[#1c1c1c]">
+      <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1 px-4 pt-2 pb-1">
         <h2 id={id} className="flex min-w-0 items-center gap-2 text-sm font-semibold">
           {Icon && <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />}
           {title}
         </h2>
-        {aside && <span className="min-w-0 text-xs text-muted-foreground">{aside}</span>}
+        {aside && <span className="min-w-0 text-xs text-meta">{aside}</span>}
         {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
       </div>
       <div className={flush ? undefined : "p-4"}>{children}</div>

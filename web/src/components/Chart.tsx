@@ -20,7 +20,7 @@ const FONT = "11px 'JetBrains Mono Variable', ui-monospace, monospace";
  * A theme colour for the canvas. A canvas cannot read CSS variables, so the
  * variable is resolved when the chart draws; `alpha` fades an oklch value.
  */
-function ink(name: "--foreground" | "--muted-foreground" | "--border", alpha?: number): string {
+function ink(name: "--foreground" | "--muted-foreground" | "--border" | "--meta" | "--live", alpha?: number): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#8a8a8a";
   return alpha === undefined || !v.startsWith("oklch(") ? v : v.replace(/\)$/, ` / ${alpha})`);
 }
@@ -60,7 +60,7 @@ export function Chart({
         cursor: { drag: { x: false, y: false } },
         scales: { x: { time: true }, y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] } },
         axes: [
-          { stroke: () => ink("--muted-foreground"), font: FONT, grid: { stroke: () => ink("--border") }, ticks: { stroke: () => ink("--border") } },
+          { stroke: () => ink("--meta"), font: FONT, grid: { stroke: () => ink("--border") }, ticks: { stroke: () => ink("--border") } },
           {
             stroke: () => ink("--muted-foreground"),
             font: FONT,
@@ -74,7 +74,7 @@ export function Chart({
           {},
           ...series.map((s) => ({
             label: s.label,
-            stroke: () => ink(s.tone === "primary" ? "--foreground" : "--muted-foreground"),
+            stroke: () => ink(s.tone === "primary" ? "--live" : "--muted-foreground"),
             width: 1.5,
             dash: s.tone === "secondary" ? [4, 3] : undefined,
             fill: s.tone === "primary" ? () => ink("--foreground", 0.08) : undefined,
@@ -104,7 +104,7 @@ export function Chart({
   }, [times, series]);
 
   return (
-    <figure className="grid gap-2 rounded-lg border bg-card p-4">
+    <figure className="grid gap-2 rounded-lg bg-[#1c1c1c] p-4">
       <figcaption className="text-sm font-semibold">{title}</figcaption>
       <div ref={box} role="img" aria-label={`${title} chart`} className="min-w-0" />
     </figure>

@@ -131,7 +131,7 @@ export function KubeOverviewPage({ env }: { env: string }) {
       }
     >
       {down !== null && (
-        <div role="alert" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-destructive/50 bg-destructive/8 p-4">
+        <div role="alert" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-lg bg-destructive/8 p-4">
           <TriangleAlert aria-hidden className="row-span-2 mt-0.5 size-5 text-destructive" />
           <p className="font-semibold text-destructive">This cluster is unavailable</p>
           <p className="font-mono text-xs break-all">{down}</p>
@@ -290,7 +290,7 @@ function AttentionPanel({
   }
   const counts = [...phases].sort(([, a], [, b]) => HEALTH_RANK[a.health] - HEALTH_RANK[b.health] || b.n - a.n);
   return (
-    <section aria-labelledby={id} className="overflow-hidden rounded-lg border bg-card">
+    <section aria-labelledby={id} className="overflow-hidden rounded-lg bg-[#1c1c1c]">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b px-4 py-2.5">
         <Icon aria-hidden className={cn("size-4.5", trouble.length ? "text-state-fail" : "text-state-run")} />
         <h2 id={id} className="tracking-tight text-base font-semibold">
@@ -732,7 +732,7 @@ function KindLink({ env, kind }: { env: string; kind: KubeKind }) {
 function Section({ title, icon: Icon, aside, flush, children }: { title: string; icon: LucideIcon; aside?: ReactNode; flush?: boolean; children: ReactNode }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="grid content-start overflow-hidden rounded-lg border bg-card">
+    <section aria-labelledby={id} className="grid content-start overflow-hidden rounded-lg bg-[#1c1c1c]">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b px-4 py-2.5">
         <h2 id={id} className="flex items-center gap-2 text-sm font-semibold">
           <Icon aria-hidden className="size-4 text-muted-foreground" strokeWidth={1.75} />
@@ -754,6 +754,6 @@ function Loading({ label, bare }: { label: string; bare?: boolean }) {
       ))}
     </div>
   );
-  return bare ? bars : <div className="rounded-lg border bg-card p-4">{bars}</div>;
+  return bare ? bars : <div className="rounded-lg bg-[#1c1c1c] p-4">{bars}</div>;
 }
 

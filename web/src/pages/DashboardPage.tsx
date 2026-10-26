@@ -136,7 +136,7 @@ function Liveness({ down, asOf }: { down: boolean; asOf: number }) {
 function Unavailable({ reason }: { reason: string }) {
   const { user } = useSession();
   return (
-    <div role="alert" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-destructive/50 bg-destructive/8 p-4">
+    <div role="alert" className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-lg bg-destructive/8 p-4">
       <TriangleAlert aria-hidden className="row-span-3 mt-0.5 size-5 text-destructive" />
       <p className="font-semibold text-destructive">This environment is unavailable</p>
       <p className="font-mono text-xs break-all">{reason}</p>
@@ -174,7 +174,7 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
   // One panel: the headline answers the first question, the strips name the
   // containers behind it, and the footer counts the whole environment.
   return (
-    <section aria-labelledby={id} className="overflow-hidden rounded-lg border bg-card">
+    <section aria-labelledby={id} className="overflow-hidden rounded-lg bg-[#1c1c1c]">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b px-4 py-2.5">
         {list.length > 0 && (
           <Icon aria-hidden className={cn("size-4.5", attention.length ? "text-state-fail" : "text-state-run")} />
@@ -592,7 +592,7 @@ function Section({
 }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="grid content-start overflow-hidden rounded-lg border bg-card">
+    <section aria-labelledby={id} className="grid content-start overflow-hidden rounded-lg bg-[#1c1c1c]">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b px-4 py-2.5">
         <h2 id={id} className="flex items-center gap-2 text-sm font-semibold">
           {Icon && <Icon aria-hidden className="size-4 text-muted-foreground" strokeWidth={1.75} />}

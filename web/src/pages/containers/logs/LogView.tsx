@@ -139,7 +139,7 @@ function LogRow({ entry, timestamps, highlight, podPrefix }: { entry: LogEntry; 
       )}
       {markSegments(segments, ranges).map((s, i) =>
         s.mark ? (
-          <mark key={i} style={css(s.style)} className="rounded-sm bg-yellow-300/80 text-inherit dark:bg-yellow-500/50">
+          <mark key={i} style={css(s.style)} className="rounded-sm bg-yellow-500/50 text-inherit">
             {s.text}
           </mark>
         ) : (

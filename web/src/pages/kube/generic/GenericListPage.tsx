@@ -153,7 +153,7 @@ export function GenericListPage() {
         />
       )}
       {list.data?.truncated && (
-        <p role="status" className="mb-3 rounded-md border border-state-wait/40 bg-state-wait/10 px-3 py-2 text-sm">
+        <p role="status" className="mb-3 rounded-md bg-state-wait/10 px-3 py-2 text-sm">
           Showing the first 5,000. Pick a namespace to narrow the list.
         </p>
       )}

@@ -350,7 +350,7 @@ function EnvForm({
         <fieldset className="grid gap-2">
           <legend className="mb-1 text-sm font-medium">Access in the cluster</legend>
           {ACCESS.map(([value, label, hint]) => (
-            <label key={value} className="flex cursor-pointer items-start gap-2 rounded-md border p-2 text-sm has-[:checked]:border-primary">
+            <label key={value} className="flex cursor-pointer items-start gap-2 rounded-md bg-[#1c1c1c] p-2 text-sm has-[:checked]:border-primary">
               <input type="radio" name="env-access" className="mt-1" checked={access === value} onChange={() => setAccess(value)} />
               <span className="grid">
                 <span className="font-medium">{label}</span>
@@ -428,7 +428,7 @@ function KindPicker({ kind, onChange }: { kind: EnvKind; onChange: (k: EnvKind) 
             <label
               key={p.id}
               className={
-                "relative grid cursor-pointer gap-3 rounded-lg border p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
+                "relative grid cursor-pointer gap-3 rounded-lg bg-[#1c1c1c] p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
                 (on ? "border-primary bg-selected" : "bg-background/40 hover:bg-accent")
               }
             >

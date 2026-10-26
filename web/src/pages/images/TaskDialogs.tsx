@@ -232,7 +232,7 @@ function LogView({ lines }: { lines: string[] }) {
     <pre
       ref={ref}
       aria-label="Output"
-      className="max-h-80 overflow-auto rounded-md border bg-muted/40 p-3 font-mono text-xs whitespace-pre-wrap"
+      className="max-h-80 overflow-auto rounded-md bg-[#0a0a0a] p-3 font-mono text-xs whitespace-pre-wrap"
     >
       {lines.join("\n")}
     </pre>

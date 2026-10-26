@@ -93,7 +93,7 @@ export default function HelmDeployDialog({ env, target, onClose }: { env: string
                 </Button>
                 {defaults.error && <p role="alert" className="text-sm text-state-fail">{errorMessage(defaults.error)}</p>}
                 {defaults.data && (
-                  <pre aria-label="Chart defaults" className="max-h-80 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-xs">
+                  <pre aria-label="Chart defaults" className="max-h-80 overflow-auto rounded-md bg-[#0a0a0a] p-2 font-mono text-xs">
                     {defaults.data.values}
                   </pre>
                 )}
@@ -139,7 +139,7 @@ export default function HelmDeployDialog({ env, target, onClose }: { env: string
             {shown.notes && (
               <section aria-label="Notes">
                 <h3 className="text-sm font-medium">Notes</h3>
-                <pre className="whitespace-pre-wrap rounded-md border bg-muted/40 p-2 text-xs">{shown.notes}</pre>
+                <pre className="whitespace-pre-wrap rounded-md bg-[#0a0a0a] p-2 text-xs">{shown.notes}</pre>
               </section>
             )}
           </div>

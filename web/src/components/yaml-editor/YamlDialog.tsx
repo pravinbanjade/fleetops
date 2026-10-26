@@ -150,7 +150,7 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
           {stage === "edit" ? "Review shows what would change before anything is written." : "Nothing more is written until you apply."}
         </DialogDescription>
         {problems.length > 0 && (
-          <ul role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+          <ul role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm">
             {problems.map((p) => (
               <li key={p}>{p}</li>
             ))}
@@ -160,10 +160,10 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
           <div className="grid gap-2">
             <p className="text-sm">This object changed since you opened it.</p>
             <div className="grid gap-2 md:grid-cols-2">
-              <pre aria-label="Your edit" className="max-h-[40vh] overflow-auto rounded-md border p-2 font-mono text-xs">
+              <pre aria-label="Your edit" className="max-h-[40vh] overflow-auto rounded-md bg-[#1c1c1c] p-2 font-mono text-xs">
                 {text}
               </pre>
-              <pre aria-label="Live YAML" className="max-h-[40vh] overflow-auto rounded-md border p-2 font-mono text-xs">
+              <pre aria-label="Live YAML" className="max-h-[40vh] overflow-auto rounded-md bg-[#1c1c1c] p-2 font-mono text-xs">
                 {conflict.yaml}
               </pre>
             </div>

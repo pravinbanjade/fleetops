@@ -184,7 +184,7 @@ export function ContainerChips({
                 tabIndex={checked ? 0 : -1}
                 onClick={() => onChange(c.name)}
                 className={cn(
-                  "inline-flex h-7 items-center gap-1.5 rounded-md border px-2 press outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35",
+                  "inline-flex h-7 items-center gap-1.5 rounded-md bg-[#1c1c1c] px-2 press outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35",
                   checked
                     ? "border-primary/60 bg-selected text-foreground"
                     : "border-input bg-card text-muted-foreground hover:bg-accent hover:text-foreground",
