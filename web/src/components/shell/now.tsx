@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -90,6 +90,7 @@ export function useNowRow<T>(rows: T[] | undefined, getId: (row: T) => string): 
 export function NowPanel({ title, subtitle, children }: { title: ReactNode; subtitle?: ReactNode; children: ReactNode }) {
   const { slot, close, mount } = useCtl();
   const sheet = useMedia(SHEET_QUERY);
+  const phone = useMedia("(max-width: 767px)");
   useEffect(() => mount(), [mount]);
   const body = (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-6 motion-safe:duration-250 motion-safe:ease-drawer">
@@ -98,9 +99,17 @@ export function NowPanel({ title, subtitle, children }: { title: ReactNode; subt
           <h2 className="truncate text-[17px] leading-tight font-semibold">{title}</h2>
           {subtitle && <div className="truncate text-sm text-muted-foreground">{subtitle}</div>}
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label="Close panel" title="Close (Esc)" onClick={close}>
-          <X />
-        </Button>
+        {phone ? (
+          // Full screen on a phone: back to the list, which kept its scroll underneath.
+          <Button variant="secondary" size="sm" className="order-first" onClick={close}>
+            <ArrowLeft aria-hidden />
+            Back
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon-sm" aria-label="Close panel" title="Close (Esc)" onClick={close}>
+            <X />
+          </Button>
+        )}
       </header>
       {children}
     </div>

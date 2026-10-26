@@ -60,16 +60,18 @@ function Frame() {
       className={cn(
         "min-h-svh bg-background md:grid md:h-svh md:gap-2 md:p-2",
         env ? "md:grid-rows-[minmax(0,1fr)_34px]" : "md:grid-rows-[minmax(0,1fr)]",
-        collapsed ? "md:grid-cols-[4.5rem_minmax(0,1fr)_24rem]" : beside ? "md:grid-cols-[15rem_minmax(0,1fr)_24rem]" : "md:grid-cols-[15rem_minmax(0,1fr)]",
+        // Under 1024px the library is a drawer and the page takes the width.
+        "md:grid-cols-[minmax(0,1fr)]",
+        collapsed ? "lg:grid-cols-[4.5rem_minmax(0,1fr)_24rem]" : beside ? "lg:grid-cols-[15rem_minmax(0,1fr)_24rem]" : "lg:grid-cols-[15rem_minmax(0,1fr)]",
       )}
     >
-      <aside aria-label="Library" className="hidden min-h-0 overflow-hidden rounded-[10px] bg-card md:block">
+      <aside aria-label="Library" className="hidden min-h-0 overflow-hidden rounded-[10px] bg-card lg:block">
         <Library env={env} family={family} collapsed={collapsed} />
       </aside>
       <DialogPrimitive.Root open={drawer} onOpenChange={setDrawer}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 md:hidden" />
-          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] bg-card shadow-[0_0_64px_rgb(0_0_0/0.8)] outline-none duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:slide-in-from-left md:hidden">
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 lg:hidden" />
+          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] bg-card shadow-[0_0_64px_rgb(0_0_0/0.8)] outline-none duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:slide-in-from-left lg:hidden">
             <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">Pages and environments</DialogPrimitive.Description>
             <DialogPrimitive.Close asChild>
@@ -93,7 +95,7 @@ function Frame() {
       <aside
         ref={setNowSlot}
         aria-label="Selected"
-        className={cn("min-h-0 overflow-hidden rounded-[10px] bg-card", beside ? "hidden md:block" : "hidden")}
+        className={cn("min-h-0 overflow-hidden rounded-[10px] bg-card", beside ? "hidden lg:block" : "hidden")}
       />
       {env && (
         <div className="min-w-0 bg-card max-md:sticky max-md:bottom-0 max-md:border-t md:col-span-full md:rounded-[10px]">
@@ -151,7 +153,7 @@ function TopBar({
   const group = family === "kube" && section && "kind" in section ? kubeGroupOf(section) : undefined;
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 bg-card px-3 md:px-6">
-      <Button variant="ghost" size="icon-sm" className="md:hidden" aria-label="Open navigation" onClick={onMenu}>
+      <Button variant="ghost" size="icon-sm" className="lg:hidden" aria-label="Open navigation" onClick={onMenu}>
         <Menu />
       </Button>
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
