@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Pencil, ShieldCheck, Trash2, Users } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { EnvView } from "@/api/gen/types.gen";
@@ -7,12 +7,14 @@ import { envsQuery, usersQuery } from "@/api/queries";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
+import type { QuickItem } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useFeatures } from "@/ee-slots";
+import { FrozenNotice } from "./FrozenNotice";
 import { errorMessage } from "@/lib/errors";
 import { accessBody, EnvRow, fromEntry, NONE, same, type Row } from "@/pages/admin/EnvAccessRow";
 import { FormDialog } from "@/pages/admin/FormDialog";
@@ -49,25 +51,20 @@ export function TeamsPage() {
     col.accessor("members", { header: "Members" }),
     col.accessor("environments", { header: "Environments" }),
     col.display({
-      id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
+      id: "open",
+      header: () => <span className="sr-only">Members</span>,
       cell: (c) => (
-        <span className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "members", team: c.row.original })}>
-            Members
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "access", team: c.row.original })}>
-            Access
-          </Button>
-          <Button variant="outline" size="sm" disabled={frozen} onClick={() => setDialog({ kind: "rename", team: c.row.original })}>
-            Rename
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "delete", team: c.row.original })}>
-            Delete
-          </Button>
-        </span>
+        <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "members", team: c.row.original })}>
+          <Users aria-hidden />
+          Members
+        </Button>
       ),
     }),
+  ];
+  const menu = (t: TeamSummary): QuickItem[] => [
+    { id: "access", label: "Environment access", icon: ShieldCheck, onSelect: () => setDialog({ kind: "access", team: t }) },
+    { id: "rename", label: "Rename", icon: Pencil, disabled: frozen, onSelect: () => setDialog({ kind: "rename", team: t }) },
+    { id: "delete", label: "Delete", icon: Trash2, danger: true, onSelect: () => setDialog({ kind: "delete", team: t }) },
   ];
   return (
     <Page
@@ -80,12 +77,7 @@ export function TeamsPage() {
       }
     >
       {frozen && (
-        <div role="status" className="mb-4 rounded-md border bg-muted/50 px-4 py-2 text-sm">
-          Teams are read-only until a license is installed. Members keep their access.{" "}
-          <Link to={"/admin/license" as never} className="font-medium underline underline-offset-2">
-            Manage license
-          </Link>
-        </div>
+        <FrozenNotice>Teams are read-only until a license is installed. Members keep their access.</FrozenNotice>
       )}
       <DataTable
         label="Teams"
@@ -95,6 +87,8 @@ export function TeamsPage() {
         getRowId={(t) => String(t.id)}
         empty="No teams yet."
         initialSorting={[{ id: "name", desc: false }]}
+        phoneColumns={["name", "members", "open"]}
+        rowMenu={{ label: (t) => t.name, items: menu }}
       />
       {dialog?.kind === "new" && <TeamForm onClose={close} onDone={refresh} />}
       {dialog?.kind === "rename" && <TeamForm team={dialog.team} onClose={close} onDone={refresh} />}
@@ -175,6 +169,17 @@ function MembersDialog({ team, frozen, onClose }: { team: TeamSummary; frozen: b
       setBusy(false);
     }
   };
+  const [leaving, setLeaving] = useState<{ id: number; username: string } | null>(null);
+  // Licensed, a removal is undone by adding back; frozen it can't be, so it asks first.
+  const removeMember = (m: { id: number; username: string }) => {
+    if (frozen) return setLeaving(m);
+    void run(async () => {
+      await removeTeamMember(team.id, m.id);
+      toast.success(`Removed ${m.username} from ${team.name}`, {
+        action: { label: "Undo", onClick: () => void run(() => addTeamMember(team.id, m.id)) },
+      });
+    });
+  };
   const members = detail.data?.members ?? [];
   const candidates = (users.data ?? []).filter((u) => !members.some((m) => m.id === u.id));
   const chosen = candidates.find((u) => u.username === pick);
@@ -217,21 +222,35 @@ function MembersDialog({ team, frozen, onClose }: { team: TeamSummary; frozen: b
                   {m.username}
                   {via && <span className="ml-2 text-xs text-muted-foreground">via {via}</span>}
                 </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={`Remove ${m.username}`}
-                  title={via ? `Added by ${via} group sync: change the group mapping or the user's groups instead` : undefined}
-                  disabled={busy || !!via}
-                  onClick={() => run(() => removeTeamMember(team.id, m.id))}
-                >
-                  Remove
-                </Button>
+                {via ? (
+                  <span className="text-xs text-muted-foreground">Synced: change the group mapping to remove</span>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Remove ${m.username}`}
+                    disabled={busy}
+                    onClick={() => removeMember(m)}
+                  >
+                    Remove
+                  </Button>
+                )}
               </li>
             );
           })}
         </ul>
       </DialogContent>
+      <ConfirmDialog
+        open={!!leaving}
+        onOpenChange={(o) => !o && setLeaving(null)}
+        title={`Remove ${leaving?.username} from ${team.name}?`}
+        description="They lose the team's environment access. Without a license they can't be added back until one is installed."
+        confirmLabel="Remove member"
+        onConfirm={async () => {
+          if (leaving) await removeTeamMember(team.id, leaving.id);
+          await changed();
+        }}
+      />
     </Dialog>
   );
 }

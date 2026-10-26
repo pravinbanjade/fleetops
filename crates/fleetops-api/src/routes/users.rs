@@ -20,6 +20,8 @@ pub struct CreateUser {
 pub struct UpdateUser {
     pub role: Option<Role>,
     pub password: Option<String>,
+    /// True disables the account and signs it out everywhere; false enables it.
+    pub disabled: Option<bool>,
 }
 
 #[utoipa::path(
@@ -99,17 +101,41 @@ pub async fn update(
     ApiPath(id): ApiPath<i64>,
     ApiJson(body): ApiJson<UpdateUser>,
 ) -> ApiResult<Json<User>> {
-    if body.role.is_none() && body.password.is_none() {
+    if body.role.is_none() && body.password.is_none() && body.disabled.is_none() {
         return Err(Error::Invalid("nothing to update".into()).into());
+    }
+    if body.disabled == Some(true) && id == admin.user.id {
+        return Err(Error::Conflict("you can't disable your own account".into()).into());
     }
     if let Some(pw) = &body.password {
         validate_password(pw)?;
     }
     s.store.get_user(id).await?;
-    if s.external_auth.managed_users().await?.contains_key(&id) {
+    // Single sign-on owns the role and password, not whether FleetOps lets the account in.
+    if (body.role.is_some() || body.password.is_some())
+        && s.external_auth.managed_users().await?.contains_key(&id)
+    {
         return Err(Error::Conflict("managed by single sign-on".into()).into());
     }
     let now = now_unix();
+    let edits = body.role.is_some() || body.password.is_some();
+    if let Some(disabled) = body.disabled {
+        s.store.set_user_disabled(id, disabled, now).await?;
+        s.hubs.access_changed(id);
+        audit(
+            &s,
+            Some(admin.user.id),
+            if disabled {
+                "user.disable"
+            } else {
+                "user.enable"
+            },
+            "user",
+            &id.to_string(),
+            "success",
+        )
+        .await;
+    }
     if let Some(role) = body.role {
         s.store.set_user_role(id, role, now).await?;
         s.hubs.access_changed(id);
@@ -120,15 +146,17 @@ pub async fn update(
         let keep = (id == admin.user.id).then_some(admin.session.id);
         s.store.delete_user_sessions(id, keep).await?;
     }
-    audit(
-        &s,
-        Some(admin.user.id),
-        "user.update",
-        "user",
-        &id.to_string(),
-        "success",
-    )
-    .await;
+    if edits {
+        audit(
+            &s,
+            Some(admin.user.id),
+            "user.update",
+            "user",
+            &id.to_string(),
+            "success",
+        )
+        .await;
+    }
     Ok(Json(s.store.get_user(id).await?))
 }
 

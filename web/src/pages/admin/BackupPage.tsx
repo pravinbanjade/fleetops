@@ -1,5 +1,7 @@
+import { Download, Upload } from "lucide-react";
 import { useState } from "react";
 import { Page } from "@/components/Page";
+import { Panel } from "@/components/Panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,15 +9,6 @@ import { Slot } from "@/ee-slots";
 import { downloadBackup, MIN_PASSPHRASE } from "./backup-api";
 import { BackupUpload } from "./BackupUpload";
 import { FormDialog } from "./FormDialog";
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="grid max-w-2xl gap-3 rounded-xl border p-5">
-      <h2 className="font-semibold">{title}</h2>
-      {children}
-    </section>
-  );
-}
 
 export function DownloadDialog({ onClose }: { onClose: () => void }) {
   const [passphrase, setPassphrase] = useState("");
@@ -49,19 +42,23 @@ export function BackupPage() {
   const [downloading, setDownloading] = useState(false);
   return (
     <Page title="Backup">
-      <Section title="Download backup">
-        <p className="text-sm text-muted-foreground">
-          One file with every user, environment, grant, setting and the audit log, locked with a passphrase. Restore it
-          here or on a new server's first screen.
-        </p>
-        <Button className="justify-self-start" onClick={() => setDownloading(true)}>
-          Download backup
-        </Button>
-        {downloading && <DownloadDialog onClose={() => setDownloading(false)} />}
-      </Section>
-      <Section title="Restore">
-        <BackupUpload mode="admin" />
-      </Section>
+      <div className="grid items-start gap-5 lg:grid-cols-2">
+        <Panel title="Download backup" icon={Download}>
+          <div className="grid gap-3">
+            <p className="text-sm text-muted-foreground">
+              One file with every user, environment, grant, setting and the audit log, locked with a passphrase. Restore
+              it here or on a new server's first screen.
+            </p>
+            <Button className="justify-self-start" onClick={() => setDownloading(true)}>
+              Download backup
+            </Button>
+          </div>
+          {downloading && <DownloadDialog onClose={() => setDownloading(false)} />}
+        </Panel>
+        <Panel title="Restore" icon={Upload}>
+          <BackupUpload mode="admin" />
+        </Panel>
+      </div>
       <Slot name="admin.backup" />
     </Page>
   );

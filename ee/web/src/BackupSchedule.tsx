@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import type { StagedBackup } from "@/api/gen/types.gen";
-import { Badge } from "@/components/ui/badge";
+import { CalendarClock, History, HardDrive, ListChecks, type LucideIcon } from "lucide-react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Panel } from "@/components/Panel";
+import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -35,15 +38,45 @@ import {
   type TargetKind,
   type TargetSettings,
 } from "./backup";
+import { FrozenNotice } from "./FrozenNotice";
 
 const KIND_LABEL: Record<TargetKind, string> = { s3: "S3", local: "Local directory" };
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** Remove, after saying what stops; the last target also turns the schedule off. */
+function RemoveTarget({ kind }: { kind: TargetKind }) {
+  const [open, setOpen] = useState(false);
+  const invalidate = useInvalidate();
+  const targets = useQuery(targetsQuery).data ?? [];
+  const scheduled = useQuery(scheduleQuery).data?.enabled ?? false;
+  const last = targets.length === 1 && targets[0].kind === kind;
   return (
-    <section className="grid max-w-2xl gap-3 rounded-xl border p-5">
-      <h2 className="font-semibold">{title}</h2>
-      {children}
-    </section>
+    <>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        Remove
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Remove the ${KIND_LABEL[kind]} target?`}
+        description={[
+          `FleetOps forgets these settings${kind === "s3" ? " and the saved secret" : ""} and stops writing backups there.`,
+          "Backups already written stay where they are.",
+          last && scheduled ? "This is the last target, so scheduled backups turn off." : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        confirmLabel="Remove target"
+        onConfirm={() => deleteTarget(kind).then(invalidate)}
+      />
+    </>
+  );
+}
+
+function Section({ title, icon, actions, children }: { title: string; icon?: LucideIcon; actions?: ReactNode; children: ReactNode }) {
+  return (
+    <Panel title={title} icon={icon} actions={actions}>
+      <div className="grid gap-3">{children}</div>
+    </Panel>
   );
 }
 
@@ -69,10 +102,9 @@ function Unlicensed() {
     onSuccess: invalidate,
     onError: toastError,
   });
-  const remove = useMutation({ mutationFn: deleteTarget, onSuccess: invalidate, onError: toastError });
   return (
-    <Section title="Scheduled backups">
-      <p className="text-sm text-muted-foreground">Scheduled backups need an Enterprise license.</p>
+    <Section title="Scheduled backups" icon={CalendarClock}>
+      <FrozenNotice>Scheduled backups need a license. You can turn them off and remove targets.</FrozenNotice>
       {schedule?.enabled && (
         <Button variant="outline" className="justify-self-start" onClick={() => off.mutate()}>
           Turn off scheduled backups
@@ -81,23 +113,26 @@ function Unlicensed() {
       {targets.map((t) => (
         <div key={t.kind} className="flex items-center justify-between gap-2 text-sm">
           <span>{KIND_LABEL[t.kind]}</span>
-          <Button variant="outline" size="sm" onClick={() => remove.mutate(t.kind)}>
-            Remove
-          </Button>
+          <RemoveTarget kind={t.kind} />
         </div>
       ))}
     </Section>
   );
 }
 
+/** When and where on the left, what happened on the right. */
 function Licensed() {
   return (
-    <>
-      <ScheduleForm />
-      <Targets />
-      <Runs />
-      <Recent />
-    </>
+    <div className="grid items-start gap-5 lg:grid-cols-2">
+      <div className="grid gap-5">
+        <ScheduleForm />
+        <Targets />
+      </div>
+      <div className="grid gap-5">
+        <Runs />
+        <Recent />
+      </div>
+    </div>
   );
 }
 
@@ -121,8 +156,13 @@ function ScheduleForm() {
   });
   if (!schedule) return null;
   const offset = viewerOffset();
+  const dirty =
+    enabled !== schedule.enabled ||
+    hour !== schedule.hour_utc ||
+    retention.kind !== schedule.retention.kind ||
+    retention.value !== schedule.retention.value;
   return (
-    <Section title="Scheduled backups">
+    <Section title="Scheduled backups" icon={CalendarClock}>
       <div className="flex items-center gap-2">
         <Checkbox id="bk-enabled" checked={enabled} onCheckedChange={(v) => setEnabled(!!v)} />
         <Label htmlFor="bk-enabled">Back up every day</Label>
@@ -162,15 +202,18 @@ function ScheduleForm() {
       </div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span>Passphrase:</span>
-        {schedule.passphrase_set ? <Badge variant="secondary">set</Badge> : <Badge variant="destructive">not set</Badge>}
+        <StateBadge state={schedule.passphrase_set ? "set" : "not set"} tone={schedule.passphrase_set ? "run" : "fail"} />
         <Button variant="outline" size="sm" onClick={() => setPassphraseOpen(true)}>
           {schedule.passphrase_set ? "Replace passphrase" : "Set passphrase"}
         </Button>
       </div>
       <FormError message={save.error ? errorMessage(save.error) : null} />
-      <Button className="justify-self-start" disabled={save.isPending} onClick={() => save.mutate()}>
-        Save schedule
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button disabled={save.isPending || !dirty} onClick={() => save.mutate()}>
+          Save schedule
+        </Button>
+        {dirty && <span className="text-sm text-state-wait-text">Unsaved changes</span>}
+      </div>
       {passphraseOpen && <PassphraseDialog onClose={() => setPassphraseOpen(false)} />}
     </Section>
   );
@@ -210,21 +253,31 @@ function Targets() {
   if (!targets) return null;
   const of = (k: TargetKind) => targets.find((t) => t.kind === k);
   return (
-    <Section title="Where backups go">
+    <Section title="Where backups go" icon={HardDrive}>
       <S3Form target={of("s3")} />
       <LocalForm target={of("local")} />
     </Section>
   );
 }
 
-function TargetActions({ kind, saved, onSave, saving }: { kind: TargetKind; saved: boolean; onSave: () => void; saving: boolean }) {
-  const invalidate = useInvalidate();
+function TargetActions({
+  kind,
+  saved,
+  dirty,
+  onSave,
+  saving,
+}: {
+  kind: TargetKind;
+  saved: boolean;
+  dirty: boolean;
+  onSave: () => void;
+  saving: boolean;
+}) {
   const test = useMutation({ mutationFn: () => testTarget(kind), meta: { inline: true } });
-  const remove = useMutation({ mutationFn: () => deleteTarget(kind), onSuccess: invalidate, onError: toastError });
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={saving} onClick={onSave}>
+        <Button size="sm" disabled={saving || !dirty} onClick={onSave}>
           Save
         </Button>
         {saved && (
@@ -232,11 +285,10 @@ function TargetActions({ kind, saved, onSave, saving }: { kind: TargetKind; save
             <Button size="sm" variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
               Test
             </Button>
-            <Button size="sm" variant="outline" onClick={() => remove.mutate()}>
-              Remove
-            </Button>
+            <RemoveTarget kind={kind} />
           </>
         )}
+        {dirty && <span className="self-center text-sm text-state-wait-text">Unsaved changes</span>}
       </div>
       {test.isSuccess && <p className="text-sm text-muted-foreground">It works: FleetOps wrote and deleted a test file.</p>}
       <FormError message={test.error ? errorMessage(test.error) : null} />
@@ -305,7 +357,21 @@ function S3Form({ target }: { target?: BackupTarget }) {
         <Label htmlFor="s3-path">Path-style URLs (MinIO and similar)</Label>
       </div>
       <FormError message={save.error ? errorMessage(save.error) : null} />
-      <TargetActions kind="s3" saved={!!target} saving={save.isPending} onSave={() => save.mutate()} />
+      <TargetActions
+        kind="s3"
+        saved={!!target}
+        dirty={
+          !!secret ||
+          endpoint !== (init?.endpoint ?? "") ||
+          region !== (init?.region ?? "") ||
+          bucket !== (init?.bucket ?? "") ||
+          prefix !== (init?.prefix ?? "") ||
+          pathStyle !== (init?.path_style ?? false) ||
+          keyId !== (init?.access_key_id ?? "")
+        }
+        saving={save.isPending}
+        onSave={() => save.mutate()}
+      />
     </fieldset>
   );
 }
@@ -324,7 +390,13 @@ function LocalForm({ target }: { target?: BackupTarget }) {
       <Field id="local-path" label="Directory" placeholder="/mnt/backups" value={path} onChange={setPath} />
       <p className="text-xs text-muted-foreground">A mounted volume or network share, outside FleetOps' data directory.</p>
       <FormError message={save.error ? errorMessage(save.error) : null} />
-      <TargetActions kind="local" saved={!!target} saving={save.isPending} onSave={() => save.mutate()} />
+      <TargetActions
+        kind="local"
+        saved={!!target}
+        dirty={path !== (target?.settings.kind === "local" ? target.settings.path : "")}
+        saving={save.isPending}
+        onSave={() => save.mutate()}
+      />
     </fieldset>
   );
 }
@@ -334,8 +406,10 @@ function Runs() {
   const runs = useQuery({ ...runsQuery, refetchInterval: 5000 }).data ?? [];
   const invalidate = useInvalidate();
   const run = useMutation({ mutationFn: runNow, meta: { inline: true }, onSuccess: invalidate });
+  const [all, setAll] = useState(false);
+  const shown = all ? runs : runs.slice(0, 6);
   return (
-    <Section title="Runs">
+    <Section title="Runs" icon={ListChecks}>
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <Button size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate()}>
           Run now
@@ -347,15 +421,20 @@ function Runs() {
         <p className="text-sm text-muted-foreground">No backups have run yet.</p>
       ) : (
         <ul className="grid gap-1 text-sm">
-          {runs.slice(0, 6).map((r) => (
+          {shown.map((r) => (
             <li key={r.id} className="flex flex-wrap items-center gap-2">
-              <span>{formatTime(r.started_at)}</span>
+              <StateBadge state={r.result} tone={r.result === "failure" ? "fail" : r.result === "skipped" ? "wait" : "run"} />
+              <span className="tabular-nums">{formatTime(r.started_at)}</span>
               {r.target_kind && <span className="text-muted-foreground">{KIND_LABEL[r.target_kind]}</span>}
-              <Badge variant={r.result === "failure" ? "destructive" : "secondary"}>{r.result}</Badge>
-              {r.error && <span className="text-destructive">{r.error}</span>}
+              {r.error && <span className="text-state-fail-text">{r.error}</span>}
             </li>
           ))}
         </ul>
+      )}
+      {runs.length > 6 && (
+        <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => setAll(!all)}>
+          {all ? "Show the latest 6" : `Show all ${runs.length} runs`}
+        </Button>
       )}
     </Section>
   );
@@ -367,15 +446,15 @@ function Recent() {
   const [staged, setStaged] = useState<StagedBackup | null>(null);
   if (staged) {
     return (
-      <Section title="Restore">
+      <Section title="Restore" icon={History}>
         <RestoreFlow staged={staged} mode="admin" onCancel={() => setStaged(null)} />
       </Section>
     );
   }
   return (
-    <Section title="Recent backups">
+    <Section title="Recent backups" icon={History}>
       {recent?.errors.map((e) => (
-        <p key={e.target_kind} className="text-sm text-destructive">
+        <p key={e.target_kind} className="text-sm text-state-fail-text">
           {KIND_LABEL[e.target_kind]}: {e.error}
         </p>
       ))}

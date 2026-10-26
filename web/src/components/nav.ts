@@ -62,10 +62,10 @@ export const SWARM_NAV = [
 
 /** Administration pages, shown to admins. */
 export const ADMIN_NAV = [
-  { to: "/admin/users", label: "Users", icon: Users },
-  { to: "/admin/envs", label: "Environments", icon: Server },
-  { to: "/admin/audit", label: "Audit log", icon: ScrollText },
-  { to: "/admin/backup", label: "Backup", icon: DatabaseBackup },
+  { to: "/admin/users", label: "Users", icon: Users, group: "people" },
+  { to: "/admin/envs", label: "Environments", icon: Server, group: "infra" },
+  { to: "/admin/audit", label: "Audit log", icon: ScrollText, group: "records" },
+  { to: "/admin/backup", label: "Backup", icon: DatabaseBackup, group: "records" },
 ] as const;
 
 /** A Kubernetes page in the sidebar. `kind` items link to that kind's list. */

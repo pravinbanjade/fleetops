@@ -18,7 +18,7 @@ mod users;
 
 pub use access::BindingRecord;
 pub use agents::AgentRecord;
-pub use audit::{AuditEntry, NewAudit};
+pub use audit::{AuditEntry, AuditFilter, NewAudit};
 pub use environments::EnvironmentRecord;
 pub use sessions::{NewSession, SessionRecord};
 pub use settings::AUDIT_RETENTION_KEY;
@@ -39,6 +39,8 @@ pub struct Store {
     secrets: std::sync::Arc<secrets::SecretBox>,
     /// The key behind `secrets`, which a backup carries.
     key: std::sync::Arc<secrets::SecretKey>,
+    /// The id of each audit entry as it is written, for the live audit log.
+    audit_tx: tokio::sync::broadcast::Sender<i64>,
 }
 
 impl Store {
@@ -89,6 +91,7 @@ impl Store {
             pool,
             secrets: std::sync::Arc::new(secrets::SecretBox::new(&key)),
             key: std::sync::Arc::new(key),
+            audit_tx: tokio::sync::broadcast::channel(64).0,
         })
     }
 

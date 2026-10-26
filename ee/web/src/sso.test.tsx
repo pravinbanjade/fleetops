@@ -2,7 +2,7 @@ import { waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { mockFetch } from "@/test/fetch";
-import { loggedIn, renderApp } from "@/test/app";
+import { loggedIn, renderApp, openRowMenu, pickRowMenu } from "@/test/app";
 import type { SsoConnection } from "./sso";
 
 const OKTA: SsoConnection = {
@@ -93,7 +93,7 @@ describe("single sign-on", () => {
     const calls = mockFetch({ ...routes(["sso"]), "PATCH /api/v1/ee/sso/connections/3": { json: OKTA } });
     const { screen } = renderApp("/admin/sso");
     await waitFor(() => expect(row(screen, "Acme Okta")).toBeTruthy());
-    await userEvent.click(within(row(screen, "Acme Okta")).getByRole("button", { name: "Edit" }));
+    await pickRowMenu("Acme Okta", "Edit");
     const dialog = await screen.findByRole("dialog");
     const secret = within(dialog).getByLabelText("Client secret");
     expect(secret).toHaveValue("");
@@ -127,10 +127,27 @@ describe("single sign-on", () => {
     const { screen } = renderApp("/admin/sso");
     await waitFor(() => expect(row(screen, "Acme Okta")).toBeTruthy());
     expect(screen.getByRole("button", { name: "New connection" })).toBeDisabled();
-    expect(within(row(screen, "Acme Okta")).getByRole("button", { name: "Edit" })).toBeDisabled();
-    expect(within(row(screen, "Acme Okta")).getByRole("button", { name: "Disable" })).toBeEnabled();
-    expect(within(row(screen, "Acme Okta")).getByRole("button", { name: "Delete" })).toBeEnabled();
+    const menu = within(await openRowMenu("Acme Okta"));
+    expect(menu.getByRole("menuitem", { name: "Edit" })).toHaveAttribute("aria-disabled", "true");
+    expect(menu.getByRole("menuitem", { name: "Disable" })).not.toHaveAttribute("aria-disabled");
+    expect(menu.getByRole("menuitem", { name: "Delete" })).not.toHaveAttribute("aria-disabled");
+    await userEvent.keyboard("{Escape}");
     expect(screen.getByRole("radio", { name: /Local admins only/ })).toBeDisabled();
+  });
+
+  it("asks before disabling a connection people sign in with", async () => {
+    const calls = mockFetch({
+      ...routes(["sso"]),
+      "PATCH /api/v1/ee/sso/connections/3": { json: { ...OKTA, enabled: false } },
+    });
+    const { screen } = renderApp("/admin/sso");
+    await waitFor(() => expect(row(screen, "Acme Okta")).toBeTruthy());
+    await pickRowMenu("Acme Okta", "Disable");
+    const dialog = await screen.findByRole("dialog", { name: "Disable Acme Okta?" });
+    expect(dialog).toHaveTextContent(/can't sign in until it's enabled again/);
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Disable" }));
+    await waitFor(() => expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ enabled: false }));
   });
 
   it("creates an LDAP connection from a preset", async () => {
@@ -178,7 +195,7 @@ describe("single sign-on", () => {
     });
     const { screen } = renderApp("/admin/sso");
     await waitFor(() => expect(row(screen, "Corp directory")).toBeTruthy());
-    await userEvent.click(within(row(screen, "Corp directory")).getByRole("button", { name: "Test" }));
+    await pickRowMenu("Corp directory", "Test sign-in");
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByLabelText(/List groups for/)).toBeNull();
     await userEvent.type(within(dialog).getByLabelText("Look up username (optional)"), "alice");

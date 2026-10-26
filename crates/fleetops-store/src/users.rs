@@ -2,7 +2,7 @@ use crate::{db_err, Store};
 use fleetops_core::{Error, Result, Role, User};
 use sqlx::AssertSqlSafe;
 
-const COLS: &str = "id, username, password_hash, role, created_at, updated_at";
+const COLS: &str = "id, username, password_hash, role, created_at, updated_at, disabled_at";
 
 #[derive(sqlx::FromRow)]
 struct UserRow {
@@ -12,6 +12,7 @@ struct UserRow {
     role: String,
     created_at: i64,
     updated_at: i64,
+    disabled_at: Option<i64>,
 }
 
 impl UserRow {
@@ -24,6 +25,7 @@ impl UserRow {
             created_at: self.created_at,
             updated_at: self.updated_at,
             sso: None,
+            disabled_at: self.disabled_at,
         };
         Ok((user, self.password_hash))
     }
@@ -135,8 +137,9 @@ impl Store {
         let res = sqlx::query(
             "UPDATE users SET role = ?1, updated_at = ?2
              WHERE id = ?3
-               AND NOT (role = 'admin' AND ?1 <> 'admin'
-                        AND (SELECT COUNT(*) FROM users WHERE role = 'admin') <= 1)",
+               AND NOT (role = 'admin' AND disabled_at IS NULL AND ?1 <> 'admin'
+                        AND (SELECT COUNT(*) FROM users
+                             WHERE role = 'admin' AND disabled_at IS NULL) <= 1)",
         )
         .bind(role.as_str())
         .bind(now)
@@ -167,10 +170,56 @@ impl Store {
         Ok(())
     }
 
+    /// Disables the account and ends all its sessions in one transaction, or
+    /// enables it again. The last enabled admin can't be disabled.
+    pub async fn set_user_disabled(&self, id: i64, disabled: bool, now: i64) -> Result<User> {
+        let mut tx = self.pool.begin().await.map_err(db_err)?;
+        let res = if disabled {
+            sqlx::query(
+                "UPDATE users SET disabled_at = ?1, updated_at = ?1
+                 WHERE id = ?2 AND disabled_at IS NULL
+                   AND NOT (role = 'admin'
+                            AND (SELECT COUNT(*) FROM users
+                                 WHERE role = 'admin' AND disabled_at IS NULL) <= 1)",
+            )
+            .bind(now)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?
+        } else {
+            sqlx::query("UPDATE users SET disabled_at = NULL, updated_at = ?1 WHERE id = ?2")
+                .bind(now)
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?
+        };
+        if disabled {
+            sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .map_err(db_err)?;
+        }
+        if res.rows_affected() == 0 {
+            drop(tx);
+            let user = self.get_user(id).await?;
+            if disabled && user.disabled_at.is_some() {
+                return Ok(user);
+            }
+            return Err(Error::Conflict("cannot disable the last admin".into()));
+        }
+        tx.commit().await.map_err(db_err)?;
+        self.get_user(id).await
+    }
+
     pub async fn delete_user(&self, id: i64) -> Result<()> {
         let res = sqlx::query(
             "DELETE FROM users WHERE id = ?1
-               AND NOT (role = 'admin' AND (SELECT COUNT(*) FROM users WHERE role = 'admin') <= 1)",
+               AND NOT (role = 'admin' AND disabled_at IS NULL
+                        AND (SELECT COUNT(*) FROM users
+                             WHERE role = 'admin' AND disabled_at IS NULL) <= 1)",
         )
         .bind(id)
         .execute(&self.pool)

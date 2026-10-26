@@ -158,13 +158,25 @@ export const envAccessQuery = (env: string) =>
 /** Audit entries a page asks for at once. */
 export const AUDIT_PAGE = 100;
 
+/** What the audit log is narrowed to; the server does the narrowing. */
+export interface AuditFilters {
+  user_id?: number;
+  /** An action, or a prefix ending in `.`. */
+  action?: string;
+  env_id?: number;
+  /** Unix seconds. */
+  since?: number;
+  failed?: boolean;
+}
+
 /** The audit log, newest first, a page at a time: each page asks for entries older than the last one seen. */
-export const auditQuery = infiniteQueryOptions({
-  queryKey: keys.audit,
-  queryFn: async ({ pageParam }) => (await listAudit({ query: { limit: AUDIT_PAGE, before: pageParam } })).data,
-  initialPageParam: undefined as number | undefined,
-  getNextPageParam: (last) => (last.length < AUDIT_PAGE ? undefined : last[last.length - 1].id),
-});
+export const auditQuery = (f: AuditFilters = {}) =>
+  infiniteQueryOptions({
+    queryKey: [...keys.audit, f] as const,
+    queryFn: async ({ pageParam }) => (await listAudit({ query: { limit: AUDIT_PAGE, before: pageParam, ...f } })).data,
+    initialPageParam: undefined as number | undefined,
+    getNextPageParam: (last) => (last.length < AUDIT_PAGE ? undefined : last[last.length - 1].id),
+  });
 
 const path = (env: string) => ({ path: { env } });
 

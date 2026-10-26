@@ -86,6 +86,8 @@ impl FromRequestParts<AppState> for CurrentUser {
             state.store.touch_session(session.id, now).await?;
         }
         let user = match state.store.get_user(session.user_id).await {
+            // Disabling ends the sessions too; this covers one made in between.
+            Ok(u) if u.disabled_at.is_some() => return Err(unauthorized()),
             Ok(u) => u,
             Err(Error::NotFound(_)) => return Err(unauthorized()),
             Err(e) => return Err(e.into()),

@@ -22,6 +22,8 @@ pub enum Topic {
     /// A swarm's tasks: a snapshot, then changes (swarm spec §7).
     #[serde(rename = "swarm-tasks")]
     SwarmTasks,
+    /// The id of each audit entry as it is written; admins only.
+    Audit,
 }
 
 /// A text frame from the client. Exec stdin may also arrive as a binary

@@ -52,6 +52,7 @@ fn user(id: i64, name: &str) -> User {
         created_at: 0,
         updated_at: 0,
         sso: None,
+        disabled_at: None,
     }
 }
 

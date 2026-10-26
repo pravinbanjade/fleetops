@@ -9,12 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { errorMessage } from "@/lib/errors";
+import { formatTime } from "@/lib/format";
+import { takeRestored } from "./admin/backup-api";
 import { AuthLayout, FormError } from "./AuthLayout";
 
 const route = getRouteApi("/login");
 
 /** Why a single sign-on attempt came back to this page. */
-export const SSO_ERRORS = ["denied", "not_allowed", "seat_limit", "unlicensed", "disabled", "invalid"] as const;
+export const SSO_ERRORS = ["denied", "not_allowed", "seat_limit", "unlicensed", "disabled", "account_disabled", "invalid"] as const;
 export type SsoError = (typeof SSO_ERRORS)[number];
 
 export const SSO_ERROR_TEXT: Record<SsoError, string> = {
@@ -23,6 +25,7 @@ export const SSO_ERROR_TEXT: Record<SsoError, string> = {
   seat_limit: "FleetOps has reached its licensed user limit. Ask an admin.",
   unlicensed: "New sign-ins are paused until the Enterprise license is renewed.",
   disabled: "That sign-in option is turned off.",
+  account_disabled: "Your FleetOps account is disabled. Ask an admin.",
   invalid: "Sign-in failed. Try again, or ask an admin to check the SSO settings.",
 };
 
@@ -49,6 +52,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const providers = useProviders();
   const [showPassword, setShowPassword] = useState(false);
+  const [restored] = useState(takeRestored);
   // The next user of this tab must not see the last one's cached data.
   // Cleared here rather than on the way out, where it would refetch the
   // pages still on screen, whose 401s would send the tab here again.
@@ -75,6 +79,11 @@ export function LoginPage() {
   return (
     <AuthLayout title="Log in to FleetOps">
       <div className="grid gap-4">
+        {restored && (
+          <p role="status" className="text-sm text-state-run-text">
+            Restored the backup made {formatTime(restored)}. Sign in with an account from that backup.
+          </p>
+        )}
         {sso_error && (
           <p role="alert" className="text-sm text-destructive">
             {SSO_ERROR_TEXT[sso_error]}

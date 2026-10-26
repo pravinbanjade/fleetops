@@ -1,20 +1,25 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, Container, Network, ShipWheel, type LucideIcon } from "lucide-react";
+import { CircleCheck, Container, KeyRound, Network, Pencil, ShieldCheck, ShipWheel, Trash2, type LucideIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { envAccessQuery, envsQuery, keys } from "@/api/queries";
+import { envAccessQuery, envsQuery, envStatusQuery, keys } from "@/api/queries";
 import { createEnv, deleteEnv, kubeContexts, rotateAgent, rotateSwarmKey, updateEnv } from "@/api/gen/sdk.gen";
 import type { Enrollment, EnvKind, EnvView, KubeAccess, SwarmEnrollment as SwarmKey } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
-import { EnvStatusBadge } from "@/components/Shell";
+import type { QuickItem } from "@/components/RowMenu";
+import { EnvTag } from "@/components/Shell";
+import { StateBadge } from "@/components/StateBadge";
 import { isEnterpriseBuild, Slot } from "@/ee-slots";
 import { Button } from "@/components/ui/button";
 import { Dialog as Modal, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { errorMessage } from "@/lib/errors";
 import { formatAgo } from "@/lib/format";
 import { AgentEnrollment } from "./AgentEnrollment";
@@ -66,6 +71,16 @@ const PLATFORMS: { id: Platform; label: string; hint: string; icon: LucideIcon; 
   },
 ];
 
+/** How the list names each kind: the platform, and how FleetOps reaches it when that isn't the default. */
+const KIND_LABEL: Record<EnvKind, string> = {
+  "docker-local": "Docker",
+  "docker-agent": "Docker via agent",
+  "kube-config": "Kubernetes",
+  "kube-agent": "Kubernetes via agent",
+  "swarm-agent": "Docker Swarm",
+  "swarm-node": "Swarm node",
+};
+
 const platformOf = (k: EnvKind): Platform => (k.startsWith("kube") ? "kube" : k.startsWith("swarm") ? "swarm" : "docker");
 
 const DESCRIPTIONS: Record<EnvKind, string> = {
@@ -85,6 +100,23 @@ const ACCESS: [KubeAccess, string, string][] = [
   ["standard", "Standard", "Change the common kinds: create, edit, scale, restart, delete, terminal."],
   ["cluster-admin", "Cluster admin", "Apply any kind, including CRDs and RBAC: full control of the cluster."],
 ];
+
+/** Up or down as a holder, with why it's down beside it. */
+function EnvState({ env }: { env: EnvView }) {
+  const { data } = useQuery(envStatusQuery(env.name));
+  if (!data) return null;
+  if (data.state === "up") return <StateBadge state="up" />;
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <StateBadge state="down" />
+      {data.reason && (
+        <span className="truncate text-xs text-muted-foreground" title={data.reason}>
+          {data.reason}
+        </span>
+      )}
+    </span>
+  );
+}
 
 /** What an agent environment's agent is doing, for the list. */
 function AgentCell({ env }: { env: EnvView }) {
@@ -123,10 +155,18 @@ export function EnvironmentsPage() {
   // Renaming or removing one changes every environment-scoped key, so all are refetched.
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: keys.envs }), qc.invalidateQueries({ queryKey: ["env"] })]);
   const [cols] = useState<Column<EnvView>[]>(() => [
-    col.accessor("name", { header: "Name", cell: (c) => <span className="font-medium">{c.getValue()}</span> }),
-    col.display({ id: "status", header: "Status", cell: (c) => <EnvStatusBadge env={c.row.original.name} /> }),
+    col.accessor("name", {
+      header: "Name",
+      cell: (c) => (
+        <Link to="/envs/$env" params={{ env: c.getValue() }} className="flex items-center gap-2 font-medium underline-offset-2 hover:underline">
+          <EnvTag name={c.getValue()} size="sm" />
+          {c.getValue()}
+        </Link>
+      ),
+    }),
+    col.display({ id: "status", header: "Status", cell: (c) => <EnvState env={c.row.original} /> }),
     col.display({ id: "agent", header: "Agent", cell: (c) => <AgentCell env={c.row.original} /> }),
-    col.accessor("kind", { header: "Kind" }),
+    col.accessor((e) => KIND_LABEL[e.kind as EnvKind] ?? e.kind, { id: "kind", header: "Kind" }),
     col.accessor((e) => (e.kube ? `${e.kube.server} · ${e.kube.context} (${e.kube.user_kind === "exec" ? `via ${e.kube.exec_command}` : e.kube.user_kind})` : e.url), {
       id: "url",
       header: "URL",
@@ -137,28 +177,21 @@ export function EnvironmentsPage() {
       ),
     }),
     col.display({
-      id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
+      id: "access",
+      header: () => <span className="sr-only">Access</span>,
       cell: (c) => (
-        <span className="flex justify-end gap-2">
-          {isAgent(c.row.original) && (
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "rotate", env: c.row.original })}>
-              Rotate key
-            </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "access", env: c.row.original })}>
-            Access
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "edit", env: c.row.original })}>
-            Edit
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "delete", env: c.row.original })}>
-            Delete
-          </Button>
-        </span>
+        <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "access", env: c.row.original })}>
+          <ShieldCheck aria-hidden />
+          Access
+        </Button>
       ),
     }),
   ]);
+  const menu = (e: EnvView): QuickItem[] => [
+    { id: "edit", label: "Edit", icon: Pencil, onSelect: () => setDialog({ kind: "edit", env: e }) },
+    ...(isAgent(e) ? [{ id: "rotate", label: "Rotate key", icon: KeyRound, onSelect: () => setDialog({ kind: "rotate", env: e }) }] : []),
+    { id: "delete", label: "Delete", icon: Trash2, danger: true, onSelect: () => setDialog({ kind: "delete", env: e }) },
+  ];
   return (
     <Page title="Environments" actions={<Button onClick={() => setDialog({ kind: "add" })}>Add environment</Button>}>
       <DataTable
@@ -169,6 +202,8 @@ export function EnvironmentsPage() {
         getRowId={(e) => String(e.id)}
         empty="No environments."
         initialSorting={[{ id: "name", desc: false }]}
+        phoneColumns={["name", "status", "access"]}
+        rowMenu={{ label: (e) => e.name, items: menu }}
       />
       {dialog?.kind === "add" && (
         <EnvForm onClose={close} onDone={refresh} onEnrollment={setEnrollment} onSwarmKey={(env, e) => setSwarmKey({ env, enrollment: e, rotated: false })} />
@@ -327,7 +362,7 @@ function EnvForm({
       )}
       {!env && kind === "kube-agent" && (
         <label className="flex cursor-pointer items-start gap-2 text-sm">
-          <input type="checkbox" className="mt-1" checked={customResources} onChange={(e) => setCustomResources(e.target.checked)} />
+          <Checkbox className="mt-0.5" checked={customResources} onCheckedChange={(v) => setCustomResources(v === true)} />
           <span className="grid">
             <span className="font-medium">Read custom resources</span>
             <span className="text-xs text-muted-foreground">
@@ -340,12 +375,12 @@ function EnvForm({
         <>
           <div className="grid gap-2">
             <Label htmlFor="env-kubeconfig">{env ? "Replace kubeconfig" : "Kubeconfig"}</Label>
-            <textarea
+            <Textarea
               id="env-kubeconfig"
               required={!env}
               rows={8}
               spellCheck={false}
-              className="rounded-md border bg-background p-2 font-mono text-xs"
+              className="font-mono text-xs"
               value={kubeconfig}
               onChange={(e) => setKubeconfig(e.target.value)}
               onBlur={(e) => void loadContexts(e.target.value)}
@@ -354,28 +389,22 @@ function EnvForm({
                 setTimeout(() => void loadContexts(el.value), 0);
               }}
             />
-            {contextsError && <p className="text-sm text-destructive">{contextsError}</p>}
+            {contextsError && <p className="text-sm text-state-fail-text">{contextsError}</p>}
           </div>
           {contexts.length > 0 && (
             <div className="grid gap-2">
               <Label htmlFor="env-context">Context</Label>
-              <select
-                id="env-context"
-                aria-label="Context"
-                className="h-9 rounded-md border bg-background px-2"
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-              >
+              <NativeSelect id="env-context" value={context} onChange={(e) => setContext(e.target.value)}>
                 {contexts.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
           )}
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={skipCheck} onChange={(e) => setSkipCheck(e.target.checked)} />
+            <Checkbox checked={skipCheck} onCheckedChange={(v) => setSkipCheck(v === true)} />
             Save without checking that the cluster answers
           </label>
         </>

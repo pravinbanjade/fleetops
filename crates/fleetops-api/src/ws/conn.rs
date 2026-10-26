@@ -272,7 +272,10 @@ async fn session_still_valid(s: &AppState, token_hash: &str, user_id: i64) -> bo
     if now - session.last_seen_at >= SESSION_TOUCH_SECS {
         let _ = s.store.touch_session(session.id, now).await;
     }
-    s.store.get_user(user_id).await.is_ok()
+    s.store
+        .get_user(user_id)
+        .await
+        .is_ok_and(|u| u.disabled_at.is_none())
 }
 
 fn input(shared: &Shared, sub: u32, data: Vec<u8>) {
@@ -386,5 +389,6 @@ async fn start(
         Topic::Task => topics::task(&c, id).await,
         Topic::KubeWatch => topics::kube_watch(&c, env, id).await,
         Topic::SwarmTasks => topics::swarm_tasks(&c, env).await,
+        Topic::Audit => topics::audit(&c).await,
     }
 }

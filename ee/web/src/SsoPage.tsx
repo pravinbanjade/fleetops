@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { FlaskConical, Pencil, Power, PowerOff, Trash2, Waypoints } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
+import type { QuickItem } from "@/components/RowMenu";
+import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -12,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { useFeatures } from "@/ee-slots";
+import { FrozenNotice } from "./FrozenNotice";
 import { errorMessage } from "@/lib/errors";
 import { FormDialog } from "@/pages/admin/FormDialog";
 import {
@@ -35,6 +39,7 @@ import {
   type PasswordLogin,
   type SsoConnection,
   type SsoKind,
+  type SsoMapping,
   type SsoSecrets,
   type SsoSettings,
   type TestResult,
@@ -43,7 +48,7 @@ import { teamsQuery } from "./teams";
 
 type Dialog =
   | { kind: "new" }
-  | { kind: "edit" | "mappings" | "test" | "delete"; conn: SsoConnection }
+  | { kind: "edit" | "mappings" | "test" | "delete" | "disable"; conn: SsoConnection }
   | null;
 
 const col = columns<SsoConnection>();
@@ -69,40 +74,27 @@ export function SsoPage() {
     col.accessor("kind", { header: "Provider", cell: (c) => KIND_LABEL[c.row.original.kind] }),
     col.accessor("enabled", {
       header: "Status",
-      cell: (c) => (c.getValue() ? "Enabled" : <span className="text-muted-foreground">Disabled</span>),
+      cell: (c) => <StateBadge state={c.getValue() ? "enabled" : "disabled"} tone={c.getValue() ? "run" : "idle"} />,
     }),
     col.accessor("user_count", { header: "Users" }),
     col.display({
-      id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
-      cell: (c) => {
-        const conn = c.row.original;
-        return (
-          <span className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={toggle.isPending || (frozen && !conn.enabled)}
-              onClick={() => toggle.mutate(conn)}
-            >
-              {conn.enabled ? "Disable" : "Enable"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "mappings", conn })}>
-              Mappings
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "test", conn })}>
-              Test
-            </Button>
-            <Button variant="outline" size="sm" disabled={frozen} onClick={() => setDialog({ kind: "edit", conn })}>
-              Edit
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "delete", conn })}>
-              Delete
-            </Button>
-          </span>
-        );
-      },
+      id: "open",
+      header: () => <span className="sr-only">Mappings</span>,
+      cell: (c) => (
+        <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "mappings", conn: c.row.original })}>
+          <Waypoints aria-hidden />
+          Mappings
+        </Button>
+      ),
     }),
+  ];
+  const menu = (conn: SsoConnection): QuickItem[] => [
+    { id: "test", label: "Test sign-in", icon: FlaskConical, onSelect: () => setDialog({ kind: "test", conn }) },
+    { id: "edit", label: "Edit", icon: Pencil, disabled: frozen, onSelect: () => setDialog({ kind: "edit", conn }) },
+    conn.enabled
+      ? { id: "toggle", label: "Disable", icon: PowerOff, onSelect: () => setDialog({ kind: "disable", conn }) }
+      : { id: "toggle", label: "Enable", icon: Power, disabled: frozen || toggle.isPending, onSelect: () => toggle.mutate(conn) },
+    { id: "delete", label: "Delete", icon: Trash2, danger: true, onSelect: () => setDialog({ kind: "delete", conn }) },
   ];
   return (
     <Page
@@ -114,11 +106,11 @@ export function SsoPage() {
         </Button>
       }
     >
-      <div className="grid gap-6">
+      <div className="grid gap-5">
         {frozen && (
-          <p className="text-sm text-muted-foreground">
+          <FrozenNotice>
             Without a license, existing users keep signing in. You can disable or remove connections and mappings, not add them.
-          </p>
+          </FrozenNotice>
         )}
         <DataTable
           label="Connections"
@@ -128,6 +120,8 @@ export function SsoPage() {
           getRowId={(c) => String(c.id)}
           empty="No connections yet."
           initialSorting={[{ id: "name", desc: false }]}
+          phoneColumns={["name", "enabled", "open"]}
+          rowMenu={{ label: (c) => c.name, items: menu }}
         />
         <PasswordLoginSetting frozen={frozen} />
       </div>
@@ -137,6 +131,24 @@ export function SsoPage() {
       {dialog?.kind === "edit" && <ConnectionDialog conn={dialog.conn} onClose={close} onDone={refresh} />}
       {dialog?.kind === "mappings" && <MappingsDialog conn={dialog.conn} frozen={frozen} onClose={close} />}
       {dialog?.kind === "test" && <TestDialog conn={dialog.conn} onClose={close} />}
+      {dialog?.kind === "disable" && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && close()}
+          title={`Disable ${dialog.conn.name}?`}
+          description={
+            dialog.conn.user_count > 0
+              ? `Its ${dialog.conn.user_count} ${dialog.conn.user_count === 1 ? "user can't" : "users can't"} sign in until it's enabled again.${frozen ? " Without a license it can't be enabled again." : ""}`
+              : "Nobody can sign in through it until it's enabled again."
+          }
+          confirmLabel="Disable"
+          onConfirm={async () => {
+            const c = await updateConnection(dialog.conn.id, { enabled: false });
+            toast.success(`${c.name} disabled`);
+            await refresh();
+          }}
+        />
+      )}
       {dialog?.kind === "delete" && (
         <ConfirmDialog
           open
@@ -144,7 +156,7 @@ export function SsoPage() {
           title={`Delete ${dialog.conn.name}?`}
           description={
             dialog.conn.user_count > 0
-              ? `Its ${dialog.conn.user_count} user(s) are logged out and lose the teams their groups gave them. Their accounts stay, but can't sign in; delete them on the Users page.`
+              ? `${dialog.conn.user_count === 1 ? "Its 1 user is" : `Its ${dialog.conn.user_count} users are`} logged out and lose the teams their groups gave them. Their accounts stay, but can't sign in; delete them on the Users page.`
               : "Nobody has signed in through it yet."
           }
           confirmLabel="Delete"
@@ -457,7 +469,7 @@ export function MappingsDialog({ conn, frozen, onClose }: { conn: SsoConnection;
     },
     meta: { inline: true },
   });
-  const remove = useMutation({ mutationFn: (id: number) => deleteMapping(conn.id, id), onSuccess: refresh });
+  const [removing, setRemoving] = useState<SsoMapping | null>(null);
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
@@ -508,13 +520,26 @@ export function MappingsDialog({ conn, frozen, onClose }: { conn: SsoConnection;
               <span>
                 <code>{m.group}</code> → {m.admin ? "FleetOps admin" : `team ${m.team_name}`}
               </span>
-              <Button variant="outline" size="sm" aria-label={`Remove ${m.group}`} disabled={remove.isPending} onClick={() => remove.mutate(m.id)}>
+              <Button variant="outline" size="sm" aria-label={`Remove ${m.group}`} onClick={() => setRemoving(m)}>
                 Remove
               </Button>
             </li>
           ))}
         </ul>
       </DialogContent>
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title={`Remove the ${removing?.group} mapping?`}
+        description={
+          (removing?.admin
+            ? `Members of ${removing?.group} stop being FleetOps admins now, unless another mapping or an admin made them one.`
+            : `Members of ${removing?.group} leave team ${removing?.team_name} now, and lose its environment access.`) +
+          (frozen ? " Without a license the mapping can't be added back." : "")
+        }
+        confirmLabel="Remove mapping"
+        onConfirm={() => deleteMapping(conn.id, removing!.id).then(refresh)}
+      />
     </Dialog>
   );
 }

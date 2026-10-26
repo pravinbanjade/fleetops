@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { KeyRound, ShieldCheck, Trash2, UserCheck, UserCog, UserX } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { keys, usersQuery } from "@/api/queries";
@@ -8,16 +9,23 @@ import { useSession } from "@/auth/session";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
+import { QuickButtons, type QuickItem } from "@/components/RowMenu";
+import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { toastError } from "@/lib/errors";
 import { formatTime } from "@/lib/format";
-import { AccessDialog } from "./AccessDialog";
+import { AccessDialog, BulkAccessDialog } from "./AccessDialog";
 import { FormDialog } from "./FormDialog";
 import { UserAvatar } from "@/components/UserAvatar";
 
-type Dialog = { kind: "add" } | { kind: "password" | "role" | "delete" | "access"; user: User } | null;
+type Dialog =
+  | { kind: "add" }
+  | { kind: "password" | "role" | "delete" | "access" | "disable"; user: User }
+  | { kind: "bulk"; users: User[] }
+  | null;
 
 const col = columns<User>();
 
@@ -36,6 +44,11 @@ export function UsersPage() {
           <UserAvatar name={c.getValue()} />
           {c.getValue()}
           {c.row.original.id === me.id && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+          {c.row.original.disabled_at != null && (
+            <span title={`Disabled ${formatTime(c.row.original.disabled_at)}`}>
+              <StateBadge state="disabled" tone="fail" />
+            </span>
+          )}
           {c.row.original.sso && (
             <span className="rounded border px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
               Signed in with {c.row.original.sso}
@@ -44,37 +57,60 @@ export function UsersPage() {
         </span>
       ),
     }),
-    col.accessor("role", { header: "Role" }),
+    col.accessor("role", { header: "Role", cell: (c) => (c.getValue() === "admin" ? "Admin" : "User") }),
     col.accessor("created_at", { header: "Created", cell: (c) => formatTime(c.getValue()) }),
     col.display({
-      id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
-      cell: (c) => (
-        <span className="flex justify-end gap-2">
-          {c.row.original.role !== "admin" && (
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "access", user: c.row.original })}>
-              Access
-            </Button>
-          )}
-          {c.row.original.sso ? (
-            <span className="self-center text-xs text-muted-foreground">Role managed by single sign-on</span>
-          ) : (
-            <>
-              <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "role", user: c.row.original })}>
-                Change role
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "password", user: c.row.original })}>
-                Reset password
-              </Button>
-            </>
-          )}
-          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "delete", user: c.row.original })}>
-            Delete
+      id: "access",
+      header: () => <span className="sr-only">Access</span>,
+      cell: (c) =>
+        c.row.original.role === "admin" ? (
+          <span className="text-xs text-muted-foreground">Every environment</span>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "access", user: c.row.original })}>
+            <ShieldCheck aria-hidden />
+            Access
           </Button>
-        </span>
-      ),
+        ),
     }),
   ]);
+  /** What can be done to one user, from its ⋮ menu; SSO users' role and password belong to the provider. */
+  const menu = (u: User): QuickItem[] => [
+    ...(u.sso
+      ? []
+      : [
+          { id: "role", label: "Change role", icon: UserCog, onSelect: () => setDialog({ kind: "role", user: u }) },
+          { id: "password", label: "Reset password", icon: KeyRound, onSelect: () => setDialog({ kind: "password", user: u }) },
+        ]),
+    ...(u.id === me.id
+      ? []
+      : u.disabled_at != null
+        ? [{ id: "enable", label: "Enable", icon: UserCheck, onSelect: () => void enable(u) }]
+        : [{ id: "disable", label: "Disable and sign out", icon: UserX, danger: true, onSelect: () => setDialog({ kind: "disable", user: u }) }]),
+    { id: "delete", label: "Delete", icon: Trash2, danger: true, onSelect: () => setDialog({ kind: "delete", user: u }) },
+  ];
+  const enable = async (u: User) => {
+    try {
+      await updateUser({ path: { id: u.id }, body: { disabled: false }, throwOnError: true });
+      toast.success(`${u.username} can sign in again`);
+      await refresh();
+    } catch (e) {
+      toastError(e);
+    }
+  };
+  /** The selection bar: access for the users who aren't admins (admins have it everywhere). */
+  const bulk = (selected: User[]): QuickItem[] => {
+    const users = selected.filter((u) => u.role !== "admin");
+    return [
+      {
+        id: "access",
+        label: "Access",
+        icon: ShieldCheck,
+        count: users.length,
+        disabled: users.length === 0,
+        onSelect: () => setDialog({ kind: "bulk", users }),
+      },
+    ];
+  };
   return (
     <Page title="Users" actions={<Button onClick={() => setDialog({ kind: "add" })}>Add user</Button>}>
       <DataTable
@@ -85,11 +121,30 @@ export function UsersPage() {
         getRowId={(u) => String(u.id)}
         empty="No users."
         initialSorting={[{ id: "username", desc: false }]}
+        phoneColumns={["username", "access"]}
+        selectable
+        actions={(selected) => <QuickButtons items={bulk(selected)} />}
+        rowMenu={{ label: (u) => u.username, items: menu }}
       />
+      {dialog?.kind === "bulk" && <BulkAccessDialog users={dialog.users} onClose={close} />}
       {dialog?.kind === "add" && <AddUser onClose={close} onDone={refresh} />}
       {dialog?.kind === "access" && <AccessDialog user={dialog.user} onClose={close} />}
-      {dialog?.kind === "role" && <ChangeRole user={dialog.user} onClose={close} onDone={refresh} />}
+      {dialog?.kind === "role" && <ChangeRole user={dialog.user} self={dialog.user.id === me.id} onClose={close} onDone={refresh} />}
       {dialog?.kind === "password" && <ResetPassword user={dialog.user} self={dialog.user.id === me.id} onClose={close} />}
+      {dialog?.kind === "disable" && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && close()}
+          title={`Disable ${dialog.user.username}?`}
+          description="They're signed out everywhere now, and can't sign in with a password, a directory or single sign-on until you enable the account again. Their access, teams and audit history are kept."
+          confirmLabel="Disable and sign out"
+          onConfirm={async () => {
+            await updateUser({ path: { id: dialog.user.id }, body: { disabled: true }, throwOnError: true });
+            toast.success(`${dialog.user.username} is disabled and signed out`);
+            await refresh();
+          }}
+        />
+      )}
       {dialog?.kind === "delete" && (
         <ConfirmDialog
           open
@@ -147,19 +202,36 @@ function AddUser({ onClose, onDone }: { onClose: () => void; onDone: () => Promi
   );
 }
 
-function ChangeRole({ user, onClose, onDone }: { user: User; onClose: () => void; onDone: () => Promise<unknown> }) {
+function ChangeRole({
+  user,
+  self,
+  onClose,
+  onDone,
+}: {
+  user: User;
+  self: boolean;
+  onClose: () => void;
+  onDone: () => Promise<unknown>;
+}) {
   const [role, setRole] = useState<Role>(user.role);
+  const demotingSelf = self && user.role === "admin" && role !== "admin";
   return (
     <FormDialog
       title={`Change role of ${user.username}`}
-      submitLabel="Save"
+      submitLabel={demotingSelf ? "Give up admin" : "Save"}
       onClose={onClose}
       onSubmit={async () => {
         await updateUser({ path: { id: user.id }, body: { role } });
         await onDone();
+        if (role !== user.role) toast.success(`${user.username} is now ${role === "admin" ? "an admin" : "a user"}`);
       }}
     >
       <RoleSelect value={role} onChange={setRole} />
+      {demotingSelf && (
+        <p role="alert" className="text-sm text-state-fail-text">
+          You lose access to Admin as soon as you save. Only another admin can give it back.
+        </p>
+      )}
     </FormDialog>
   );
 }
@@ -199,8 +271,8 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
     <div className="grid gap-2">
       <Label htmlFor="user-role">Role</Label>
       <NativeSelect id="user-role" value={value} onChange={(e) => onChange(e.target.value as Role)}>
-        <option value="user">user: works in the environments granted under Access</option>
-        <option value="admin">admin: also manages users and environments</option>
+        <option value="user">User: works in the environments granted under Access</option>
+        <option value="admin">Admin: also manages users and environments</option>
       </NativeSelect>
     </div>
   );

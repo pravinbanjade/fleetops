@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { User } from "@/api/gen/types.gen";
 import { mockFetch } from "@/test/fetch";
-import { ADMIN, loggedIn, renderApp } from "@/test/app";
+import { ADMIN, loggedIn, renderApp, openRowMenu, pickRowMenu } from "@/test/app";
 import type { TeamDetail, TeamSummary } from "./teams";
 
 const BOB: User = { id: 2, username: "bob", role: "user", created_at: 0, updated_at: 0 };
@@ -79,7 +79,8 @@ describe("teams", () => {
     expect(screen.getByRole("link", { name: "Manage license" })).toHaveAttribute("href", "/admin/license");
     expect(screen.getByRole("button", { name: "New team" })).toBeDisabled();
     await waitFor(() => expect(row(screen, "ops")).toBeTruthy());
-    expect(within(row(screen, "ops")).getByRole("button", { name: "Rename" })).toBeDisabled();
+    expect(within(await openRowMenu("ops")).getByRole("menuitem", { name: "Rename" })).toHaveAttribute("aria-disabled", "true");
+    await userEvent.keyboard("{Escape}");
     await userEvent.click(within(row(screen, "ops")).getByRole("button", { name: "Members" }));
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByText("bob");
@@ -91,7 +92,7 @@ describe("teams", () => {
     mockFetch(routes([]));
     const { screen } = renderApp("/admin/teams");
     await waitFor(() => expect(row(screen, "ops")).toBeTruthy());
-    await userEvent.click(within(row(screen, "ops")).getByRole("button", { name: "Access" }));
+    await pickRowMenu("ops", "Environment access");
     const dialog = await screen.findByRole("dialog");
     const role = await within(dialog).findByLabelText("Role on local");
     await waitFor(() => expect(role).toHaveValue("viewer"));

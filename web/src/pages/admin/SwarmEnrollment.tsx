@@ -4,9 +4,9 @@ import { toast } from "sonner";
 import { finishSwarmRotation } from "@/api/gen/sdk.gen";
 import { keys } from "@/api/queries";
 import type { SwarmEnrollment as Enrollment } from "@/api/gen/types.gen";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { errorMessage } from "@/lib/errors";
 
 const copy = async (text: string) => {
   await navigator.clipboard.writeText(text);
@@ -40,18 +40,20 @@ export function SwarmEnrollment({
   const qc = useQueryClient();
   const [inside, setInside] = useState(false);
   const stack = (inside && enrollment.inside) || enrollment.outside;
+  const [finishing, setFinishing] = useState(false);
   const finish = async () => {
-    try {
-      await finishSwarmRotation({ path: { env }, throwOnError: true });
-      toast.success("Rotation finished: the old key no longer works");
-      await qc.invalidateQueries({ queryKey: keys.envs });
-    } catch (e) {
-      toast.error(errorMessage(e));
-    }
+    await finishSwarmRotation({ path: { env }, throwOnError: true });
+    toast.success("Rotation finished: the old key no longer works");
+    await qc.invalidateQueries({ queryKey: keys.envs });
   };
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      {/* The key is shown once: only Done closes it, never a stray click or Esc. */}
+      <DialogContent
+        className="sm:max-w-2xl"
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>Start the agents on {env}</DialogTitle>
           <DialogDescription>The key is shown once. FleetOps keeps only a hash of it.</DialogDescription>
@@ -102,13 +104,21 @@ export function SwarmEnrollment({
         )}
         <DialogFooter>
           {rotated && (
-            <Button variant="outline" onClick={() => void finish()}>
+            <Button variant="outline" onClick={() => setFinishing(true)}>
               Finish rotation
             </Button>
           )}
           <Button onClick={onClose}>Done</Button>
         </DialogFooter>
       </DialogContent>
+      <ConfirmDialog
+        open={finishing}
+        onOpenChange={setFinishing}
+        title="Finish the rotation?"
+        description="The old key stops working now. Agents on nodes still using it disconnect until they run with the new secret."
+        confirmLabel="Finish rotation"
+        onConfirm={finish}
+      />
     </Dialog>
   );
 }

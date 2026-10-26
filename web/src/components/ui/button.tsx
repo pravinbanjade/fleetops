@@ -8,7 +8,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.18),0_1px_2px_oklch(0_0_0/0.2)] hover:bg-primary/88",
+        // Disabled, the cord colour at half opacity reads as a washed-out tan with
+        // unreadable text; a neutral wash keeps the label legible in both themes.
+        default:
+          "bg-primary text-primary-foreground shadow-[inset_0_1px_0_oklch(1_0_0/0.18),0_1px_2px_oklch(0_0_0/0.2)] hover:bg-primary/88 disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100 disabled:shadow-none",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive dark:text-[oklch(0.15_0.04_25)] dark:focus-visible:ring-destructive",
         outline:

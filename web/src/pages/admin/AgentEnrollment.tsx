@@ -28,7 +28,8 @@ export function AgentEnrollment({
   };
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      {/* The command is shown once: only Done closes it, never a stray click or Esc. */}
+      <DialogContent onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{kube ? "Run this against the cluster" : "Run this on the remote host"}</DialogTitle>
           <DialogDescription>

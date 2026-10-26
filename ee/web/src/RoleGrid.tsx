@@ -66,7 +66,7 @@ export function RoleGrid({
           {GROUPS.map(([group, label]) => (
             <tbody key={group}>
               <tr>
-                <th colSpan={catalog.verbs.length + 1} className="bg-muted/20 px-3 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <th colSpan={catalog.verbs.length + 1} className="bg-muted/20 px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground">
                   {label}
                 </th>
               </tr>

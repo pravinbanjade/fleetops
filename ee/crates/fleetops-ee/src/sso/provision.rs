@@ -29,6 +29,8 @@ pub enum Refusal {
     SeatLimit,
     Unlicensed,
     Disabled,
+    /// The account exists, but an admin disabled it.
+    AccountDisabled,
     Invalid,
 }
 
@@ -40,6 +42,7 @@ impl Refusal {
             Refusal::SeatLimit => "seat_limit",
             Refusal::Unlicensed => "unlicensed",
             Refusal::Disabled => "disabled",
+            Refusal::AccountDisabled => "account_disabled",
             Refusal::Invalid => "invalid",
         }
     }

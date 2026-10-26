@@ -24,13 +24,13 @@ import { cn } from "@/lib/utils";
 import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { CommandPalette, typing } from "./CommandPalette";
 import { useWalkKeys } from "./walk";
-import { ADMIN_NAV, KUBE_SIDEBAR, NAV, NODE_NAV, SWARM_NAV, isGroup, kubeGroupOf, navHref, navOf, type NavItem } from "./nav";
+import { KUBE_SIDEBAR, NAV, NODE_NAV, SWARM_NAV, isGroup, kubeGroupOf, navHref, navOf, type NavItem } from "./nav";
 import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
 import { CustomResourcesNav } from "@/pages/kube/generic/CustomResourcesNav";
 import { LINK, useGroupToggles } from "./sidebar";
 import { TopBarSlot } from "./topBarSlot";
-import { ee, Slot, useEeAdminNav } from "@/ee-slots";
+import { ee, Slot, useAdminNav } from "@/ee-slots";
 
 export function Shell() {
   const { env } = useParams({ strict: false });
@@ -201,22 +201,21 @@ function AdminNav() {
   // Read without `useSession`: the shell re-renders on navigation, and a
   // lost session clears the cache just before the move to login.
   const { data } = useQuery(meQuery);
-  const eeNav = useEeAdminNav();
+  const groups = useAdminNav();
   if (data?.user.role !== "admin") return null;
+  // People, then environments, then records, then the license: groups by proximity, not headings.
   return (
-    <nav className="grid gap-0.5" aria-label="Administration">
-      <div className="px-2 pb-1 text-xs font-medium text-muted-foreground">Administration</div>
-      {ADMIN_NAV.map(({ to, label, icon: Icon }) => (
-        <Link key={to} to={to} className={LINK}>
-          <Icon className="size-4 shrink-0" strokeWidth={1.75} />
-          {label}
-        </Link>
-      ))}
-      {eeNav.map(({ to, label, icon: Icon }) => (
-        <Link key={to} to={to as never} className={LINK}>
-          <Icon className="size-4 shrink-0" strokeWidth={1.75} />
-          {label}
-        </Link>
+    <nav className="grid gap-2" aria-label="Administration">
+      <div className="px-2 text-xs font-medium text-muted-foreground">Administration</div>
+      {groups.map(({ group, items }) => (
+        <div key={group} className="grid gap-0.5">
+          {items.map(({ to, label, icon: Icon }) => (
+            <Link key={to} to={to as never} className={LINK}>
+              <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+              {label}
+            </Link>
+          ))}
+        </div>
       ))}
     </nav>
   );
@@ -274,9 +273,10 @@ function TopBar({
 }) {
   const { pathname } = useLocation();
   const items = navOf(family);
+  const admin = useAdminNav().flatMap((g) => g.items);
   const section =
     [...items].reverse().find((n) => env && pathname.startsWith(navHref(n, env))) ??
-    ADMIN_NAV.find((n) => pathname.startsWith(n.to));
+    admin.find((n) => pathname.startsWith(n.to));
   const SectionIcon = section?.icon;
   const group = family === "kube" && section && "kind" in section ? kubeGroupOf(section) : undefined;
   return (

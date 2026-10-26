@@ -1,15 +1,17 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Copy, Eye, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
+import type { QuickItem } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useFeatures } from "@/ee-slots";
+import { FrozenNotice } from "./FrozenNotice";
 import { FormDialog } from "@/pages/admin/FormDialog";
 import { RoleGrid } from "./RoleGrid";
 import { builtinPermissions, catalogQuery, createRole, deleteRole, roleKeys, rolesQuery, updateRole, type Catalog, type RoleSummary } from "./roles";
@@ -53,35 +55,32 @@ export function RolesPage() {
     col.accessor("users", { header: "Users", cell: (c) => (c.row.original.builtin ? "" : c.getValue()) }),
     col.accessor("teams", { header: "Teams", cell: (c) => (c.row.original.builtin ? "" : c.getValue()) }),
     col.display({
-      id: "actions",
-      header: () => <span className="sr-only">Actions</span>,
+      id: "open",
+      header: () => <span className="sr-only">Permissions</span>,
       cell: (c) => {
         const r = c.row.original;
-        if (r.builtin) {
-          return (
-            <span className="flex justify-end">
-              <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "builtin", role: r.builtin! })}>
-                View
-              </Button>
-            </span>
-          );
-        }
-        return (
-          <span className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "edit", role: r })}>
-              Edit
-            </Button>
-            <Button variant="outline" size="sm" disabled={frozen} onClick={() => setDialog({ kind: "new", from: r })}>
-              Duplicate
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "delete", role: r })}>
-              Delete
-            </Button>
-          </span>
+        return r.builtin ? (
+          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "builtin", role: r.builtin! })}>
+            <Eye aria-hidden />
+            View
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setDialog({ kind: "edit", role: r })}>
+            <Pencil aria-hidden />
+            Edit
+          </Button>
         );
       },
     }),
   ];
+  // Built-ins are fixed: they have no menu.
+  const menu = (r: ListRow): QuickItem[] =>
+    r.builtin
+      ? []
+      : [
+          { id: "duplicate", label: "Duplicate", icon: Copy, disabled: frozen, onSelect: () => setDialog({ kind: "new", from: r }) },
+          { id: "delete", label: "Delete", icon: Trash2, danger: true, onSelect: () => setDialog({ kind: "delete", role: r }) },
+        ];
   const doomed = dialog?.kind === "delete" ? dialog.role : null;
   return (
     <Page
@@ -94,12 +93,7 @@ export function RolesPage() {
       }
     >
       {frozen && (
-        <div role="status" className="mb-4 rounded-md border bg-muted/50 px-4 py-2 text-sm">
-          Roles are read-only until a license is installed. People keep their access.{" "}
-          <Link to={"/admin/license" as never} className="font-medium underline underline-offset-2">
-            Manage license
-          </Link>
-        </div>
+        <FrozenNotice>Roles are read-only until a license is installed. People keep their access.</FrozenNotice>
       )}
       <DataTable
         label="Roles"
@@ -108,6 +102,8 @@ export function RolesPage() {
         columns={cols}
         getRowId={(r) => String(r.id)}
         empty="No roles yet."
+        phoneColumns={["name", "open"]}
+        rowMenu={{ label: (r) => r.name, items: menu }}
       />
       {catalog.data && dialog?.kind === "new" && <RoleForm catalog={catalog.data} from={dialog.from} frozen={frozen} onClose={close} onDone={refresh} />}
       {catalog.data && dialog?.kind === "edit" && <RoleForm catalog={catalog.data} role={dialog.role} frozen={frozen} onClose={close} onDone={refresh} />}

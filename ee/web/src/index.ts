@@ -35,10 +35,10 @@ export const ee: EeModule = {
   ],
   // Teams, Roles and SSO show without a license too: frozen ones stay visible and removable.
   adminNav: [
-    { to: "/admin/teams", label: "Teams", icon: UsersRound },
-    { to: "/admin/roles", label: "Roles", icon: ShieldCheck },
-    { to: "/admin/sso", label: "Single sign-on", icon: LogIn },
-    { to: "/admin/license", label: "License", icon: KeyRound },
+    { to: "/admin/teams", label: "Teams", icon: UsersRound, group: "people" },
+    { to: "/admin/roles", label: "Roles", icon: ShieldCheck, group: "people" },
+    { to: "/admin/sso", label: "Single sign-on", icon: LogIn, group: "people" },
+    { to: "/admin/license", label: "License", icon: KeyRound, group: "license" },
   ],
   slots: {
     "shell.banner": { component: EeBanners },

@@ -110,6 +110,18 @@ impl Idp {
             .await;
     }
 
+    /// Like `answer_token`, but for one exchange only, so a later
+    /// `answer_token` in the same test is the one that answers next.
+    pub async fn answer_token_once(&self, id_token: String) {
+        let body = json!({"access_token": "access-1", "token_type": "Bearer", "expires_in": 300, "id_token": id_token});
+        Mock::given(method("POST"))
+            .and(path("/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .up_to_n_times(1)
+            .mount(&self.server)
+            .await;
+    }
+
     /// GET `p` answers `body`.
     pub async fn json(&self, p: &str, body: Value) {
         Mock::given(method("GET"))

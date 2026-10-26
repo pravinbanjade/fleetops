@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useState } from "react";
 import type { AccessEntry, EnvRole, EnvView, SetAccess } from "@/api/gen/types.gen";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useRoleOptions } from "@/ee-slots";
@@ -84,11 +85,10 @@ export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; 
       {(kube || swarm) && row.role !== "none" && (
         <>
           <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={row.namespaces === null}
               disabled={listOnly && row.namespaces !== null}
-              onChange={(e) => onChange({ ...row, namespaces: e.target.checked ? null : [] })}
+              onCheckedChange={(v) => onChange({ ...row, namespaces: v === true ? null : [] })}
             />
             {scope.all}
           </label>
@@ -98,8 +98,13 @@ export function EnvRow({ env, row, onChange, limit }: { env: EnvView; row: Row; 
                 {row.namespaces.map((n) => (
                   <span key={n} className="flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs">
                     {n}
-                    <button type="button" aria-label={`Remove ${n}`} onClick={() => onChange({ ...row, namespaces: row.namespaces!.filter((x) => x !== n) })}>
-                      <X className="size-3" />
+                    <button
+                      type="button"
+                      aria-label={`Remove ${n}`}
+                      className="-my-1 -mr-1.5 grid size-6 place-items-center rounded-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      onClick={() => onChange({ ...row, namespaces: row.namespaces!.filter((x) => x !== n) })}
+                    >
+                      <X aria-hidden className="size-3" />
                     </button>
                   </span>
                 ))}

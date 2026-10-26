@@ -36,7 +36,7 @@ describe("backup page", () => {
     });
     const { screen } = renderApp("/admin/backup");
     const user = await openBackup(screen);
-    const restore = await screen.findByRole("button", { name: "Restore" });
+    const restore = await screen.findByRole("button", { name: "Replace this server with the backup" });
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(restore).toBeDisabled();
     await user.type(screen.getByLabelText("Type RESTORE to confirm"), "restore");
@@ -67,7 +67,7 @@ describe("backup page", () => {
     mockFetch({ ...loggedIn, "POST /api/v1/backup/stage": { json: STAGED } });
     const { screen } = renderApp("/admin/backup");
     await openBackup(screen);
-    await screen.findByRole("button", { name: "Restore" });
+    await screen.findByRole("button", { name: "Replace this server with the backup" });
     const warning = screen.queryByText(/Community keeps it but doesn't use it/);
     if (isEnterpriseBuild) expect(warning).toBeNull();
     else expect(warning).toBeInTheDocument();

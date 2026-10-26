@@ -163,6 +163,7 @@ mod tests {
             created_at: 0,
             updated_at: 0,
             sso: None,
+            disabled_at: None,
         }
     }
 

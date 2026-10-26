@@ -3,7 +3,8 @@ import { createElement } from "react";
 import { ee } from "@ee";
 import type { Feature } from "@/api/gen/types.gen";
 import { editionQuery } from "@/api/queries";
-import type { EeNavItem, EeSlot, RoleOption, SlotName, SlotProps } from "./ee-contract";
+import { ADMIN_NAV } from "./components/nav";
+import { ADMIN_GROUPS, type AdminGroup, type EeNavItem, type EeSlot, type RoleOption, type SlotName, type SlotProps } from "./ee-contract";
 
 // The only module that imports `@ee` (scripts/check-editions.sh).
 
@@ -37,4 +38,10 @@ export function useRoleOptions(): RoleOption[] {
 export function useEeAdminNav(): EeNavItem[] {
   const features = useFeatures();
   return ee.adminNav.filter((n) => allowed(features, n.feature));
+}
+
+/** Every admin page, Community and Enterprise, grouped in nav order. */
+export function useAdminNav(): { group: AdminGroup; items: EeNavItem[] }[] {
+  const all: EeNavItem[] = [...ADMIN_NAV, ...useEeAdminNav()];
+  return ADMIN_GROUPS.map((group) => ({ group, items: all.filter((n) => n.group === group) })).filter((g) => g.items.length);
 }

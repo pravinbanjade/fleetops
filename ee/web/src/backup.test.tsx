@@ -84,7 +84,7 @@ describe("schedule", () => {
   it("unlicensed shows only disable and remove", async () => {
     mockFetch(page(status({ licensed: false, paused: true })));
     const { screen } = renderApp("/admin/backup");
-    expect(await screen.findByText("Scheduled backups need an Enterprise license.")).toBeInTheDocument();
+    expect(await screen.findByText(/Scheduled backups need a license/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Turn off scheduled backups" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Run now" })).toBeNull();

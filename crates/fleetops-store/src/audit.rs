@@ -67,8 +67,33 @@ impl TryFrom<AuditRow> for AuditEntry {
     }
 }
 
+/// Which audit entries a list keeps; every field left out keeps all.
+#[derive(Debug, Clone, Default)]
+pub struct AuditFilter {
+    pub user_id: Option<i64>,
+    /// An action, or a prefix of one ending in `.` (`container.` keeps every container action).
+    pub action: Option<String>,
+    pub environment_id: Option<i64>,
+    /// Unix seconds, inclusive.
+    pub since: Option<i64>,
+    /// Only entries whose result is not `success`.
+    pub failed: bool,
+}
+
 impl Store {
+    /// The id of every audit entry written from now on; a slow reader skips ahead.
+    pub fn audit_feed(&self) -> tokio::sync::broadcast::Receiver<i64> {
+        self.audit_tx.subscribe()
+    }
+
     pub async fn insert_audit(&self, a: &NewAudit<'_>) -> Result<i64> {
+        let id = self.insert_audit_row(a).await?;
+        // Nobody listening is not an error.
+        let _ = self.audit_tx.send(id);
+        Ok(id)
+    }
+
+    async fn insert_audit_row(&self, a: &NewAudit<'_>) -> Result<i64> {
         sqlx::query_scalar(
             "INSERT INTO audit_log (ts, user_id, environment_id, action, target_type, target_id, result, detail)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
@@ -87,15 +112,49 @@ impl Store {
     }
 
     pub async fn list_audit(&self, limit: i64, before_id: Option<i64>) -> Result<Vec<AuditEntry>> {
+        self.list_audit_filtered(limit, before_id, &AuditFilter::default())
+            .await
+    }
+
+    /// Newest first, below `before_id`, keeping only what `f` matches.
+    pub async fn list_audit_filtered(
+        &self,
+        limit: i64,
+        before_id: Option<i64>,
+        f: &AuditFilter,
+    ) -> Result<Vec<AuditEntry>> {
+        // A prefix ends in `.`; otherwise the action must match exactly.
+        let (exact, prefix) = match f.action.as_deref() {
+            Some(a) if a.ends_with('.') => (None, Some(format!("{}%", a.replace(['%', '_'], "")))),
+            Some(a) => (Some(a.to_string()), None),
+            None => (None, None),
+        };
         let rows: Vec<AuditRow> = sqlx::query_as(
             "SELECT a.id, a.ts, a.user_id, u.username, a.environment_id, a.action,
                     a.target_type, a.target_id, a.result, a.detail
              FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
              WHERE (? IS NULL OR a.id < ?)
+               AND (? IS NULL OR a.user_id = ?)
+               AND (? IS NULL OR a.action = ?)
+               AND (? IS NULL OR a.action LIKE ?)
+               AND (? IS NULL OR a.environment_id = ?)
+               AND (? IS NULL OR a.ts >= ?)
+               AND (? = 0 OR a.result <> 'success')
              ORDER BY a.id DESC LIMIT ?",
         )
         .bind(before_id)
         .bind(before_id)
+        .bind(f.user_id)
+        .bind(f.user_id)
+        .bind(&exact)
+        .bind(&exact)
+        .bind(&prefix)
+        .bind(&prefix)
+        .bind(f.environment_id)
+        .bind(f.environment_id)
+        .bind(f.since)
+        .bind(f.since)
+        .bind(f.failed)
         .bind(limit)
         .fetch_all(&self.pool)
         .await

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { User } from "@/api/gen/types.gen";
 import { isEnterpriseBuild } from "@/ee-slots";
 import { json, mockFetch } from "@/test/fetch";
-import { ADMIN, ENVS, KUBE_ENV, loggedIn, renderApp } from "@/test/app";
+import { ADMIN, ENVS, KUBE_ENV, loggedIn, openRowMenu, pickRowMenu, renderApp } from "@/test/app";
 
 const BOB: User = { id: 2, username: "bob", role: "user", created_at: 1_790_000_000, updated_at: 0 };
 const routes = { ...loggedIn, "GET /api/v1/users": { json: [ADMIN.user, BOB] } };
@@ -35,17 +35,17 @@ describe("users", () => {
     mockFetch({ ...routes, "GET /api/v1/users": { json: [ADMIN.user, { ...BOB, sso: "Acme Okta" }] } });
     const { screen } = renderApp("/admin/users");
     await waitFor(() => expect(row(screen, "bob")).toHaveTextContent("Signed in with Acme Okta"));
-    expect(within(row(screen, "bob")).queryByRole("button", { name: "Change role" })).toBeNull();
-    expect(within(row(screen, "bob")).queryByRole("button", { name: "Reset password" })).toBeNull();
-    expect(row(screen, "bob")).toHaveTextContent("Role managed by single sign-on");
-    expect(within(row(screen, "admin")).getByRole("button", { name: "Change role" })).toBeInTheDocument();
+    const items = async (name: string) => within(await openRowMenu(name)).getAllByRole("menuitem").map((m) => m.textContent);
+    expect(await items("bob")).toEqual(["Disable and sign out", "Delete"]);
+    await userEvent.keyboard("{Escape}");
+    expect(await items("admin")).toEqual(["Change role", "Reset password", "Delete"]);
   });
 
   it("lists users and marks the current one", async () => {
     mockFetch(routes);
     const { screen } = renderApp("/admin/users");
     await waitFor(() => expect(row(screen, "admin")).toHaveTextContent("(you)"));
-    expect(row(screen, "bob")).toHaveTextContent("user");
+    expect(row(screen, "bob")).toHaveTextContent("User");
   });
 
   it("adds a user", async () => {
@@ -92,12 +92,12 @@ describe("users", () => {
     const calls = mockFetch({ ...routes, "PATCH /api/v1/users/2": { json: BOB } });
     const { screen } = renderApp("/admin/users");
     await waitFor(() => expect(row(screen, "bob")).toBeTruthy());
-    await userEvent.click(within(row(screen, "bob")).getByRole("button", { name: "Change role" }));
+    await pickRowMenu("bob", "Change role");
     let dialog = await screen.findByRole("dialog");
     await userEvent.selectOptions(within(dialog).getByLabelText("Role"), "admin");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    await userEvent.click(within(row(screen, "bob")).getByRole("button", { name: "Reset password" }));
+    await pickRowMenu("bob", "Reset password");
     dialog = await screen.findByRole("dialog");
     await userEvent.type(within(dialog).getByLabelText("New password"), "another-long-one");
     await userEvent.click(within(dialog).getByRole("button", { name: "Reset password" }));
@@ -108,6 +108,30 @@ describe("users", () => {
     ]);
   });
 
+  it("disables a user after confirming, and enables them again from the menu", async () => {
+    let bob: User = BOB;
+    const calls = mockFetch({
+      ...routes,
+      "GET /api/v1/users": () => json(200, [ADMIN.user, bob]),
+      "PATCH /api/v1/users/2": (c) => {
+        bob = { ...bob, disabled_at: (c.body as { disabled: boolean }).disabled ? 1_790_000_100 : null };
+        return json(200, bob);
+      },
+    });
+    const { screen } = renderApp("/admin/users");
+    await waitFor(() => expect(row(screen, "bob")).toBeTruthy());
+    expect(within(await openRowMenu("admin")).queryByRole("menuitem", { name: "Disable and sign out" })).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    await pickRowMenu("bob", "Disable and sign out");
+    const dialog = await screen.findByRole("dialog", { name: "Disable bob?" });
+    expect(dialog).toHaveTextContent("signed out everywhere");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Disable and sign out" }));
+    await waitFor(() => expect(row(screen, "bob")).toHaveTextContent("disabled"));
+    await pickRowMenu("bob", "Enable");
+    await waitFor(() => expect(row(screen, "bob")).not.toHaveTextContent("disabled"));
+    expect(calls.filter((c) => c.method === "PATCH").map((c) => c.body)).toEqual([{ disabled: true }, { disabled: false }]);
+  });
+
   it("refuses to delete the last admin with the server's reason", async () => {
     mockFetch({
       ...routes,
@@ -115,7 +139,7 @@ describe("users", () => {
     });
     const { screen } = renderApp("/admin/users");
     await waitFor(() => expect(row(screen, "admin")).toBeTruthy());
-    await userEvent.click(within(row(screen, "admin")).getByRole("button", { name: "Delete" }));
+    await pickRowMenu("admin", "Delete");
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("This is your own account");
     await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
@@ -155,7 +179,7 @@ describe("environments", () => {
     const calls = mockFetch({ ...routes, "PATCH /api/v1/envs/local": { json: { ...ENVS[0], name: "laptop" } } });
     const { screen } = renderApp("/admin/envs");
     await waitFor(() => expect(row(screen, "local")).toBeTruthy());
-    await userEvent.click(within(row(screen, "local")).getByRole("button", { name: "Edit" }));
+    await pickRowMenu("local", "Edit");
     const dialog = await screen.findByRole("dialog");
     await userEvent.clear(within(dialog).getByLabelText("Name"));
     await userEvent.type(within(dialog).getByLabelText("Name"), "laptop");
@@ -168,7 +192,7 @@ describe("environments", () => {
     const calls = mockFetch({ ...routes, "DELETE /api/v1/envs/local": { status: 204 } });
     const { screen } = renderApp("/admin/envs");
     await waitFor(() => expect(row(screen, "local")).toBeTruthy());
-    await userEvent.click(within(row(screen, "local")).getByRole("button", { name: "Delete" }));
+    await pickRowMenu("local", "Delete");
     await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
   });
@@ -231,15 +255,16 @@ describe("agent environments", () => {
     await waitFor(() => expect(row(screen, "web-01")).toBeTruthy());
     expect(row(screen, "web-01")).toHaveTextContent("0.2.0");
     expect(row(screen, "web-01")).toHaveTextContent("last seen 10 minutes ago");
-    expect(within(row(screen, "web-01")).getByRole("button", { name: "Rotate key" })).toBeInTheDocument();
-    expect(within(row(screen, "local")).queryByRole("button", { name: "Rotate key" })).not.toBeInTheDocument();
+    expect(within(await openRowMenu("web-01")).getByRole("menuitem", { name: "Rotate key" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(within(await openRowMenu("local")).queryByRole("menuitem", { name: "Rotate key" })).not.toBeInTheDocument();
   });
 
   it("rotating asks first, then shows the new command", async () => {
     const calls = mockFetch({ ...agentRoutes, "POST /api/v1/envs/web-01/agent/rotate": { json: enrollment("fj_new") } });
     const { screen } = renderApp("/admin/envs");
     await waitFor(() => expect(row(screen, "web-01")).toBeTruthy());
-    await userEvent.click(within(row(screen, "web-01")).getByRole("button", { name: "Rotate key" }));
+    await pickRowMenu("web-01", "Rotate key");
     const confirm = await screen.findByRole("dialog");
     expect(confirm).toHaveTextContent(/disconnects the running agent/i);
     await userEvent.click(within(confirm).getByRole("button", { name: "Rotate" }));
@@ -251,7 +276,7 @@ describe("agent environments", () => {
     mockFetch(agentRoutes);
     const { screen } = renderApp("/admin/envs");
     await waitFor(() => expect(row(screen, "web-01")).toBeTruthy());
-    await userEvent.click(within(row(screen, "web-01")).getByRole("button", { name: "Edit" }));
+    await pickRowMenu("web-01", "Edit");
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByLabelText("Docker URL")).not.toBeInTheDocument();
   });
@@ -397,6 +422,29 @@ describe("Kubernetes environments", () => {
 });
 
 describe("access", () => {
+  it("grants one environment to several users at once, naming the ones that failed", async () => {
+    const CAROL: User = { ...BOB, id: 3, username: "carol" };
+    const calls = mockFetch({
+      ...routes,
+      "GET /api/v1/users": { json: [ADMIN.user, BOB, CAROL] },
+      "PUT /api/v1/users/2/access/1": { json: { env_id: 1, env_name: "local", env_kind: "docker-local", role: "operator" } },
+      "PUT /api/v1/users/3/access/1": () => json(403, { code: "forbidden", message: "seat limit reached" }),
+    });
+    const { screen } = renderApp("/admin/users");
+    await waitFor(() => expect(row(screen, "carol")).toBeTruthy());
+    await userEvent.click(within(row(screen, "bob")).getByRole("checkbox"));
+    await userEvent.click(within(row(screen, "carol")).getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "Access 2" }));
+    const dialog = await screen.findByRole("dialog", { name: "Access for 2 users" });
+    await userEvent.selectOptions(await within(dialog).findByLabelText("Role on local"), "operator");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Grant access" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Not saved for carol (seat limit reached). The other 1 saved.");
+    expect(calls.filter((c) => c.method === "PUT").map((c) => c.path)).toEqual([
+      "/api/v1/users/2/access/1",
+      "/api/v1/users/3/access/1",
+    ]);
+  });
+
   it("grants a namespace-limited role from the Access dialog", async () => {
     const calls = mockFetch({
       ...routes,

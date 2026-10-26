@@ -1,21 +1,59 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ExternalLink, FileUp, KeyRound, ReceiptText, ShieldCheck } from "lucide-react";
+import { Check, ExternalLink, Minus, Plus, FileUp, KeyRound, ReceiptText, ShieldCheck } from "lucide-react";
 import { useRef, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { editionQuery } from "@/api/queries";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Page } from "@/components/Page";
 import { Panel } from "@/components/Panel";
 import { StateBadge, type Tone } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { errorMessage } from "@/lib/errors";
 import { formatTime } from "@/lib/format";
+import { FormError } from "@/pages/AuthLayout";
 import { cn } from "@/lib/utils";
-import { GRACE_SECS, licenseQuery, removeLicense, uploadLicense, type LicenseInfo, type LicenseStatus } from "./license";
+import {
+  GRACE_SECS,
+  licenseQuery,
+  peekLicense,
+  removeLicense,
+  uploadLicense,
+  type LicenseInfo,
+  type LicensePeek,
+  type LicenseStatus,
+} from "./license";
 import { PLANS, PRICING_URL, type Plan } from "./plans";
 
 const TONE: Record<LicenseStatus, Tone> = { valid: "run", grace: "wait", expired: "fail", invalid: "fail", none: "idle" };
 
-const FEATURE_NAMES: Record<string, string> = { audit_export: "Audit export", teams: "Teams", rbac: "Custom roles" };
+const FEATURE_NAMES: Record<string, string> = {
+  audit_export: "Audit export",
+  teams: "Teams",
+  rbac: "Custom roles",
+  sso: "Single sign-on",
+  backup: "Scheduled backup",
+};
+
+/** What turns off when the features in `lost` go, in the words an admin acts on. */
+const LOSS: Record<string, string> = {
+  sso: "SSO users can't sign in",
+  teams: "teams become read-only",
+  rbac: "custom roles become read-only",
+  backup: "scheduled backups stop",
+  audit_export: "audit export is unavailable",
+};
+
+function lossLine(lost: string[]): string | null {
+  const parts = lost.map((f) => LOSS[f]).filter(Boolean);
+  if (!parts.length) return null;
+  const text = parts.join(", ");
+  return text[0].toUpperCase() + text.slice(1) + ".";
+}
+
+const limit = (n: number | null) => (n === null ? "unlimited" : String(n));
+const date = (unix: number | null) =>
+  unix ? new Date(unix * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—";
 
 /** "in 12 days", "today", "3 days ago" for a Unix-seconds time. */
 function relDays(unix: number, now: number): string {
@@ -84,10 +122,10 @@ function CurrentLicense({ l }: { l: LicenseInfo }) {
               <dd className="tabular-nums">
                 {l.expires_at ? (
                   <>
-                    <span className="text-lg font-semibold">{new Date(l.expires_at * 1000).toLocaleDateString()}</span>{" "}
-                    <span className="text-xs text-muted-foreground" title={formatTime(l.expires_at)}>
-                      {relDays(l.expires_at, now)}
-                    </span>
+                    <span className="text-lg font-semibold" title={formatTime(l.expires_at)}>
+                      {date(l.expires_at)}
+                    </span>{" "}
+                    <span className="text-xs text-muted-foreground">{relDays(l.expires_at, now)}</span>
                   </>
                 ) : (
                   <span className="text-lg font-semibold">—</span>
@@ -221,6 +259,76 @@ function Plans({ current }: { current: boolean }) {
   );
 }
 
+/** The current license next to the one about to replace it, with features gained and lost. */
+function ReplaceDiff({ from, to }: { from: LicenseInfo; to: LicensePeek }) {
+  const rows: [string, string, string][] = [
+    ["Customer", from.customer ?? "—", to.customer],
+    ["Expires", date(from.expires_at), date(to.expires_at)],
+    ["Nodes", limit(from.max_nodes), limit(to.max_nodes)],
+    ["Users", limit(from.max_users), limit(to.max_users)],
+  ];
+  const gained = to.features.filter((f) => !from.features.includes(f as never));
+  const lost = from.features.filter((f) => !to.features.includes(f));
+  const fewerNodes = to.max_nodes !== null && to.max_nodes < from.nodes_in_use;
+  const loss = lossLine(lost);
+  return (
+    <div className="grid gap-3 text-sm">
+      <table className="w-full tabular-nums">
+        <thead>
+          <tr className="text-left text-xs text-muted-foreground">
+            <th className="py-1 font-medium" scope="col">
+              <span className="sr-only">Field</span>
+            </th>
+            <th className="py-1 font-medium" scope="col">
+              Current
+            </th>
+            <th className="py-1 font-medium" scope="col">
+              New
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([k, a, b]) => (
+            <tr key={k} className="border-t">
+              <th scope="row" className="py-1.5 pr-3 text-left text-xs font-medium text-muted-foreground">
+                {k}
+              </th>
+              <td className="py-1.5 pr-3">{a}</td>
+              <td className={cn("py-1.5", a !== b && "font-semibold")}>{b}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {(gained.length > 0 || lost.length > 0) && (
+        <ul aria-label="Feature changes" className="flex flex-wrap gap-1.5">
+          {gained.map((f) => (
+            <li key={f} className="inline-flex items-center gap-1 rounded-xs border px-1.5 py-0.5 text-xs">
+              <Plus aria-hidden className="size-3 text-state-run-text" />
+              <span className="sr-only">Gains </span>
+              {FEATURE_NAMES[f] ?? f}
+            </li>
+          ))}
+          {lost.map((f) => (
+            <li key={f} className="inline-flex items-center gap-1 rounded-xs border border-state-fail/40 px-1.5 py-0.5 text-xs">
+              <Minus aria-hidden className="size-3 text-state-fail-text" />
+              <span className="sr-only">Loses </span>
+              {FEATURE_NAMES[f] ?? f}
+            </li>
+          ))}
+        </ul>
+      )}
+      {loss && <p className="text-state-fail-text">{loss}</p>}
+      {fewerNodes && (
+        <p className="text-state-fail-text">
+          FleetOps manages {from.nodes_in_use} nodes; the new license covers {to.max_nodes}. New environments can't be added
+          until you remove some.
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">Read from the pasted text; the server checks the signature when you install.</p>
+    </div>
+  );
+}
+
 export function LicensePage() {
   const qc = useQueryClient();
   const license = useQuery(licenseQuery);
@@ -237,15 +345,14 @@ export function LicensePage() {
       setText("");
       done(l, "License installed");
     },
-    onError: (e) => toast.error(e.message),
+    meta: { inline: true },
   });
-  const remove = useMutation({
-    mutationFn: removeLicense,
-    onSuccess: (l) => done(l, "License removed"),
-    onError: (e) => toast.error(e.message),
-  });
+  const [confirm, setConfirm] = useState<"replace" | "remove" | null>(null);
   const l = license.data;
   const active = l?.status === "valid";
+  const replacing = !!l && l.status !== "none";
+  const peek = confirm === "replace" ? peekLicense(text) : null;
+  const removeLoss = lossLine(l?.features ?? []);
   return (
     <Page title="License" meta="Enterprise features are unlocked by a signed license file, checked offline.">
       {l && <CurrentLicense l={l} />}
@@ -257,7 +364,7 @@ export function LicensePage() {
             <input
               ref={fileInput}
               type="file"
-              accept=".lic,text/plain"
+              accept=".license,.lic,text/plain"
               className="hidden"
               onChange={async (e) => {
                 const f = e.target.files?.[0];
@@ -267,7 +374,7 @@ export function LicensePage() {
             />
             <Button type="button" variant="ghost" size="sm" onClick={() => fileInput.current?.click()}>
               <FileUp aria-hidden />
-              Load .lic file
+              Load license file
             </Button>
           </>
         }
@@ -276,7 +383,8 @@ export function LicensePage() {
           className="grid gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            upload.mutate(text.trim());
+            if (replacing) setConfirm("replace");
+            else upload.mutate(text.trim());
           }}
         >
           <label htmlFor="license-text" className="text-sm font-medium">
@@ -288,21 +396,59 @@ export function LicensePage() {
             placeholder="Paste the license you received after purchase"
             className="font-mono text-xs"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              upload.reset();
+            }}
           />
+          <FormError message={upload.error ? errorMessage(upload.error) : null} />
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={!text.trim() || upload.isPending}>
               Install license
             </Button>
             {l?.source === "uploaded" && (
-              <Button type="button" variant="outline" disabled={remove.isPending} onClick={() => remove.mutate()}>
+              <Button type="button" variant="outline" onClick={() => setConfirm("remove")}>
                 Remove license
               </Button>
             )}
           </div>
         </form>
       </Panel>
-      {l && <Plans current={active} />}
+      {l && !active && <Plans current={false} />}
+      {active && (
+        <details className="group">
+          <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">Renew or change plan</summary>
+          <div className="mt-3">
+            <Plans current />
+          </div>
+        </details>
+      )}
+      <ConfirmDialog
+        open={confirm === "replace"}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title="Replace the license?"
+        description={peek ? undefined : "This text doesn't look like a FleetOps license; the server will check it."}
+        confirmLabel="Replace license"
+        destructive={false}
+        onConfirm={() => uploadLicense(text.trim()).then((n) => {
+          setText("");
+          done(n, "License replaced");
+        })}
+      >
+        {peek && l && <ReplaceDiff from={l} to={peek} />}
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={confirm === "remove"}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title="Remove the license?"
+        description={
+          l?.source === "uploaded" && removeLoss
+            ? `Enterprise features turn off for everyone unless the server has a --license-file. ${removeLoss} Your data is kept.`
+            : "Enterprise features turn off for everyone unless the server has a --license-file. Your data is kept."
+        }
+        confirmLabel="Remove license"
+        onConfirm={() => removeLicense().then((n) => done(n, "License removed"))}
+      />
     </Page>
   );
 }

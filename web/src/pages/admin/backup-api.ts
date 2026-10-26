@@ -36,6 +36,28 @@ export async function discardStaged(id: string) {
   await apiRequest(`/api/v1/backup/stage/${id}`, { method: "DELETE" });
 }
 
+const RESTORED = "fleetops-restored";
+
+/** Remembers, for the sign-in page of this tab, when the restored backup was made. */
+export function noteRestored(createdAt: number) {
+  try {
+    sessionStorage.setItem(RESTORED, String(createdAt));
+  } catch {
+    // Without storage the sign-in page just doesn't say.
+  }
+}
+
+/** When the backup restored in this tab was made (Unix seconds), read once; null otherwise. */
+export function takeRestored(): number | null {
+  try {
+    const v = sessionStorage.getItem(RESTORED);
+    sessionStorage.removeItem(RESTORED);
+    return v ? Number(v) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Resolves once the server went away (or 3 s passed) and answers again. */
 export async function waitForRestart(pollMs = 1000) {
   const up = async () => {

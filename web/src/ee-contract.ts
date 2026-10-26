@@ -17,10 +17,15 @@ export interface SlotProps {
 
 export type SlotName = keyof SlotProps;
 
+/** Where an admin page sits in the Administration nav, in this order. */
+export const ADMIN_GROUPS = ["people", "infra", "records", "license"] as const;
+export type AdminGroup = (typeof ADMIN_GROUPS)[number];
+
 export interface EeNavItem {
   to: string;
   label: string;
   icon: LucideIcon;
+  group: AdminGroup;
   /** Hidden unless the license grants it. */
   feature?: Feature;
 }

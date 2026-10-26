@@ -38,10 +38,34 @@ describe("audit log", () => {
     const [exec, create] = rows(screen);
     expect(exec).toHaveTextContent("local");
     expect(within(exec).getByText("failure")).toBeInTheDocument();
-    await userEvent.click(within(exec).getByText("show"));
+    await userEvent.click(within(exec).getByText("Details"));
     expect(exec).toHaveTextContent('"sh"');
     expect(create).toHaveTextContent("user 2");
     expect(screen.queryByRole("button", { name: "Load older entries" })).not.toBeInTheDocument();
+  });
+
+  it("asks the server for the filtered entries", async () => {
+    const calls = mockFetch({ ...loggedIn, "GET /api/v1/audit": { json: [entry(1)] } });
+    const { screen } = renderApp("/admin/audit");
+    await waitFor(() => expect(rows(screen)).toHaveLength(1));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Failures only" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Action" }), "container.");
+    await waitFor(() =>
+      expect(
+        calls.some((c) => {
+          const q = new URL(c.path, "http://x").searchParams;
+          return c.path.startsWith("/api/v1/audit") && q.get("failed") === "true" && q.get("action") === "container.";
+        }),
+      ).toBe(true),
+    );
+    expect(await screen.findByRole("button", { name: "Clear filters" })).toBeInTheDocument();
+  });
+
+  it("links a container target to its page", async () => {
+    mockFetch({ ...loggedIn, "GET /api/v1/audit": { json: [entry(1)] } });
+    const { screen } = renderApp("/admin/audit");
+    const link = await screen.findByRole("link", { name: "container c1" });
+    expect(link).toHaveAttribute("href", "/envs/local/containers/c1");
   });
 
   it("loads older entries a page at a time", async () => {

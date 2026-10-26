@@ -208,6 +208,7 @@ pub async fn members(pool: &SqlitePool, team_id: i64) -> Result<Vec<User>> {
                 created_at,
                 updated_at,
                 sso: None,
+                disabled_at: None,
             })
         })
         .collect()

@@ -2,7 +2,7 @@ import { waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { mockFetch } from "@/test/fetch";
-import { ADMIN, ENVS, loggedIn, renderApp } from "@/test/app";
+import { ADMIN, ENVS, loggedIn, renderApp, pickRowMenu } from "@/test/app";
 
 const SWARM = {
   id: 7,
@@ -105,7 +105,7 @@ describe("Swarm environments", () => {
       return r!;
     });
     expect(row).toHaveTextContent("2 nodes connected");
-    await userEvent.click(within(row).getByRole("button", { name: "Rotate key" }));
+    await pickRowMenu("prod", "Rotate key");
     const confirm = await screen.findByRole("dialog");
     expect(confirm).toHaveTextContent(/keeps working for 24 hours/i);
     await userEvent.click(within(confirm).getByRole("button", { name: "Rotate" }));
@@ -114,6 +114,8 @@ describe("Swarm environments", () => {
     await userEvent.click(within(shown).getByRole("radio", { name: /inside the swarm/i }));
     expect(within(shown).getByText(/fleetops:9443/)).toBeInTheDocument();
     await userEvent.click(within(shown).getByRole("button", { name: "Finish rotation" }));
+    const finish = await screen.findByRole("dialog", { name: "Finish the rotation?" });
+    await userEvent.click(within(finish).getByRole("button", { name: "Finish rotation" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path.endsWith("/swarm/rotate/finish"))).toBe(true));
   });
 });

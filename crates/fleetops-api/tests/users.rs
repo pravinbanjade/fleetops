@@ -275,3 +275,108 @@ async fn audit_lists_admin_actions_with_paging() {
         "auth.setup"
     );
 }
+
+#[tokio::test]
+async fn disabling_signs_out_and_blocks_login_until_enabled() {
+    let app = app().await;
+    let admin = app.setup_admin().await;
+    let r = app.create_user(&admin, "bob", "bob-password", "user").await;
+    let id = r.json["id"].as_i64().unwrap();
+    let bob = session_from(&app.login("bob", "bob-password").await);
+
+    let r = app
+        .send(req(
+            "PATCH",
+            &format!("/api/v1/users/{id}"),
+            Some(json!({"disabled": true})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json);
+    assert!(r.json["disabled_at"].as_i64().is_some());
+
+    // Signed out at once, and the right password no longer gets in.
+    let me = app
+        .send(req("GET", "/api/v1/auth/me", None, Some(&bob)))
+        .await;
+    assert_eq!(me.status, StatusCode::UNAUTHORIZED);
+    let r = app.login("bob", "bob-password").await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    assert!(r.json["message"].as_str().unwrap().contains("disabled"));
+    // A wrong password still says only that it is wrong.
+    let r = app.login("bob", "wrong-password").await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+
+    let r = app
+        .send(req(
+            "PATCH",
+            &format!("/api/v1/users/{id}"),
+            Some(json!({"disabled": false})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert!(r.json["disabled_at"].is_null());
+    assert_eq!(
+        app.login("bob", "bob-password").await.status,
+        StatusCode::OK
+    );
+
+    let actions = app.audit_actions().await;
+    assert!(actions.contains(&"user.disable".to_string()), "{actions:?}");
+    assert!(actions.contains(&"user.enable".to_string()), "{actions:?}");
+}
+
+#[tokio::test]
+async fn admins_cannot_disable_themselves_or_the_last_admin() {
+    let app = app().await;
+    let admin = app.setup_admin().await;
+    let me = app
+        .send(req("GET", "/api/v1/auth/me", None, Some(&admin)))
+        .await;
+    let id = me.json["user"]["id"].as_i64().unwrap();
+    let r = app
+        .send(req(
+            "PATCH",
+            &format!("/api/v1/users/{id}"),
+            Some(json!({"disabled": true})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+
+    // Another admin can't disable the only enabled one either.
+    let r = app
+        .create_user(&admin, "carol", "carol-password", "admin")
+        .await;
+    let carol_id = r.json["id"].as_i64().unwrap();
+    let carol = session_from(&app.login("carol", "carol-password").await);
+    let r = app
+        .send(req(
+            "PATCH",
+            &format!("/api/v1/users/{carol_id}"),
+            Some(json!({"disabled": true})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let r = app
+        .send(req(
+            "PATCH",
+            &format!("/api/v1/users/{id}"),
+            Some(json!({"disabled": true})),
+            Some(&carol),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED, "carol was signed out");
+    // With carol disabled, the first admin is the last enabled one.
+    let r = app
+        .send(req(
+            "PATCH",
+            &format!("/api/v1/users/{id}"),
+            Some(json!({"role": "user"})),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+}

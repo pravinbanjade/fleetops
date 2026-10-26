@@ -158,6 +158,12 @@ pub async fn login(
         audit(&s, None, "auth.login", "user", &body.username, "failure").await;
         return Err(Error::Unauthorized("invalid username or password".into()).into());
     };
+    if user.disabled_at.is_some() {
+        // The password was right, so saying why is no help to a guesser.
+        let id = user.id.to_string();
+        audit(&s, Some(user.id), "auth.login", "user", &id, "disabled").await;
+        return Err(Error::Forbidden("this account is disabled; ask an admin".into()).into());
+    }
     s.limiter.reset(&key);
     audit(
         &s,
@@ -227,6 +233,10 @@ pub async fn start_session(
     status: StatusCode,
     absolute_secs: i64,
 ) -> ApiResult<Response> {
+    // Every way in (password, directory, single sign-on) ends here.
+    if user.disabled_at.is_some() {
+        return Err(Error::Forbidden("this account is disabled; ask an admin".into()).into());
+    }
     let session_token = token::generate_token();
     let csrf_token = token::generate_token();
     let now = now_unix();

@@ -114,6 +114,11 @@ export const viewerOffset = () => -new Date().getTimezoneOffset();
 /** What the admin banner says, or null. */
 export function backupBanner(s: BackupStatus): string | null {
   if (s.paused) return "Scheduled backups paused: license required";
-  if (s.last_failed) return "The last scheduled backup failed.";
+  if (s.last_failed) {
+    const r = s.last_run;
+    if (!r) return "The last scheduled backup failed.";
+    const when = new Date((r.finished_at ?? r.started_at) * 1000).toISOString().slice(0, 16).replace("T", " ");
+    return `The scheduled backup at ${when} UTC failed${r.error ? `: ${r.error}` : "."}`;
+  }
   return null;
 }

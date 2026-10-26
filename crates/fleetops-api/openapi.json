@@ -95,6 +95,54 @@
               "type": "integer",
               "format": "int64"
             }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "description": "Only this user's entries.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Only this action, or every action under a prefix ending in `.` (e.g. `container.`).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "env_id",
+            "in": "query",
+            "description": "Only entries about this environment.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Only entries at or after this time, in Unix seconds.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "failed",
+            "in": "query",
+            "description": "Only entries that did not succeed.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -14722,7 +14770,8 @@
           "exec",
           "task",
           "kube-watch",
-          "swarm-tasks"
+          "swarm-tasks",
+          "audit"
         ]
       },
       "TriggerResult": {
@@ -14807,6 +14856,13 @@
       "UpdateUser": {
         "type": "object",
         "properties": {
+          "disabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "True disables the account and signs it out everywhere; false enables it."
+          },
           "password": {
             "type": [
               "string",
@@ -14862,6 +14918,14 @@
           "created_at": {
             "type": "integer",
             "format": "int64"
+          },
+          "disabled_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "When an admin disabled the account (Unix seconds); null while it can\nsign in. A disabled account keeps its grants, teams and audit history."
           },
           "id": {
             "type": "integer",

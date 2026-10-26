@@ -1,9 +1,9 @@
-import { waitFor } from "@testing-library/react";
+import { waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { mockFetch } from "@/test/fetch";
 import { loggedIn, renderApp } from "@/test/app";
-import { bannerFor, GRACE_SECS, type LicenseInfo } from "./license";
+import { bannerFor, GRACE_SECS, peekLicense, type LicenseInfo } from "./license";
 
 const NOW = 1_800_000_000;
 const info = (over: Partial<LicenseInfo> = {}): LicenseInfo => ({
@@ -41,7 +41,58 @@ describe("bannerFor", () => {
   });
 });
 
+/** A license-shaped string with `payload` and a dummy signature, as `peekLicense` reads it. */
+const pasted = (payload: object) =>
+  `${btoa(JSON.stringify(payload)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}.sig`;
+
+describe("peekLicense", () => {
+  it("reads the payload without the signature, and rejects other text", () => {
+    const p = peekLicense(pasted({ v: 1, id: "x", customer: "Beta", expires_at: NOW, max_users: null, features: ["sso"] }));
+    expect(p).toMatchObject({ customer: "Beta", expires_at: NOW, max_nodes: null, features: ["sso"] });
+    expect(peekLicense("not a license")).toBeNull();
+  });
+});
+
 describe("enterprise UI", () => {
+  it("previews a replacement license and installs it only after confirming", async () => {
+    const calls = mockFetch({
+      ...loggedIn,
+      "GET /api/v1/edition": { json: { edition: "enterprise", features: ["audit_export", "teams"] } },
+      "GET /api/v1/ee/license": { json: info({ features: ["audit_export", "teams"] }) },
+      "PUT /api/v1/ee/license": { json: info({ customer: "Beta" }) },
+    });
+    const { screen } = renderApp("/admin/license");
+    await userEvent.click(await screen.findByLabelText("License key"));
+    await userEvent.paste(
+      pasted({ v: 1, id: "n", customer: "Beta", expires_at: NOW, max_users: null, max_nodes: 1, features: ["audit_export", "sso"] }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Install license" }));
+    const dialog = await screen.findByRole("dialog", { name: "Replace the license?" });
+    expect(within(dialog).getByRole("list", { name: "Feature changes" })).toHaveTextContent("Gains Single sign-on");
+    expect(within(dialog).getByRole("list", { name: "Feature changes" })).toHaveTextContent("Loses Teams");
+    expect(dialog).toHaveTextContent("Teams become read-only.");
+    expect(dialog).toHaveTextContent("FleetOps manages 2 nodes; the new license covers 1");
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Replace license" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
+  });
+
+  it("asks before removing the license, naming what turns off", async () => {
+    const calls = mockFetch({
+      ...loggedIn,
+      "GET /api/v1/edition": { json: { edition: "enterprise", features: ["sso"] } },
+      "GET /api/v1/ee/license": { json: info({ features: ["sso"] }) },
+      "DELETE /api/v1/ee/license": { json: info({ status: "none", source: null, features: [] }) },
+    });
+    const { screen } = renderApp("/admin/license");
+    await userEvent.click(await screen.findByRole("button", { name: "Remove license" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove the license?" });
+    expect(dialog).toHaveTextContent("SSO users can't sign in.");
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remove license" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
+  });
+
   it("installs a license from the License page", async () => {
     let current = info({ status: "none", customer: null, id: null, expires_at: null, max_users: null, features: [] });
     const calls = mockFetch({

@@ -30,11 +30,34 @@ export function FormDialog(props: {
           {props.children}
           <FormError message={m.error ? errorMessage(m.error) : null} />
           <DialogFooter>
+            <Button type="button" variant="outline" onClick={props.onClose}>
+              Cancel
+            </Button>
             <Button type="submit" disabled={m.isPending}>
               {props.submitLabel}
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The dialog's frame while what it edits loads, or the reason it couldn't. */
+export function LoadingDialog({ title, error, onClose }: { title: string; error?: unknown; onClose: () => void }) {
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{error ? "This couldn't be loaded." : "Loading…"}</DialogDescription>
+        </DialogHeader>
+        {error ? <FormError message={errorMessage(error)} /> : <p role="status" className="sr-only">Loading</p>}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

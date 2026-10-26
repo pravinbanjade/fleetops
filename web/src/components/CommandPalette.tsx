@@ -7,6 +7,7 @@ import { containersQuery, envsQuery, imagesQuery, keys, networksQuery, volumesQu
 import { containerAction } from "@/api/gen/sdk.gen";
 import type { ContainerActionName, ContainerSummary } from "@/api/gen/types.gen";
 import { useSession } from "@/auth/session";
+import { useAdminNav } from "@/ee-slots";
 import { Button } from "@/components/ui/button";
 import {
   CommandDialog,
@@ -20,7 +21,7 @@ import {
 import { errorMessage } from "@/lib/errors";
 import { shortId } from "@/lib/format";
 import { ACTIONS, actionsFor } from "@/pages/containers/actions";
-import { ADMIN_NAV, KUBE_NAV, NAV, NODE_NAV, SWARM_NAV, kubeGroupOf, navHref } from "./nav";
+import { KUBE_NAV, NAV, NODE_NAV, SWARM_NAV, kubeGroupOf, navHref } from "./nav";
 import { refOf } from "@/pages/kube/generic/ref";
 import { envFamily, findEnv } from "@/lib/env";
 
@@ -84,6 +85,7 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useSession();
+  const admin = useAdminNav().flatMap((g) => g.items);
   const envs = useQuery(envsQuery);
   const on = !!env;
   const e = env ?? "";
@@ -162,8 +164,8 @@ function PaletteBody({ env, close }: { env?: string; close: () => void }) {
               </CommandItem>
             ))}
           {user.role === "admin" &&
-            ADMIN_NAV.map((n) => (
-              <CommandItem key={n.to} value={`page ${n.label}`} onSelect={() => go(() => navigate({ to: n.to }))}>
+            admin.map((n) => (
+              <CommandItem key={n.to} value={`page ${n.label}`} onSelect={() => go(() => navigate({ to: n.to as never }))}>
                 <n.icon />
                 {n.label}
               </CommandItem>

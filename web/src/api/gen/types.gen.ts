@@ -2110,7 +2110,7 @@ export type TaskSummary = {
     version: number;
 };
 
-export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch' | 'swarm-tasks';
+export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch' | 'swarm-tasks' | 'audit';
 
 export type TriggerResult = {
     /**
@@ -2147,6 +2147,10 @@ export type UpdateEnv = {
 };
 
 export type UpdateUser = {
+    /**
+     * True disables the account and signs it out everywhere; false enables it.
+     */
+    disabled?: boolean | null;
     password?: string | null;
     role?: Role | null;
 };
@@ -2163,6 +2167,11 @@ export type UpgradeBody = {
 
 export type User = {
     created_at: number;
+    /**
+     * When an admin disabled the account (Unix seconds); null while it can
+     * sign in. A disabled account keeps its grants, teams and audit history.
+     */
+    disabled_at?: number | null;
     id: number;
     role: Role;
     /**
@@ -2279,6 +2288,26 @@ export type ListAuditData = {
          * Only entries with an id below this, for paging.
          */
         before?: number;
+        /**
+         * Only this user's entries.
+         */
+        user_id?: number;
+        /**
+         * Only this action, or every action under a prefix ending in `.` (e.g. `container.`).
+         */
+        action?: string;
+        /**
+         * Only entries about this environment.
+         */
+        env_id?: number;
+        /**
+         * Only entries at or after this time, in Unix seconds.
+         */
+        since?: number;
+        /**
+         * Only entries that did not succeed.
+         */
+        failed?: boolean;
     };
     url: '/api/v1/audit';
 };

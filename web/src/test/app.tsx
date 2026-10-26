@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { App } from "@/App";
 import type { SessionInfo } from "@/api/gen/types.gen";
@@ -103,3 +104,14 @@ export const genericRoutes = {
     },
   },
 };
+
+/** Opens the ⋮ menu of the row named `name` and returns the menu. */
+export async function openRowMenu(name: string) {
+  await userEvent.click(await screen.findByRole("button", { name: `Actions for ${name}` }));
+  return screen.findByRole("menu");
+}
+
+/** Opens the row's ⋮ menu and picks `item` from it. */
+export async function pickRowMenu(name: string, item: string) {
+  await userEvent.click(within(await openRowMenu(name)).getByRole("menuitem", { name: item }));
+}

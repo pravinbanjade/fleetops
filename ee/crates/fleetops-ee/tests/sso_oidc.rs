@@ -333,3 +333,36 @@ async fn disabled_connection_start_refused() {
         .await;
     assert_eq!(location(&r), "/login?sso_error=disabled");
 }
+
+#[tokio::test]
+async fn disabled_account_is_refused_at_the_callback() {
+    let f = Flow::new(12).await;
+    // The first sign-in makes the account.
+    let st = f.start("/").await;
+    let t = f.idp.id_token(&f.idp.uri(), &st.nonce, json!({}));
+    f.idp.answer_token_once(t).await;
+    let first = f.callback(&st.state, Some(&st.binding), "").await;
+    assert!(
+        !location(&first).contains("sso_error"),
+        "{}",
+        location(&first)
+    );
+    let user =
+        f.ee.store
+            .list_users()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|u| u.role == fleetops_core::Role::User)
+            .expect("the provisioned user");
+    f.ee.store
+        .set_user_disabled(user.id, true, now_unix())
+        .await
+        .unwrap();
+
+    let st = f.start("/").await;
+    let t = f.idp.id_token(&f.idp.uri(), &st.nonce, json!({}));
+    f.idp.answer_token(Some(t)).await;
+    let r = f.callback(&st.state, Some(&st.binding), "").await;
+    assert_eq!(location(&r), "/login?sso_error=account_disabled");
+}

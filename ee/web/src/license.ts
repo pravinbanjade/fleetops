@@ -33,6 +33,38 @@ export const uploadLicense = (text: string) =>
   apiFetch<LicenseInfo>(URL, { method: "PUT", body: text, contentType: "text/plain" });
 export const removeLicense = () => apiFetch<LicenseInfo>(URL, { method: "DELETE" });
 
+/** What a pasted license says about itself, read without checking the signature (the server does that on install). */
+export interface LicensePeek {
+  id: string;
+  customer: string;
+  expires_at: number;
+  max_users: number | null;
+  max_nodes: number | null;
+  features: string[];
+}
+
+/** The unverified payload of `text`, or null when it isn't shaped like a license. */
+export function peekLicense(text: string): LicensePeek | null {
+  const payload = text.trim().split(".")[0];
+  if (!payload) return null;
+  try {
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "=")), (c) => c.charCodeAt(0));
+    const p = JSON.parse(new TextDecoder().decode(bytes));
+    if (typeof p?.customer !== "string" || typeof p?.expires_at !== "number" || !Array.isArray(p?.features)) return null;
+    return {
+      id: String(p.id ?? ""),
+      customer: p.customer,
+      expires_at: p.expires_at,
+      max_users: p.max_users ?? null,
+      max_nodes: p.max_nodes ?? null,
+      features: p.features.map(String),
+    };
+  } catch {
+    return null;
+  }
+}
+
 const day = (secs: number) => new Date(secs * 1000).toISOString().slice(0, 10);
 
 /** What the admin banner says about `l` at `now` (unix seconds), or null. */

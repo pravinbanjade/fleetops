@@ -863,6 +863,41 @@ pub(super) async fn task(c: &Ctx<'_>, id: Option<String>) -> Result<Sub> {
     })
 }
 
+/// The id of each new audit entry, so an open audit log fetches it at once.
+/// Admins only, like the audit log itself.
+pub(super) async fn audit(c: &Ctx<'_>) -> Result<Sub> {
+    if c.cu.user.role != Role::Admin {
+        return Err(Error::Forbidden("the audit log is for admins".into()));
+    }
+    let mut feed = c.s.store.audit_feed();
+    let sub = c.sub;
+    let q = c.queue(Policy::DropOldest);
+    let qq = q.clone();
+    let handle = tokio::spawn(async move {
+        loop {
+            match feed.recv().await {
+                Ok(id) => {
+                    if !qq.push(protocol::data(sub, json!({ "id": id })), 1) {
+                        return;
+                    }
+                }
+                // Missed ids only mean the page refetches; say so with the next one.
+                Err(RecvError::Lagged(_)) => continue,
+                Err(RecvError::Closed) => {
+                    return qq.finish(protocol::end(sub, "closed", Value::Null))
+                }
+            }
+        }
+    });
+    Ok(Sub {
+        queue: q,
+        task: handle.abort_handle(),
+        // A demoted admin loses it with the rest.
+        keep_on_access: false,
+        exec: None,
+    })
+}
+
 /// Exec is root-equivalent access to the container, so every attempt is
 /// audited with the command.
 async fn audit_exec(

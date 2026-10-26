@@ -376,6 +376,9 @@ async fn callback_inner(
         Ok(Err(refusal)) => return Err((refusal, AUDITED.into())),
         Err(e) => return Err((Refusal::Invalid, e.to_string())),
     };
+    if user.disabled_at.is_some() {
+        return Err((Refusal::AccountDisabled, "account disabled".into()));
+    }
     let session = start_session(s, user, meta, StatusCode::OK, c.session_hours * 3600)
         .await
         .map_err(|e| (Refusal::Invalid, format!("{e:?}")))?;

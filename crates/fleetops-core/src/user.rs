@@ -46,6 +46,9 @@ pub struct User {
     /// filled by the users routes only.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sso: Option<String>,
+    /// When an admin disabled the account (Unix seconds); null while it can
+    /// sign in. A disabled account keeps its grants, teams and audit history.
+    pub disabled_at: Option<i64>,
 }
 
 pub fn validate_username(name: &str) -> Result<()> {
