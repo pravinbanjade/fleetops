@@ -1,3 +1,4 @@
+import { Plug, Unplug } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,10 +107,12 @@ export function TerminalTab({
         </div>
         {live ? (
           <Button type="button" variant="outline" onClick={() => setSession(null)}>
+            <Unplug aria-hidden />
             Disconnect
           </Button>
         ) : (
           <Button type="submit" disabled={!running}>
+            <Plug aria-hidden />
             {session ? "Connect again" : "Connect"}
           </Button>
         )}

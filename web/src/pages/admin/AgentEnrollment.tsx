@@ -1,3 +1,4 @@
+import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { Enrollment, EnvKind } from "@/api/gen/types.gen";
@@ -44,9 +45,11 @@ export function AgentEnrollment({
         </p>
         <DialogFooter>
           <Button variant="outline" onClick={() => void copy()}>
+            <Copy aria-hidden />
             Copy command
           </Button>
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>
+<Check aria-hidden />Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

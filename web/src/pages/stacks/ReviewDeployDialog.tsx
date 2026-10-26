@@ -1,3 +1,4 @@
+import { RotateCw, Send, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { deployStack, planStack } from "@/api/gen/sdk.gen";
@@ -147,6 +148,7 @@ export function ReviewDeployDialog({
             )}
             <DialogFooter>
               <Button variant="outline" onClick={close}>
+                <X aria-hidden />
                 Cancel
               </Button>
               {stale ? (
@@ -156,10 +158,12 @@ export function ReviewDeployDialog({
                     void plan.refetch();
                   }}
                 >
+                  <RotateCw aria-hidden />
                   Review again
                 </Button>
               ) : (
                 <Button disabled={blocked || deploy.isPending} onClick={() => p?.plan && deploy.mutate(p.plan.token)}>
+                  <Send aria-hidden />
                   {source.source === "revision" ? "Roll back" : "Deploy"}
                 </Button>
               )}

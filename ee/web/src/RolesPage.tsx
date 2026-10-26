@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Eye, Pencil, Trash2 } from "lucide-react";
+import { Copy, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -88,6 +88,7 @@ export function RolesPage() {
       meta="Build a role from what it may do to each kind of resource, then give it to users and teams like Viewer or Operator."
       actions={
         <Button disabled={frozen} onClick={() => setDialog({ kind: "new" })}>
+          <Plus aria-hidden />
           New role
         </Button>
       }

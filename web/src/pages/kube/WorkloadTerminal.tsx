@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { TerminalSquare } from "lucide-react";
+import { SquareTerminal, TerminalSquare } from "lucide-react";
 import { useState } from "react";
 import type { KubeKind, KubeRow } from "@/api/gen/types.gen";
 import { workloadPodsQuery } from "@/api/queries";
@@ -88,6 +88,7 @@ export function WorkloadTerminal({ env, kind, ns, name }: { env: string; kind: K
               })
             }
           >
+            <SquareTerminal aria-hidden />
             Open terminal
           </Button>
         </DialogFooter>

@@ -1,3 +1,4 @@
+import { CloudDownload, Eraser, Hammer, Trash2 } from "lucide-react";
 import { useNow, useNowRow } from "@/components/shell/now";
 import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery } from "@tanstack/react-query";
@@ -74,15 +75,18 @@ export function ImagesPage() {
           <>
             {canDelete && (
               <Button variant="outline" onClick={() => setPruning(true)}>
+                <Eraser aria-hidden />
                 Prune
               </Button>
             )}
             {canCreate && (
               <>
                 <Button variant="outline" onClick={() => setBuilding(true)}>
+                  <Hammer aria-hidden />
                   Build
                 </Button>
-                <Button onClick={() => setPulling(true)}>Pull</Button>
+                <Button onClick={() => setPulling(true)}>
+<CloudDownload aria-hidden />Pull</Button>
               </>
             )}
           </>
@@ -112,6 +116,7 @@ export function ImagesPage() {
                     clear();
                   }}
                 >
+                  <Trash2 aria-hidden />
                   Remove
                 </Button>
               )

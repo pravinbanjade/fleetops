@@ -1,3 +1,4 @@
+import { CloudDownload, Hammer, X } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { buildImage, pullImage } from "@/api/gen/sdk.gen";
@@ -65,6 +66,7 @@ export function PullDialog({ env, onClose }: { env: string; onClose: () => void 
             <FormError message={m.error ? errorMessage(m.error) : null} />
             <DialogFooter>
               <Button type="submit" disabled={m.isPending}>
+                <CloudDownload aria-hidden />
                 Pull
               </Button>
             </DialogFooter>
@@ -141,6 +143,7 @@ export function BuildDialog({ env, onClose }: { env: string; onClose: () => void
             <FormError message={invalid ?? (m.error ? errorMessage(m.error) : null)} />
             <DialogFooter>
               <Button type="submit" disabled={m.isPending}>
+                <Hammer aria-hidden />
                 Build
               </Button>
             </DialogFooter>
@@ -166,6 +169,7 @@ export function TaskView({ task, onClose, children }: { task: TrackedTask; onClo
       </p>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
+          <X aria-hidden />
           Close
         </Button>
       </DialogFooter>

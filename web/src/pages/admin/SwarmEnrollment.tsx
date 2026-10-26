@@ -1,3 +1,4 @@
+import { Check, Copy, Download } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -63,6 +64,7 @@ export function SwarmEnrollment({
           <div className="flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded-md bg-muted px-2 py-1.5 font-mono text-xs">{enrollment.agent_key}</code>
             <Button variant="outline" size="sm" onClick={() => void copy(enrollment.agent_key)}>
+              <Copy aria-hidden />
               Copy key
             </Button>
           </div>
@@ -86,9 +88,11 @@ export function SwarmEnrollment({
           <pre className={pre}>{stack.stack_yaml}</pre>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => void copy(stack.stack_yaml)}>
+              <Copy aria-hidden />
               Copy stack file
             </Button>
             <Button variant="outline" size="sm" onClick={() => download(stack.stack_yaml)}>
+              <Download aria-hidden />
               Download fleetops-agent.yml
             </Button>
           </div>
@@ -105,10 +109,12 @@ export function SwarmEnrollment({
         <DialogFooter>
           {rotated && (
             <Button variant="outline" onClick={() => setFinishing(true)}>
+              <Check aria-hidden />
               Finish rotation
             </Button>
           )}
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>
+<Check aria-hidden />Done</Button>
         </DialogFooter>
       </DialogContent>
       <ConfirmDialog

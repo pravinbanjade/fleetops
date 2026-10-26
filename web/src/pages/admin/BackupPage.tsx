@@ -50,6 +50,7 @@ export function BackupPage() {
               it here or on a new server's first screen.
             </p>
             <Button className="justify-self-start" onClick={() => setDownloading(true)}>
+              <Download aria-hidden />
               Download backup
             </Button>
           </div>

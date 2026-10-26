@@ -2,7 +2,7 @@ import { useNow, useNowRow } from "@/components/shell/now";
 import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi } from "@tanstack/react-router";
-import { GitBranch } from "lucide-react";
+import { GitBranch, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ServiceSummary, StackSummary } from "@/api/gen/types.gen";
 import { useEnvAccess, useEnvFamily } from "@/api/access";
@@ -147,6 +147,7 @@ export function StacksPage() {
       actions={
         can("stacks.create") && (
           <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus aria-hidden />
             New stack
           </Button>
         )

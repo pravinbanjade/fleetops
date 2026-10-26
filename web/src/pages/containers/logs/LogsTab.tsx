@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Download } from "lucide-react";
+import { ChevronDown, ChevronUp, Download, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { LogLine } from "@/api/gen/types.gen";
@@ -129,6 +129,7 @@ export function LogsTab({
           </Toggle>
         )}
         <Button variant="outline" size="sm" onClick={clear}>
+          <X aria-hidden />
           Clear
         </Button>
       </div>

@@ -1,3 +1,4 @@
+import { Tag, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
@@ -41,11 +42,13 @@ export function ImagePage() {
         <>
           {can("images.create") && (
             <Button variant="outline" onClick={() => setTagging(true)}>
+              <Tag aria-hidden />
               Tag
             </Button>
           )}
           {can("images.delete") && (
             <Button variant="destructive" onClick={() => setRemoving(true)}>
+              <Trash2 aria-hidden />
               Remove
             </Button>
           )}

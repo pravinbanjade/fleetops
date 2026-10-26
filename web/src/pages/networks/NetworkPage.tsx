@@ -1,3 +1,4 @@
+import { Plug, Trash2, Unplug } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
@@ -39,6 +40,7 @@ export function NetworkPage() {
         can("networks.delete") &&
         !BUILTIN_NETWORKS.includes(n.Name) && (
           <Button variant="destructive" onClick={() => setRemoving(true)}>
+            <Trash2 aria-hidden />
             Remove
           </Button>
         )
@@ -136,6 +138,7 @@ function Attached({ env, n }: { env: string; n: NetworkInspect }) {
                       disabled={disconnect.isPending}
                       onClick={() => disconnect.mutate(cid)}
                     >
+                      <Unplug aria-hidden />
                       Disconnect
                     </Button>
                   )}
@@ -156,6 +159,7 @@ function Attached({ env, n }: { env: string; n: NetworkInspect }) {
             ))}
           </NativeSelect>
           <Button type="submit" variant="outline" disabled={!pick || connect.isPending}>
+            <Plug aria-hidden />
             Connect
           </Button>
         </form>

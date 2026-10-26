@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, ShieldCheck, Trash2, Users } from "lucide-react";
+import { Pencil, Plus, ShieldCheck, Trash2, Users } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { EnvView } from "@/api/gen/types.gen";
@@ -72,6 +72,7 @@ export function TeamsPage() {
       meta="Members of a team get its environment access."
       actions={
         <Button disabled={frozen} onClick={() => setDialog({ kind: "new" })}>
+          <Plus aria-hidden />
           New team
         </Button>
       }
@@ -209,6 +210,7 @@ function MembersDialog({ team, frozen, onClose }: { team: TeamSummary; frozen: b
               })
             }
           >
+            <Plus aria-hidden />
             Add
           </Button>
         </div>
@@ -232,6 +234,7 @@ function MembersDialog({ team, frozen, onClose }: { team: TeamSummary; frozen: b
                     disabled={busy}
                     onClick={() => removeMember(m)}
                   >
+                    <Trash2 aria-hidden />
                     Remove
                   </Button>
                 )}

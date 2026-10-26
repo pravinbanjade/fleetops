@@ -1,3 +1,4 @@
+import { ArchiveRestore, LogIn, X } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { envsQuery, usersQuery } from "@/api/queries";
@@ -48,7 +49,8 @@ function Restarting({ phase }: { phase: "restoring" | "restarting" }) {
             <code className="font-mono">docker logs fleetops</code>). This page keeps checking.
           </p>
           <Button variant="outline" size="sm" className="justify-self-start" asChild>
-            <a href="/login">Go to sign in</a>
+            <a href="/login">
+<LogIn aria-hidden />Go to sign in</a>
           </Button>
         </div>
       )}
@@ -152,9 +154,11 @@ export function RestoreFlow({
           disabled={mode === "admin" && confirm !== "RESTORE"}
           onClick={() => m.mutate()}
         >
+          <ArchiveRestore aria-hidden />
           {admin ? "Replace this server with the backup" : "Restore"}
         </Button>
         <Button variant="outline" onClick={cancel}>
+          <X aria-hidden />
           Cancel
         </Button>
       </div>

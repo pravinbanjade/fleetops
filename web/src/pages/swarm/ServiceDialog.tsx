@@ -1,3 +1,4 @@
+import { Check, FileCode2, Rows3, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -113,9 +114,11 @@ export function ServiceDialog({ env, target, onClose }: { env: string; target: T
         </DialogHeader>
         <div className="flex gap-2">
           <Button size="sm" variant={raw === null ? "default" : "outline"} onClick={toForm}>
+            <Rows3 aria-hidden />
             Form
           </Button>
           <Button size="sm" variant={raw !== null ? "default" : "outline"} onClick={toRaw}>
+            <FileCode2 aria-hidden />
             Raw spec
           </Button>
         </div>
@@ -158,9 +161,11 @@ export function ServiceDialog({ env, target, onClose }: { env: string; target: T
         <FormError message={error} />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
+            <X aria-hidden />
             Cancel
           </Button>
           <Button disabled={pending} onClick={() => void save()}>
+            <Check aria-hidden />
             {editing ? "Save" : "Create"}
           </Button>
         </DialogFooter>

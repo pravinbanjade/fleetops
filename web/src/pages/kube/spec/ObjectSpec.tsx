@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Database, Pencil, Plus, RotateCcw, Tags, Undo2, Variable, X } from "lucide-react";
+import { ChevronsDown, Database, FileSearch, Pencil, Plus, Replace, RotateCcw, Tags, TextCursorInput, Undo2, Variable, X } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import type { KubeKind, KubeRef } from "@/api/gen/types.gen";
 import { ImageRef } from "@/components/ImageRef";
@@ -123,9 +123,11 @@ function EditBar({ count, invalid, onCancel, onReview }: { count: number; invali
       </p>
       <div className="ml-auto flex gap-2">
         <Button variant="outline" size="sm" onClick={onCancel}>
+          <X aria-hidden />
           Cancel
         </Button>
         <Button size="sm" disabled={count === 0 || invalid} onClick={onReview}>
+          <FileSearch aria-hidden />
           Review
         </Button>
       </div>
@@ -500,6 +502,7 @@ function EnvRow({
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="min-w-0">{current}</span>
             <Button variant="link" size="xs" className="text-xs" onClick={() => onChange({ value: "" })}>
+              <TextCursorInput aria-hidden />
               Set a value instead<span className="sr-only"> for {name}</span>
             </Button>
           </div>
@@ -659,6 +662,7 @@ function DataPanel({
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="text-muted-foreground">Hidden</span>
                     <Button variant="link" size="xs" className="text-xs" onClick={() => set("")}>
+                      <Replace aria-hidden />
                       Replace value<span className="sr-only"> of {d.key}</span>
                     </Button>
                   </div>
@@ -798,6 +802,7 @@ function MetaPanel({ spec }: { spec: Spec }) {
             </dl>
             {spec.annotations.length > 4 && (
               <Button variant="link" size="xs" className="mt-2 text-xs" aria-expanded={all} onClick={() => setAll(!all)}>
+                <ChevronsDown aria-hidden />
                 {all ? "Show fewer" : `Show all ${spec.annotations.length}`}
               </Button>
             )}

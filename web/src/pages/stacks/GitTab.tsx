@@ -1,3 +1,4 @@
+import { Check, Copy, FileSearch, Play, RefreshCw, Save, ShieldCheck, Unlink } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -89,12 +90,15 @@ export function WebhookSecretDialog({ url, secret, onClose }: { url: string; sec
         </ul>
         <DialogFooter>
           <Button variant="outline" onClick={() => void copy(absoluteUrl(url))}>
+            <Copy aria-hidden />
             Copy URL
           </Button>
           <Button variant="outline" onClick={() => void copy(secret)}>
+            <Copy aria-hidden />
             Copy secret
           </Button>
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>
+<Check aria-hidden />Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -177,6 +181,7 @@ export function GitTab({
           <span>Auto-sync paused after rollback.</span>
           {canOperate && (
             <Button size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate("resume")}>
+              <Play aria-hidden />
               Resume
             </Button>
           )}
@@ -209,6 +214,7 @@ export function GitTab({
                 disabled={acceptHostKey.isPending}
                 onClick={() => acceptHostKey.mutate()}
               >
+                <ShieldCheck aria-hidden />
                 Accept new key
               </Button>
             )}
@@ -221,6 +227,7 @@ export function GitTab({
             </span>
             {canOperate && (
               <Button size="sm" onClick={() => onReview({ source: "draft" })}>
+                <FileSearch aria-hidden />
                 Review deploy
               </Button>
             )}
@@ -229,6 +236,7 @@ export function GitTab({
         {canOperate && (
           <div>
             <Button size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate("sync")}>
+              <RefreshCw aria-hidden />
               Sync now
             </Button>
           </div>
@@ -242,10 +250,12 @@ export function GitTab({
               {absoluteUrl(git.data.webhook_url)}
             </pre>
             <Button size="sm" variant="outline" onClick={() => void copy(absoluteUrl(git.data.webhook_url))}>
+              <Copy aria-hidden />
               Copy
             </Button>
             {canEdit && (
               <Button size="sm" variant="outline" disabled={rotate.isPending} onClick={() => rotate.mutate()}>
+                <RefreshCw aria-hidden />
                 Rotate secret
               </Button>
             )}
@@ -265,9 +275,11 @@ export function GitTab({
         {canEdit && (
           <div className="flex flex-wrap gap-2">
             <Button disabled={!form || !gitFormValid(editing) || save.isPending} onClick={() => save.mutate(editing)}>
+              <Save aria-hidden />
               Save
             </Button>
             <Button variant="outline" onClick={() => setDetaching(true)}>
+              <Unlink aria-hidden />
               Detach from git
             </Button>
           </div>

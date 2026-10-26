@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, Container, KeyRound, Network, Pencil, ShieldCheck, ShipWheel, Trash2, type LucideIcon } from "lucide-react";
+import { CircleCheck, Container, KeyRound, Network, Pencil, Plus, ShieldCheck, ShipWheel, Trash2, type LucideIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -193,7 +193,8 @@ export function EnvironmentsPage() {
     { id: "delete", label: "Delete", icon: Trash2, danger: true, onSelect: () => setDialog({ kind: "delete", env: e }) },
   ];
   return (
-    <Page title="Environments" actions={<Button onClick={() => setDialog({ kind: "add" })}>Add environment</Button>}>
+    <Page title="Environments" actions={<Button onClick={() => setDialog({ kind: "add" })}>
+<Plus aria-hidden />Add environment</Button>}>
       <DataTable
         label="Environments"
         data={envs.data}

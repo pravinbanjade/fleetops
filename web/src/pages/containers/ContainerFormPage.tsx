@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, X } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { containerSpecQuery, keys, networksQuery } from "@/api/queries";
@@ -248,9 +248,11 @@ function ContainerForm({
         <FormError message={invalid ?? (m.error ? errorMessage(m.error) : null)} />
         <div className="flex gap-2">
           <Button type="submit" disabled={m.isPending}>
+            <Plus aria-hidden />
             {mode === "recreate" ? "Recreate" : "Create"}
           </Button>
           <Button type="button" variant="outline" onClick={() => history.back()}>
+            <X aria-hidden />
             Cancel
           </Button>
         </div>

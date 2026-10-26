@@ -1,3 +1,4 @@
+import { Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
@@ -36,6 +37,7 @@ export function VolumePage() {
       actions={
         can("volumes.delete") && (
           <Button variant="destructive" onClick={() => setRemoving(true)}>
+            <Trash2 aria-hidden />
             Remove
           </Button>
         )

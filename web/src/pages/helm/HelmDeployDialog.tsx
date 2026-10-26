@@ -1,3 +1,4 @@
+import { ArrowLeft, Check, FileCode2, FileSearch } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useState } from "react";
 import { installHelmChart, showHelmChart, upgradeHelmRelease } from "@/api/gen/sdk.gen";
@@ -89,6 +90,7 @@ export default function HelmDeployDialog({ env, target, onClose }: { env: string
               </div>
               <div className="grid content-start gap-1">
                 <Button variant="outline" size="sm" onClick={() => defaults.mutate()} disabled={defaults.isPending}>
+                  <FileCode2 aria-hidden />
                   Load chart defaults
                 </Button>
                 {defaults.error && <p role="alert" className="text-sm text-state-fail">{errorMessage(defaults.error)}</p>}
@@ -153,21 +155,25 @@ export default function HelmDeployDialog({ env, target, onClose }: { env: string
         <DialogFooter>
           {review.data && !commit.data && (
             <Button variant="outline" onClick={() => review.reset()}>
+              <ArrowLeft aria-hidden />
               Back
             </Button>
           )}
           {!review.data ? (
             <Button onClick={() => review.mutate()} disabled={review.isPending || (target.kind === "install" && !name)}>
+              <FileSearch aria-hidden />
               Review
             </Button>
           ) : (
             !commit.data && (
               <Button onClick={() => commit.mutate(review.data!.current)} disabled={commit.isPending}>
+                <Check aria-hidden />
                 {verb}
               </Button>
             )
           )}
-          {commit.data && <Button onClick={onClose}>Done</Button>}
+          {commit.data && <Button onClick={onClose}>
+<Check aria-hidden />Done</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import type { StagedBackup } from "@/api/gen/types.gen";
-import { CalendarClock, History, HardDrive, ListChecks, type LucideIcon } from "lucide-react";
+import { ArchiveRestore, CalendarClock, ChevronsDown, FlaskConical, HardDrive, History, KeyRound, ListChecks, Play, PowerOff, Save, Trash2, type LucideIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Panel } from "@/components/Panel";
 import { StateBadge } from "@/components/StateBadge";
@@ -52,6 +52,7 @@ function RemoveTarget({ kind }: { kind: TargetKind }) {
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <Trash2 aria-hidden />
         Remove
       </Button>
       <ConfirmDialog
@@ -107,6 +108,7 @@ function Unlicensed() {
       <FrozenNotice>Scheduled backups need a license. You can turn them off and remove targets.</FrozenNotice>
       {schedule?.enabled && (
         <Button variant="outline" className="justify-self-start" onClick={() => off.mutate()}>
+          <PowerOff aria-hidden />
           Turn off scheduled backups
         </Button>
       )}
@@ -204,12 +206,14 @@ function ScheduleForm() {
         <span>Passphrase:</span>
         <StateBadge state={schedule.passphrase_set ? "set" : "not set"} tone={schedule.passphrase_set ? "run" : "fail"} />
         <Button variant="outline" size="sm" onClick={() => setPassphraseOpen(true)}>
+          <KeyRound aria-hidden />
           {schedule.passphrase_set ? "Replace passphrase" : "Set passphrase"}
         </Button>
       </div>
       <FormError message={save.error ? errorMessage(save.error) : null} />
       <div className="flex flex-wrap items-center gap-3">
         <Button disabled={save.isPending || !dirty} onClick={() => save.mutate()}>
+          <Save aria-hidden />
           Save schedule
         </Button>
         {dirty && <span className="text-sm text-state-wait-text">Unsaved changes</span>}
@@ -278,11 +282,13 @@ function TargetActions({
     <div className="grid gap-2">
       <div className="flex flex-wrap gap-2">
         <Button size="sm" disabled={saving || !dirty} onClick={onSave}>
+          <Save aria-hidden />
           Save
         </Button>
         {saved && (
           <>
             <Button size="sm" variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
+              <FlaskConical aria-hidden />
               Test
             </Button>
             <RemoveTarget kind={kind} />
@@ -412,6 +418,7 @@ function Runs() {
     <Section title="Runs" icon={ListChecks}>
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <Button size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate()}>
+          <Play aria-hidden />
           Run now
         </Button>
         {status?.next_run_at && <span className="text-muted-foreground">Next: {formatTime(status.next_run_at)}</span>}
@@ -433,6 +440,7 @@ function Runs() {
       )}
       {runs.length > 6 && (
         <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => setAll(!all)}>
+          <ChevronsDown aria-hidden />
           {all ? "Show the latest 6" : `Show all ${runs.length} runs`}
         </Button>
       )}
@@ -484,6 +492,7 @@ function RecentRow({ backup, onStaged }: { backup: RecentBackup; onStaged: (s: S
         <span className="text-muted-foreground">{KIND_LABEL[backup.target_kind]}</span>
         <span className="text-muted-foreground">{formatBytes(backup.size)}</span>
         <Button size="sm" variant="outline" disabled={m.isPending} onClick={() => m.mutate()}>
+          <ArchiveRestore aria-hidden />
           Restore
         </Button>
       </div>

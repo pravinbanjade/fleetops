@@ -1,3 +1,4 @@
+import { ArrowLeft, Check, FileSearch, RotateCw, Undo2, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -179,6 +180,7 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
                   setStage("edit");
                 }}
               >
+                <Undo2 aria-hidden />
                 Discard
               </Button>
               <Button
@@ -189,6 +191,7 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
                   void run(true, false, v);
                 }}
               >
+                <RotateCw aria-hidden />
                 Reload and reapply my edit
               </Button>
             </div>
@@ -203,9 +206,11 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={close}>
+                <X aria-hidden />
                 Cancel
               </Button>
               <Button disabled={busy || !text.trim()} onClick={() => void run(true)}>
+                <FileSearch aria-hidden />
                 Review
               </Button>
             </div>
@@ -229,15 +234,18 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
             </ul>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setStage("edit")}>
+                <ArrowLeft aria-hidden />
                 Back to editing
               </Button>
               {forceable && (
                 <Button variant="outline" onClick={() => setConfirmForce(true)}>
+                  <Check aria-hidden />
                   Force apply
                 </Button>
               )}
               {stage === "review" && (
                 <Button disabled={busy} onClick={() => void run(false)}>
+                  <Check aria-hidden />
                   Apply
                 </Button>
               )}

@@ -1,3 +1,4 @@
+import { ChevronsDown, FilterX } from "lucide-react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -270,6 +271,7 @@ export function AuditPage() {
         </label>
         {filtered && (
           <Button type="button" variant="ghost" size="sm" className="h-9" onClick={clear}>
+            <FilterX aria-hidden />
             Clear filters
           </Button>
         )}
@@ -290,6 +292,7 @@ export function AuditPage() {
           disabled={audit.isFetchingNextPage}
           onClick={() => void audit.fetchNextPage()}
         >
+          <ChevronsDown aria-hidden />
           Load older entries
         </Button>
       )}

@@ -1,3 +1,4 @@
+import { Copy, KeyRound, Replace, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { GitBody, GitRecord } from "@/api/gen/types.gen";
@@ -164,9 +165,11 @@ export function GitSettingsForm({
               {!disabled && (
                 <>
                   <Button type="button" variant="outline" size="sm" onClick={() => setReplacing(true)}>
+                    <Replace aria-hidden />
                     Replace
                   </Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => set({ clearToken: true, token: "" })}>
+                    <Trash2 aria-hidden />
                     Remove
                   </Button>
                 </>
@@ -252,14 +255,17 @@ function DeployKey({
             size="sm"
             onClick={() => void navigator.clipboard.writeText(publicKey).then(() => toast.success("Copied"))}
           >
+            <Copy aria-hidden />
             Copy public key
           </Button>
           {!disabled && (
             <>
               <Button type="button" variant="outline" size="sm" onClick={() => set({ key: "generate" })}>
+                <KeyRound aria-hidden />
                 Replace key
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={() => set({ key: "clear" })}>
+                <KeyRound aria-hidden />
                 Remove key
               </Button>
             </>

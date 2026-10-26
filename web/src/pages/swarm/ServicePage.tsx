@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { FileText, ListChecks, ScrollText } from "lucide-react";
+import { FileText, ListChecks, Pencil, ScrollText } from "lucide-react";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { useEnvAccess } from "@/api/access";
 import { swarmServiceQuery } from "@/api/queries";
@@ -40,6 +40,7 @@ export function ServicePage() {
           <span className="flex items-center gap-2">
             {can("swarm-services.operate", s.stack ?? null) && (
               <Button variant="outline" onClick={() => setEditing(true)}>
+                <Pencil aria-hidden />
                 Edit
               </Button>
             )}

@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import type { FormEvent, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ export function FormDialog(props: {
           <FormError message={m.error ? errorMessage(m.error) : null} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={props.onClose}>
+              <X aria-hidden />
               Cancel
             </Button>
             <Button type="submit" disabled={m.isPending}>
@@ -55,6 +57,7 @@ export function LoadingDialog({ title, error, onClose }: { title: string; error?
         {error ? <FormError message={errorMessage(error)} /> : <p role="status" className="sr-only">Loading</p>}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
+            <X aria-hidden />
             Close
           </Button>
         </DialogFooter>

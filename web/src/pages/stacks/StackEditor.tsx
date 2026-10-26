@@ -1,3 +1,4 @@
+import { FileSearch, Plus, Save, Trash2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { saveStackDraft, validateStack } from "@/api/gen/sdk.gen";
@@ -185,6 +186,7 @@ export function StackEditor({
                 aria-label={`Remove variable ${i + 1}`}
                 onClick={() => setRows((old) => old.filter((_, n) => n !== i))}
               >
+                <Trash2 aria-hidden />
                 Remove
               </Button>
             )}
@@ -193,6 +195,7 @@ export function StackEditor({
         {canEdit && (
           <div>
             <Button variant="outline" size="sm" onClick={() => setRows((old) => [...old, { key: "", value: "" }])}>
+              <Plus aria-hidden />
               Add variable
             </Button>
           </div>
@@ -202,11 +205,13 @@ export function StackEditor({
       <div className="flex flex-wrap gap-2">
         {canEdit && (
           <Button variant="outline" disabled={save.isPending} onClick={() => save.mutate()}>
+            <Save aria-hidden />
             Save draft
           </Button>
         )}
         {canDeploy && (
           <Button disabled={save.isPending} onClick={() => void review()}>
+            <FileSearch aria-hidden />
             Review deploy
           </Button>
         )}

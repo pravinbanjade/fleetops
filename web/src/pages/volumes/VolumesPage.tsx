@@ -1,3 +1,4 @@
+import { Eraser, Plus, Trash2 } from "lucide-react";
 import { useNow, useNowRow } from "@/components/shell/now";
 import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery } from "@tanstack/react-query";
@@ -83,10 +84,12 @@ export function VolumesPage() {
         <>
           {canDelete && (
             <Button variant="outline" onClick={() => setPruning(true)}>
+              <Eraser aria-hidden />
               Prune
             </Button>
           )}
-          {can("volumes.create") && <Button onClick={() => setCreating(true)}>Create volume</Button>}
+          {can("volumes.create") && <Button onClick={() => setCreating(true)}>
+<Plus aria-hidden />Create volume</Button>}
         </>
       }
     >
@@ -112,6 +115,7 @@ export function VolumesPage() {
                     clear();
                   }}
                 >
+                  <Trash2 aria-hidden />
                   Remove
                 </Button>
               )

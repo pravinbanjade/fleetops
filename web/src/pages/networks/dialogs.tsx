@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
@@ -147,6 +148,7 @@ export function CreateNetworkDialog({ env, onClose }: { env: string; onClose: ()
           <FormError message={invalid ?? (m.error ? errorMessage(m.error) : null)} />
           <DialogFooter>
             <Button type="submit" disabled={m.isPending}>
+              <Plus aria-hidden />
               Create
             </Button>
           </DialogFooter>

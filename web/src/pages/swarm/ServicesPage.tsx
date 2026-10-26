@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useNow, useNowRow } from "@/components/shell/now";
 import { ObjectNow } from "@/components/shell/ObjectNow";
 import { Tick } from "@/components/Tick";
@@ -53,7 +54,8 @@ export function ServicesPage() {
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
-    <Page title="Services" actions={can("swarm-services.create", null) && <Button onClick={() => setCreating(true)}>Create service</Button>}>
+    <Page title="Services" actions={can("swarm-services.create", null) && <Button onClick={() => setCreating(true)}>
+<Plus aria-hidden />Create service</Button>}>
       {creating && <ServiceDialog env={env} target={{ mode: "create" }} onClose={() => setCreating(false)} />}
       {active && <ServiceNow key={active.id} env={env} service={active} />}
       <DataTable label="Services" data={services.data} error={services.error} columns={cols} onActivate={(r) => now.open(((s: ServiceSummary) => s.id)(r))} activeId={active ? ((s: ServiceSummary) => s.id)(active) : undefined} getRowId={(s) => s.id} empty="No services." initialSorting={[{ id: "name", desc: false }]} />

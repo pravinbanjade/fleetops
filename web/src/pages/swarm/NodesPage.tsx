@@ -1,3 +1,4 @@
+import { Check, ShieldCheck, ShieldX } from "lucide-react";
 import { useNow, useNowRow } from "@/components/shell/now";
 import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useSwarmTasks } from "@/live/swarmTasks";
@@ -127,9 +128,11 @@ export function TrustCard({ env, admin }: { env: string; admin: boolean }) {
             await refresh();
           }}
         >
+          <ShieldCheck aria-hidden />
           Trust this swarm
         </Button>
         <Button variant="outline" onClick={() => setReject(true)}>
+          <ShieldX aria-hidden />
           Reject
         </Button>
       </div>
@@ -186,10 +189,12 @@ export function NodesPage({ env }: { env: string }) {
           <span className="flex gap-2">
             {rotating && (
               <Button variant="outline" onClick={() => setConfirm("finish")}>
+                <Check aria-hidden />
                 Finish key rotation
               </Button>
             )}
             <Button variant="outline" onClick={() => setConfirm("retrust")}>
+              <ShieldCheck aria-hidden />
               Re-trust swarm
             </Button>
           </span>

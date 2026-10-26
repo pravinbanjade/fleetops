@@ -1,3 +1,4 @@
+import { FolderOpen } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import type { StagedBackup } from "@/api/gen/types.gen";
@@ -43,6 +44,7 @@ export function BackupUpload({ mode }: { mode: "admin" | "setup" }) {
       </div>
       <FormError message={m.error ? errorMessage(m.error) : null} />
       <Button type="submit" variant="outline" className="justify-self-start" disabled={m.isPending || !file}>
+        <FolderOpen aria-hidden />
         {m.isPending ? "Opening…" : "Open backup"}
       </Button>
     </form>

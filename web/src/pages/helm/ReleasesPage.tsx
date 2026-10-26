@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useNow, useNowRow } from "@/components/shell/now";
 import { ReleaseNow } from "./ReleaseNow";
 import { useQuery } from "@tanstack/react-query";
@@ -65,6 +66,7 @@ export function ReleasesPage() {
         <NamespacePicker env={env} value={ns} onChange={setNs} />
         {can("helm.create", ns || "default") && caps.data?.install && (
           <Button size="sm" onClick={() => setInstalling(true)}>
+            <Plus aria-hidden />
             Install chart
           </Button>
         )}

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, ShieldCheck, Trash2, UserCheck, UserCog, UserX } from "lucide-react";
+import { KeyRound, Plus, ShieldCheck, Trash2, UserCheck, UserCog, UserX } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { keys, usersQuery } from "@/api/queries";
@@ -112,7 +112,8 @@ export function UsersPage() {
     ];
   };
   return (
-    <Page title="Users" actions={<Button onClick={() => setDialog({ kind: "add" })}>Add user</Button>}>
+    <Page title="Users" actions={<Button onClick={() => setDialog({ kind: "add" })}>
+<Plus aria-hidden />Add user</Button>}>
       <DataTable
         label="Users"
         data={users.data}

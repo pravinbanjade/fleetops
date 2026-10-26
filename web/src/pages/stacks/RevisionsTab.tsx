@@ -1,3 +1,4 @@
+import { Eye, RotateCcw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { getStackRevision } from "@/api/gen/sdk.gen";
@@ -66,10 +67,12 @@ export function RevisionsTab({
                 {r.number !== deployed && (
                   <span className="inline-flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => setViewing(r.number)}>
+                      <Eye aria-hidden />
                       View
                     </Button>
                     {canRollback && (
                       <Button variant="outline" size="sm" onClick={() => onRollback(r.number)}>
+                        <RotateCcw aria-hidden />
                         Roll back to this
                       </Button>
                     )}

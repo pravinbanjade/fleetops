@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, CircleAlert } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CircleAlert } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ApiError } from "@/api/client";
@@ -166,9 +166,11 @@ export function TweakReview({
 
         <div className="flex justify-end gap-2">
           <Button variant="outline" disabled={busy} onClick={onClose}>
+            <ArrowLeft aria-hidden />
             {revert ? "Cancel" : "Back to editing"}
           </Button>
           <Button disabled={busy || !prepared || !!failed || !!unchanged} onClick={() => void apply()}>
+            <Check aria-hidden />
             {busy ? "Applying…" : revert ? "Revert" : "Apply"}
           </Button>
         </div>

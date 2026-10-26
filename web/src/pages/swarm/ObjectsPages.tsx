@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import type { ConfigSummary, SecretSummary, SwarmNetwork } from "@/api/gen/types.gen";
@@ -33,7 +34,8 @@ export function SecretsPage() {
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
-    <Page title="Secrets" actions={can(permOf("secret", "create"), null) && <Button onClick={() => setCreating(true)}>Create secret</Button>}>
+    <Page title="Secrets" actions={can(permOf("secret", "create"), null) && <Button onClick={() => setCreating(true)}>
+<Plus aria-hidden />Create secret</Button>}>
       {creating && <CreateObjectDialog env={env} kind="secret" onClose={() => setCreating(false)} />}
       <DataTable label="Secrets" data={q.data} error={q.error} columns={cols} getRowId={(x) => x.id} empty="No secrets." initialSorting={[{ id: "name", desc: false }]} />
     </Page>
@@ -48,7 +50,8 @@ export function ConfigsPage() {
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
-    <Page title="Configs" actions={can(permOf("config", "create"), null) && <Button onClick={() => setCreating(true)}>Create config</Button>}>
+    <Page title="Configs" actions={can(permOf("config", "create"), null) && <Button onClick={() => setCreating(true)}>
+<Plus aria-hidden />Create config</Button>}>
       {creating && <CreateObjectDialog env={env} kind="config" onClose={() => setCreating(false)} />}
       <DataTable label="Configs" data={q.data} error={q.error} columns={cols} getRowId={(x) => x.id} empty="No configs." initialSorting={[{ id: "name", desc: false }]} />
     </Page>
@@ -74,7 +77,8 @@ export function NetworksPage() {
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
-    <Page title="Networks" actions={can(permOf("network", "create"), null) && <Button onClick={() => setCreating(true)}>Create network</Button>}>
+    <Page title="Networks" actions={can(permOf("network", "create"), null) && <Button onClick={() => setCreating(true)}>
+<Plus aria-hidden />Create network</Button>}>
       {creating && <CreateSwarmNetworkDialog env={env} onClose={() => setCreating(false)} />}
       <DataTable label="Networks" data={q.data} error={q.error} columns={cols} getRowId={(x) => x.id} empty="No swarm networks." initialSorting={[{ id: "name", desc: false }]} />
     </Page>

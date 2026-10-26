@@ -1,3 +1,4 @@
+import { Check, RotateCw, Trash2, X } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { rollbackHelmRelease, uninstallHelmRelease } from "@/api/gen/sdk.gen";
@@ -119,10 +120,12 @@ export default function HelmPlanDialog({
                 review.mutate();
               }}
             >
+              <RotateCw aria-hidden />
               Review again
             </Button>
           )}
           <Button variant="outline" onClick={onClose}>
+            <X aria-hidden />
             {commit.data ? "Close" : "Cancel"}
           </Button>
           {!commit.data && (
@@ -131,6 +134,7 @@ export default function HelmPlanDialog({
               disabled={!ready || commit.isPending}
               onClick={() => review.data && commit.mutate(review.data.current)}
             >
+              {action.kind === "uninstall" ? <Trash2 aria-hidden /> : <Check aria-hidden />}
               {verb}
             </Button>
           )}

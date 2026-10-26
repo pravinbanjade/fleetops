@@ -1,3 +1,4 @@
+import { Tag } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -113,6 +114,7 @@ export function TagDialog({ env, id, onClose }: { env: string; id: string; onClo
           <FormError message={m.error ? errorMessage(m.error) : null} />
           <DialogFooter>
             <Button type="submit" disabled={m.isPending}>
+              <Tag aria-hidden />
               Tag
             </Button>
           </DialogFooter>

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FlaskConical, Pencil, Power, PowerOff, Trash2, Waypoints } from "lucide-react";
+import { FlaskConical, Pencil, Plus, Power, PowerOff, Trash2, Waypoints } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -102,6 +102,7 @@ export function SsoPage() {
       meta="People sign in with their company account. Their groups decide their teams."
       actions={
         <Button disabled={frozen} onClick={() => setDialog({ kind: "new" })}>
+          <Plus aria-hidden />
           New connection
         </Button>
       }
@@ -505,6 +506,7 @@ export function MappingsDialog({ conn, frozen, onClose }: { conn: SsoConnection;
             </NativeSelect>
           </div>
           <Button type="submit" disabled={frozen || add.isPending || !group.trim() || !target}>
+            <Plus aria-hidden />
             Add
           </Button>
         </form>
@@ -521,6 +523,7 @@ export function MappingsDialog({ conn, frozen, onClose }: { conn: SsoConnection;
                 <code>{m.group}</code> → {m.admin ? "FleetOps admin" : `team ${m.team_name}`}
               </span>
               <Button variant="outline" size="sm" aria-label={`Remove ${m.group}`} onClick={() => setRemoving(m)}>
+                <Trash2 aria-hidden />
                 Remove
               </Button>
             </li>
@@ -578,6 +581,7 @@ function TestDialog({ conn, onClose }: { conn: SsoConnection; onClose: () => voi
             </Field>
           )}
           <Button type="submit" disabled={run.isPending}>
+            <FlaskConical aria-hidden />
             {run.isPending ? "Testing…" : "Run test"}
           </Button>
         </form>

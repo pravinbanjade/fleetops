@@ -1,3 +1,4 @@
+import { Check, X } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { ApiError } from "@/api/client";
@@ -35,9 +36,11 @@ function TypeToConfirm({ ask, close }: { ask: Ask; close: (ran: boolean) => void
         <FormError message={m.error ? errorMessage(m.error) : null} />
         <DialogFooter>
           <Button variant="outline" onClick={() => close(false)}>
+            <X aria-hidden />
             Cancel
           </Button>
           <Button variant="destructive" disabled={typed !== ask.name || m.isPending} onClick={() => m.mutate(undefined, { onSuccess: () => close(true) })}>
+            <Check aria-hidden />
             Confirm
           </Button>
         </DialogFooter>

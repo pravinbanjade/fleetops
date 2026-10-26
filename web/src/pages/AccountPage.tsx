@@ -1,3 +1,4 @@
+import { KeyRound, LogOut, ShieldX } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -93,6 +94,7 @@ function PasswordCard() {
           </div>
           <FormError message={mismatch ? "The passwords do not match." : m.error ? errorMessage(m.error) : null} />
           <Button type="submit" className="justify-self-start" disabled={m.isPending}>
+            <KeyRound aria-hidden />
             Change password
           </Button>
         </form>
@@ -130,10 +132,12 @@ function SessionsCard() {
               </div>
               {s.current ? (
                 <Button variant="outline" size="sm" onClick={() => logout.mutate()}>
+                  <LogOut aria-hidden />
                   Log out
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" disabled={revoke.isPending} onClick={() => revoke.mutate(s.id)}>
+                  <ShieldX aria-hidden />
                   Revoke
                 </Button>
               )}

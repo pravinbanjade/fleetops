@@ -1,3 +1,4 @@
+import { Pencil } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
 import type { KubeKind, KubeRow } from "@/api/gen/types.gen";
@@ -31,6 +32,7 @@ export function KubeActions({ env, kind, ns, name, row }: { env: string; kind: K
     <div className="flex flex-wrap gap-2">
       {canEdit && (
         <Button variant="outline" size="sm" onClick={() => setOpen("edit")}>
+          <Pencil aria-hidden />
           Edit YAML
         </Button>
       )}

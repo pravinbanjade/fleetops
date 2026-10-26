@@ -1,3 +1,4 @@
+import { Check, TriangleAlert, X } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         <FormError message={m.error ? errorMessage(m.error) : null} />
         <DialogFooter>
           <Button variant="outline" onClick={() => change(false)}>
+            <X aria-hidden />
             Cancel
           </Button>
           <Button
@@ -50,6 +52,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             disabled={m.isPending}
             onClick={() => m.mutate(undefined, { onSuccess: () => change(false) })}
           >
+            {props.destructive === false ? <Check aria-hidden /> : <TriangleAlert aria-hidden />}
             {props.confirmLabel}
           </Button>
         </DialogFooter>

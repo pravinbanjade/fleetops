@@ -1,3 +1,4 @@
+import { LogIn } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
@@ -93,7 +94,8 @@ export function LoginPage() {
           <div className="grid gap-2">
             {buttons.map((p) => (
               <Button key={p.id} variant="outline" asChild>
-                <a href={`/api/v1/ee/sso/${p.id}/start?return_to=${returnTo}`}>Sign in with {p.name}</a>
+                <a href={`/api/v1/ee/sso/${p.id}/start?return_to=${returnTo}`}>
+<LogIn aria-hidden />Sign in with {p.name}</a>
               </Button>
             ))}
           </div>
@@ -134,6 +136,7 @@ export function LoginPage() {
             </div>
             <FormError message={m.error ? errorMessage(m.error) : null} />
             <Button type="submit" disabled={m.isPending}>
+              <LogIn aria-hidden />
               {m.isPending ? "Logging in…" : "Log in"}
             </Button>
           </form>

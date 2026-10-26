@@ -1,3 +1,4 @@
+import { KeyRound, Pencil, Save, Trash2, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { removeStackFile, setStackFile } from "@/api/gen/sdk.gen";
@@ -23,6 +24,7 @@ export function IssueLine({ issue, onSecrets }: { issue: ComposeIssue; onSecrets
       <span className="font-ident">{issue.path || "file"}</span>: {issue.message}
       {onSecrets && issue.message.endsWith(FIX_IN_TAB) && (
         <Button variant="link" size="sm" className="h-auto px-1 py-0" onClick={onSecrets}>
+          <KeyRound aria-hidden />
           Secrets tab
         </Button>
       )}
@@ -88,9 +90,11 @@ function ValueDialog({ env, stack, file, onClose }: { env: string; stack: string
           <FormError message={save.error ? errorMessage(save.error) : null} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
+              <X aria-hidden />
               Cancel
             </Button>
             <Button type="submit" disabled={save.isPending || (secret && !value)}>
+              <Save aria-hidden />
               Save
             </Button>
           </DialogFooter>
@@ -182,11 +186,13 @@ export function SecretsTab({ env, stack, isGit, canEdit }: { env: string; stack:
                     <span className="inline-flex gap-2">
                       {f.used && (
                         <Button variant="outline" size="sm" onClick={() => setEditing(f)}>
+                          <Pencil aria-hidden />
                           {f.kind === "config" ? "Edit" : f.set ? "Replace" : "Set"}
                         </Button>
                       )}
                       {f.set && (
                         <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => remove.mutate(f)}>
+                          <Trash2 aria-hidden />
                           Remove
                         </Button>
                       )}

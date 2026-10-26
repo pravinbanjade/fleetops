@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
-import { FileText, Info, ListTree } from "lucide-react";
+import { FileText, Info, ListTree, Pencil, Trash2 } from "lucide-react";
 import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import { deleteGenericKube } from "@/api/gen/sdk.gen";
 import { useEnvAccess } from "@/api/access";
@@ -60,11 +60,13 @@ export function GenericObjectPage() {
       <div className="flex flex-wrap gap-2">
         {canEdit && (
           <Button variant="outline" size="sm" onClick={() => setOpen("edit")}>
+            <Pencil aria-hidden />
             Edit YAML
           </Button>
         )}
         {canDelete && (
           <Button variant="outline" size="sm" className="text-state-fail-text hover:text-state-fail-text" onClick={() => setOpen("delete")}>
+            <Trash2 aria-hidden />
             Delete
           </Button>
         )}

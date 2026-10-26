@@ -1,20 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import {
-  Activity,
-  Braces,
-  Copy,
-  FolderTree,
-  HardDrive,
-  Info,
-  PencilLine,
-  ScrollText,
-  SlidersHorizontal,
-  SquareTerminal,
-  Trash2,
-  Variable,
-  Waypoints,
-} from "lucide-react";
+import { Activity, Braces, Copy, FolderTree, HardDrive, Info, PencilLine, ScrollText, SlidersHorizontal, SquarePen, SquareTerminal, Trash2, Variable, Waypoints } from "lucide-react";
 import { lazy, Suspense, useState, type FormEvent } from "react";
 import { containerQuery, keys } from "@/api/queries";
 import { containerAction, renameContainer } from "@/api/gen/sdk.gen";
@@ -250,6 +236,7 @@ function RenameDialog({ env, id, name, onClose }: { env: string; id: string; nam
           <FormError message={m.error ? errorMessage(m.error) : null} />
           <DialogFooter>
             <Button type="submit" disabled={m.isPending}>
+              <SquarePen aria-hidden />
               Rename
             </Button>
           </DialogFooter>

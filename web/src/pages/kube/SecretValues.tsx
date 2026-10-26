@@ -1,3 +1,4 @@
+import { Eye, EyeOff } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { revealSecret } from "@/api/gen/sdk.gen";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ export function SecretValues({ env, ns, name }: { env: string; ns: string; name:
     return (
       <div className="flex items-center gap-3">
         <Button variant="outline" size="sm" disabled={reveal.isPending} onClick={() => reveal.mutate()}>
+          <Eye aria-hidden />
           Show values
         </Button>
         <span className="text-xs text-muted-foreground">Each time values are shown, it is written to the audit log.</span>
@@ -27,6 +29,7 @@ export function SecretValues({ env, ns, name }: { env: string; ns: string; name:
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium">Values</h3>
         <Button variant="outline" size="sm" onClick={() => reveal.reset()}>
+          <EyeOff aria-hidden />
           Hide values
         </Button>
       </div>

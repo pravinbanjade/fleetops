@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "gen:api": "openapi-ts",
-    "check:api": "openapi-ts && git diff --exit-code -- src/api/gen && test -z \"$(git status --porcelain -- src/api/gen)\""
+    "check:api": "openapi-ts && git diff --exit-code -- src/api/gen && test -z \"$(git status --porcelain -- src/api/gen)\"",
+    "check:icons": "node scripts/check-button-icons.mjs"
   },
   "dependencies": {
     "@blobatar/react": "^2.7.0",

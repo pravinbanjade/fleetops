@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ExternalLink, Minus, Plus, FileUp, KeyRound, ReceiptText, ShieldCheck } from "lucide-react";
+import { Check, ExternalLink, FileUp, KeyRound, Minus, Plus, ReceiptText, ShieldCheck, Trash2 } from "lucide-react";
 import { useRef, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { editionQuery } from "@/api/queries";
@@ -404,10 +404,12 @@ export function LicensePage() {
           <FormError message={upload.error ? errorMessage(upload.error) : null} />
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={!text.trim() || upload.isPending}>
+              <Plus aria-hidden />
               Install license
             </Button>
             {l?.source === "uploaded" && (
               <Button type="button" variant="outline" onClick={() => setConfirm("remove")}>
+                <Trash2 aria-hidden />
                 Remove license
               </Button>
             )}

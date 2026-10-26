@@ -1,3 +1,4 @@
+import { Plus, X } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
@@ -83,9 +84,11 @@ export function NewStackDialog({ env, onClose }: { env: string; onClose: () => v
           <FormError message={create.error ? errorMessage(create.error) : null} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
+              <X aria-hidden />
               Cancel
             </Button>
             <Button type="submit" disabled={!valid || create.isPending}>
+              <Plus aria-hidden />
               Create
             </Button>
           </DialogFooter>

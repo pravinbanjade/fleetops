@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
@@ -109,6 +110,7 @@ export function SetupPage() {
         </div>
         <FormError message={mismatch ? "The passwords do not match." : m.error ? errorMessage(m.error) : null} />
         <Button type="submit" disabled={m.isPending}>
+          <Plus aria-hidden />
           {m.isPending ? "Creating…" : "Create administrator"}
         </Button>
       </form>

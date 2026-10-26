@@ -2,7 +2,7 @@ import { useNow, useNowRow } from "@/components/shell/now";
 import { KubeNow } from "./KubeNow";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
-import { FileCode2, ListTree, ScrollText, TerminalSquare } from "lucide-react";
+import { FileCode2, ListTree, Plus, ScrollText, TerminalSquare } from "lucide-react";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { useEnvAccess } from "@/api/access";
 import { kubePerm } from "./perms";
@@ -283,6 +283,7 @@ export function KubeListPage() {
           )}
           {can(kubePerm(kind, "create"), createIn) && can(kubePerm(kind, "operate"), createIn) && !NO_CREATE.includes(kind) && !READ_ONLY.includes(kind) && (
             <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
+              <Plus aria-hidden />
               Create
             </Button>
           )}

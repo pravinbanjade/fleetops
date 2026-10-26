@@ -1,3 +1,4 @@
+import { RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { WatchPause } from "@/live/kubeWatch";
 
@@ -10,6 +11,7 @@ export function LivePaused({ paused, onRetry }: { paused: WatchPause; onRetry: (
         Live updates paused — showing data from {time}. <span className="text-muted-foreground">{paused.message}</span>
       </span>
       <Button size="sm" variant="outline" onClick={onRetry}>
+        <RotateCw aria-hidden />
         Retry
       </Button>
     </div>

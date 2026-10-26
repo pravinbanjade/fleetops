@@ -1,3 +1,4 @@
+import { CircleArrowUp, RotateCcw, Trash2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
@@ -66,11 +67,13 @@ export function ReleasePage() {
             {/* Upgrade starts from the current values, so it needs to see them. */}
             {caps.data?.install && can("helm.operate", ns) && !hidden && (
               <Button variant="outline" size="sm" onClick={() => setUpgrading(true)}>
+                <CircleArrowUp aria-hidden />
                 Upgrade
               </Button>
             )}
             {can("helm.delete", ns) && (
               <Button variant="outline" size="sm" onClick={() => setAction({ kind: "uninstall" })}>
+                <Trash2 aria-hidden />
                 Uninstall
               </Button>
             )}
@@ -157,6 +160,7 @@ export function ReleasePage() {
                     <td className="text-right">
                       {can("helm.operate", ns) && r && h.revision !== r.revision && h.status !== "unreadable" && (
                         <Button variant="outline" size="sm" onClick={() => setAction({ kind: "rollback", revision: h.revision })}>
+                          <RotateCcw aria-hidden />
                           Roll back to {h.revision}
                         </Button>
                       )}
