@@ -24,9 +24,7 @@ impl std::fmt::Debug for SecretKey {
 
 impl SecretKey {
     pub fn random() -> Self {
-        let mut k = [0u8; 32];
-        rand::fill(&mut k);
-        Self(k)
+        Self(rand::random())
     }
 
     /// The key as `FLEETOPS_SECRET_KEY` takes it; backups carry it this way.
@@ -87,8 +85,7 @@ impl SecretBox {
     }
 
     pub fn seal(&self, aad: &[u8], plain: &[u8]) -> String {
-        let mut nonce = [0u8; NONCE_LEN];
-        rand::fill(&mut nonce);
+        let nonce: [u8; NONCE_LEN] = rand::random();
         let ct = self
             .cipher
             .encrypt(Nonce::from_slice(&nonce), Payload { msg: plain, aad })

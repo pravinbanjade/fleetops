@@ -109,10 +109,8 @@ pub struct Encryptor<W: Write> {
 
 impl<W: Write> Encryptor<W> {
     pub fn new(mut out: W, passphrase: &str, params: KdfParams) -> Result<Self> {
-        let mut salt = [0u8; SALT_LEN];
-        let mut prefix = [0u8; NONCE_PREFIX_LEN];
-        rand::fill(&mut salt);
-        rand::fill(&mut prefix);
+        let salt: [u8; SALT_LEN] = rand::random();
+        let prefix: [u8; NONCE_PREFIX_LEN] = rand::random();
         let mut header = Vec::with_capacity(HEADER_LEN);
         header.extend_from_slice(MAGIC);
         header.push(VERSION_BYTE);

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { expect, test } from "@playwright/test";
 
 // Sub-project 3 end to end against the kind cluster from `make kind-up`:
@@ -143,7 +143,7 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
     execFileSync(process.env.HELM ?? "helm", ["package", "../scripts/helm-it-chart", "-d", dir]);
     const server = createServer((req, res) => {
       try {
-        res.end(readFileSync(join(dir, (req.url ?? "/").slice(1))));
+        res.end(readFileSync(join(dir, basename(new URL(req.url ?? "/", "http://x").pathname))));
       } catch {
         res.statusCode = 404;
         res.end();
