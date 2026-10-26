@@ -84,7 +84,8 @@ function EnvRow({ env, current, collapsed }: { env: EnvView; current: boolean; c
           <span className="truncate font-medium">{env.name}</span>
           <span className="truncate text-xs text-meta" data-numeric>
             {summary}
-            {role && ` · ${role}`}
+            {role && " · "}
+            {role && <span>{role}</span>}
           </span>
         </span>
       )}

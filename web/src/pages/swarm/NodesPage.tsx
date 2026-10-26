@@ -183,7 +183,13 @@ export function NodesPage({ env }: { env: string }) {
   return (
     <Page
       title="Nodes"
-      meta={[swarmStatus(rows), agents.data && `${covered} of ${rows.length} nodes have an agent`].filter(Boolean).join(" · ")}
+      meta={
+        <>
+          <span>{swarmStatus(rows)}</span>
+          {agents.data && <span>{` · `}</span>}
+          {agents.data && <span>{`${covered} of ${rows.length} nodes have an agent`}</span>}
+        </>
+      }
       actions={
         user.role === "admin" && (
           <span className="flex gap-2">

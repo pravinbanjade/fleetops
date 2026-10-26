@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { within, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { ENVS, KUBE_ENV, kubeRoutes, loggedIn, renderApp } from "@/test/app";
@@ -28,12 +28,11 @@ describe("a custom role", () => {
     expect(screen.queryByRole("button", { name: "Prune" })).toBeNull();
   });
 
-  it("shows the role's name in the environment switcher", async () => {
+  it("shows the role's name on the environment's row in the library", async () => {
     mockFetch({ ...loggedIn, "GET /api/v1/envs": { json: ENVS.map((e) => holding(e, DEPLOYER)) } });
     renderApp("/envs/local/containers");
     await screen.findByRole("heading", { name: "Containers" });
-    await userEvent.click(screen.getAllByRole("button", { name: /local/ })[0]);
-    expect(await screen.findByText("Deployer")).toBeInTheDocument();
+    expect(await within(screen.getByRole("region", { name: "Environments" })).findByText("Deployer")).toBeInTheDocument();
   });
 });
 

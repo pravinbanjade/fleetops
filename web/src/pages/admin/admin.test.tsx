@@ -403,7 +403,7 @@ describe("Kubernetes environments", () => {
         kube: { server: "https://k:6443", context: "prod", user_kind: "exec", exec_command: "aws" } }] },
     });
     const { screen } = renderApp("/admin/envs");
-    await screen.findByText("eks-1");
+    await within(await screen.findByRole("table", { name: "Environments" })).findByText("eks-1");
     expect(within(row(screen, "eks-1")).getByText(/via aws/)).toBeInTheDocument();
   });
 
@@ -414,7 +414,7 @@ describe("Kubernetes environments", () => {
         kube: { server: "https://k:6443", context: "prod", user_kind: "token" } }] },
     });
     const { screen } = renderApp("/admin/envs");
-    await screen.findByText("cluster-1");
+    await within(await screen.findByRole("table", { name: "Environments" })).findByText("cluster-1");
     const r = row(screen, "cluster-1");
     expect(within(r).getByText(/prod/)).toBeInTheDocument();
     expect(within(r).getByText(/token/)).toBeInTheDocument();

@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DockerEvent } from "@/api/gen/types.gen";
-import { envStatusQuery, kubeListQuery, recentEventsQuery, swarmKeys } from "@/api/queries";
+import type { DockerEvent, KubeList } from "@/api/gen/types.gen";
+import { envStatusQuery, keys, recentEventsQuery, swarmKeys } from "@/api/queries";
 import type { EnvFamily } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { useKubeWatch } from "@/live/kubeWatch";
@@ -40,9 +40,11 @@ function SwarmTape({ env }: { env: string }) {
 
 function KubeTape({ env }: { env: string }) {
   // Warnings only: a busy cluster sends Normal events every second, and the
-  // overview already watches this filtered list, so the watch is shared.
-  const live = useKubeWatch(env, "events", undefined, undefined, "warnings");
-  const { data } = useQuery({ ...kubeListQuery(env, "events", undefined, "warnings"), enabled: !live.synced });
+  // overview already watches this filtered list, so the watch is shared. The
+  // tape reads what the watch delivers and never fetches: a page refreshing
+  // its environment's queries must not wait on the tape.
+  useKubeWatch(env, "events", undefined, undefined, "warnings");
+  const { data } = useQuery<KubeList>({ queryKey: keys.kube(env, "events", undefined, "warnings"), queryFn: skipToken });
   return <Strip env={env} items={capTape((data?.rows ?? []).map(kubeTapeItem))} />;
 }
 
@@ -78,7 +80,7 @@ function Strip({ env, items: incoming }: { env: string; items: TapeItem[] | "dow
     else void navigate({ to: t.to as never, params: { env, ...t.params } as never });
   };
   return (
-    <div role="log" aria-label="Events" aria-live="off" className="flex h-[34px] min-w-0 items-center gap-6 overflow-hidden px-3.5 text-[12.5px] whitespace-nowrap text-muted-foreground">
+    <section aria-label="Events" className="flex h-[34px] min-w-0 items-center gap-6 overflow-hidden px-3.5 text-[12.5px] whitespace-nowrap text-muted-foreground">
       <span className="flex shrink-0 items-center gap-1.5 font-medium text-live">
         <span aria-hidden className="size-1.5 rounded-full bg-live" />
         Live
@@ -104,7 +106,7 @@ function Strip({ env, items: incoming }: { env: string; items: TapeItem[] | "dow
           </button>
         ))
       )}
-    </div>
+    </section>
   );
 }
 

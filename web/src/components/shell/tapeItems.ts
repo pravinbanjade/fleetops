@@ -31,10 +31,12 @@ const LISTS: Record<string, string> = {
 export function dockerTapeItem(ev: DockerEvent): TapeItem | null {
   if (isNoise(ev)) return null;
   const action = ev.action.split(":")[0];
-  const exit = ev.attributes.exitCode;
+  // Swarm and daemon events can arrive with no attributes at all.
+  const attrs = ev.attributes ?? {};
+  const exit = attrs.exitCode;
   const failing =
     (action === "die" && !!exit && exit !== "0") || action === "oom" || action === "kill" || ev.action === "health_status: unhealthy";
-  const what = ev.name ?? ev.attributes.name ?? ev.id.slice(0, 12);
+  const what = ev.name ?? attrs.name ?? ev.id.slice(0, 12);
   const text = `${what} ${ev.action.startsWith("health_status") ? ev.action.replace("health_status: ", "") : action}${action === "die" && exit ? ` (${exit})` : ""}`;
   const to = LISTS[ev.kind];
   return { key: `${ev.time}|${ev.kind}|${ev.id}|${ev.action}`, at: ev.time, text, failing, target: to ? { to, select: ev.id } : undefined };

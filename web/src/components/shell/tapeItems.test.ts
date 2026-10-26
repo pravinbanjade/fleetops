@@ -49,4 +49,9 @@ describe("tape", () => {
     expect(item.text).toBe("api-7d9 BackOff");
     expect(item.at).toBe(200);
   });
+
+  it("survives an event that carries no attributes", () => {
+    const bare = { action: "update", id: "s1", kind: "service", name: "blog_web", time: 1 } as unknown as DockerEvent;
+    expect(dockerTapeItem(bare)!.text).toBe("blog_web update");
+  });
 });

@@ -43,7 +43,7 @@ describe("live Kubernetes pages", () => {
     const banner = await screen.findByText(/Live updates paused/);
     expect(banner.closest("[role=status]")).toHaveTextContent("pods is forbidden");
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await vi.waitFor(() => expect(sock.frames().filter((f) => f.topic === "kube-watch").length).toBe(2));
+    await vi.waitFor(() => expect(sock.frames().filter((f) => f.topic === "kube-watch" && f.id === "pods/-").length).toBe(2));
   });
 
   it("subscribes again at once when the user's access changes", async () => {
@@ -51,7 +51,7 @@ describe("live Kubernetes pages", () => {
     renderApp("/envs/k/k8s/pods");
     const { sock, sub } = await watchSub("pods/-");
     act(() => sock.receive({ sub, type: "end", reason: "access", message: "your access changed" }));
-    await vi.waitFor(() => expect(sock.frames().filter((f) => f.topic === "kube-watch").length).toBe(2));
+    await vi.waitFor(() => expect(sock.frames().filter((f) => f.topic === "kube-watch" && f.id === "pods/-").length).toBe(2));
     expect(screen.queryByText(/Live updates paused/)).not.toBeInTheDocument();
   });
 

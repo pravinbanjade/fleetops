@@ -186,7 +186,7 @@ describe("container form", () => {
     await userEvent.type(screen.getByLabelText("Name"), "api");
     await userEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => expect(history.location.pathname).toBe("/envs/local/containers/new1"));
-    expect(calls.find((c) => c.path === "/api/v1/envs/local/containers")?.body).toMatchObject({ start: false });
+    expect(calls.find((c) => c.method === "POST" && c.path === "/api/v1/envs/local/containers")?.body).toMatchObject({ start: false });
     expect(await screen.findByText("Created api, but it could not start: port is already allocated")).toBeInTheDocument();
   });
 });
