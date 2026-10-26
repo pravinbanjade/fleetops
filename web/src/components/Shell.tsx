@@ -23,6 +23,7 @@ import { envFamily, envHue, envInitials, findEnv, isKube, isSwarm, splitNodeView
 import { cn } from "@/lib/utils";
 import { useEnvEvents, useLive } from "@/live/LiveProvider";
 import { CommandPalette, typing } from "./CommandPalette";
+import { useWalkKeys } from "./walk";
 import { ADMIN_NAV, KUBE_SIDEBAR, NAV, NODE_NAV, SWARM_NAV, isGroup, kubeGroupOf, navHref, navOf, type NavItem } from "./nav";
 import { useTheme, type Theme } from "@/theme";
 import { UserAvatar } from "./UserAvatar";
@@ -42,6 +43,7 @@ export function Shell() {
   const family = envFamily(findEnv(envs, env)?.kind);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useGoKeys(env, family);
+  useWalkKeys();
   return (
     <div data-edition={ee.id} className="min-h-svh md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
       <aside className="sticky top-0 hidden h-svh border-r bg-rail md:block">
