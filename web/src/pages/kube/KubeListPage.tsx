@@ -1,3 +1,5 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { KubeNow } from "./KubeNow";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { FileCode2, ListTree, ScrollText, TerminalSquare } from "lucide-react";
@@ -265,6 +267,8 @@ export function KubeListPage() {
     [withUsage, list.data, usage.index],
   );
   const forbidden = list.error instanceof ApiError && list.error.status === 403;
+  const now = useNow();
+  const active = useNowRow(forbidden ? undefined : rows, (r: { namespace?: string | null; name: string }) => `${r.namespace ?? "-"}/${r.name}`);
   const where = ns ? `namespace ${ns}` : "all namespaces";
   return (
     <Page
@@ -313,11 +317,14 @@ export function KubeListPage() {
           Showing the first 5,000. Pick a namespace to narrow the list.
         </p>
       )}
+      {active && <KubeNow key={`${kind}:${active.namespace}/${active.name}`} env={env} kind={kind} row={active} />}
       <DataTable
         label={KIND_LABEL[kind]}
         data={forbidden ? [] : rows}
         columns={cols}
         getRowId={(r) => `${r.namespace ?? "-"}/${r.name}`}
+        onActivate={kind === "events" ? undefined : (r) => now.open(`${r.namespace ?? "-"}/${r.name}`)}
+        activeId={active ? `${active.namespace ?? "-"}/${active.name}` : undefined}
         initialFilter={q}
         selectable={selectable}
         actions={(selected, clear) => <QuickButtons items={quickItems(kubeQuick(kind, selected, can), selected, clear)} />}

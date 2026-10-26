@@ -1,3 +1,5 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { GenericNow } from "../KubeNow";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { FileCode2, ListTree, Trash2 } from "lucide-react";
@@ -79,6 +81,8 @@ export function GenericListPage() {
   const scoped = k?.namespaced ?? true;
   const live = useKubeWatch(env, refKind(r), scoped ? ns : undefined);
   const list = useQuery({ ...genericListQuery(env, r, scoped ? ns : undefined), enabled: !live.synced });
+  const now = useNow();
+  const active = useNowRow(list.data?.rows, (r: { namespace?: string | null; name: string }) => `${r.namespace ?? "-"}/${r.name}`);
   const [doomed, setDoomed] = useState<{ rows: KubeRow[]; clear: () => void } | null>(null);
   const [editing, setEditing] = useState<{ ns: string; name: string } | null>(null);
   const navigate = useNavigate();
@@ -153,11 +157,14 @@ export function GenericListPage() {
           Showing the first 5,000. Pick a namespace to narrow the list.
         </p>
       )}
+      {active && <GenericNow key={`${active.namespace}/${active.name}`} env={env} r={r} row={active} />}
       <DataTable
         label={label}
         data={forbidden ? [] : list.data?.rows}
         columns={cols}
         getRowId={(x) => `${x.namespace ?? "-"}/${x.name}`}
+        onActivate={(x) => now.open(`${x.namespace ?? "-"}/${x.name}`)}
+        activeId={active ? `${active.namespace ?? "-"}/${active.name}` : undefined}
         selectable={canDelete}
         actions={(selected, clear) => <QuickButtons items={quick(selected, clear)} />}
         rowMenu={{ label: (x) => x.name, items: (x) => quick([x], () => {}) }}

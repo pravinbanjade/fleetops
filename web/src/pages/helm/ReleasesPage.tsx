@@ -1,3 +1,5 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ReleaseNow } from "./ReleaseNow";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { lazy, Suspense, useMemo, useState } from "react";
@@ -51,6 +53,8 @@ export function ReleasesPage() {
   const { env } = route.useParams();
   const [ns, setNs] = useNamespace(env);
   const list = useQuery(helmReleasesQuery(env, ns || undefined));
+  const now = useNow();
+  const active = useNowRow(list.data, (r: HelmRelease) => `${r.namespace}/${r.name}`);
   const cols = useMemo(() => releaseColumns(env), [env]);
   const caps = useQuery(helmCapabilitiesQuery(env));
   const { can } = useEnvAccess(env);
@@ -70,11 +74,14 @@ export function ReleasesPage() {
           <HelmDeployDialog env={env} target={{ kind: "install", ns: ns || "default" }} onClose={() => setInstalling(false)} />
         </Suspense>
       )}
+      {active && <ReleaseNow key={`${active.namespace}/${active.name}`} env={env} release={active} />}
       <DataTable
         label="Helm releases"
         data={list.data}
         columns={cols}
         getRowId={(r) => `${r.namespace}/${r.name}`}
+        onActivate={(r) => now.open(`${r.namespace}/${r.name}`)}
+        activeId={active ? `${active.namespace}/${active.name}` : undefined}
         error={list.error}
         empty={`No Helm releases in ${ns ? `namespace ${ns}` : "all namespaces"}`}
       />
