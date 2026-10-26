@@ -1,3 +1,5 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, Container, KeyRound, Network, Pencil, Plus, ShieldCheck, ShipWheel, Trash2, type LucideIcon } from "lucide-react";
 import { useId, useState } from "react";
@@ -147,6 +149,8 @@ function AgentCell({ env }: { env: EnvView }) {
 export function EnvironmentsPage() {
   const qc = useQueryClient();
   const envs = useQuery(envsQuery);
+  const now = useNow();
+  const active = useNowRow(envs.data, (e: EnvView) => String(e.id));
   const [dialog, setDialog] = useState<Dialog>(null);
   // Separate from `dialog`: a confirm dialog closes itself after it succeeds.
   const [enrollment, setEnrollment] = useState<Pending | null>(null);
@@ -195,11 +199,14 @@ export function EnvironmentsPage() {
   return (
     <Page title="Environments" actions={<Button onClick={() => setDialog({ kind: "add" })}>
 <Plus aria-hidden />Add environment</Button>}>
+      {active && <EnvNow key={active.id} env={active} />}
       <DataTable
         label="Environments"
         data={envs.data}
         error={envs.error}
         columns={cols}
+        onActivate={(r) => now.open(((e: EnvView) => String(e.id))(r))}
+        activeId={active ? ((e: EnvView) => String(e.id))(active) : undefined}
         getRowId={(e) => String(e.id)}
         empty="No environments."
         initialSorting={[{ id: "name", desc: false }]}
@@ -536,5 +543,24 @@ function EnvAccess({ env, onClose }: { env: string; onClose: () => void }) {
         <Slot name="env.access" props={{ env }} />
       </DialogContent>
     </Modal>
+  );
+}
+
+/** An environment in the panel: its kind and address, whether it answers, and where it lives. */
+function EnvNow({ env: e }: { env: EnvView }) {
+  const status = useQuery(envStatusQuery(e.name, e.kind.startsWith("kube-") || e.kind.startsWith("swarm-")));
+  return (
+    <ObjectNow
+      title={e.name}
+      subtitle={<span className="font-ident">{e.url}</span>}
+      facts={[
+        { label: "Kind", value: e.kind },
+        { label: "Status", value: <span className={status.data?.state === "down" ? "text-fall" : undefined}>{status.data?.state ?? "—"}</span> },
+        { label: "Added", value: formatAgo(e.created_at) },
+      ]}
+      open={{ to: "/envs/$env", params: { env: e.name } }}
+    >
+      {status.data?.state === "down" && <p className="rounded-md bg-[#1c1c1c] p-3 text-sm text-fall">{status.data.reason}</p>}
+    </ObjectNow>
   );
 }

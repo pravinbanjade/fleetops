@@ -18,7 +18,7 @@ export function AccountPage() {
   const { user } = useSession();
   return (
     <div className="grid max-w-3xl gap-4 p-6">
-      <h1 className="text-2xl font-semibold">Account</h1>
+      <h1 className="text-[1.75rem] leading-tight font-bold tracking-[-0.02em]">Account</h1>
       <p className="text-sm text-muted-foreground">
         <span className="inline-flex items-center gap-2">
           <UserAvatar name={user.username} size="sm" />

@@ -1,3 +1,6 @@
+import { JsonView } from "@/components/JsonView";
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
 import { ChevronsDown, FilterX } from "lucide-react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -180,6 +183,8 @@ export function AuditPage() {
       envName: e.environment_id == null ? "" : (names.get(e.environment_id) ?? `#${e.environment_id}`),
     }));
   }, [audit.data, envs.data]);
+  const now = useNow();
+  const active = useNowRow(rows, (e: AuditEntry) => String(e.id));
   const [cols] = useState(() => COLUMNS);
   const clear = () => {
     setUserId("");
@@ -276,11 +281,14 @@ export function AuditPage() {
           </Button>
         )}
       </form>
+      {active && <AuditNow key={active.id} entry={active} />}
       <DataTable
         label="Audit log"
         data={rows}
         error={audit.error}
         columns={cols}
+        onActivate={(r) => now.open(((e: AuditEntry) => String(e.id))(r))}
+        activeId={active ? ((e: AuditEntry) => String(e.id))(active) : undefined}
         getRowId={(e) => String(e.id)}
         empty={filtered ? "No entries match these filters." : "Nothing has been audited yet."}
         phoneColumns={["ts", "user", "action"]}
@@ -297,5 +305,27 @@ export function AuditPage() {
         </Button>
       )}
     </Page>
+  );
+}
+
+/** One audit record in the panel, whole: who, what, on which target, and the detail it carried. */
+function AuditNow({ entry: e }: { entry: AuditEntry & { envName: string } }) {
+  return (
+    <ObjectNow
+      title={e.action}
+      subtitle={formatTime(e.ts)}
+      facts={[
+        { label: "User", value: e.username ?? "—" },
+        { label: "Result", value: <span className={e.result === "ok" ? undefined : "text-fall"}>{e.result}</span> },
+        { label: "Environment", value: e.envName || "—" },
+      ]}
+    >
+      {e.target_type && (
+        <p className="text-sm text-muted-foreground">
+          {e.target_type} <span className="font-ident text-foreground">{e.target_id}</span>
+        </p>
+      )}
+      {e.detail != null && <JsonView label="Detail" value={e.detail} />}
+    </ObjectNow>
   );
 }

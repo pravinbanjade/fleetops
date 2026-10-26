@@ -109,9 +109,9 @@ export function EnvTile({ name, size = "md" }: { name: string; size?: "sm" | "md
 }
 
 /** The FleetOps mark: the favicon's F on the live green. */
-function Mark() {
+export function Mark({ size = "size-7" }: { size?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className="size-7 shrink-0" aria-hidden>
+    <svg viewBox="0 0 32 32" className={cn(size, "shrink-0")} aria-hidden>
       <rect width="32" height="32" rx="8" className="fill-live" />
       <path d="M9 9h14v3.4H13v3.2h8.5V19H13v4H9z" className="fill-black" />
     </svg>

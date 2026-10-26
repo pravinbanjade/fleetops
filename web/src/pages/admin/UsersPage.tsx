@@ -1,3 +1,5 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Plus, ShieldCheck, Trash2, UserCheck, UserCog, UserX } from "lucide-react";
 import { useState } from "react";
@@ -33,6 +35,8 @@ export function UsersPage() {
   const { user: me } = useSession();
   const qc = useQueryClient();
   const users = useQuery(usersQuery);
+  const now = useNow();
+  const active = useNowRow(users.data, (u: User) => String(u.id));
   const [dialog, setDialog] = useState<Dialog>(null);
   const close = () => setDialog(null);
   const refresh = () => qc.invalidateQueries({ queryKey: keys.users });
@@ -114,11 +118,14 @@ export function UsersPage() {
   return (
     <Page title="Users" actions={<Button onClick={() => setDialog({ kind: "add" })}>
 <Plus aria-hidden />Add user</Button>}>
+      {active && <UserNow key={active.id} user={active} />}
       <DataTable
         label="Users"
         data={users.data}
         error={users.error}
         columns={cols}
+        onActivate={(r) => now.open(((u: User) => String(u.id))(r))}
+        activeId={active ? ((u: User) => String(u.id))(active) : undefined}
         getRowId={(u) => String(u.id)}
         empty="No users."
         initialSorting={[{ id: "username", desc: false }]}
@@ -276,5 +283,20 @@ function RoleSelect({ value, onChange }: { value: Role; onChange: (r: Role) => v
         <option value="admin">Admin: also manages users and environments</option>
       </NativeSelect>
     </div>
+  );
+}
+
+/** An account in the panel: its role, how it signs in, and when it was made. */
+function UserNow({ user: u }: { user: User }) {
+  return (
+    <ObjectNow
+      title={u.username}
+      subtitle={u.disabled_at ? `Disabled ${formatTime(u.disabled_at)}` : "Active"}
+      facts={[
+        { label: "Role", value: u.role },
+        { label: "Signs in with", value: u.sso ?? "Password" },
+        { label: "Created", value: formatTime(u.created_at) },
+      ]}
+    />
   );
 }

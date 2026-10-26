@@ -36,7 +36,7 @@ export function ObjectNow({
   subtitle?: ReactNode;
   facts: NowFact[];
   list?: { title: string; rows: NowRow[]; empty: string };
-  open: { to: string; params: Record<string, string> };
+  open?: { to: string; params: Record<string, string> };
   actions?: ReactNode;
   children?: ReactNode;
 }) {
@@ -75,15 +75,19 @@ export function ObjectNow({
         </section>
       )}
       {children}
-      <div className="mt-auto flex flex-wrap gap-2">
-        <Button asChild size="sm">
-          <Link to={open.to as never} params={open.params as never}>
-            <ArrowUpRight />
-            Open
-          </Link>
-        </Button>
-        {actions}
-      </div>
+      {(open || actions) && (
+        <div className="mt-auto flex flex-wrap gap-2">
+          {open && (
+            <Button asChild size="sm">
+              <Link to={open.to as never} params={open.params as never}>
+                <ArrowUpRight />
+                Open
+              </Link>
+            </Button>
+          )}
+          {actions}
+        </div>
+      )}
     </NowPanel>
   );
 }
