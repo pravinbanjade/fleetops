@@ -1,4 +1,4 @@
-import { waitFor } from "@testing-library/react";
+import { within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { safeRedirect } from "./router";
@@ -94,8 +94,7 @@ describe("a lost session", () => {
     const user = userEvent.setup();
     expect(await screen.findByText("AdminsLaptop")).toBeInTheDocument();
     lost = true;
-    await user.click(screen.getByRole("button", { name: /^Environment/ }));
-    await user.click(await screen.findByRole("menuitem", { name: "local" }));
+    await user.click(within(screen.getByRole("region", { name: "Environments" })).getByRole("link", { name: /^local/ }));
     await waitFor(() => expect(history.location.pathname).toBe("/login"));
     await user.type(screen.getByLabelText("Username"), "bob");
     await user.type(screen.getByLabelText("Password"), "bobs-password-1");

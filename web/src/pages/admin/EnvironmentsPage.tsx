@@ -10,7 +10,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { Page } from "@/components/Page";
 import type { QuickItem } from "@/components/RowMenu";
-import { EnvTag } from "@/components/Shell";
+import { EnvTile } from "@/components/shell/Library";
 import { StateBadge } from "@/components/StateBadge";
 import { isEnterpriseBuild, Slot } from "@/ee-slots";
 import { Button } from "@/components/ui/button";
@@ -159,7 +159,7 @@ export function EnvironmentsPage() {
       header: "Name",
       cell: (c) => (
         <Link to="/envs/$env" params={{ env: c.getValue() }} className="flex items-center gap-2 font-medium underline-offset-2 hover:underline">
-          <EnvTag name={c.getValue()} size="sm" />
+          <EnvTile name={c.getValue()} size="sm" />
           {c.getValue()}
         </Link>
       ),
