@@ -1,3 +1,4 @@
+import { swarmStatus } from "@/lib/findings";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -173,7 +174,7 @@ export function NodesPage({ env }: { env: string }) {
   return (
     <Page
       title="Nodes"
-      meta={agents.data && `${covered} of ${rows.length} nodes have an agent`}
+      meta={[swarmStatus(rows), agents.data && `${covered} of ${rows.length} nodes have an agent`].filter(Boolean).join(" · ")}
       actions={
         user.role === "admin" && (
           <span className="flex gap-2">

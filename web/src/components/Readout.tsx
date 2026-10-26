@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import type { CSSProperties } from "react";
 import { Sparkline } from "@/components/Sparkline";
+import { Tick } from "@/components/Tick";
 
 /**
  * A live value with its recent history, and its share of capacity as a
@@ -33,7 +34,7 @@ export function Readout({
     <div
       role="group"
       aria-label={label}
-      className="font-strip grid min-w-0 gap-1 rounded-lg border bg-card px-3 py-2 sm:w-[12rem] xl:w-auto"
+      className="grid min-w-0 gap-1 rounded-lg bg-[#1c1c1c] px-3 py-2.5 sm:w-[12rem] xl:w-auto"
     >
       <div className="flex items-center gap-3">
         <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -46,8 +47,8 @@ export function Readout({
         </span>
       </div>
       <p className="min-w-0 truncate tabular-nums">
-        <span className="text-lg font-semibold">{value}</span>{" "}
-        <span className="text-xs whitespace-nowrap text-muted-foreground">{detail}</span>
+        <Tick className="text-lg font-semibold" value={values.at(-1) ?? 0} text={value} />{" "}
+        <span className="text-xs whitespace-nowrap text-meta">{detail}</span>
       </p>
       {share !== undefined && (
         <div aria-hidden className="h-0.5 overflow-hidden rounded-full bg-muted">

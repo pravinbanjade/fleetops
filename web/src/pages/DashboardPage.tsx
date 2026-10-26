@@ -1,3 +1,5 @@
+import { dockerStatus } from "@/lib/findings";
+import { useClock } from "@/components/useClock";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { getRouteApi, Link } from "@tanstack/react-router";
 import {
@@ -69,12 +71,15 @@ export function DashboardPage() {
   // still has, not for the errors every query now returns.
   const shown = (q: UseQueryResult) => down === null || q.data !== undefined;
   const asOf = Math.max(containers.dataUpdatedAt, info.dataUpdatedAt);
+  const clock = useClock();
 
   return (
     <Page
       title={env}
+      kicker="Docker host"
       meta={
         <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {containers.data && <span>{dockerStatus(containers.data, events.data ?? [], clock)}</span>}
           <Liveness down={down !== null} asOf={asOf} />
           {info.data && <HostFacts info={info.data} />}
         </span>

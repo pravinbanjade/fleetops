@@ -1,3 +1,4 @@
+import { swarmStatus } from "@/lib/findings";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -41,7 +42,11 @@ export function SwarmOverviewPage({ env }: { env: string }) {
   ];
   const v = status.data?.state === "up" && status.data.version.kind === "swarm" ? status.data.version : null;
   return (
-    <Page title="Overview" meta={v && `${v.managers} managers, ${v.workers} workers · Docker ${v.engine}`}>
+    <Page
+      title={env}
+      kicker="Swarm"
+      meta={[nodes.data && swarmStatus(nodes.data), v && `${v.managers} managers, ${v.workers} workers · Docker ${v.engine}`].filter(Boolean).join(" · ")}
+    >
       <TrustCard env={env} admin={user.role === "admin"} />
       <FeedPaused reason={paused} />
       {status.data?.state === "down" && (

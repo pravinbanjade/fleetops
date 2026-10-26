@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { Tick } from "@/components/Tick";
 import { cn } from "@/lib/utils";
 
 /**
@@ -9,7 +10,7 @@ import { cn } from "@/lib/utils";
 export function Meter({ value, share, title, plain, className }: { value: string; share?: number; title?: string; plain?: boolean; className?: string }) {
   return (
     <span className={cn("grid min-w-0 gap-1 tabular-nums", className)} title={title}>
-      <span>{value}</span>
+      <Tick value={share ?? (Number.parseFloat(value) || 0)} text={value} />
       {share !== undefined && (
         <span aria-hidden className="h-0.5 overflow-hidden rounded-full bg-muted">
           <span

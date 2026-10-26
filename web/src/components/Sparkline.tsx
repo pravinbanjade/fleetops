@@ -47,7 +47,7 @@ export function Sparkline({
       height={height}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
-      className="block text-foreground/75"
+      className="block text-meta"
     >
       {/* The minute's full window, so a short history reads as recent, not as a stub. */}
       <line x1={0} x2={width} y1={height - 1} y2={height - 1} stroke="currentColor" strokeOpacity={0.18} strokeWidth={1} vectorEffect="non-scaling-stroke" />

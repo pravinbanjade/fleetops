@@ -218,7 +218,7 @@ describe("Swarm trust and node views", () => {
         "GET /api/v1/envs/prod/swarm/trust": () => (n++ === 0 ? { status: 404, json: { code: "not_found", message: "none" } } : { json: TRUST }),
       });
       const { screen } = renderApp("/envs/prod");
-      await screen.findByRole("heading", { name: "Overview" });
+      await screen.findByRole("heading", { name: "prod" });
       await waitFor(() => expect(n).toBe(1));
       expect(screen.queryByRole("region", { name: "Trust this swarm" })).not.toBeInTheDocument();
       await vi.advanceTimersByTimeAsync(16_000);
@@ -273,7 +273,7 @@ describe("Swarm trust and node views", () => {
       "GET /api/v1/envs/prod/swarm/trust": { json: TRUST },
     });
     const { screen } = renderApp("/envs/prod");
-    await screen.findByRole("heading", { name: "Overview" });
+    await screen.findByRole("heading", { name: "prod" });
     await new Promise((r) => setTimeout(r, 50));
     expect(calls.filter((c) => c.path.endsWith("/swarm/trust") || c.path.endsWith("/swarm/agents"))).toEqual([]);
   });
