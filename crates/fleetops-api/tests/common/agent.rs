@@ -163,4 +163,24 @@ impl TestAgent {
     pub fn session(&self) -> &Session {
         &self.session
     }
+
+    /// Keeps the agent connected from a task of its own, answering pings,
+    /// and hands on every other message. Reading inside a `select!` would
+    /// drop half-read messages whenever another branch won.
+    pub fn answering(mut self) -> tokio::sync::mpsc::UnboundedReceiver<Msg> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            while let Ok(Some(m)) = read_msg(&mut self.rx).await {
+                match m {
+                    Msg::Ping { n } => self.pong(n).await,
+                    other => {
+                        if tx.send(other).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+        rx
+    }
 }

@@ -935,7 +935,7 @@ async fn a_removed_manager_drops_off_while_fleetops_runs() {
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", true)]);
     trust(&t, env_id, &pki, &daemon).await;
-    let (mut m, _) = join(
+    let (m, _) = join(
         &base,
         &key,
         &daemon,
@@ -943,25 +943,23 @@ async fn a_removed_manager_drops_off_while_fleetops_runs() {
         &pki.node("n1", true),
     )
     .await;
+    // n1 stays connected (answering pings); nobody reconnects.
+    let _m = m.answering();
     // Let the registration's own refresh finish while n2 is still a manager.
     eventually("registered", || t.state.agents.nodes(env_id).len() == 1).await;
-    for _ in 0..4 {
-        tokio::select! {
-            Some(Msg::Ping { n }) = m.next() => m.pong(n).await,
-            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
+    for _ in 0..200 {
+        if known(&t, env_id).await == ["n1", "n2"] {
+            break;
         }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     assert_eq!(known(&t, env_id).await, ["n1", "n2"]);
     daemon.remove("n2");
-    // n1 stays connected (answering pings); nobody reconnects.
     for _ in 0..200 {
         if known(&t, env_id).await == ["n1"] {
             break;
         }
-        tokio::select! {
-            Some(Msg::Ping { n }) = m.next() => m.pong(n).await,
-            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
-        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     assert_eq!(known(&t, env_id).await, ["n1"]);
 }
@@ -980,7 +978,7 @@ async fn a_removed_worker_is_dropped_while_fleetops_runs() {
     let pki = SwarmPki::new("c1");
     let daemon = FakeSwarm::new(&pki, &[("n1", true), ("n2", false)]);
     trust(&t, env_id, &pki, &daemon).await;
-    let (mut m, _) = join(
+    let (m, _) = join(
         &base,
         &key,
         &daemon,
@@ -988,7 +986,8 @@ async fn a_removed_worker_is_dropped_while_fleetops_runs() {
         &pki.node("n1", true),
     )
     .await;
-    let (mut w, _) = join(
+    let _m = m.answering();
+    let (w, _) = join(
         &base,
         &key,
         &daemon,
@@ -996,25 +995,18 @@ async fn a_removed_worker_is_dropped_while_fleetops_runs() {
         &pki.node("n2", false),
     )
     .await;
+    let mut w = w.answering();
     eventually("both", || t.state.agents.nodes(env_id).len() == 2).await;
     daemon.remove("n2");
-    let mut revoked = false;
-    for _ in 0..200 {
-        tokio::select! {
-            Some(msg) = w.next() => match msg {
-                Msg::Ping { n } => w.pong(n).await,
-                Msg::Bye { reason } => {
-                    assert_eq!(reason, ByeReason::Revoked);
-                    revoked = true;
-                    break;
-                }
-                _ => {}
-            },
-            Some(Msg::Ping { n }) = m.next() => m.pong(n).await,
-            _ = tokio::time::sleep(std::time::Duration::from_millis(50)) => {}
-        }
-    }
-    assert!(revoked, "the removed worker was not dropped");
+    let bye = tokio::time::timeout(std::time::Duration::from_secs(10), w.recv())
+        .await
+        .expect("the removed worker was not dropped");
+    assert_eq!(
+        bye,
+        Some(Msg::Bye {
+            reason: ByeReason::Revoked
+        })
+    );
     eventually("gone", || t.state.agents.get_node(env_id, "n2").is_none()).await;
 }
 
