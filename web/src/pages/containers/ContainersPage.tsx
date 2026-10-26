@@ -20,6 +20,8 @@ import { portLinks } from "@/lib/ports";
 import { Usage } from "@/components/Usage";
 import { QuickButtons, type QuickItem } from "@/components/RowMenu";
 import { ACTIONS, RemoveDialog } from "./actions";
+import { ContainerNow } from "./ContainerNow";
+import { useNow, useNowRow } from "@/components/shell/now";
 import { containerQuick } from "./quick";
 
 const route = getRouteApi("/authed/shell/envs/$env/containers");
@@ -136,6 +138,8 @@ export function ContainersPage() {
   const [removing, setRemoving] = useState<ContainerSummary[] | null>(null);
   const [pruning, setPruning] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: keys.containers(env) });
+  const now = useNow();
+  const active = useNowRow(list.data, (c) => c.id);
 
   const bulk = useMutation({
     mutationFn: async ({ items, action }: { items: ContainerSummary[]; action: (typeof ACTIONS)[number] }) => {
@@ -213,7 +217,10 @@ export function ContainersPage() {
         selectable={can("containers.operate") || can("containers.delete")}
         actions={(selected, clear) => <QuickButtons items={quick(selected, clear)} />}
         rowMenu={{ label: (c) => c.name, items: (c) => quick([c], () => {}) }}
+        onActivate={(c) => now.open(c.id)}
+        activeId={active?.id}
       />
+      {active && <ContainerNow key={active.id} env={env} container={active} />}
       {removing && <RemoveDialog env={env} containers={removing} onDone={() => setRemoving(null)} />}
       <ConfirmDialog
         open={pruning}
