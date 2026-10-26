@@ -8,6 +8,7 @@ import type { ContainerActionName, ContainerSummary, DockerEvent } from "@/api/g
 import { containerQuery, keys, recentEventsQuery } from "@/api/queries";
 import { LogTail } from "@/components/LogTail";
 import { NowPanel } from "@/components/shell/now";
+import { Fact } from "@/components/shell/ObjectNow";
 import { Tick } from "@/components/Tick";
 import { useClock } from "@/components/useClock";
 import { Button } from "@/components/ui/button";
@@ -107,11 +108,3 @@ export function ContainerNow({ env, container: c }: { env: string; container: Co
   );
 }
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid gap-0.5 rounded-md bg-[#1c1c1c] px-2.5 py-2">
-      <span className="truncate text-xs text-meta">{label}</span>
-      <span className="text-base font-semibold">{children}</span>
-    </div>
-  );
-}

@@ -1,3 +1,7 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
+import { useSwarmTasks } from "@/live/swarmTasks";
+import { taskName } from "./shared";
 import { swarmStatus } from "@/lib/findings";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
@@ -164,6 +168,8 @@ export function NodesPage({ env }: { env: string }) {
   const [confirm, setConfirm] = useState<"finish" | "retrust" | null>(null);
   const cols = useMemo(() => nodeColumns(env), [env]);
   const rows = agents.data ?? [];
+  const now = useNow();
+  const active = useNowRow(agents.data, (n: SwarmAgentView) => n.node_id);
   const agent = useQuery(envsQuery).data?.find((e) => e.name === env)?.agent;
   // Set while the key from before the last rotation still works.
   const rotating = agent?.rotation_ends_at != null;
@@ -201,7 +207,8 @@ export function NodesPage({ env }: { env: string }) {
           Last refused agent: {refused}
         </p>
       )}
-      <DataTable label="Nodes" data={agents.data} error={agents.error} columns={cols} getRowId={(n) => n.node_id} empty="No nodes yet." />
+      {active && <NodeNow key={active.node_id} env={env} node={active} />}
+      <DataTable label="Nodes" data={agents.data} error={agents.error} columns={cols} onActivate={(r) => now.open(((n: SwarmAgentView) => n.node_id)(r))} activeId={active ? ((n: SwarmAgentView) => n.node_id)(active) : undefined} getRowId={(n) => n.node_id} empty="No nodes yet." />
       {confirm === "finish" && (
         <ConfirmDialog
           open
@@ -231,5 +238,28 @@ export function NodesPage({ env }: { env: string }) {
         />
       )}
     </Page>
+  );
+}
+
+/** A node in the panel: its state and agent, and the tasks placed on it. */
+function NodeNow({ env, node: n }: { env: string; node: SwarmAgentView }) {
+  const { tasks: all } = useSwarmTasks(env);
+  const tasks = (all ?? []).filter((t) => t.node_id === n.node_id);
+  return (
+    <ObjectNow
+      title={n.hostname ?? n.node_id}
+      subtitle={<span className="font-ident">{n.node_id}</span>}
+      facts={[
+        { label: "State", value: <span className={n.state === "down" ? "text-fall" : undefined}>{n.state ?? "—"}</span> },
+        { label: "Role", value: n.role ?? "—" },
+        { label: "Agent", value: n.connected ? "Connected" : "Not connected" },
+      ]}
+      list={{ title: "Tasks", empty: all ? "No tasks on this node." : "Loading tasks…", rows: tasks
+          .slice()
+          .sort((a, b) => b.updated_at - a.updated_at)
+          .slice(0, 30)
+          .map((t) => ({ key: t.id, label: taskName(t), aside: t.error ? t.error : t.state, failing: !!t.error || t.state === "failed" || t.state === "rejected" })) }}
+      open={{ to: "/envs/$env", params: { env: `${env}@${n.node_id}` } }}
+    />
   );
 }

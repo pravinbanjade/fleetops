@@ -1,3 +1,8 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
+import { Tick } from "@/components/Tick";
+import { useSwarmTasks } from "@/live/swarmTasks";
+import { taskName } from "./shared";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -42,13 +47,44 @@ export function ServicesPage() {
   const env = useEnv();
   useSwarmEvents(env);
   const services = useQuery(swarmServicesQuery(env));
+  const now = useNow();
+  const active = useNowRow(services.data, (s: ServiceSummary) => s.id);
   const cols = useMemo(() => serviceColumns(env), [env]);
   const [creating, setCreating] = useState(false);
   const { can } = useEnvAccess(env);
   return (
     <Page title="Services" actions={can("swarm-services.create", null) && <Button onClick={() => setCreating(true)}>Create service</Button>}>
       {creating && <ServiceDialog env={env} target={{ mode: "create" }} onClose={() => setCreating(false)} />}
-      <DataTable label="Services" data={services.data} error={services.error} columns={cols} getRowId={(s) => s.id} empty="No services." initialSorting={[{ id: "name", desc: false }]} />
+      {active && <ServiceNow key={active.id} env={env} service={active} />}
+      <DataTable label="Services" data={services.data} error={services.error} columns={cols} onActivate={(r) => now.open(((s: ServiceSummary) => s.id)(r))} activeId={active ? ((s: ServiceSummary) => s.id)(active) : undefined} getRowId={(s) => s.id} empty="No services." initialSorting={[{ id: "name", desc: false }]} />
     </Page>
+  );
+}
+
+/** A service in the panel: its tasks running against those wanted, live. */
+function ServiceNow({ env, service: s }: { env: string; service: ServiceSummary }) {
+  const { tasks: all } = useSwarmTasks(env);
+  const tasks = (all ?? []).filter((t) => t.service_id === s.id);
+  const running = all ? tasks.filter((t) => t.state === "running").length : s.tasks_running;
+  return (
+    <ObjectNow
+      title={s.name}
+      subtitle={<span className="font-ident">{s.image}</span>}
+      facts={[
+        { label: "Running", value: <Tick value={running} text={`${running} / ${s.tasks_desired}`} className={running < s.tasks_desired ? "text-fall" : undefined} /> },
+        { label: "Mode", value: s.mode },
+        { label: "Update", value: s.update_state ?? "—" },
+      ]}
+      list={{
+        title: "Tasks",
+        empty: all ? "No tasks." : "Loading tasks…",
+        rows: tasks
+          .slice()
+          .sort((a, b) => b.updated_at - a.updated_at)
+          .slice(0, 30)
+          .map((t) => ({ key: t.id, label: taskName(t), aside: t.error ? t.error : t.state, failing: !!t.error || t.state === "failed" || t.state === "rejected" })),
+      }}
+      open={{ to: "/envs/$env/swarm/services/$id", params: { env, id: s.id } }}
+    />
   );
 }

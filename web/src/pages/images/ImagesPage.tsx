@@ -1,7 +1,9 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { imagesQuery } from "@/api/queries";
+import { containersQuery, imagesQuery } from "@/api/queries";
 import type { ImageSummary } from "@/api/gen/types.gen";
 import { columns, DataTable, type Column } from "@/components/DataTable";
 import { ImageRef } from "@/components/ImageRef";
@@ -57,6 +59,8 @@ export function ImagesPage() {
   const canCreate = can("images.create");
   const canDelete = can("images.delete");
   const list = useQuery(imagesQuery(env));
+  const now = useNow();
+  const active = useNowRow(list.data, (i: ImageSummary) => i.id);
   const cols = useMemo(() => imageColumns(env), [env]);
   const [removing, setRemoving] = useState<ImageSummary[] | null>(null);
   const [pruning, setPruning] = useState(false);
@@ -85,12 +89,15 @@ export function ImagesPage() {
         )
       }
     >
+      {active && <ImageNow key={active.id} env={env} image={active} />}
       <DataTable
         label="Images"
         data={list.data}
         error={list.error}
         columns={cols}
         getRowId={(i) => i.id}
+        onActivate={(r) => now.open(((i: ImageSummary) => i.id)(r))}
+        activeId={active ? ((i: ImageSummary) => i.id)(active) : undefined}
         empty="No images in this environment."
         initialSorting={[{ id: "created", desc: true }]}
         selectable={canDelete}
@@ -122,5 +129,28 @@ export function ImagesPage() {
       {pulling && <PullDialog env={env} onClose={() => setPulling(false)} />}
       {building && <BuildDialog env={env} onClose={() => setBuilding(false)} />}
     </Page>
+  );
+}
+
+/** An image in the panel: its size and age, and the containers that run it. */
+function ImageNow({ env, image }: { env: string; image: ImageSummary }) {
+  const containers = useQuery(containersQuery(env));
+  const users = (containers.data ?? []).filter((c) => c.image_id === image.id);
+  return (
+    <ObjectNow
+      title={<span className="font-ident">{image.repo_tags[0] ?? shortId(image.id)}</span>}
+      subtitle={image.repo_tags.length > 1 ? `${image.repo_tags.length} tags` : shortId(image.id)}
+      facts={[
+        { label: "Size", value: <span className="font-figure">{formatBytes(image.size)}</span> },
+        { label: "Created", value: formatAgo(image.created) },
+        { label: "Containers", value: <span className="font-figure">{users.length}</span> },
+      ]}
+      list={{
+        title: "Used by",
+        empty: "No container uses this image.",
+        rows: users.map((c) => ({ key: c.id, label: c.name, aside: c.state, link: { to: "/envs/$env/containers/$id", params: { env, id: c.id } } })),
+      }}
+      open={{ to: "/envs/$env/images/$id", params: { env, id: image.id } }}
+    />
   );
 }

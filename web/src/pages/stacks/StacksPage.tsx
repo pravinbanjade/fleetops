@@ -1,10 +1,12 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { GitBranch } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ServiceSummary, StackSummary } from "@/api/gen/types.gen";
 import { useEnvAccess, useEnvFamily } from "@/api/access";
-import { composeProjectsQuery, stacksQuery, swarmServicesQuery } from "@/api/queries";
+import { composeProjectsQuery, containersQuery, stacksQuery, swarmServicesQuery } from "@/api/queries";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, columns } from "@/components/DataTable";
@@ -131,6 +133,8 @@ export function StacksPage() {
   const { env } = route.useParams();
   const swarm = useEnvFamily(env) === "swarm";
   const stacks = useQuery(stacksQuery(env));
+  const now = useNow();
+  const active = useNowRow(stacks.data, (r: StackSummary) => r.name);
   const projects = useQuery({ ...composeProjectsQuery(env), enabled: !swarm });
   const cols = useMemo(() => stackColumns(env), [env]);
   const { can } = useEnvAccess(env);
@@ -149,11 +153,12 @@ export function StacksPage() {
       }
     >
       {creating && <NewStackDialog env={env} onClose={() => setCreating(false)} />}
+      {active && <StackNow key={active.name} env={env} stack={active} swarm={swarm} />}
       <DataTable
         label="Stacks"
         data={stacks.data}
         columns={cols}
-        getRowId={(r) => r.name}
+        onActivate={(r) => now.open(((r: StackSummary) => r.name)(r))} activeId={active ? ((r: StackSummary) => r.name)(active) : undefined} getRowId={(r) => r.name}
         error={stacks.error}
         empty="No stacks in this environment yet."
       />
@@ -182,5 +187,37 @@ export function StacksPage() {
         )
       )}
     </Page>
+  );
+}
+
+/** A stack in the panel: its revision and last result, and what it runs now. */
+function StackNow({ env, stack, swarm }: { env: string; stack: StackSummary; swarm: boolean }) {
+  const containers = useQuery({ ...containersQuery(env), enabled: !swarm });
+  const services = useQuery({ ...swarmServicesQuery(env), enabled: swarm });
+  const rows = swarm
+    ? (services.data ?? [])
+        .filter((s) => s.stack === stack.name)
+        .map((s) => ({
+          key: s.id,
+          label: s.name,
+          aside: `${s.tasks_running} / ${s.tasks_desired}`,
+          failing: s.tasks_running < s.tasks_desired,
+          link: { to: "/envs/$env/swarm/services/$id", params: { env, id: s.id } },
+        }))
+    : (containers.data ?? [])
+        .filter((c) => c.compose_project === stack.name)
+        .map((c) => ({ key: c.id, label: c.name, aside: c.state, failing: c.state !== "running", link: { to: "/envs/$env/containers/$id", params: { env, id: c.id } } }));
+  return (
+    <ObjectNow
+      title={stack.name}
+      subtitle={stack.sync_error ?? stack.last_status ?? undefined}
+      facts={[
+        { label: "Revision", value: <span className="font-figure">{stack.deployed_revision ?? "—"}</span> },
+        { label: "Source", value: stack.source },
+        { label: "Updated", value: formatAgo(stack.updated_at) },
+      ]}
+      list={{ title: swarm ? "Services" : "Containers", empty: "Nothing deployed yet.", rows }}
+      open={{ to: "/envs/$env/stacks/$stack", params: { env, stack: stack.name } }}
+    />
   );
 }

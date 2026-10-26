@@ -1,3 +1,5 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -69,6 +71,8 @@ export function VolumesPage() {
     const users = volumeUsers(containers.data);
     return list.data.map((v) => ({ ...v, users: users.get(v.name) ?? [] }));
   }, [list.data, containers.data]);
+  const now = useNow();
+  const active = useNowRow(rows, (v: Row) => v.name);
   const [removing, setRemoving] = useState<string[] | null>(null);
   const [pruning, setPruning] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -86,12 +90,13 @@ export function VolumesPage() {
         </>
       }
     >
+      {active && <VolumeNow key={active.name} env={env} volume={active} />}
       <DataTable
         label="Volumes"
         data={rows}
         error={list.error}
         columns={cols}
-        getRowId={(v) => v.name}
+        onActivate={(r) => now.open(((v: Row) => v.name)(r))} activeId={active ? ((v: Row) => v.name)(active) : undefined} getRowId={(v) => v.name}
         empty="No volumes in this environment."
         initialSorting={[{ id: "name", desc: false }]}
         initialHidden={["mountpoint"]}
@@ -117,5 +122,25 @@ export function VolumesPage() {
       {pruning && <PruneVolumesDialog env={env} onDone={() => setPruning(false)} />}
       {creating && <CreateVolumeDialog env={env} onClose={() => setCreating(false)} />}
     </Page>
+  );
+}
+
+/** A volume in the panel: its driver and mountpoint, and the containers that mount it. */
+function VolumeNow({ env, volume }: { env: string; volume: Row }) {
+  return (
+    <ObjectNow
+      title={<span className="font-ident">{volume.name}</span>}
+      subtitle={<span className="font-ident">{volume.mountpoint}</span>}
+      facts={[
+        { label: "Driver", value: volume.driver },
+        { label: "Containers", value: <span className="font-figure">{volume.users.length}</span> },
+      ]}
+      list={{
+        title: "Mounted by",
+        empty: "No container mounts this volume.",
+        rows: volume.users.map((c) => ({ key: c.id, label: c.name, aside: c.state, link: { to: "/envs/$env/containers/$id", params: { env, id: c.id } } })),
+      }}
+      open={{ to: "/envs/$env/volumes/$name", params: { env, name: volume.name } }}
+    />
   );
 }

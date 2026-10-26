@@ -1,3 +1,5 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { TaskSummary } from "@/api/gen/types.gen";
@@ -42,11 +44,35 @@ export function FeedPaused({ reason }: { reason: string | null }) {
 export function TasksPage() {
   const env = useEnv();
   const { tasks, paused } = useSwarmTasks(env);
+  const now = useNow();
+  const active = useNowRow(tasks, (t: TaskSummary) => t.id);
   const cols = useMemo(() => taskColumns(env), [env]);
   return (
     <Page title="Tasks">
       <FeedPaused reason={paused} />
-      <DataTable label="Tasks" data={tasks} columns={cols} getRowId={(t) => t.id} empty="No tasks." initialSorting={[{ id: "updated_at", desc: true }]} />
+      {active && <TaskNow key={active.id} env={env} task={active} />}
+      <DataTable label="Tasks" data={tasks} columns={cols} onActivate={(r) => now.open(((t: TaskSummary) => t.id)(r))} activeId={active ? ((t: TaskSummary) => t.id)(active) : undefined} getRowId={(t) => t.id} empty="No tasks." initialSorting={[{ id: "updated_at", desc: true }]} />
     </Page>
+  );
+}
+
+/** A task in the panel: where it runs, what it wants, and what it last said. */
+function TaskNow({ env, task: t }: { env: string; task: TaskSummary }) {
+  return (
+    <ObjectNow
+      title={taskName(t)}
+      subtitle={<TaskState task={t} />}
+      facts={[
+        { label: "Node", value: <NodeName env={env} id={t.node_id} /> },
+        { label: "Desired", value: t.desired_state },
+        { label: "Updated", value: formatAgo(t.updated_at) },
+      ]}
+      open={{ to: "/envs/$env/swarm/services/$id", params: { env, id: t.service_id } }}
+    >
+      <p className={t.error ? "rounded-md bg-[#1c1c1c] p-3 font-ident text-sm text-fall" : "rounded-md bg-[#1c1c1c] p-3 font-ident text-sm text-muted-foreground"}>
+        {t.error ?? t.message}
+      </p>
+      {t.container_id && <TaskContainer env={env} task={t} />}
+    </ObjectNow>
   );
 }

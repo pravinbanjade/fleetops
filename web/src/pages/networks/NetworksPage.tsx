@@ -1,3 +1,5 @@
+import { useNow, useNowRow } from "@/components/shell/now";
+import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -50,6 +52,8 @@ export function NetworksPage() {
   const { can } = useEnvAccess(env);
   const canDelete = can("networks.delete");
   const list = useQuery(networksQuery(env));
+  const now = useNow();
+  const active = useNowRow(list.data, (n: NetworkSummary) => n.id);
   const cols = useMemo(() => networkColumns(env), [env]);
   const [removing, setRemoving] = useState<NetworkSummary[] | null>(null);
   const [pruning, setPruning] = useState(false);
@@ -68,12 +72,13 @@ export function NetworksPage() {
         </>
       }
     >
+      {active && <NetworkNow key={active.id} env={env} network={active} />}
       <DataTable
         label="Networks"
         data={list.data}
         error={list.error}
         columns={cols}
-        getRowId={(n) => n.id}
+        onActivate={(r) => now.open(((n: NetworkSummary) => n.id)(r))} activeId={active ? ((n: NetworkSummary) => n.id)(active) : undefined} getRowId={(n) => n.id}
         empty="No networks in this environment."
         initialSorting={[{ id: "name", desc: false }]}
         selectable={canDelete}
@@ -104,5 +109,21 @@ export function NetworksPage() {
       {pruning && <PruneNetworksDialog env={env} onDone={() => setPruning(false)} />}
       {creating && <CreateNetworkDialog env={env} onClose={() => setCreating(false)} />}
     </Page>
+  );
+}
+
+/** A network in the panel: how it is built and where its addresses come from. */
+function NetworkNow({ env, network: n }: { env: string; network: NetworkSummary }) {
+  return (
+    <ObjectNow
+      title={<span className="font-ident">{n.name}</span>}
+      subtitle={[n.internal && "internal", n.attachable && "attachable"].filter(Boolean).join(" · ") || undefined}
+      facts={[
+        { label: "Driver", value: n.driver },
+        { label: "Scope", value: n.scope },
+        { label: "Subnet", value: <span className="font-figure text-sm">{n.subnet ?? "—"}</span> },
+      ]}
+      open={{ to: "/envs/$env/networks/$id", params: { env, id: n.id } }}
+    />
   );
 }
