@@ -1,0 +1,6 @@
+name: FleetOps CodeQL
+
+# Integration tests use fixed keys and secrets on purpose, so a run is
+# repeatable; CodeQL would read each as a hard-coded credential.
+paths-ignore:
+  - "**/tests/**"
