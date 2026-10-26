@@ -32,7 +32,7 @@ axum = { version = "0.8", features = ["ws", "multipart"] }
 axum-server = { version = "0.8", features = ["tls-rustls-no-provider"] }
 clap = { version = "4", features = ["derive", "env"] }
 futures-util = "0.3"
-gix = { version = "0.89", default-features = false, features = ["blocking-http-transport-reqwest", "sha1"] }
+gix = { version = "0.90", default-features = false, features = ["blocking-http-transport-reqwest", "sha1"] }
 flate2 = "1"
 hex = "0.4"
 hmac = "0.12"

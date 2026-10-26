@@ -19,7 +19,7 @@ gix.workspace = true
 reqwest = { package = "reqwest", version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls.workspace = true
 tar.workspace = true
-gix-transport = "0.61"
+gix-transport = "0.62"
 # SSH in-process, on ring: the default features pull in aws-lc-rs and the
 # `rsa` crate.
 russh = { version = "0.64", default-features = false, features = ["ring"] }
