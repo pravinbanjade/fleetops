@@ -87,7 +87,18 @@ interface DataTableProps<T extends RowData> {
   phoneColumns?: string[];
   /** A ⋮ menu at the end of each row with what can be done to it; rows with nothing get none. */
   rowMenu?: { label: (row: T) => string; items: (row: T) => QuickItem[] };
+  /**
+   * Shows a row in the "now playing" panel: a click anywhere on the row but
+   * its links and controls, or Space on its walked link (Enter still opens
+   * the row's page).
+   */
+  onActivate?: (row: T) => void;
+  /** The row the panel shows, marked as selected. */
+  activeId?: string;
 }
+
+/** Clicks on these inside a row keep their own meaning. */
+const OWN_CLICK = "a, button, input, label, select, textarea, [role=checkbox], [role=menuitem], [data-no-activate]";
 
 const EMPTY: never[] = [];
 
@@ -429,7 +440,27 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                   </tr>
                 )}
                 {g.rows.map((row) => (
-                  <TableRow key={row.id} data-state={row.getIsSelected() ? "selected" : undefined}>
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() ? "selected" : undefined}
+                    data-active={props.activeId === row.id ? "" : undefined}
+                    className={cn(props.onActivate && "cursor-pointer")}
+                    onClick={
+                      props.onActivate &&
+                      ((e) => {
+                        if ((e.target as HTMLElement).closest(OWN_CLICK) || window.getSelection()?.toString()) return;
+                        props.onActivate!(row.original);
+                      })
+                    }
+                    onKeyDown={
+                      props.onActivate &&
+                      ((e) => {
+                        if (e.key !== " " || !(e.target as HTMLElement).matches("a[data-strip]")) return;
+                        e.preventDefault();
+                        props.onActivate!(row.original);
+                      })
+                    }
+                  >
                     {props.selectable && (
                       <TableCell>
                         <Checkbox

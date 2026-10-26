@@ -17,10 +17,26 @@ import { TopBarSlot } from "./topBarSlot";
 import { ee, Slot, useAdminNav } from "@/ee-slots";
 import { Library, EnvTile } from "./shell/Library";
 import { navParams } from "./shell/EnvPages";
+import { NowHost, SHEET_QUERY, useNowFrame } from "./shell/now";
+import { useMedia } from "./useMedia";
 
 export { EnvTile } from "./shell/Library";
 
 export function Shell() {
+  const { pathname } = useLocation();
+  return (
+    <NowHost path={pathname}>
+      <Frame />
+    </NowHost>
+  );
+}
+
+/**
+ * The window: the library, the page and the "now playing" panel as rounded
+ * panels on black with an 8px gap. With the panel open on a window under
+ * 1536px the library folds to its tiles so the list keeps its room.
+ */
+function Frame() {
   const { env } = useParams({ strict: false });
   // The drawer is open for the page it was opened on, so any navigation closes it.
   const { pathname } = useLocation();
@@ -30,17 +46,28 @@ export function Shell() {
   const { data: envs = [] } = useQuery(envsQuery);
   const family = envFamily(findEnv(envs, env)?.kind);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const { setSlot: setNowSlot, shown } = useNowFrame();
+  const sheet = useMedia(SHEET_QUERY);
+  const tight = useMedia("(max-width: 1535px)");
+  const beside = shown && !sheet;
+  const collapsed = beside && tight;
   useGoKeys(env, family);
   useWalkKeys();
   return (
-    <div data-edition={ee.id} className="min-h-svh md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
-      <aside className="sticky top-0 hidden h-svh border-r bg-rail md:block">
-        <Library env={env} family={family} collapsed={false} />
+    <div
+      data-edition={ee.id}
+      className={cn(
+        "min-h-svh bg-background md:grid md:h-svh md:gap-2 md:p-2",
+        collapsed ? "md:grid-cols-[4.5rem_minmax(0,1fr)_24rem]" : beside ? "md:grid-cols-[15rem_minmax(0,1fr)_24rem]" : "md:grid-cols-[15rem_minmax(0,1fr)]",
+      )}
+    >
+      <aside aria-label="Library" className="hidden min-h-0 overflow-hidden rounded-[10px] bg-card md:block">
+        <Library env={env} family={family} collapsed={collapsed} />
       </aside>
       <DialogPrimitive.Root open={drawer} onOpenChange={setDrawer}>
         <DialogPrimitive.Portal>
-          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[oklch(0.1_0.01_255/0.6)] duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 md:hidden" />
-          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] border-r bg-rail shadow-2xl outline-none duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:slide-in-from-left md:hidden">
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70 duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:fade-in-0 md:hidden" />
+          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] bg-card shadow-[0_0_64px_rgb(0_0_0/0.8)] outline-none duration-300 ease-drawer data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=closed]:duration-200 data-[state=open]:animate-in data-[state=open]:slide-in-from-left md:hidden">
             <DialogPrimitive.Title className="sr-only">Navigation</DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">Pages and environments</DialogPrimitive.Description>
             <DialogPrimitive.Close asChild>
@@ -52,7 +79,7 @@ export function Shell() {
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
-      <main className="min-w-0">
+      <main className="min-w-0 bg-card md:min-h-0 md:overflow-y-auto md:rounded-[10px]">
         <TopBar env={env} family={family} onMenu={() => setDrawer(true)} slotRef={setSlot} />
         <ConnectionBanner />
         <Slot name="shell.banner" />
@@ -61,6 +88,11 @@ export function Shell() {
           <Outlet />
         </TopBarSlot.Provider>
       </main>
+      <aside
+        ref={setNowSlot}
+        aria-label="Selected"
+        className={cn("min-h-0 overflow-hidden rounded-[10px] bg-card", beside ? "hidden md:block" : "hidden")}
+      />
     </div>
   );
 }
@@ -111,7 +143,7 @@ function TopBar({
   const SectionIcon = section?.icon;
   const group = family === "kube" && section && "kind" in section ? kubeGroupOf(section) : undefined;
   return (
-    <header className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b bg-background/85 px-3 backdrop-blur-md md:px-6">
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 bg-card px-3 md:px-6">
       <Button variant="ghost" size="icon-sm" className="md:hidden" aria-label="Open navigation" onClick={onMenu}>
         <Menu />
       </Button>

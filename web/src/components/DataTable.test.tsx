@@ -198,4 +198,24 @@ describe("DataTable", () => {
       expect(screen.queryByRole("separator", { name: /Resize Actions/ })).not.toBeInTheDocument();
     });
   });
+
+  it("activates a row when the row is clicked, but not when its link is", async () => {
+    const hits: string[] = [];
+    const LINKED = [
+      col.accessor("name", { header: "Name", cell: (c) => <a href={`#${c.getValue()}`}>{c.getValue()}</a> }),
+      col.accessor("size", { header: "Size" }),
+    ];
+    render(<DataTable label="Boxes" data={BOXES} columns={LINKED} getRowId={(b) => b.id} empty="No boxes" onActivate={(b) => hits.push(b.id)} />);
+    await userEvent.click(screen.getByRole("cell", { name: "10" }));
+    expect(hits).toEqual(["b2"]);
+    await userEvent.click(screen.getByRole("link", { name: "beta" }));
+    expect(hits).toEqual(["b2"]);
+  });
+
+  it("marks the active row", () => {
+    render(<DataTable label="Boxes" data={BOXES} columns={COLS} getRowId={(b) => b.id} empty="No boxes" activeId="b3" />);
+    const active = screen.getByRole("cell", { name: "gamma" }).closest("tr");
+    expect(active).toHaveAttribute("data-active");
+    expect(screen.getByRole("cell", { name: "beta" }).closest("tr")).not.toHaveAttribute("data-active");
+  });
 });
