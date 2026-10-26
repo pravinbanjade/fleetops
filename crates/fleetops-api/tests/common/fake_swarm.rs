@@ -532,11 +532,9 @@ impl FakeSwarm {
         }
         if path.contains("/services") {
             use std::sync::atomic::Ordering::SeqCst;
-            if self
-                .blip
-                .fetch_update(SeqCst, SeqCst, |n| n.checked_sub(1))
-                .is_ok()
-            {
+            let left = self.blip.load(SeqCst);
+            if left > 0 {
+                self.blip.store(left - 1, SeqCst);
                 return (500, r#"{"message":"manager unavailable"}"#.into());
             }
             let mut services = self.services.lock().unwrap();
