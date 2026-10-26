@@ -329,21 +329,18 @@ pub fn plan_swarm(new: &Project, deployed: Option<(&Project, i64)>, live: &Swarm
     };
     let mut nets: Vec<&String> = live.networks.iter().map(|n| &n.name).collect();
     nets.sort();
-    let token = format!(
-        "{:x}",
-        Sha256::digest(
-            serde_json::to_vec(&json!([
-                new,
-                deployed.map(|(_, n)| n).unwrap_or(0),
-                versions,
-                sorted(&live.secrets),
-                sorted(&live.configs),
-                nets,
-                live.network_hashes,
-            ]))
-            .expect("serialisable")
-        )
-    );
+    let token = hex::encode(Sha256::digest(
+        serde_json::to_vec(&json!([
+            new,
+            deployed.map(|(_, n)| n).unwrap_or(0),
+            versions,
+            sorted(&live.secrets),
+            sorted(&live.configs),
+            nets,
+            live.network_hashes,
+        ]))
+        .expect("serialisable"),
+    ));
     Plan {
         services,
         networks,

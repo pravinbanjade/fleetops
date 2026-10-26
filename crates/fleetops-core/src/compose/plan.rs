@@ -404,13 +404,10 @@ pub fn plan(new: &Project, deployed: Option<(&Project, i64)>, live: &Live) -> Pl
         })
         .collect();
     pairs.sort();
-    let token = format!(
-        "{:x}",
-        Sha256::digest(
-            serde_json::to_vec(&json!([new, deployed.map(|(_, n)| n).unwrap_or(0), pairs]))
-                .expect("serialisable")
-        )
-    );
+    let token = hex::encode(Sha256::digest(
+        serde_json::to_vec(&json!([new, deployed.map(|(_, n)| n).unwrap_or(0), pairs]))
+            .expect("serialisable"),
+    ));
     Plan {
         services,
         networks,

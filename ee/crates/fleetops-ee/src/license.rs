@@ -137,7 +137,6 @@ pub fn signing_key_from_hex(hex_text: &str) -> Result<SigningKey, LicenseError> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::OsRng;
 
     fn payload(expires_at: i64) -> Payload {
         Payload {
@@ -154,7 +153,7 @@ mod tests {
 
     #[test]
     fn signed_license_verifies_and_ignores_unknown_features() {
-        let key = SigningKey::generate(&mut OsRng);
+        let key = SigningKey::from_bytes(&rand::random());
         let text = sign(&payload(100), &key);
         let lic = verify(&format!("\n  {text}\n"), &[key.verifying_key()]).unwrap();
         assert_eq!(lic.payload.customer, "Acme");
@@ -163,7 +162,7 @@ mod tests {
 
     #[test]
     fn bom_and_line_wrapped_pastes_verify() {
-        let key = SigningKey::generate(&mut OsRng);
+        let key = SigningKey::from_bytes(&rand::random());
         let text = sign(&payload(100), &key);
         let wrapped: String = text
             .as_bytes()
@@ -176,8 +175,8 @@ mod tests {
 
     #[test]
     fn wrong_key_and_tampering_fail() {
-        let key = SigningKey::generate(&mut OsRng);
-        let other = SigningKey::generate(&mut OsRng);
+        let key = SigningKey::from_bytes(&rand::random());
+        let other = SigningKey::from_bytes(&rand::random());
         let text = sign(&payload(100), &key);
         assert_eq!(
             verify(&text, &[other.verifying_key()]),
@@ -207,7 +206,7 @@ mod tests {
 
     #[test]
     fn unknown_version_is_rejected() {
-        let key = SigningKey::generate(&mut OsRng);
+        let key = SigningKey::from_bytes(&rand::random());
         let text = sign(
             &Payload {
                 v: 2,
@@ -223,7 +222,7 @@ mod tests {
 
     #[test]
     fn status_at_each_boundary() {
-        let key = SigningKey::generate(&mut OsRng);
+        let key = SigningKey::from_bytes(&rand::random());
         let lic = verify(&sign(&payload(1_000), &key), &[key.verifying_key()]).unwrap();
         assert_eq!(lic.status_at(999), Status::Valid);
         assert_eq!(lic.status_at(1_000), Status::Grace);
@@ -235,7 +234,7 @@ mod tests {
 
     #[test]
     fn keys_round_trip_through_hex() {
-        let key = SigningKey::generate(&mut OsRng);
+        let key = SigningKey::from_bytes(&rand::random());
         let seed = hex::encode(key.to_bytes());
         let public = hex::encode(key.verifying_key().to_bytes());
         assert_eq!(

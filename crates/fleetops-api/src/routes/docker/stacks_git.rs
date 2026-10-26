@@ -15,7 +15,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use fleetops_core::perm::{Permission, Row, Verb};
 use fleetops_core::{now_unix, Error, Result};
 use fleetops_store::{GitRecord, GitSettings, KeyChange, StackRecord, TokenChange};
-use rand::RngCore;
+use rand::TryRng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use utoipa::ToSchema;
@@ -76,7 +76,9 @@ pub struct SecretRotated {
 
 fn new_secret() -> String {
     let mut b = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut b);
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut b)
+        .expect("the OS random source");
     hex::encode(b)
 }
 

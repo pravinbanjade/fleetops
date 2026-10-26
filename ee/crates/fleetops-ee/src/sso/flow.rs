@@ -26,7 +26,7 @@ use fleetops_api::{
     AppState,
 };
 use fleetops_core::{now_unix, Error, Result};
-use rand::RngCore;
+use rand::TryRng;
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -88,7 +88,9 @@ pub type Rt = Extension<Arc<Runtime>>;
 
 fn random_token() -> String {
     let mut b = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut b);
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut b)
+        .expect("the OS random source");
     URL_SAFE_NO_PAD.encode(b)
 }
 

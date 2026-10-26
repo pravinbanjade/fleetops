@@ -1,11 +1,13 @@
-use rand::RngCore;
+use rand::TryRng;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 /// 256 bits from the OS RNG, hex encoded.
 pub fn generate_token() -> String {
     let mut bytes = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut bytes)
+        .expect("the OS random source");
     hex::encode(bytes)
 }
 

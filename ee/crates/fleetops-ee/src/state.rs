@@ -223,7 +223,7 @@ mod tests {
     }
 
     fn key() -> SigningKey {
-        SigningKey::generate(&mut rand::rngs::OsRng)
+        SigningKey::from_bytes(&rand::random())
     }
 
     #[tokio::test]

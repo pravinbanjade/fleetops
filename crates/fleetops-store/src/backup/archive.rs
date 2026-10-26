@@ -7,7 +7,6 @@ use super::{
 };
 use crate::{db_err, Store};
 use fleetops_core::{Error, Result};
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sqlx::{
     sqlite::SqliteConnectOptions, AssertSqlSafe, ConnectOptions, Connection, SqliteConnection,
@@ -90,7 +89,7 @@ fn io(e: std::io::Error) -> Error {
 
 fn rand_name(prefix: &str, ext: &str) -> String {
     let mut b = [0u8; 8];
-    rand::thread_rng().fill_bytes(&mut b);
+    rand::fill(&mut b);
     let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
     format!("{prefix}-{hex}.{ext}")
 }

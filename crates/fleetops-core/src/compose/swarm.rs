@@ -489,7 +489,7 @@ pub fn named(live: &Value, networks: &BTreeMap<String, String>) -> Value {
 /// Hex SHA-256 of `canonical(spec)`.
 pub fn spec_hash(spec: &Value) -> String {
     let bytes = serde_json::to_vec(&canonical(spec)).expect("serialisable");
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 const ENV: &str = "TaskTemplate.ContainerSpec.Env";

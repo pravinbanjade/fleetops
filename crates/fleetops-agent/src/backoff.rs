@@ -1,7 +1,6 @@
 //! Reconnect delays: doubling from `min` to `max`, ±20 % jitter so a fleet
 //! of agents does not reconnect in lockstep after a server restart.
 
-use rand::Rng;
 use std::time::Duration;
 
 pub struct Backoff {
@@ -22,7 +21,7 @@ impl Backoff {
     pub fn next_delay(&mut self) -> Duration {
         let base = self.next;
         self.next = (self.next * 2).min(self.max);
-        base.mul_f64(rand::thread_rng().gen_range(0.8..=1.2))
+        base.mul_f64(rand::random_range(0.8..=1.2))
     }
 
     pub fn reset(&mut self) {

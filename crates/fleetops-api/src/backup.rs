@@ -9,7 +9,6 @@ use fleetops_store::{
     backup::{self, BackupSummary, Manifest, SealedColumn, ServerVersions},
     Store,
 };
-use rand::RngCore;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::{
@@ -122,7 +121,7 @@ pub fn tmp_file(s: &AppState, ext: &str) -> Result<PathBuf> {
 
 fn random_id() -> String {
     let mut b = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut b);
+    rand::fill(&mut b);
     hex::encode(b)
 }
 

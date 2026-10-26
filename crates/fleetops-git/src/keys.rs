@@ -1,7 +1,7 @@
 //! Deploy keys for SSH git sources (stack git SSH spec §2): ed25519 keys
 //! FleetOps generates, or unencrypted ed25519 / ECDSA keys users paste.
 
-use rand::RngCore;
+use rand::TryRng;
 use russh::keys::ssh_key::{private::Ed25519Keypair, private::KeypairData, LineEnding};
 use russh::keys::{Algorithm, PrivateKey};
 
@@ -38,7 +38,9 @@ fn pair(key: &PrivateKey) -> KeyPair {
 /// A new ed25519 key with `comment`.
 pub fn generate_key(comment: &str) -> KeyPair {
     let mut seed = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut seed);
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut seed)
+        .expect("the OS random source");
     let data = KeypairData::Ed25519(Ed25519Keypair::from_seed(&seed));
     pair(&PrivateKey::new(data, comment).expect("an ed25519 key is valid"))
 }

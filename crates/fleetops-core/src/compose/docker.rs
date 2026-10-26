@@ -29,7 +29,7 @@ pub fn container_name(project: &Project, svc: &Service, n: u32) -> String {
 
 fn sha256_hex(v: &impl serde::Serialize) -> String {
     let bytes = serde_json::to_vec(v).expect("model types serialise");
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 /// The service's config hash. The replica count is left out, so scaling

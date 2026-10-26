@@ -58,7 +58,7 @@ pub struct Session {
 }
 
 pub fn key() -> SigningKey {
-    SigningKey::generate(&mut rand::rngs::OsRng)
+    SigningKey::from_bytes(&rand::random())
 }
 
 /// A license for "Acme" expiring at `expires_at`.

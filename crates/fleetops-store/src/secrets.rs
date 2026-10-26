@@ -8,7 +8,6 @@ use aes_gcm::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use fleetops_core::{Error, Result};
-use rand::RngCore;
 use std::{io::Write, path::Path};
 
 const PREFIX: &str = "v1:";
@@ -26,7 +25,7 @@ impl std::fmt::Debug for SecretKey {
 impl SecretKey {
     pub fn random() -> Self {
         let mut k = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut k);
+        rand::fill(&mut k);
         Self(k)
     }
 
@@ -38,8 +37,9 @@ impl SecretKey {
     /// A 32-byte key for one purpose: HMAC-SHA256 of `label`, keyed with
     /// this key. Never the key itself.
     pub fn derive(&self, label: &[u8]) -> [u8; 32] {
-        use hmac::{Hmac, Mac};
-        let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(&self.0).expect("any key length");
+        use hmac::{Hmac, KeyInit, Mac};
+        let mut mac =
+            <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(&self.0).expect("any key length");
         mac.update(label);
         mac.finalize().into_bytes().into()
     }
@@ -88,7 +88,7 @@ impl SecretBox {
 
     pub fn seal(&self, aad: &[u8], plain: &[u8]) -> String {
         let mut nonce = [0u8; NONCE_LEN];
-        rand::thread_rng().fill_bytes(&mut nonce);
+        rand::fill(&mut nonce);
         let ct = self
             .cipher
             .encrypt(Nonce::from_slice(&nonce), Payload { msg: plain, aad })

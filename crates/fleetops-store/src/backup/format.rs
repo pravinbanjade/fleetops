@@ -13,7 +13,6 @@ use aes_gcm::{
 };
 use argon2::{Algorithm, Argon2, Params, Version};
 use fleetops_core::{Error, Result};
-use rand::RngCore;
 use std::io::{Read, Write};
 
 const MAGIC: &[u8; 16] = b"FLEETOPS-BACKUP\n";
@@ -112,8 +111,8 @@ impl<W: Write> Encryptor<W> {
     pub fn new(mut out: W, passphrase: &str, params: KdfParams) -> Result<Self> {
         let mut salt = [0u8; SALT_LEN];
         let mut prefix = [0u8; NONCE_PREFIX_LEN];
-        rand::thread_rng().fill_bytes(&mut salt);
-        rand::thread_rng().fill_bytes(&mut prefix);
+        rand::fill(&mut salt);
+        rand::fill(&mut prefix);
         let mut header = Vec::with_capacity(HEADER_LEN);
         header.extend_from_slice(MAGIC);
         header.push(VERSION_BYTE);

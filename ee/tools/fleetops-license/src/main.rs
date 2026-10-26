@@ -127,7 +127,7 @@ fn keygen(out: PathBuf) -> Result<()> {
             key_path.display()
         );
     }
-    let key = SigningKey::generate(&mut rand::rngs::OsRng);
+    let key = SigningKey::from_bytes(&rand::random());
     std::fs::write(&key_path, hex::encode(key.to_bytes()) + "\n")?;
     #[cfg(unix)]
     {

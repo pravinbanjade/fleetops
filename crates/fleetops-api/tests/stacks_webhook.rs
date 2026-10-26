@@ -7,7 +7,7 @@ use common::git::*;
 use fleetops_api::stacks::git::poll_once;
 use fleetops_git::testing::{GitServer, ServerOpts};
 use fleetops_store::TokenChange;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde_json::json;
 use sha2::Sha256;
 use std::net::SocketAddr;

@@ -2,7 +2,7 @@
 //! it is signed with the stack's secret, and which branch it is about.
 
 use axum::http::HeaderMap;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
