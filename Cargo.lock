@@ -1879,7 +1879,7 @@ dependencies = [
  "futures-util",
  "hyper",
  "hyper-util",
- "p256 0.13.2",
+ "p256 0.14.0",
  "rcgen",
  "serde",
  "serde_json",
