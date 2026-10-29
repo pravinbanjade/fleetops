@@ -109,7 +109,7 @@ export function TweakReview({
         <DialogTitle>{revert ? `Revert ${name}?` : `Review changes to ${name}`}</DialogTitle>
         <DialogDescription>Nothing is written until you apply.</DialogDescription>
 
-        <ul aria-label="Changes" className="font-strip overflow-hidden rounded-md bg-[#1c1c1c] text-sm">
+        <ul aria-label="Changes" className="font-strip overflow-hidden rounded-md bg-raised text-sm">
           {changes.map(({ op, verb, subject, where, before, after }) => (
             <li key={`${op.op}:${op.op === "env" ? `${op.container}/${op.name}` : op.key}`} className="grid gap-1 border-b px-3 py-2.5 last:border-b-0">
               <span className="font-medium">

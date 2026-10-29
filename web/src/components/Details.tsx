@@ -10,7 +10,7 @@ export function Details({ items, label }: { items: [string, ReactNode][]; label?
   return (
     <dl
       aria-label={label}
-      className="grid overflow-hidden rounded-lg bg-[#1c1c1c] text-sm sm:grid-cols-[minmax(8rem,max-content)_minmax(0,1fr)]"
+      className="grid overflow-hidden rounded-lg bg-raised text-sm sm:grid-cols-[minmax(8rem,max-content)_minmax(0,1fr)]"
     >
       {shown.map(([k, v]) => (
         <div key={k} className="contents">

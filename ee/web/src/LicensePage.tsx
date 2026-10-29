@@ -193,7 +193,7 @@ function Plans({ current }: { current: boolean }) {
       icon={ReceiptText}
       aside="USD before tax, sold in blocks of ten nodes"
       actions={
-        <div role="group" aria-label="Billing period" className="flex rounded-md bg-[#1c1c1c] p-0.5 text-xs">
+        <div role="group" aria-label="Billing period" className="flex rounded-md bg-raised p-0.5 text-xs">
           {[true, false].map((y) => (
             <button
               key={String(y)}
@@ -216,7 +216,7 @@ function Plans({ current }: { current: boolean }) {
           <article
             key={p.name}
             aria-label={`${p.name} plan`}
-            className={cn("grid content-start gap-3 rounded-md bg-[#1c1c1c] p-3", p.recommended && "border-primary bg-primary/5")}
+            className={cn("grid content-start gap-3 rounded-md bg-raised p-3", p.recommended && "border-primary bg-primary/5")}
           >
             <header className="grid gap-0.5">
               <div className="flex items-center gap-2">

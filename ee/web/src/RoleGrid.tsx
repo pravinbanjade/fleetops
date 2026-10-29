@@ -43,7 +43,7 @@ export function RoleGrid({
   if (has.has("k8s-other.create")) warnings.push("Creating RBAC objects (Everything else) can give a service account cluster-admin.");
   return (
     <div className="grid gap-3">
-      <div className="overflow-x-auto rounded-md bg-[#1c1c1c]">
+      <div className="overflow-x-auto rounded-md bg-raised">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/40">

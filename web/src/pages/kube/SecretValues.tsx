@@ -36,7 +36,7 @@ export function SecretValues({ env, ns, name }: { env: string; ns: string; name:
       {reveal.data.length === 0 ? (
         <p className="text-sm text-muted-foreground">This Secret has no data.</p>
       ) : (
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 rounded-md bg-[#1c1c1c] p-3 text-sm">
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 rounded-md bg-raised p-3 text-sm">
           {reveal.data.map((v) => (
             <div key={v.key} className="contents">
               <dt className="font-ident text-muted-foreground">{v.key}</dt>

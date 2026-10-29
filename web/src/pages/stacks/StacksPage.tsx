@@ -106,7 +106,7 @@ function OtherSwarmStacks({ env, managed }: { env: string; managed: Set<string> 
         {[...byStack.entries()]
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([stack, list]) => (
-            <li key={stack} className="grid gap-1 rounded-md bg-[#1c1c1c] px-3 py-2">
+            <li key={stack} className="grid gap-1 rounded-md bg-raised px-3 py-2">
               <span className="font-ident font-medium">{stack}</span>
               <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
                 {list.map((s) => (

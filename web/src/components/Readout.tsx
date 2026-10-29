@@ -34,7 +34,7 @@ export function Readout({
     <div
       role="group"
       aria-label={label}
-      className="grid min-w-0 gap-1 rounded-lg bg-[#1c1c1c] px-3 py-2.5 sm:w-[12rem] xl:w-auto"
+      className="grid min-w-0 gap-1 rounded-lg bg-raised px-3 py-2.5 sm:w-[12rem] xl:w-auto"
     >
       <div className="flex items-center gap-3">
         <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">

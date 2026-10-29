@@ -16,7 +16,7 @@ export function ReleaseNow({ env, release: r }: { env: string; release: HelmRele
       ]}
       open={{ to: "/envs/$env/k8s/helm/$ns/$name", params: { env, ns: r.namespace, name: r.name } }}
     >
-      {r.error && <p className="rounded-md bg-[#1c1c1c] p-3 font-ident text-sm text-fall">{r.error}</p>}
+      {r.error && <p className="rounded-md bg-raised p-3 font-ident text-sm text-fall">{r.error}</p>}
     </ObjectNow>
   );
 }

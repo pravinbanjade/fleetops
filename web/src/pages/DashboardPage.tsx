@@ -174,7 +174,7 @@ function StatusSection({ env, q }: { env: string; q: UseQueryResult<ContainerSum
   // One panel: the headline answers the first question, the strips name the
   // containers behind it, and the footer counts the whole environment.
   return (
-    <section aria-labelledby={id} className="overflow-hidden rounded-lg bg-[#1c1c1c]">
+    <section aria-labelledby={id} className="overflow-hidden rounded-lg bg-raised">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-b px-4 py-2.5">
         {list.length > 0 && (
           <Icon aria-hidden className={cn("size-4.5", attention.length ? "text-state-fail" : "text-state-run")} />
@@ -592,7 +592,7 @@ function Section({
 }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="grid content-start overflow-hidden rounded-lg bg-[#1c1c1c]">
+    <section aria-labelledby={id} className="grid content-start overflow-hidden rounded-lg bg-raised">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b px-4 py-2.5">
         <h2 id={id} className="flex items-center gap-2 text-sm font-semibold">
           {Icon && <Icon aria-hidden className="size-4 text-muted-foreground" strokeWidth={1.75} />}

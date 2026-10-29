@@ -41,7 +41,7 @@ export function EventStrips({ events, pending, error }: { events: KubeEvent[] | 
   if (pending) return <p className="text-sm text-muted-foreground">Loading events…</p>;
   if (!events?.length) return <p className="text-sm text-muted-foreground">No recent events.</p>;
   return (
-    <ul aria-label="Events" className="font-strip overflow-hidden rounded-lg bg-[#1c1c1c] text-sm">
+    <ul aria-label="Events" className="font-strip overflow-hidden rounded-lg bg-raised text-sm">
       {events.map((e, i) => {
         const when = [e.count > 1 && `×${e.count}`, e.last_seen && formatAgo(e.last_seen)].filter(Boolean).join(" · ");
         return (

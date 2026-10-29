@@ -22,7 +22,7 @@ export function Panel({
 }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="grid content-start overflow-clip rounded-lg bg-[#1c1c1c]">
+    <section aria-labelledby={id} className="grid content-start overflow-clip rounded-lg bg-raised">
       <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-1 px-4 pt-2 pb-1">
         <h2 id={id} className="flex min-w-0 items-center gap-2 text-sm font-semibold">
           {Icon && <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />}

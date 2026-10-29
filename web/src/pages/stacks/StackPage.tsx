@@ -156,7 +156,7 @@ export function StackPage() {
               {byService.map(([svc, cs]) => (
                 <section key={svc} aria-label={`Service ${svc}`} className="grid gap-1">
                   <h2 className="font-ident text-sm font-semibold">{svc}</h2>
-                  <ul className="font-strip overflow-hidden rounded-md bg-[#1c1c1c]">
+                  <ul className="font-strip overflow-hidden rounded-md bg-raised">
                     {cs.map((c) => (
                       <li
                         key={c.id}

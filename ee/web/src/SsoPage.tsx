@@ -207,7 +207,7 @@ function PasswordLoginSetting({ frozen }: { frozen: boolean }) {
     </label>
   );
   return (
-    <fieldset className="grid gap-2 rounded-md bg-[#1c1c1c] p-4">
+    <fieldset className="grid gap-2 rounded-md bg-raised p-4">
       <legend className="px-1 text-sm font-medium">Allow password login</legend>
       {option("everyone", "Everyone", "Local accounts keep their passwords.")}
       {option(
@@ -518,7 +518,7 @@ export function MappingsDialog({ conn, frozen, onClose }: { conn: SsoConnection;
         {mappings.data?.length === 0 && <p className="text-sm text-muted-foreground">No mappings yet.</p>}
         <ul className="grid gap-1">
           {(mappings.data ?? []).map((m) => (
-            <li key={m.id} className="flex items-center justify-between rounded-md bg-[#1c1c1c] px-3 py-1.5 text-sm">
+            <li key={m.id} className="flex items-center justify-between rounded-md bg-raised px-3 py-1.5 text-sm">
               <span>
                 <code>{m.group}</code> → {m.admin ? "FleetOps admin" : `team ${m.team_name}`}
               </span>

@@ -99,7 +99,7 @@ export function TrustCard({ env, admin }: { env: string; admin: boolean }) {
   if (!t || t.confirmed) return null;
   if (!admin) {
     return (
-      <p role="status" className="mb-3 rounded-md bg-[#1c1c1c] p-3 text-sm">
+      <p role="status" className="mb-3 rounded-md bg-raised p-3 text-sm">
         Waiting for an admin to trust this swarm.
       </p>
     );
@@ -214,7 +214,7 @@ export function NodesPage({ env }: { env: string }) {
         </p>
       )}
       {refused && (
-        <p role="status" className="mb-3 rounded-md bg-[#1c1c1c] p-3 text-sm">
+        <p role="status" className="mb-3 rounded-md bg-raised p-3 text-sm">
           Last refused agent: {refused}
         </p>
       )}

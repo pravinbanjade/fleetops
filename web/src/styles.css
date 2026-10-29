@@ -34,7 +34,9 @@
   --border: #262626;
   --input: #3a3a3a;
   --ring: #ffffff99;
-  /* A raised step inside a panel: the selected row, the active nav row. */
+  /* A raised block inside a panel: a fact tile, a readout, a field. */
+  --raised: #1c1c1c;
+  /* A step above that: the selected row, the active nav row. */
   --selected: #2a2a2a;
   /* Meta text: dates, counts, axis ticks. 4.5:1 even on --selected. */
   --meta: #949494;
@@ -100,6 +102,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-raised: var(--raised);
   --color-selected: var(--selected);
   --color-meta: var(--meta);
   --color-rail: var(--rail);

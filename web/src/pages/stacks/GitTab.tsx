@@ -177,7 +177,7 @@ export function GitTab({
   return (
     <div className="grid gap-6">
       {g.paused && (
-        <div role="status" className="flex flex-wrap items-center gap-3 rounded-md bg-[#1c1c1c] p-3 text-sm">
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-md bg-raised p-3 text-sm">
           <span>Auto-sync paused after rollback.</span>
           {canOperate && (
             <Button size="sm" variant="outline" disabled={run.isPending} onClick={() => run.mutate("resume")}>

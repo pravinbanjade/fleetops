@@ -11,7 +11,7 @@ export type NowRow = { key: string; label: ReactNode; aside?: ReactNode; failing
 /** A small raised tile: a label over a figure. */
 export function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid min-w-0 gap-0.5 rounded-md bg-[#1c1c1c] px-2.5 py-2">
+    <div className="grid min-w-0 gap-0.5 rounded-md bg-raised px-2.5 py-2">
       <span className="truncate text-xs text-meta">{label}</span>
       <span className="truncate text-base font-semibold">{children}</span>
     </div>

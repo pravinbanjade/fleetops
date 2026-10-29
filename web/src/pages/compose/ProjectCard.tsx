@@ -79,7 +79,7 @@ export function ProjectCard({ env, project }: { env: string; project: ComposePro
         <div className="text-muted-foreground">
           Services: <span className="font-ident">{project.services.join(", ")}</span>
         </div>
-        <ul className="font-strip overflow-hidden rounded-md bg-[#1c1c1c]" aria-label={`Containers of ${project.name}`}>
+        <ul className="font-strip overflow-hidden rounded-md bg-raised" aria-label={`Containers of ${project.name}`}>
           {members.map((c) => (
             <li
               key={c.id}

@@ -104,7 +104,7 @@ export function Chart({
   }, [times, series]);
 
   return (
-    <figure className="grid gap-2 rounded-lg bg-[#1c1c1c] p-4">
+    <figure className="grid gap-2 rounded-lg bg-raised p-4">
       <figcaption className="text-sm font-semibold">{title}</figcaption>
       <div ref={box} role="img" aria-label={`${title} chart`} className="min-w-0" />
     </figure>

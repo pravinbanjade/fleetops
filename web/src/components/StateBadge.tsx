@@ -60,10 +60,9 @@ const LAST = new Map<string, string>();
 const PULSE: Keyframe[] = [{ transform: "scale(2.2)" }, { transform: "scale(1)" }];
 
 /**
- * A container's (or compose project's) state as a strip holder: a squared
- * tag tinted in the state's colour, the word exactly as Docker or
- * Kubernetes reports it, in its own case. When
- * Docker changes the state on screen, the holder flashes once.
+ * A container's (or compose project's) state: a small dot in the state's hue
+ * and the word exactly as Docker or Kubernetes reports it, in its own case.
+ * When the state on screen changes, the dot swells once and settles.
  */
 export function StateBadge({
   state,

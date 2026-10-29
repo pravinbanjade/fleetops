@@ -161,10 +161,10 @@ export default function YamlDialog({ env, target, onClose }: { env: string; targ
           <div className="grid gap-2">
             <p className="text-sm">This object changed since you opened it.</p>
             <div className="grid gap-2 md:grid-cols-2">
-              <pre aria-label="Your edit" className="max-h-[40vh] overflow-auto rounded-md bg-[#1c1c1c] p-2 font-mono text-xs">
+              <pre aria-label="Your edit" className="max-h-[40vh] overflow-auto rounded-md bg-raised p-2 font-mono text-xs">
                 {text}
               </pre>
-              <pre aria-label="Live YAML" className="max-h-[40vh] overflow-auto rounded-md bg-[#1c1c1c] p-2 font-mono text-xs">
+              <pre aria-label="Live YAML" className="max-h-[40vh] overflow-auto rounded-md bg-raised p-2 font-mono text-xs">
                 {conflict.yaml}
               </pre>
             </div>

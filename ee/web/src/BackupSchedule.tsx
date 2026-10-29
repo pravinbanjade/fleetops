@@ -341,7 +341,7 @@ function S3Form({ target }: { target?: BackupTarget }) {
     },
   });
   return (
-    <fieldset className="grid gap-3 rounded-lg bg-[#1c1c1c] p-4">
+    <fieldset className="grid gap-3 rounded-lg bg-raised p-4">
       <legend className="px-1 text-sm font-medium">S3-compatible storage</legend>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field id="s3-endpoint" label="Endpoint" placeholder="Blank for AWS" value={endpoint} onChange={setEndpoint} />
@@ -391,7 +391,7 @@ function LocalForm({ target }: { target?: BackupTarget }) {
     onSuccess: invalidate,
   });
   return (
-    <fieldset className="grid gap-3 rounded-lg bg-[#1c1c1c] p-4">
+    <fieldset className="grid gap-3 rounded-lg bg-raised p-4">
       <legend className="px-1 text-sm font-medium">Local directory</legend>
       <Field id="local-path" label="Directory" placeholder="/mnt/backups" value={path} onChange={setPath} />
       <p className="text-xs text-muted-foreground">A mounted volume or network share, outside FleetOps' data directory.</p>

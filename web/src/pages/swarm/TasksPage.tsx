@@ -69,7 +69,7 @@ function TaskNow({ env, task: t }: { env: string; task: TaskSummary }) {
       ]}
       open={{ to: "/envs/$env/swarm/services/$id", params: { env, id: t.service_id } }}
     >
-      <p className={t.error ? "rounded-md bg-[#1c1c1c] p-3 font-ident text-sm text-fall" : "rounded-md bg-[#1c1c1c] p-3 font-ident text-sm text-muted-foreground"}>
+      <p className={t.error ? "rounded-md bg-raised p-3 font-ident text-sm text-fall" : "rounded-md bg-raised p-3 font-ident text-sm text-muted-foreground"}>
         {t.error ?? t.message}
       </p>
       {t.container_id && <TaskContainer env={env} task={t} />}
