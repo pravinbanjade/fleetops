@@ -1717,7 +1717,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "bytes",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek 3.0.0",
  "fleetops-api",
  "fleetops-core",
  "fleetops-store",
@@ -1805,7 +1805,7 @@ version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
- "ed25519-dalek 2.2.0",
+ "ed25519-dalek 3.0.0",
  "fleetops-core",
  "fleetops-ee",
  "hex",

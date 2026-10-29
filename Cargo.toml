@@ -25,7 +25,7 @@ anyhow = "1"
 argon2 = { version = "0.5", features = ["std"] }
 async-trait = "0.1"
 base64 = "0.23"
-ed25519-dalek = "2"
+ed25519-dalek = "3"
 bollard = "0.21"
 bytes = "1"
 axum = { version = "0.8", features = ["ws", "multipart"] }
