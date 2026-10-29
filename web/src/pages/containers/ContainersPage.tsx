@@ -3,9 +3,8 @@ import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { Activity, ArrowUpRight, Plus, ScrollText, SquareTerminal, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { containersQuery, keys, recentEventsQuery } from "@/api/queries";
-import { dockerStatus } from "@/lib/findings";
-import { useClock } from "@/components/useClock";
+import { containersQuery, keys } from "@/api/queries";
+import { DockerStatusLine } from "@/components/DockerStatusLine";
 import { containerAction, pruneContainers } from "@/api/gen/sdk.gen";
 import type { ContainerSummary } from "@/api/gen/types.gen";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -141,8 +140,6 @@ export function ContainersPage() {
   const [pruning, setPruning] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: keys.containers(env) });
   const now = useNow();
-  const events = useQuery(recentEventsQuery(env));
-  const clock = useClock();
   const active = useNowRow(list.data, (c) => c.id);
 
   const bulk = useMutation({
@@ -187,7 +184,7 @@ export function ContainersPage() {
     <Page
       title="Containers"
       kicker={env}
-      meta={list.data && dockerStatus(list.data, events.data ?? [], clock)}
+      meta={list.data && <DockerStatusLine env={env} containers={list.data} />}
       actions={
         <>
           {/* Node-wide: not for a grant limited to stacks on a node's view. */}

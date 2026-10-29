@@ -89,7 +89,7 @@ function EnvRow({ env, current, collapsed }: { env: EnvView; current: boolean; c
           </span>
         </span>
       )}
-      {!collapsed && <EnvStatusBadge env={env.name} kube={isKube(env.kind) || isSwarm(env.kind)} />}
+      {!collapsed && <EnvStatusBadge env={env.name} kube={isKube(env.kind) || isSwarm(env.kind)} current={current} />}
     </Link>
   );
 }
@@ -149,8 +149,14 @@ function AdminNav({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-export function EnvStatusBadge({ env, kube = false }: { env: string; kube?: boolean }) {
-  const { data } = useQuery(envStatusQuery(env, kube));
+/** How often a cluster the operator is not in rechecks its status; Docker hosts push theirs. */
+const ELSEWHERE_POLL_MS = 60_000;
+
+export function EnvStatusBadge({ env, kube = false, current = true }: { env: string; kube?: boolean; current?: boolean }) {
+  // Only the current environment polls at its usual rate: a row for every
+  // environment must not keep every cluster busy from every page.
+  const q = envStatusQuery(env, kube);
+  const { data } = useQuery(current ? q : { ...q, refetchInterval: kube ? ELSEWHERE_POLL_MS : false });
   if (!data) return null;
   if (data.state === "up") return <StatusDot state="up" />;
   return (

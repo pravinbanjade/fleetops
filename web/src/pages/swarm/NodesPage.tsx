@@ -254,7 +254,7 @@ export function NodesPage({ env }: { env: string }) {
 
 /** A node in the panel: its state and agent, and the tasks placed on it. */
 function NodeNow({ env, node: n }: { env: string; node: SwarmAgentView }) {
-  const { tasks: all } = useSwarmTasks(env);
+  const { tasks: all, paused } = useSwarmTasks(env);
   const tasks = (all ?? []).filter((t) => t.node_id === n.node_id);
   return (
     <ObjectNow
@@ -265,7 +265,7 @@ function NodeNow({ env, node: n }: { env: string; node: SwarmAgentView }) {
         { label: "Role", value: n.role ?? "—" },
         { label: "Agent", value: n.connected ? "Connected" : "Not connected" },
       ]}
-      list={{ title: "Tasks", empty: all ? "No tasks on this node." : "Loading tasks…", rows: tasks
+      list={{ title: "Tasks", empty: paused && !all ? `Live updates paused — ${paused}` : all ? "No tasks on this node." : "Loading tasks…", rows: tasks
           .slice()
           .sort((a, b) => b.updated_at - a.updated_at)
           .slice(0, 30)

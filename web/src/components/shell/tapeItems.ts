@@ -7,7 +7,11 @@ export type TapeItem = {
   at: number;
   text: string;
   failing: boolean;
-  target?: { to: string; params?: Record<string, string>; select?: string };
+  /**
+   * Where the item leads: the list it is a row of (`select` picks it there
+   * when that list is on screen), and the object's own page otherwise.
+   */
+  target?: { to: string; params?: Record<string, string>; select?: string; page?: { to: string; params: Record<string, string> } };
 };
 
 /** How many items the tape keeps. */
@@ -17,6 +21,14 @@ export const TAPE_MAX = 50;
 export function capTape(items: TapeItem[], max = TAPE_MAX): TapeItem[] {
   return [...items].sort((a, b) => b.at - a.at).slice(0, max);
 }
+
+/** The pages of the objects that have one, by event kind. */
+const PAGES: Record<string, { to: string; param: string }> = {
+  container: { to: "/envs/$env/containers/$id", param: "id" },
+  image: { to: "/envs/$env/images/$id", param: "id" },
+  network: { to: "/envs/$env/networks/$id", param: "id" },
+  service: { to: "/envs/$env/swarm/services/$id", param: "id" },
+};
 
 const LISTS: Record<string, string> = {
   container: "/envs/$env/containers",
@@ -39,7 +51,14 @@ export function dockerTapeItem(ev: DockerEvent): TapeItem | null {
   const what = ev.name ?? attrs.name ?? ev.id.slice(0, 12);
   const text = `${what} ${ev.action.startsWith("health_status") ? ev.action.replace("health_status: ", "") : action}${action === "die" && exit ? ` (${exit})` : ""}`;
   const to = LISTS[ev.kind];
-  return { key: `${ev.time}|${ev.kind}|${ev.id}|${ev.action}`, at: ev.time, text, failing, target: to ? { to, select: ev.id } : undefined };
+  const page = PAGES[ev.kind] && { to: PAGES[ev.kind].to, params: { [PAGES[ev.kind].param]: ev.id } };
+  return {
+    key: `${ev.time}|${ev.kind}|${ev.id}|${ev.action}`,
+    at: ev.time,
+    text,
+    failing,
+    target: to ? { to, select: ev.id, ...(page && { page }) } : undefined,
+  };
 }
 
 /** What a Kubernetes event says on the tape: its object and reason; a warning is failing. */

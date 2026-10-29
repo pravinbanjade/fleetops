@@ -18,7 +18,7 @@ describe("tape", () => {
     expect(item.failing).toBe(true);
     expect(item.text).toContain("worker-billing");
     expect(item.text).toContain("(137)");
-    expect(item.target).toEqual({ to: "/envs/$env/containers", select: "c1" });
+    expect(item.target).toEqual({ to: "/envs/$env/containers", select: "c1", page: { to: "/envs/$env/containers/$id", params: { id: "c1" } } });
   });
 
   it("does not mark a clean exit as failing", () => {

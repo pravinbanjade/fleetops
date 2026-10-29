@@ -218,4 +218,16 @@ describe("DataTable", () => {
     expect(active).toHaveAttribute("data-active");
     expect(screen.getByRole("cell", { name: "beta" }).closest("tr")).not.toHaveAttribute("data-active");
   });
+
+  it("activates a row with Space on its focused link, and leaves Enter to the link", async () => {
+    const hits: string[] = [];
+    const LINKED = [
+      col.accessor("name", { header: "Name", cell: (c) => <a href={`#${c.getValue()}`}>{c.getValue()}</a> }),
+      col.accessor("size", { header: "Size" }),
+    ];
+    render(<DataTable label="Boxes" data={BOXES} columns={LINKED} getRowId={(b) => b.id} empty="No boxes" onActivate={(b) => hits.push(b.id)} />);
+    screen.getByRole("link", { name: "gamma" }).focus();
+    await userEvent.keyboard(" ");
+    expect(hits).toEqual(["b3"]);
+  });
 });

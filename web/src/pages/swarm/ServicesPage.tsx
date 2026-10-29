@@ -65,7 +65,7 @@ export function ServicesPage() {
 
 /** A service in the panel: its tasks running against those wanted, live. */
 function ServiceNow({ env, service: s }: { env: string; service: ServiceSummary }) {
-  const { tasks: all } = useSwarmTasks(env);
+  const { tasks: all, paused } = useSwarmTasks(env);
   const tasks = (all ?? []).filter((t) => t.service_id === s.id);
   const running = all ? tasks.filter((t) => t.state === "running").length : s.tasks_running;
   return (
@@ -79,7 +79,7 @@ function ServiceNow({ env, service: s }: { env: string; service: ServiceSummary 
       ]}
       list={{
         title: "Tasks",
-        empty: all ? "No tasks." : "Loading tasks…",
+        empty: paused && !all ? `Live updates paused — ${paused}` : all ? "No tasks." : "Loading tasks…",
         rows: tasks
           .slice()
           .sort((a, b) => b.updated_at - a.updated_at)

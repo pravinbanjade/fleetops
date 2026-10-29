@@ -1,5 +1,6 @@
 import { skipToken, useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DockerEvent, KubeList } from "@/api/gen/types.gen";
 import { envStatusQuery, keys, recentEventsQuery, swarmKeys } from "@/api/queries";
@@ -7,6 +8,7 @@ import type { EnvFamily } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { useKubeWatch } from "@/live/kubeWatch";
 import { useSwarmEvents } from "@/live/swarmEvents";
+import { useLive } from "@/live/LiveProvider";
 import { useMedia } from "../useMedia";
 import { useNow } from "./now";
 import { capTape, dockerTapeItem, kubeTapeItem, type TapeItem } from "./tapeItems";
@@ -43,9 +45,15 @@ function KubeTape({ env }: { env: string }) {
   // overview already watches this filtered list, so the watch is shared. The
   // tape reads what the watch delivers and never fetches: a page refreshing
   // its environment's queries must not wait on the tape.
-  useKubeWatch(env, "events", undefined, undefined, "warnings");
+  const watch = useKubeWatch(env, "events", undefined, undefined, "warnings");
   const { data } = useQuery<KubeList>({ queryKey: keys.kube(env, "events", undefined, "warnings"), queryFn: skipToken });
-  return <Strip env={env} items={capTape((data?.rows ?? []).map(kubeTapeItem))} />;
+  return (
+    <Strip
+      env={env}
+      items={capTape((data?.rows ?? []).map(kubeTapeItem))}
+      paused={watch.paused ? { message: watch.paused.message, retry: watch.retry } : undefined}
+    />
+  );
 }
 
 function fromDocker(events: DockerEvent[] | undefined): TapeItem[] {
@@ -67,7 +75,17 @@ function useThrottled<T>(value: T, ms: number): T {
   return shown;
 }
 
-function Strip({ env, items: incoming }: { env: string; items: TapeItem[] | "down" }) {
+function Strip({
+  env,
+  items: incoming,
+  paused,
+}: {
+  env: string;
+  items: TapeItem[] | "down";
+  /** The feed ended (a watch timed out or was refused): say so, and offer to start it again. */
+  paused?: { message: string; retry: () => void };
+}) {
+  const { state } = useLive();
   const items = useThrottled(incoming, THROTTLE_MS);
   const phone = useMedia("(max-width: 767px)");
   const navigate = useNavigate();
@@ -77,14 +95,28 @@ function Strip({ env, items: incoming }: { env: string; items: TapeItem[] | "dow
   const go = (t: NonNullable<TapeItem["target"]>) => {
     const href = Object.entries({ env, ...t.params }).reduce((h, [k, v]) => h.replace(`$${k}`, encodeURIComponent(v)), t.to);
     if (pathname === href && t.select) open(t.select);
+    else if (t.page) void navigate({ to: t.page.to as never, params: { env, ...t.page.params } as never });
     else void navigate({ to: t.to as never, params: { env, ...t.params } as never });
   };
   return (
     <section aria-label="Events" className="flex h-[34px] min-w-0 items-center gap-6 overflow-hidden px-3.5 text-[12.5px] whitespace-nowrap text-muted-foreground">
-      <span className="flex shrink-0 items-center gap-1.5 font-medium text-live">
-        <span aria-hidden className="size-1.5 rounded-full bg-live" />
-        Live
-      </span>
+      {state === "open" && !paused ? (
+        <span className="flex shrink-0 items-center gap-1.5 font-medium text-live">
+          <span aria-hidden className="size-1.5 rounded-full bg-live" />
+          Live
+        </span>
+      ) : (
+        <span className="flex shrink-0 items-center gap-1.5 font-medium text-meta">
+          <span aria-hidden className="size-1.5 rounded-full bg-meta" />
+          {paused ? "Paused" : state === "reconnecting" ? "Reconnecting" : "Connecting"}
+        </span>
+      )}
+      {paused && (
+        <button type="button" onClick={paused.retry} className="flex shrink-0 items-center gap-1.5 rounded-sm text-meta press hover:text-foreground">
+          <RotateCw aria-hidden className="size-3.5" />
+          Retry · {paused.message}
+        </button>
+      )}
       {items === "down" ? (
         <span className="text-meta">Environment unreachable</span>
       ) : shown.length === 0 ? (

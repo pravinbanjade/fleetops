@@ -1,3 +1,4 @@
+import { withAlpha } from "@/lib/color";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { useEffect, useRef } from "react";
@@ -18,11 +19,11 @@ const FONT = "11px 'JetBrains Mono Variable', ui-monospace, monospace";
 
 /**
  * A theme colour for the canvas. A canvas cannot read CSS variables, so the
- * variable is resolved when the chart draws; `alpha` fades an oklch value.
+ * variable is resolved when the chart draws; `alpha` fades it.
  */
 function ink(name: "--foreground" | "--muted-foreground" | "--border" | "--meta" | "--live", alpha?: number): string {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#8a8a8a";
-  return alpha === undefined || !v.startsWith("oklch(") ? v : v.replace(/\)$/, ` / ${alpha})`);
+  return alpha === undefined ? v : withAlpha(v, alpha);
 }
 
 /**
@@ -77,7 +78,7 @@ export function Chart({
             stroke: () => ink(s.tone === "primary" ? "--live" : "--muted-foreground"),
             width: 1.5,
             dash: s.tone === "secondary" ? [4, 3] : undefined,
-            fill: s.tone === "primary" ? () => ink("--foreground", 0.08) : undefined,
+            fill: s.tone === "primary" ? () => ink("--live", 0.1) : undefined,
             value: (_u: uPlot, v: number | null) => fmt(v),
           })),
         ],

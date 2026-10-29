@@ -89,8 +89,8 @@ interface DataTableProps<T extends RowData> {
   rowMenu?: { label: (row: T) => string; items: (row: T) => QuickItem[] };
   /**
    * Shows a row in the "now playing" panel: a click anywhere on the row but
-   * its links and controls, or Space on its walked link (Enter still opens
-   * the row's page).
+   * its links and controls, or Space on a link in the row (Enter still
+   * follows the link).
    */
   onActivate?: (row: T) => void;
   /** The row the panel shows, marked as selected. */
@@ -455,7 +455,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                     onKeyDown={
                       props.onActivate &&
                       ((e) => {
-                        if (e.key !== " " || !(e.target as HTMLElement).matches("a[data-strip]")) return;
+                        if (e.key !== " " || !(e.target as HTMLElement).matches("a")) return;
                         e.preventDefault();
                         props.onActivate!(row.original);
                       })
