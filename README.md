@@ -6,7 +6,7 @@ FleetOps is a self-hosted container management platform. It is a single Rust bin
 
 It is an open-source alternative to Portainer: roles, Kubernetes namespace scoping and an audit log are free under Apache-2.0, on any number of nodes. See [FleetOps vs Portainer](https://fleetops.pravinb.com.np/portainer-alternative) and the [FAQ](https://fleetops.pravinb.com.np/faq).
 
-[Quick start](#quick-start) · [Features](#features) · [Editions](#editions) · [Kubernetes guide](docs/kubernetes.md) · [Swarm guide](docs/swarm.md) · [Security](#security) · [Contributing](CONTRIBUTING.md)
+[Quick start](#quick-start) · [Features](#features) · [Plans](#plans) · [Kubernetes guide](docs/kubernetes.md) · [Swarm guide](docs/swarm.md) · [Security](#security) · [Contributing](CONTRIBUTING.md)
 
 ![The FleetOps dashboard for a Docker host: containers that need attention, running containers with live CPU and memory, disk usage and recent events](docs/images/dashboard.png)
 
@@ -51,7 +51,7 @@ docker run -d --name fleetops -p 9000:9000 \
   fleets/fleetops
 ```
 
-The same images are mirrored to `ghcr.io/pravinbanjade/fleetops` (and `fleetops-ee`, `fleetops-agent`) for hosts that hit Docker Hub's pull limits.
+The same images are mirrored to `ghcr.io/pravinbanjade/fleetops` (and `fleetops-agent`) for hosts that hit Docker Hub's pull limits.
 
 Open <http://localhost:9000> and create the admin account. Setup locks if no admin is created within 10 minutes of starting, until the server restarts.
 
@@ -140,13 +140,14 @@ One file holds everything FleetOps keeps: users, environments and their credenti
 
 With an Enterprise license, FleetOps also backs up daily to S3-compatible storage (AWS S3, MinIO, Cloudflare R2 and others) and/or a local directory such as a mounted volume, keeping the last N backups or N days of them, and **Admin → Backup** lists the five most recent with a **Restore** button each.
 
-## Editions
+## Plans
+
+There is one image, `fleets/fleetops`. Every install starts on Community. Buy a plan on the [pricing page](https://fleetops.pravinb.com.np/pricing), paste the emailed key in **Admin → License**, and Enterprise features turn on without reinstalling. `fleets/fleetops-ee` is a deprecated alias of the same image and stops being published after v0.8.
 
 | | Community | Enterprise |
 |---|---|---|
-| License | Apache-2.0 | [FleetOps Enterprise License](ee/LICENSE) plus a subscription |
+| License | Free | A subscription; Enterprise code is under the [FleetOps Enterprise License](ee/LICENSE) |
 | Price | Free, any number of nodes | Per node, in blocks of ten: see [pricing](https://fleetops.pravinb.com.np/pricing) |
-| Image | `fleets/fleetops` | `fleets/fleetops-ee` |
 | Docker, Kubernetes, Helm, agents | ✓ | ✓ |
 | Roles and namespace scoping | ✓ | ✓ |
 | Audit log (90-day retention) | ✓ | ✓ |
@@ -159,7 +160,7 @@ With an Enterprise license, FleetOps also backs up daily to S3-compatible storag
 | Scheduled backups (S3, local directory) | | ✓ |
 | API tokens | | planned |
 
-Enterprise is for paying customers only: there is no free tier or trial license, since Community is already free on any number of nodes. The Enterprise image runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license covers a number of nodes: each Docker or Podman host is one, and a Kubernetes cluster counts its nodes. At the limit, new environments are refused; a cluster that grows past it only warns admins. Users are never limited.
+Enterprise is for paying customers only: there is no free tier or trial license, since Community is already free on any number of nodes. FleetOps runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license covers a number of nodes: each Docker or Podman host is one, and a Kubernetes cluster counts its nodes. At the limit, new environments are refused; a cluster that grows past it only warns admins. Users are never limited.
 
 Teams come with any Enterprise license: add a user to a team in **Admin → Teams** and they get its environment access, alongside their own. Each grant a user holds, direct or through a team, is checked on its own, so Operator on one namespace plus Viewer on the whole cluster is Operator on that namespace and Viewer everywhere else.
 
@@ -173,7 +174,7 @@ Known limits of custom roles: Helm and Compose actions are checked against the H
 
 Scheduled backups come with any Enterprise license (see [Moving or recovering a server](#moving-or-recovering-a-server)). Without a license they pause, with a banner for admins, and resume once one is installed; turning them off and removing targets always works.
 
-Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and production use needs a subscription. `make build` builds Community with no Enterprise code compiled in; `make build-ee` builds Enterprise.
+Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and production use needs a subscription. `make build` builds the one server, Enterprise code included; it runs as Community until a license is installed.
 
 ## Access
 

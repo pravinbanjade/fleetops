@@ -14,7 +14,7 @@ fleetops/
 │  └─ fleetops-store/    sqlx + SQLite: migrations and repositories (users, sessions, environments, settings, audit), backup files and restores
 ├─ web/                  React 19 + TypeScript + Vite
 │  └─ src/api/gen/       client generated from the OpenAPI document
-└─ ee/                   Enterprise edition (source-available): fleetops-ee crate, license tool, UI
+└─ ee/                   Enterprise code (source-available, in every build): fleetops-ee crate, license tool, UI
 ```
 
 - **Environments.** Every Docker route is scoped to an environment (`/envs/{env}/…`). Handlers resolve the environment through an `EnvRegistry` and call the `DockerOps` trait. They never call bollard directly. Local environments use `LocalDocker` on a socket; agent environments (`docker-agent`) use the same `LocalDocker` over a tunnel. Kubernetes environments (`kube-config`, `kube-agent`) implement `KubeOps` instead, on kube-rs, either from a stored kubeconfig or over the same tunnel to an in-cluster agent; their routes live under `/envs/{env}/k8s/…`, and pod logs and exec use the same websocket topics as containers.
