@@ -23,6 +23,24 @@ export type AccessEntry = {
     role_name?: string | null;
 };
 
+/**
+ * Where part of a user's access comes from.
+ */
+export type AccessSource = {
+    namespaces?: Array<string> | null;
+    role: EnvRole;
+    /**
+     * Set when the grant is a custom role.
+     */
+    role_id?: number | null;
+    role_name?: string | null;
+    /**
+     * Null for a direct grant.
+     */
+    team_id?: number | null;
+    team_name?: string | null;
+};
+
 export type AgentView = {
     /**
      * kube-agent: the access level its manifest grants.
@@ -176,6 +194,21 @@ export type BackupForm = {
     passphrase: string;
 };
 
+export type BackupStatus = {
+    enabled: boolean;
+    /**
+     * The most recent run failed for at least one target.
+     */
+    last_failed: boolean;
+    last_run?: Run | null;
+    licensed: boolean;
+    next_run_at?: number | null;
+    /**
+     * Enabled, but not running for lack of a license.
+     */
+    paused: boolean;
+};
+
 /**
  * What an admin is shown before restoring: the manifest without secrets.
  */
@@ -241,6 +274,32 @@ export type CallerAccess = {
      * The custom role's name, when exactly one grant is a custom role.
      */
     role_name?: string | null;
+};
+
+/**
+ * The role grid, so the editor isn't written down twice.
+ */
+export type Catalog = {
+    rows: Array<CatalogRow>;
+    verbs: Array<CatalogVerb>;
+};
+
+export type CatalogRow = {
+    /**
+     * The verbs this row has a cell for, in column order.
+     */
+    cells: Array<string>;
+    /**
+     * `docker` or `kubernetes`.
+     */
+    group: string;
+    key: string;
+    label: string;
+};
+
+export type CatalogVerb = {
+    key: string;
+    label: string;
 };
 
 export type ChangePassword = {
@@ -383,6 +442,95 @@ export type ConfirmRestore = {
 };
 
 /**
+ * A connection's non-secret settings, by kind.
+ */
+export type ConnectionSettings = {
+    client_id: string;
+    kind: 'microsoft';
+    tenant: string;
+} | {
+    /**
+     * The Workspace admin the service account acts as to read groups.
+     */
+    admin_email?: string | null;
+    client_id: string;
+    /**
+     * Workspace domains allowed to sign in; empty allows any.
+     */
+    hosted_domains?: Array<string>;
+    kind: 'google';
+} | {
+    /**
+     * GitHub Enterprise Server, e.g. `https://github.acme.io`.
+     */
+    base_url?: string | null;
+    client_id: string;
+    kind: 'github';
+    /**
+     * Members of at least one of these organisations may sign in.
+     */
+    orgs: Array<string>;
+} | {
+    client_id: string;
+    groups_claim?: string;
+    issuer: string;
+    kind: 'oidc';
+    scopes?: Array<string>;
+} | {
+    /**
+     * The service account; none searches anonymously.
+     */
+    bind_dn?: string | null;
+    /**
+     * PEM certificates to trust instead of the system's.
+     */
+    ca_cert?: string | null;
+    email_attr?: string;
+    /**
+     * Where groups are searched; none reads no groups.
+     */
+    group_base_dn?: string | null;
+    group_filter?: string;
+    kind: 'ldap';
+    preset: LdapPreset;
+    skip_tls_verify?: boolean;
+    starttls?: boolean;
+    /**
+     * `ldap://` or `ldaps://`.
+     */
+    url: string;
+    user_base_dn: string;
+    /**
+     * Empty takes the preset's.
+     */
+    user_filter?: string;
+    username_attr?: string;
+};
+
+/**
+ * A connection as the API shows it: secrets are never returned.
+ */
+export type ConnectionView = {
+    /**
+     * Where the identity provider sends people back; null until
+     * `FLEETOPS_PUBLIC_URL` is set.
+     */
+    callback_url?: string | null;
+    enabled: boolean;
+    id: number;
+    kind: string;
+    name: string;
+    require_mapped_group: boolean;
+    /**
+     * The names of the secrets that are saved.
+     */
+    secrets_set: Array<string>;
+    session_hours: number;
+    settings: ConnectionSettings;
+    user_count: number;
+};
+
+/**
  * `POST /envs/{env}/containers/{id}/{action}` actions.
  */
 export type ContainerActionName = 'start' | 'stop' | 'restart' | 'kill' | 'pause' | 'unpause';
@@ -511,6 +659,14 @@ export type Credentials = {
     username: string;
 };
 
+export type DeletedConnection = {
+    /**
+     * SSO users the connection leaves behind; they can no longer sign in
+     * and an admin may delete them.
+     */
+    users_left: number;
+};
+
 export type DeployBody = {
     from: DeploySource;
     /**
@@ -626,6 +782,28 @@ export type EditionInfo = {
     features: Array<Feature>;
 };
 
+/**
+ * A user's access to one environment, and the grants it is made of (each
+ * checked on its own).
+ */
+export type EffectiveAccess = {
+    env_id: number;
+    env_kind: string;
+    env_name: string;
+    /**
+     * Every namespace a source covers; null when one covers the whole environment.
+     */
+    namespaces?: Array<string> | null;
+    /**
+     * The strongest built-in role among the sources.
+     */
+    role: EnvRole;
+    /**
+     * Direct grant first, then teams by name.
+     */
+    sources: Array<AccessSource>;
+};
+
 export type EngineVersion = {
     api_version: string;
     arch: string;
@@ -666,6 +844,25 @@ export type EnvStatus = {
 } | {
     reason: string;
     state: 'down';
+};
+
+/**
+ * A team's grant on one environment, and who it reaches.
+ */
+export type EnvTeamAccess = {
+    /**
+     * Usernames, sorted.
+     */
+    members: Array<string>;
+    /**
+     * Null for the whole environment.
+     */
+    namespaces?: Array<string> | null;
+    role: EnvRole;
+    role_id?: number | null;
+    role_name?: string | null;
+    team_id: number;
+    team_name: string;
 };
 
 /**
@@ -1217,6 +1414,51 @@ export type KubeconfigText = {
     kubeconfig: string;
 };
 
+/**
+ * Which directory an LDAP connection talks to; sets the default filters.
+ */
+export type LdapPreset = 'active_directory' | 'openldap' | 'custom';
+
+/**
+ * `GET /ee/license`.
+ */
+export type LicenseInfo = {
+    customer?: string | null;
+    expires_at?: number | null;
+    /**
+     * The features the license grants, Teams always among them (in effect
+     * only while it is active).
+     */
+    features: Array<Feature>;
+    id?: string | null;
+    /**
+     * `null`: unlimited.
+     */
+    max_nodes?: number | null;
+    /**
+     * `null`: unlimited.
+     */
+    max_users?: number | null;
+    /**
+     * Docker or Podman hosts plus Kubernetes nodes managed now.
+     */
+    nodes_in_use: number;
+    /**
+     * Why the license is invalid.
+     */
+    reason?: string | null;
+    source?: LicenseSource | null;
+    status: LicenseStatus;
+    users_in_use: number;
+};
+
+/**
+ * Where the license in effect came from.
+ */
+export type LicenseSource = 'uploaded' | 'file';
+
+export type LicenseStatus = 'none' | 'invalid' | 'valid' | 'grace' | 'expired';
+
 export type LogLine = {
     /**
      * Kubernetes merged logs only: the pod the line came from.
@@ -1266,6 +1508,17 @@ export type LoginProvider = {
     name: string;
 };
 
+export type MappingView = {
+    admin: boolean;
+    group: string;
+    id: number;
+    /**
+     * Null when the group grants admin.
+     */
+    team_id?: number | null;
+    team_name?: string | null;
+};
+
 export type NameBody = {
     name: string;
 };
@@ -1297,6 +1550,36 @@ export type NetworkSummary = {
     name: string;
     scope: string;
     subnet?: string | null;
+};
+
+export type NewConnectionBody = {
+    enabled?: boolean;
+    name: string;
+    require_mapped_group?: boolean;
+    secrets?: Secrets;
+    session_hours?: number | null;
+    /**
+     * Tagged by `kind`.
+     */
+    settings: ConnectionSettings;
+};
+
+export type NewMapping = {
+    /**
+     * Make members FleetOps admins instead of joining a team.
+     */
+    admin?: boolean;
+    /**
+     * The group as the provider names it: a name, an id, an email or a DN.
+     */
+    group: string;
+    team_id?: number | null;
+};
+
+export type NewRole = {
+    description?: string | null;
+    name: string;
+    permissions: Array<string>;
 };
 
 export type NewService = {
@@ -1337,6 +1620,11 @@ export type NewSwarmObject = {
      * Write-only for secrets: neither Docker nor FleetOps shows it again.
      */
     value: string;
+};
+
+export type NewTeam = {
+    description?: string | null;
+    name: string;
 };
 
 /**
@@ -1396,6 +1684,15 @@ export type NodeUpdate = NodeChange & {
      */
     confirm?: string | null;
 };
+
+export type PassphraseBody = {
+    passphrase: string;
+};
+
+/**
+ * Who may log in with a local password.
+ */
+export type PasswordLogin = 'everyone' | 'local_admins';
 
 export type Plan = {
     /**
@@ -1481,6 +1778,18 @@ export type PullBody = {
     tag?: string | null;
 };
 
+export type RecentBackup = RemoteFile & {
+    target_kind: TargetKind;
+};
+
+export type RecentBackups = {
+    backups: Array<RecentBackup>;
+    /**
+     * Targets that could not be listed.
+     */
+    errors: Array<TargetError>;
+};
+
 export type RecreateResult = {
     backup_name: string;
     id: string;
@@ -1510,6 +1819,15 @@ export type ReleaseDetail = {
     values: string;
 };
 
+export type RemoteFile = {
+    /**
+     * When the backup was made, from its name.
+     */
+    created_at: number;
+    name: string;
+    size: number;
+};
+
 export type ReplaceBody = {
     dry_run?: boolean;
     /**
@@ -1527,6 +1845,32 @@ export type ResourcePlan = {
      * The Docker name.
      */
     name: string;
+};
+
+export type RestoreRecentBody = {
+    name: string;
+    /**
+     * Needed only when the backup was made with an earlier passphrase.
+     */
+    passphrase?: string | null;
+    target_kind: TargetKind;
+};
+
+/**
+ * How many backups each target keeps.
+ */
+export type Retention = {
+    kind: 'count';
+    /**
+     * The newest N.
+     */
+    value: number;
+} | {
+    kind: 'days';
+    /**
+     * Those made in the last N days.
+     */
+    value: number;
 };
 
 export type RevisionDetail = {
@@ -1568,6 +1912,55 @@ export type RevisionRecord = {
 
 export type Role = 'admin' | 'user';
 
+/**
+ * Any of the fields; `description: null` clears it.
+ */
+export type RoleChange = {
+    description?: string | null;
+    name?: string | null;
+    permissions?: Array<string> | null;
+};
+
+export type RoleDetail = {
+    description?: string | null;
+    holders: RoleHolders;
+    id: number;
+    name: string;
+    permissions: Array<string>;
+};
+
+export type RoleHolder = {
+    /**
+     * The environment it is held on.
+     */
+    env: string;
+    id: number;
+    /**
+     * Username or team name.
+     */
+    name: string;
+};
+
+export type RoleHolders = {
+    teams: Array<RoleHolder>;
+    users: Array<RoleHolder>;
+};
+
+export type RoleSummary = {
+    description?: string | null;
+    id: number;
+    name: string;
+    /**
+     * `row.verb`, sorted.
+     */
+    permissions: Array<string>;
+    teams: number;
+    /**
+     * How many users and teams hold it, on any environment.
+     */
+    users: number;
+};
+
 export type RollbackBody = {
     dry_run: boolean;
     /**
@@ -1582,6 +1975,27 @@ export type RollbackBody = {
  */
 export type RowHealth = 'ok' | 'warn' | 'bad' | 'unknown' | 'off';
 
+export type Run = {
+    error?: string | null;
+    file_name?: string | null;
+    finished_at?: number | null;
+    id: number;
+    /**
+     * `success`, `failure` or `skipped`.
+     */
+    result: string;
+    size?: number | null;
+    started_at: number;
+    /**
+     * `s3` or `local`; null when skipped.
+     */
+    target_kind?: string | null;
+    /**
+     * `schedule`, `manual` or `catch_up`.
+     */
+    trigger: string;
+};
+
 export type Scale = {
     confirm?: string | null;
     replicas: number;
@@ -1589,6 +2003,25 @@ export type Scale = {
 
 export type ScaleBody = {
     replicas: number;
+};
+
+export type Schedule = {
+    enabled: boolean;
+    /**
+     * 0–23, UTC.
+     */
+    hour_utc: number;
+    passphrase_set: boolean;
+    retention: Retention;
+};
+
+export type ScheduleBody = {
+    enabled: boolean;
+    /**
+     * 0–23, UTC.
+     */
+    hour_utc: number;
+    retention: Retention;
 };
 
 export type SecretRotated = {
@@ -1626,6 +2059,21 @@ export type SecretValue = {
      * The value as text, or base64 when it is not UTF-8.
      */
     value: string;
+};
+
+/**
+ * Secrets as an admin sends them; an absent field keeps the stored one.
+ */
+export type Secrets = {
+    /**
+     * LDAP: the service account's password.
+     */
+    bind_password?: string | null;
+    client_secret?: string | null;
+    /**
+     * Google: the service account's JSON key, to read groups.
+     */
+    service_account_json?: string | null;
 };
 
 /**
@@ -1777,6 +2225,10 @@ export type SetAccess = {
 
 export type ShowBody = {
     chart: ChartRef;
+};
+
+export type SsoSettings = {
+    password_login: PasswordLogin;
 };
 
 export type StackActionName = 'start' | 'stop' | 'restart';
@@ -2054,9 +2506,66 @@ export type SyncOutcome = {
     outcome: 'failed';
 };
 
+export type SyncedMember = {
+    /**
+     * The SSO connection whose group mapping added the member.
+     */
+    connection: string;
+    user_id: number;
+};
+
 export type TagBody = {
     repo: string;
     tag?: string;
+};
+
+export type TargetBody = {
+    /**
+     * S3 only; absent keeps the saved one.
+     */
+    secret_access_key?: string | null;
+    settings: TargetSettings;
+};
+
+export type TargetError = {
+    error: string;
+    target_kind: TargetKind;
+};
+
+export type TargetKind = 's3' | 'local';
+
+/**
+ * Where backups go; secrets are kept apart.
+ */
+export type TargetSettings = {
+    access_key_id: string;
+    bucket: string;
+    /**
+     * Blank means AWS.
+     */
+    endpoint?: string | null;
+    kind: 's3';
+    /**
+     * Path-style URLs, for MinIO and similar.
+     */
+    path_style?: boolean;
+    prefix?: string;
+    region: string;
+} | {
+    kind: 'local';
+    /**
+     * An absolute directory outside the data directory.
+     */
+    path: string;
+};
+
+export type TargetView = {
+    kind: TargetKind;
+    /**
+     * Whether the S3 secret access key is saved; it is never returned.
+     */
+    secret_set: boolean;
+    settings: TargetSettings;
 };
 
 export type TaskInfo = {
@@ -2110,6 +2619,50 @@ export type TaskSummary = {
     version: number;
 };
 
+export type TeamDetail = {
+    /**
+     * The team's environment access, by environment name.
+     */
+    access: Array<AccessEntry>;
+    description?: string | null;
+    id: number;
+    members: Array<User>;
+    name: string;
+    /**
+     * Members that single sign-on group sync added; they leave the team
+     * through the identity provider, not by hand.
+     */
+    synced: Array<SyncedMember>;
+};
+
+export type TeamSummary = {
+    description?: string | null;
+    environments: number;
+    id: number;
+    members: number;
+    name: string;
+};
+
+export type TestBody = {
+    /**
+     * Google: also list this user's groups through the service account.
+     */
+    email?: string | null;
+    /**
+     * LDAP: also look this user up and list their groups.
+     */
+    username?: string | null;
+};
+
+export type TestResult = {
+    detail: string;
+    /**
+     * The groups found for `email`, when asked.
+     */
+    groups?: Array<string> | null;
+    ok: boolean;
+};
+
 export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch' | 'swarm-tasks' | 'audit';
 
 export type TriggerResult = {
@@ -2133,6 +2686,18 @@ export type UninstallBody = {
      * The latest revision the plan was reviewed against.
      */
     expected_current: number;
+};
+
+/**
+ * Absent fields keep their value; absent secrets keep the saved ones.
+ */
+export type UpdateConnectionBody = {
+    enabled?: boolean | null;
+    name?: string | null;
+    require_mapped_group?: boolean | null;
+    secrets?: Secrets | null;
+    session_hours?: number | null;
+    settings?: ConnectionSettings | null;
 };
 
 export type UpdateEnv = {
@@ -2736,6 +3301,1319 @@ export type GetEditionResponses = {
 };
 
 export type GetEditionResponse = GetEditionResponses[keyof GetEditionResponses];
+
+export type ExportAuditData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * `csv` (default) or `ndjson`.
+         */
+        format?: 'csv' | 'ndjson';
+        /**
+         * Unix seconds, inclusive.
+         */
+        from?: number;
+        /**
+         * Unix seconds, exclusive.
+         */
+        to?: number;
+    };
+    url: '/api/v1/ee/audit/export';
+};
+
+export type ExportAuditErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ExportAuditError = ExportAuditErrors[keyof ExportAuditErrors];
+
+export type ExportAuditResponses = {
+    /**
+     * Audit rows, oldest first
+     */
+    200: string;
+};
+
+export type ExportAuditResponse = ExportAuditResponses[keyof ExportAuditResponses];
+
+export type ListRecentBackupsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/backup/recent';
+};
+
+export type ListRecentBackupsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListRecentBackupsError = ListRecentBackupsErrors[keyof ListRecentBackupsErrors];
+
+export type ListRecentBackupsResponses = {
+    /**
+     * The newest backups across targets
+     */
+    200: RecentBackups;
+};
+
+export type ListRecentBackupsResponse = ListRecentBackupsResponses[keyof ListRecentBackupsResponses];
+
+export type StageRecentBackupData = {
+    body: RestoreRecentBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/backup/recent/restore';
+};
+
+export type StageRecentBackupErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type StageRecentBackupError = StageRecentBackupErrors[keyof StageRecentBackupErrors];
+
+export type StageRecentBackupResponses = {
+    /**
+     * Staged; confirm with POST /backup/stage/{id}/restore
+     */
+    200: StagedBackup;
+};
+
+export type StageRecentBackupResponse = StageRecentBackupResponses[keyof StageRecentBackupResponses];
+
+export type RunBackupData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/backup/run';
+};
+
+export type RunBackupErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RunBackupError = RunBackupErrors[keyof RunBackupErrors];
+
+export type RunBackupResponses = {
+    /**
+     * Started; follow it in the runs
+     */
+    202: unknown;
+};
+
+export type ListBackupRunsData = {
+    body?: never;
+    path: {
+        /**
+         * At most 50; default 20.
+         */
+        limit: number | null;
+    };
+    query?: never;
+    url: '/api/v1/ee/backup/runs';
+};
+
+export type ListBackupRunsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListBackupRunsError = ListBackupRunsErrors[keyof ListBackupRunsErrors];
+
+export type ListBackupRunsResponses = {
+    /**
+     * Newest first
+     */
+    200: Array<Run>;
+};
+
+export type ListBackupRunsResponse = ListBackupRunsResponses[keyof ListBackupRunsResponses];
+
+export type GetBackupScheduleData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/backup/schedule';
+};
+
+export type GetBackupScheduleErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetBackupScheduleError = GetBackupScheduleErrors[keyof GetBackupScheduleErrors];
+
+export type GetBackupScheduleResponses = {
+    /**
+     * The schedule
+     */
+    200: Schedule;
+};
+
+export type GetBackupScheduleResponse = GetBackupScheduleResponses[keyof GetBackupScheduleResponses];
+
+export type PutBackupScheduleData = {
+    body: ScheduleBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/backup/schedule';
+};
+
+export type PutBackupScheduleErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type PutBackupScheduleError = PutBackupScheduleErrors[keyof PutBackupScheduleErrors];
+
+export type PutBackupScheduleResponses = {
+    /**
+     * Saved
+     */
+    200: Schedule;
+};
+
+export type PutBackupScheduleResponse = PutBackupScheduleResponses[keyof PutBackupScheduleResponses];
+
+export type PutBackupPassphraseData = {
+    body: PassphraseBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/backup/schedule/passphrase';
+};
+
+export type PutBackupPassphraseErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type PutBackupPassphraseError = PutBackupPassphraseErrors[keyof PutBackupPassphraseErrors];
+
+export type PutBackupPassphraseResponses = {
+    /**
+     * Saved
+     */
+    204: void;
+};
+
+export type PutBackupPassphraseResponse = PutBackupPassphraseResponses[keyof PutBackupPassphraseResponses];
+
+export type GetBackupStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/backup/status';
+};
+
+export type GetBackupStatusErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetBackupStatusError = GetBackupStatusErrors[keyof GetBackupStatusErrors];
+
+export type GetBackupStatusResponses = {
+    /**
+     * For the page and the banner
+     */
+    200: BackupStatus;
+};
+
+export type GetBackupStatusResponse = GetBackupStatusResponses[keyof GetBackupStatusResponses];
+
+export type ListBackupTargetsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/backup/targets';
+};
+
+export type ListBackupTargetsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListBackupTargetsError = ListBackupTargetsErrors[keyof ListBackupTargetsErrors];
+
+export type ListBackupTargetsResponses = {
+    /**
+     * Targets
+     */
+    200: Array<TargetView>;
+};
+
+export type ListBackupTargetsResponse = ListBackupTargetsResponses[keyof ListBackupTargetsResponses];
+
+export type DeleteBackupTargetData = {
+    body?: never;
+    path: {
+        /**
+         * `s3` or `local`.
+         */
+        kind: string;
+    };
+    query?: never;
+    url: '/api/v1/ee/backup/targets/{kind}';
+};
+
+export type DeleteBackupTargetErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteBackupTargetError = DeleteBackupTargetErrors[keyof DeleteBackupTargetErrors];
+
+export type DeleteBackupTargetResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type DeleteBackupTargetResponse = DeleteBackupTargetResponses[keyof DeleteBackupTargetResponses];
+
+export type PutBackupTargetData = {
+    body: TargetBody;
+    path: {
+        /**
+         * `s3` or `local`.
+         */
+        kind: string;
+    };
+    query?: never;
+    url: '/api/v1/ee/backup/targets/{kind}';
+};
+
+export type PutBackupTargetErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type PutBackupTargetError = PutBackupTargetErrors[keyof PutBackupTargetErrors];
+
+export type PutBackupTargetResponses = {
+    /**
+     * Saved
+     */
+    200: TargetView;
+};
+
+export type PutBackupTargetResponse = PutBackupTargetResponses[keyof PutBackupTargetResponses];
+
+export type TestBackupTargetData = {
+    body?: never;
+    path: {
+        /**
+         * `s3` or `local`.
+         */
+        kind: string;
+    };
+    query?: never;
+    url: '/api/v1/ee/backup/targets/{kind}/test';
+};
+
+export type TestBackupTargetErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type TestBackupTargetError = TestBackupTargetErrors[keyof TestBackupTargetErrors];
+
+export type TestBackupTargetResponses = {
+    /**
+     * Writable
+     */
+    204: void;
+};
+
+export type TestBackupTargetResponse = TestBackupTargetResponses[keyof TestBackupTargetResponses];
+
+export type ListEnvTeamAccessData = {
+    body?: never;
+    path: {
+        /**
+         * Environment name
+         */
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/ee/envs/{env}/teams';
+};
+
+export type ListEnvTeamAccessErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListEnvTeamAccessError = ListEnvTeamAccessErrors[keyof ListEnvTeamAccessErrors];
+
+export type ListEnvTeamAccessResponses = {
+    /**
+     * By team name
+     */
+    200: Array<EnvTeamAccess>;
+};
+
+export type ListEnvTeamAccessResponse = ListEnvTeamAccessResponses[keyof ListEnvTeamAccessResponses];
+
+export type DeleteLicenseData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/license';
+};
+
+export type DeleteLicenseErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteLicenseError = DeleteLicenseErrors[keyof DeleteLicenseErrors];
+
+export type DeleteLicenseResponses = {
+    /**
+     * License now in effect
+     */
+    200: LicenseInfo;
+};
+
+export type DeleteLicenseResponse = DeleteLicenseResponses[keyof DeleteLicenseResponses];
+
+export type GetLicenseData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/license';
+};
+
+export type GetLicenseErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetLicenseError = GetLicenseErrors[keyof GetLicenseErrors];
+
+export type GetLicenseResponses = {
+    /**
+     * License
+     */
+    200: LicenseInfo;
+};
+
+export type GetLicenseResponse = GetLicenseResponses[keyof GetLicenseResponses];
+
+export type PutLicenseData = {
+    body: string;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/license';
+};
+
+export type PutLicenseErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type PutLicenseError = PutLicenseErrors[keyof PutLicenseErrors];
+
+export type PutLicenseResponses = {
+    /**
+     * License
+     */
+    200: LicenseInfo;
+};
+
+export type PutLicenseResponse = PutLicenseResponses[keyof PutLicenseResponses];
+
+export type ListRolesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/roles';
+};
+
+export type ListRolesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListRolesError = ListRolesErrors[keyof ListRolesErrors];
+
+export type ListRolesResponses = {
+    /**
+     * Roles, by name
+     */
+    200: Array<RoleSummary>;
+};
+
+export type ListRolesResponse = ListRolesResponses[keyof ListRolesResponses];
+
+export type CreateRoleData = {
+    body: NewRole;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/roles';
+};
+
+export type CreateRoleErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateRoleError = CreateRoleErrors[keyof CreateRoleErrors];
+
+export type CreateRoleResponses = {
+    /**
+     * The role
+     */
+    201: RoleDetail;
+};
+
+export type CreateRoleResponse = CreateRoleResponses[keyof CreateRoleResponses];
+
+export type RoleCatalogData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/roles/catalog';
+};
+
+export type RoleCatalogErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RoleCatalogError = RoleCatalogErrors[keyof RoleCatalogErrors];
+
+export type RoleCatalogResponses = {
+    /**
+     * Rows and verbs
+     */
+    200: Catalog;
+};
+
+export type RoleCatalogResponse = RoleCatalogResponses[keyof RoleCatalogResponses];
+
+export type DeleteRoleData = {
+    body?: never;
+    path: {
+        /**
+         * Role id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/roles/{id}';
+};
+
+export type DeleteRoleErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteRoleError = DeleteRoleErrors[keyof DeleteRoleErrors];
+
+export type DeleteRoleResponses = {
+    /**
+     * Deleted
+     */
+    204: void;
+};
+
+export type DeleteRoleResponse = DeleteRoleResponses[keyof DeleteRoleResponses];
+
+export type GetRoleData = {
+    body?: never;
+    path: {
+        /**
+         * Role id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/roles/{id}';
+};
+
+export type GetRoleErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetRoleError = GetRoleErrors[keyof GetRoleErrors];
+
+export type GetRoleResponses = {
+    /**
+     * The role
+     */
+    200: RoleDetail;
+};
+
+export type GetRoleResponse = GetRoleResponses[keyof GetRoleResponses];
+
+export type UpdateRoleData = {
+    body: RoleChange;
+    path: {
+        /**
+         * Role id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/roles/{id}';
+};
+
+export type UpdateRoleErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type UpdateRoleError = UpdateRoleErrors[keyof UpdateRoleErrors];
+
+export type UpdateRoleResponses = {
+    /**
+     * The role
+     */
+    200: RoleDetail;
+};
+
+export type UpdateRoleResponse = UpdateRoleResponses[keyof UpdateRoleResponses];
+
+export type ListSsoConnectionsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/sso/connections';
+};
+
+export type ListSsoConnectionsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSsoConnectionsError = ListSsoConnectionsErrors[keyof ListSsoConnectionsErrors];
+
+export type ListSsoConnectionsResponses = {
+    /**
+     * Connections by name
+     */
+    200: Array<ConnectionView>;
+};
+
+export type ListSsoConnectionsResponse = ListSsoConnectionsResponses[keyof ListSsoConnectionsResponses];
+
+export type CreateSsoConnectionData = {
+    body: NewConnectionBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/sso/connections';
+};
+
+export type CreateSsoConnectionErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateSsoConnectionError = CreateSsoConnectionErrors[keyof CreateSsoConnectionErrors];
+
+export type CreateSsoConnectionResponses = {
+    /**
+     * Created
+     */
+    201: ConnectionView;
+};
+
+export type CreateSsoConnectionResponse = CreateSsoConnectionResponses[keyof CreateSsoConnectionResponses];
+
+export type DeleteSsoConnectionData = {
+    body?: never;
+    path: {
+        /**
+         * Connection id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/sso/connections/{id}';
+};
+
+export type DeleteSsoConnectionErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteSsoConnectionError = DeleteSsoConnectionErrors[keyof DeleteSsoConnectionErrors];
+
+export type DeleteSsoConnectionResponses = {
+    /**
+     * Deleted
+     */
+    200: DeletedConnection;
+};
+
+export type DeleteSsoConnectionResponse = DeleteSsoConnectionResponses[keyof DeleteSsoConnectionResponses];
+
+export type GetSsoConnectionData = {
+    body?: never;
+    path: {
+        /**
+         * Connection id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/sso/connections/{id}';
+};
+
+export type GetSsoConnectionErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetSsoConnectionError = GetSsoConnectionErrors[keyof GetSsoConnectionErrors];
+
+export type GetSsoConnectionResponses = {
+    /**
+     * The connection
+     */
+    200: ConnectionView;
+};
+
+export type GetSsoConnectionResponse = GetSsoConnectionResponses[keyof GetSsoConnectionResponses];
+
+export type UpdateSsoConnectionData = {
+    body: UpdateConnectionBody;
+    path: {
+        /**
+         * Connection id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/sso/connections/{id}';
+};
+
+export type UpdateSsoConnectionErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type UpdateSsoConnectionError = UpdateSsoConnectionErrors[keyof UpdateSsoConnectionErrors];
+
+export type UpdateSsoConnectionResponses = {
+    /**
+     * The connection
+     */
+    200: ConnectionView;
+};
+
+export type UpdateSsoConnectionResponse = UpdateSsoConnectionResponses[keyof UpdateSsoConnectionResponses];
+
+export type ListSsoMappingsData = {
+    body?: never;
+    path: {
+        /**
+         * Connection id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/sso/connections/{id}/mappings';
+};
+
+export type ListSsoMappingsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSsoMappingsError = ListSsoMappingsErrors[keyof ListSsoMappingsErrors];
+
+export type ListSsoMappingsResponses = {
+    /**
+     * Mappings
+     */
+    200: Array<MappingView>;
+};
+
+export type ListSsoMappingsResponse = ListSsoMappingsResponses[keyof ListSsoMappingsResponses];
+
+export type CreateSsoMappingData = {
+    body: NewMapping;
+    path: {
+        /**
+         * Connection id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/sso/connections/{id}/mappings';
+};
+
+export type CreateSsoMappingErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateSsoMappingError = CreateSsoMappingErrors[keyof CreateSsoMappingErrors];
+
+export type CreateSsoMappingResponses = {
+    /**
+     * Created
+     */
+    201: MappingView;
+};
+
+export type CreateSsoMappingResponse = CreateSsoMappingResponses[keyof CreateSsoMappingResponses];
+
+export type DeleteSsoMappingData = {
+    body?: never;
+    path: {
+        /**
+         * Connection id
+         */
+        id: number;
+        /**
+         * Mapping id
+         */
+        mapping_id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/sso/connections/{id}/mappings/{mapping_id}';
+};
+
+export type DeleteSsoMappingErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteSsoMappingError = DeleteSsoMappingErrors[keyof DeleteSsoMappingErrors];
+
+export type DeleteSsoMappingResponses = {
+    /**
+     * Gone
+     */
+    204: void;
+};
+
+export type DeleteSsoMappingResponse = DeleteSsoMappingResponses[keyof DeleteSsoMappingResponses];
+
+export type TestSsoConnectionData = {
+    body: TestBody;
+    path: {
+        /**
+         * Connection id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/sso/connections/{id}/test';
+};
+
+export type TestSsoConnectionErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type TestSsoConnectionError = TestSsoConnectionErrors[keyof TestSsoConnectionErrors];
+
+export type TestSsoConnectionResponses = {
+    /**
+     * What the check found
+     */
+    200: TestResult;
+};
+
+export type TestSsoConnectionResponse = TestSsoConnectionResponses[keyof TestSsoConnectionResponses];
+
+export type GetSsoSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/sso/settings';
+};
+
+export type GetSsoSettingsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetSsoSettingsError = GetSsoSettingsErrors[keyof GetSsoSettingsErrors];
+
+export type GetSsoSettingsResponses = {
+    /**
+     * Settings
+     */
+    200: SsoSettings;
+};
+
+export type GetSsoSettingsResponse = GetSsoSettingsResponses[keyof GetSsoSettingsResponses];
+
+export type PutSsoSettingsData = {
+    body: SsoSettings;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/sso/settings';
+};
+
+export type PutSsoSettingsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type PutSsoSettingsError = PutSsoSettingsErrors[keyof PutSsoSettingsErrors];
+
+export type PutSsoSettingsResponses = {
+    /**
+     * Settings
+     */
+    200: SsoSettings;
+};
+
+export type PutSsoSettingsResponse = PutSsoSettingsResponses[keyof PutSsoSettingsResponses];
+
+export type SsoCallbackData = {
+    body?: never;
+    path: {
+        /**
+         * Connection id
+         */
+        id: number;
+        code: string | null;
+        state: string | null;
+        error: string | null;
+    };
+    query?: never;
+    url: '/api/v1/ee/sso/{id}/callback';
+};
+
+export type SsoCallbackErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type SsoCallbackError = SsoCallbackErrors[keyof SsoCallbackErrors];
+
+export type SsoCallbackResponses = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type SsoCallbackResponse = SsoCallbackResponses[keyof SsoCallbackResponses];
+
+export type StartSsoData = {
+    body?: never;
+    path: {
+        /**
+         * Connection id
+         */
+        id: number;
+        /**
+         * A path on this server to land on after signing in.
+         */
+        return_to: string | null;
+    };
+    query?: never;
+    url: '/api/v1/ee/sso/{id}/start';
+};
+
+export type StartSsoErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type StartSsoError = StartSsoErrors[keyof StartSsoErrors];
+
+export type StartSsoResponses = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type StartSsoResponse = StartSsoResponses[keyof StartSsoResponses];
+
+export type ListTeamsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/teams';
+};
+
+export type ListTeamsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListTeamsError = ListTeamsErrors[keyof ListTeamsErrors];
+
+export type ListTeamsResponses = {
+    /**
+     * Teams, by name
+     */
+    200: Array<TeamSummary>;
+};
+
+export type ListTeamsResponse = ListTeamsResponses[keyof ListTeamsResponses];
+
+export type CreateTeamData = {
+    body: NewTeam;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/teams';
+};
+
+export type CreateTeamErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateTeamError = CreateTeamErrors[keyof CreateTeamErrors];
+
+export type CreateTeamResponses = {
+    /**
+     * The team
+     */
+    201: TeamDetail;
+};
+
+export type CreateTeamResponse = CreateTeamResponses[keyof CreateTeamResponses];
+
+export type DeleteTeamData = {
+    body?: never;
+    path: {
+        /**
+         * Team id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/teams/{id}';
+};
+
+export type DeleteTeamErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteTeamError = DeleteTeamErrors[keyof DeleteTeamErrors];
+
+export type DeleteTeamResponses = {
+    /**
+     * Deleted
+     */
+    204: void;
+};
+
+export type DeleteTeamResponse = DeleteTeamResponses[keyof DeleteTeamResponses];
+
+export type GetTeamData = {
+    body?: never;
+    path: {
+        /**
+         * Team id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/teams/{id}';
+};
+
+export type GetTeamErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetTeamError = GetTeamErrors[keyof GetTeamErrors];
+
+export type GetTeamResponses = {
+    /**
+     * The team
+     */
+    200: TeamDetail;
+};
+
+export type GetTeamResponse = GetTeamResponses[keyof GetTeamResponses];
+
+export type UpdateTeamData = {
+    body: NewTeam;
+    path: {
+        /**
+         * Team id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/teams/{id}';
+};
+
+export type UpdateTeamErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type UpdateTeamError = UpdateTeamErrors[keyof UpdateTeamErrors];
+
+export type UpdateTeamResponses = {
+    /**
+     * The team
+     */
+    200: TeamDetail;
+};
+
+export type UpdateTeamResponse = UpdateTeamResponses[keyof UpdateTeamResponses];
+
+export type RevokeTeamAccessData = {
+    body?: never;
+    path: {
+        /**
+         * Team id
+         */
+        id: number;
+        /**
+         * Environment id
+         */
+        env_id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/teams/{id}/access/{env_id}';
+};
+
+export type RevokeTeamAccessErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RevokeTeamAccessError = RevokeTeamAccessErrors[keyof RevokeTeamAccessErrors];
+
+export type RevokeTeamAccessResponses = {
+    /**
+     * Revoked (or there was nothing to revoke)
+     */
+    204: void;
+};
+
+export type RevokeTeamAccessResponse = RevokeTeamAccessResponses[keyof RevokeTeamAccessResponses];
+
+export type SetTeamAccessData = {
+    body: SetAccess;
+    path: {
+        /**
+         * Team id
+         */
+        id: number;
+        /**
+         * Environment id
+         */
+        env_id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/teams/{id}/access/{env_id}';
+};
+
+export type SetTeamAccessErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type SetTeamAccessError = SetTeamAccessErrors[keyof SetTeamAccessErrors];
+
+export type SetTeamAccessResponses = {
+    /**
+     * The grant
+     */
+    200: AccessEntry;
+};
+
+export type SetTeamAccessResponse = SetTeamAccessResponses[keyof SetTeamAccessResponses];
+
+export type RemoveTeamMemberData = {
+    body?: never;
+    path: {
+        /**
+         * Team id
+         */
+        id: number;
+        /**
+         * User id
+         */
+        user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/teams/{id}/members/{user_id}';
+};
+
+export type RemoveTeamMemberErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type RemoveTeamMemberError = RemoveTeamMemberErrors[keyof RemoveTeamMemberErrors];
+
+export type RemoveTeamMemberResponses = {
+    /**
+     * Not a member (any more)
+     */
+    204: void;
+};
+
+export type RemoveTeamMemberResponse = RemoveTeamMemberResponses[keyof RemoveTeamMemberResponses];
+
+export type AddTeamMemberData = {
+    body?: never;
+    path: {
+        /**
+         * Team id
+         */
+        id: number;
+        /**
+         * User id
+         */
+        user_id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/teams/{id}/members/{user_id}';
+};
+
+export type AddTeamMemberErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type AddTeamMemberError = AddTeamMemberErrors[keyof AddTeamMemberErrors];
+
+export type AddTeamMemberResponses = {
+    /**
+     * A member (already, or now)
+     */
+    204: void;
+};
+
+export type AddTeamMemberResponse = AddTeamMemberResponses[keyof AddTeamMemberResponses];
+
+export type ListUserEffectiveAccessData = {
+    body?: never;
+    path: {
+        /**
+         * User id
+         */
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/users/{id}/access';
+};
+
+export type ListUserEffectiveAccessErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListUserEffectiveAccessError = ListUserEffectiveAccessErrors[keyof ListUserEffectiveAccessErrors];
+
+export type ListUserEffectiveAccessResponses = {
+    /**
+     * By environment name; empty for admins, who have full access
+     */
+    200: Array<EffectiveAccess>;
+};
+
+export type ListUserEffectiveAccessResponse = ListUserEffectiveAccessResponses[keyof ListUserEffectiveAccessResponses];
 
 export type ListEnvsData = {
     body?: never;

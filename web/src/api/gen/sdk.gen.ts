@@ -2,7 +2,7 @@
 
 import { type Client, type ClientMeta, formDataBodySerializer, type Options as Options2, type RequestResult, type TDataShape } from './client';
 import { client } from './client.gen';
-import type { AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CordonKubeData, CordonKubeErrors, CordonKubeResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateStackData, CreateStackErrors, CreateStackResponses, CreateSwarmConfigData, CreateSwarmConfigErrors, CreateSwarmConfigResponses, CreateSwarmNetworkData, CreateSwarmNetworkErrors, CreateSwarmNetworkResponses, CreateSwarmSecretData, CreateSwarmSecretErrors, CreateSwarmSecretResponses, CreateSwarmServiceData, CreateSwarmServiceErrors, CreateSwarmServiceResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteGenericKubeData, DeleteGenericKubeErrors, DeleteGenericKubeResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DeployStackData, DeployStackErrors, DeployStackResponses, DetachStackGitData, DetachStackGitErrors, DetachStackGitResponses, DiscardBackupData, DiscardBackupErrors, DiscardBackupResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadBackupData, DownloadBackupErrors, DownloadBackupResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableGenericKubeData, EditableGenericKubeErrors, EditableGenericKubeResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, EditSwarmServiceData, EditSwarmServiceErrors, EditSwarmServiceResponses, FinishSwarmRotationData, FinishSwarmRotationErrors, FinishSwarmRotationResponses, GenericKubeEventsData, GenericKubeEventsErrors, GenericKubeEventsResponses, GetAuthProvidersData, GetAuthProvidersErrors, GetAuthProvidersResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEditionData, GetEditionErrors, GetEditionResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetGenericKubeData, GetGenericKubeErrors, GetGenericKubeResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetStackData, GetStackErrors, GetStackGitData, GetStackGitErrors, GetStackGitResponses, GetStackResponses, GetStackRevisionData, GetStackRevisionErrors, GetStackRevisionResponses, GetSwarmConfigDataData, GetSwarmConfigDataErrors, GetSwarmConfigDataResponses, GetSwarmNodeData, GetSwarmNodeErrors, GetSwarmNodeResponses, GetSwarmServiceData, GetSwarmServiceErrors, GetSwarmServiceResponses, GetSwarmTrustData, GetSwarmTrustErrors, GetSwarmTrustResponses, GetTaskData, GetTaskErrors, GetTaskResponses, HelmCapabilitiesData, HelmCapabilitiesErrors, HelmCapabilitiesResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, InstallHelmChartData, InstallHelmChartErrors, InstallHelmChartResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeDiscoveryData, KubeDiscoveryErrors, KubeDiscoveryResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListGenericKubeData, ListGenericKubeErrors, ListGenericKubeResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListStackFilesData, ListStackFilesErrors, ListStackFilesResponses, ListStackRevisionsData, ListStackRevisionsErrors, ListStackRevisionsResponses, ListStacksData, ListStacksErrors, ListStackServicesData, ListStackServicesErrors, ListStackServicesResponses, ListStacksResponses, ListSwarmAgentsData, ListSwarmAgentsErrors, ListSwarmAgentsResponses, ListSwarmConfigsData, ListSwarmConfigsErrors, ListSwarmConfigsResponses, ListSwarmNetworksData, ListSwarmNetworksErrors, ListSwarmNetworksResponses, ListSwarmNodesData, ListSwarmNodesErrors, ListSwarmNodesResponses, ListSwarmSecretsData, ListSwarmSecretsErrors, ListSwarmSecretsResponses, ListSwarmServicesData, ListSwarmServicesErrors, ListSwarmServicesResponses, ListSwarmTasksData, ListSwarmTasksErrors, ListSwarmTasksResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PlanStackData, PlanStackErrors, PlanStackResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RedeploySwarmServiceData, RedeploySwarmServiceErrors, RedeploySwarmServiceResponses, RemoveStackData, RemoveStackErrors, RemoveStackFileData, RemoveStackFileErrors, RemoveStackFileResponses, RemoveStackResponses, RemoveSwarmConfigData, RemoveSwarmConfigErrors, RemoveSwarmConfigResponses, RemoveSwarmNetworkData, RemoveSwarmNetworkErrors, RemoveSwarmNetworkResponses, RemoveSwarmNodeData, RemoveSwarmNodeErrors, RemoveSwarmNodeResponses, RemoveSwarmSecretData, RemoveSwarmSecretErrors, RemoveSwarmSecretResponses, RemoveSwarmServiceData, RemoveSwarmServiceErrors, RemoveSwarmServiceResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceGenericKubeData, ReplaceGenericKubeErrors, ReplaceGenericKubeResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, ResetStackGitHostKeyData, ResetStackGitHostKeyErrors, ResetStackGitHostKeyResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, RestoreBackupData, RestoreBackupErrors, RestoreBackupResponses, RestoreSetupBackupData, RestoreSetupBackupErrors, RestoreSetupBackupResponses, ResumeKubeData, ResumeKubeErrors, ResumeKubeResponses, ResumeStackGitData, ResumeStackGitErrors, ResumeStackGitResponses, RetrustSwarmData, RetrustSwarmErrors, RetrustSwarmResponses, RevealSecretData, RevealSecretErrors, RevealSecretResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RollbackSwarmServiceData, RollbackSwarmServiceErrors, RollbackSwarmServiceResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, RotateStackGitSecretData, RotateStackGitSecretErrors, RotateStackGitSecretResponses, RotateSwarmKeyData, RotateSwarmKeyErrors, RotateSwarmKeyResponses, SaveStackDraftData, SaveStackDraftErrors, SaveStackDraftResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, ScaleSwarmServiceData, ScaleSwarmServiceErrors, ScaleSwarmServiceResponses, SetStackFileData, SetStackFileErrors, SetStackFileResponses, SetStackGitData, SetStackGitErrors, SetStackGitResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, ShowHelmChartData, ShowHelmChartErrors, ShowHelmChartResponses, StackActionData, StackActionErrors, StackActionResponses, StackWebhookData, StackWebhookErrors, StackWebhookResponses, StageBackupData, StageBackupErrors, StageBackupResponses, StageSetupBackupData, StageSetupBackupErrors, StageSetupBackupResponses, SuspendKubeData, SuspendKubeErrors, SuspendKubeResponses, SyncStackGitData, SyncStackGitErrors, SyncStackGitResponses, TagImageData, TagImageErrors, TagImageResponses, TriggerKubeData, TriggerKubeErrors, TriggerKubeResponses, TrustSwarmData, TrustSwarmErrors, TrustSwarmResponses, UncordonKubeData, UncordonKubeErrors, UncordonKubeResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateSwarmNodeData, UpdateSwarmNodeErrors, UpdateSwarmNodeResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses, UpgradeHelmReleaseData, UpgradeHelmReleaseErrors, UpgradeHelmReleaseResponses, ValidateStackData, ValidateStackErrors, ValidateStackResponses, WorkloadPodsData, WorkloadPodsErrors, WorkloadPodsResponses } from './types.gen';
+import type { AddTeamMemberData, AddTeamMemberErrors, AddTeamMemberResponses, AgentConnectData, AgentConnectErrors, AgentConnectResponses, ApplyKubeData, ApplyKubeErrors, ApplyKubeResponses, BuildImageData, BuildImageErrors, BuildImageResponses, ChangePasswordData, ChangePasswordErrors, ChangePasswordResponses, ComposeActionData, ComposeActionErrors, ComposeActionResponses, ConnectNetworkData, ConnectNetworkErrors, ConnectNetworkResponses, ContainerActionData, ContainerActionErrors, ContainerActionResponses, CordonKubeData, CordonKubeErrors, CordonKubeResponses, CreateContainerData, CreateContainerErrors, CreateContainerResponses, CreateEnvData, CreateEnvErrors, CreateEnvResponses, CreateNetworkData, CreateNetworkErrors, CreateNetworkResponses, CreateRoleData, CreateRoleErrors, CreateRoleResponses, CreateSsoConnectionData, CreateSsoConnectionErrors, CreateSsoConnectionResponses, CreateSsoMappingData, CreateSsoMappingErrors, CreateSsoMappingResponses, CreateStackData, CreateStackErrors, CreateStackResponses, CreateSwarmConfigData, CreateSwarmConfigErrors, CreateSwarmConfigResponses, CreateSwarmNetworkData, CreateSwarmNetworkErrors, CreateSwarmNetworkResponses, CreateSwarmSecretData, CreateSwarmSecretErrors, CreateSwarmSecretResponses, CreateSwarmServiceData, CreateSwarmServiceErrors, CreateSwarmServiceResponses, CreateTeamData, CreateTeamErrors, CreateTeamResponses, CreateUserData, CreateUserErrors, CreateUserResponses, CreateVolumeData, CreateVolumeErrors, CreateVolumeResponses, DeleteBackupTargetData, DeleteBackupTargetErrors, DeleteBackupTargetResponses, DeleteContainerData, DeleteContainerErrors, DeleteContainerResponses, DeleteEnvData, DeleteEnvErrors, DeleteEnvResponses, DeleteGenericKubeData, DeleteGenericKubeErrors, DeleteGenericKubeResponses, DeleteImageData, DeleteImageErrors, DeleteImageResponses, DeleteKubeData, DeleteKubeErrors, DeleteKubeResponses, DeleteLicenseData, DeleteLicenseErrors, DeleteLicenseResponses, DeleteNetworkData, DeleteNetworkErrors, DeleteNetworkResponses, DeleteRoleData, DeleteRoleErrors, DeleteRoleResponses, DeleteSsoConnectionData, DeleteSsoConnectionErrors, DeleteSsoConnectionResponses, DeleteSsoMappingData, DeleteSsoMappingErrors, DeleteSsoMappingResponses, DeleteTeamData, DeleteTeamErrors, DeleteTeamResponses, DeleteUserData, DeleteUserErrors, DeleteUserResponses, DeleteVolumeData, DeleteVolumeErrors, DeleteVolumeResponses, DeployStackData, DeployStackErrors, DeployStackResponses, DetachStackGitData, DetachStackGitErrors, DetachStackGitResponses, DiscardBackupData, DiscardBackupErrors, DiscardBackupResponses, DisconnectNetworkData, DisconnectNetworkErrors, DisconnectNetworkResponses, DownloadBackupData, DownloadBackupErrors, DownloadBackupResponses, DownloadContainerFileData, DownloadContainerFileErrors, DownloadContainerFileResponses, DuplicateContainerData, DuplicateContainerErrors, DuplicateContainerResponses, EditableGenericKubeData, EditableGenericKubeErrors, EditableGenericKubeResponses, EditableKubeData, EditableKubeErrors, EditableKubeResponses, EditSwarmServiceData, EditSwarmServiceErrors, EditSwarmServiceResponses, ExportAuditData, ExportAuditErrors, ExportAuditResponses, FinishSwarmRotationData, FinishSwarmRotationErrors, FinishSwarmRotationResponses, GenericKubeEventsData, GenericKubeEventsErrors, GenericKubeEventsResponses, GetAuthProvidersData, GetAuthProvidersErrors, GetAuthProvidersResponses, GetAuthStatusData, GetAuthStatusErrors, GetAuthStatusResponses, GetBackupScheduleData, GetBackupScheduleErrors, GetBackupScheduleResponses, GetBackupStatusData, GetBackupStatusErrors, GetBackupStatusResponses, GetContainerSpecData, GetContainerSpecErrors, GetContainerSpecResponses, GetDiskUsageData, GetDiskUsageErrors, GetDiskUsageResponses, GetEditionData, GetEditionErrors, GetEditionResponses, GetEngineInfoData, GetEngineInfoErrors, GetEngineInfoResponses, GetEnvStatusData, GetEnvStatusErrors, GetEnvStatusResponses, GetGenericKubeData, GetGenericKubeErrors, GetGenericKubeResponses, GetHealthData, GetHealthErrors, GetHealthResponses, GetHelmReleaseData, GetHelmReleaseErrors, GetHelmReleaseResponses, GetImageHistoryData, GetImageHistoryErrors, GetImageHistoryResponses, GetKubeData, GetKubeErrors, GetKubeResponses, GetLicenseData, GetLicenseErrors, GetLicenseResponses, GetMeData, GetMeErrors, GetMeResponses, GetOpenApiData, GetOpenApiErrors, GetOpenApiResponses, GetRoleData, GetRoleErrors, GetRoleResponses, GetSsoConnectionData, GetSsoConnectionErrors, GetSsoConnectionResponses, GetSsoSettingsData, GetSsoSettingsErrors, GetSsoSettingsResponses, GetStackData, GetStackErrors, GetStackGitData, GetStackGitErrors, GetStackGitResponses, GetStackResponses, GetStackRevisionData, GetStackRevisionErrors, GetStackRevisionResponses, GetSwarmConfigDataData, GetSwarmConfigDataErrors, GetSwarmConfigDataResponses, GetSwarmNodeData, GetSwarmNodeErrors, GetSwarmNodeResponses, GetSwarmServiceData, GetSwarmServiceErrors, GetSwarmServiceResponses, GetSwarmTrustData, GetSwarmTrustErrors, GetSwarmTrustResponses, GetTaskData, GetTaskErrors, GetTaskResponses, GetTeamData, GetTeamErrors, GetTeamResponses, HelmCapabilitiesData, HelmCapabilitiesErrors, HelmCapabilitiesResponses, HelmHistoryData, HelmHistoryErrors, HelmHistoryResponses, InspectContainerData, InspectContainerErrors, InspectContainerResponses, InspectImageData, InspectImageErrors, InspectImageResponses, InspectNetworkData, InspectNetworkErrors, InspectNetworkResponses, InspectVolumeData, InspectVolumeErrors, InspectVolumeResponses, InstallHelmChartData, InstallHelmChartErrors, InstallHelmChartResponses, KubeContextsData, KubeContextsErrors, KubeContextsResponses, KubeCountsData, KubeCountsErrors, KubeCountsResponses, KubeDiscoveryData, KubeDiscoveryErrors, KubeDiscoveryResponses, KubeEventsData, KubeEventsErrors, KubeEventsResponses, KubeTemplatesData, KubeTemplatesErrors, KubeTemplatesResponses, KubeUsageData, KubeUsageErrors, KubeUsageResponses, ListAuditData, ListAuditErrors, ListAuditResponses, ListBackupRunsData, ListBackupRunsErrors, ListBackupRunsResponses, ListBackupTargetsData, ListBackupTargetsErrors, ListBackupTargetsResponses, ListComposeProjectsData, ListComposeProjectsErrors, ListComposeProjectsResponses, ListContainerFilesData, ListContainerFilesErrors, ListContainerFilesResponses, ListContainersData, ListContainersErrors, ListContainersResponses, ListEnvAccessData, ListEnvAccessErrors, ListEnvAccessResponses, ListEnvsData, ListEnvsErrors, ListEnvsResponses, ListEnvTeamAccessData, ListEnvTeamAccessErrors, ListEnvTeamAccessResponses, ListGenericKubeData, ListGenericKubeErrors, ListGenericKubeResponses, ListHelmReleasesData, ListHelmReleasesErrors, ListHelmReleasesResponses, ListImagesData, ListImagesErrors, ListImagesResponses, ListKubeData, ListKubeErrors, ListKubeResponses, ListNetworksData, ListNetworksErrors, ListNetworksResponses, ListRecentBackupsData, ListRecentBackupsErrors, ListRecentBackupsResponses, ListRecentEventsData, ListRecentEventsErrors, ListRecentEventsResponses, ListRolesData, ListRolesErrors, ListRolesResponses, ListSessionsData, ListSessionsErrors, ListSessionsResponses, ListSsoConnectionsData, ListSsoConnectionsErrors, ListSsoConnectionsResponses, ListSsoMappingsData, ListSsoMappingsErrors, ListSsoMappingsResponses, ListStackFilesData, ListStackFilesErrors, ListStackFilesResponses, ListStackRevisionsData, ListStackRevisionsErrors, ListStackRevisionsResponses, ListStacksData, ListStacksErrors, ListStackServicesData, ListStackServicesErrors, ListStackServicesResponses, ListStacksResponses, ListSwarmAgentsData, ListSwarmAgentsErrors, ListSwarmAgentsResponses, ListSwarmConfigsData, ListSwarmConfigsErrors, ListSwarmConfigsResponses, ListSwarmNetworksData, ListSwarmNetworksErrors, ListSwarmNetworksResponses, ListSwarmNodesData, ListSwarmNodesErrors, ListSwarmNodesResponses, ListSwarmSecretsData, ListSwarmSecretsErrors, ListSwarmSecretsResponses, ListSwarmServicesData, ListSwarmServicesErrors, ListSwarmServicesResponses, ListSwarmTasksData, ListSwarmTasksErrors, ListSwarmTasksResponses, ListTeamsData, ListTeamsErrors, ListTeamsResponses, ListUserAccessData, ListUserAccessErrors, ListUserAccessResponses, ListUserEffectiveAccessData, ListUserEffectiveAccessErrors, ListUserEffectiveAccessResponses, ListUsersData, ListUsersErrors, ListUsersResponses, ListVolumesData, ListVolumesErrors, ListVolumesResponses, LoginData, LoginErrors, LoginResponses, LogoutData, LogoutErrors, LogoutResponses, OpenWebsocketData, OpenWebsocketErrors, OpenWebsocketResponses, PlanStackData, PlanStackErrors, PlanStackResponses, PruneContainersData, PruneContainersErrors, PruneContainersResponses, PruneImagesData, PruneImagesErrors, PruneImagesResponses, PruneNetworksData, PruneNetworksErrors, PruneNetworksResponses, PruneVolumesData, PruneVolumesErrors, PruneVolumesResponses, PullImageData, PullImageErrors, PullImageResponses, PutBackupPassphraseData, PutBackupPassphraseErrors, PutBackupPassphraseResponses, PutBackupScheduleData, PutBackupScheduleErrors, PutBackupScheduleResponses, PutBackupTargetData, PutBackupTargetErrors, PutBackupTargetResponses, PutLicenseData, PutLicenseErrors, PutLicenseResponses, PutSsoSettingsData, PutSsoSettingsErrors, PutSsoSettingsResponses, RecreateContainerData, RecreateContainerErrors, RecreateContainerResponses, RedeploySwarmServiceData, RedeploySwarmServiceErrors, RedeploySwarmServiceResponses, RemoveStackData, RemoveStackErrors, RemoveStackFileData, RemoveStackFileErrors, RemoveStackFileResponses, RemoveStackResponses, RemoveSwarmConfigData, RemoveSwarmConfigErrors, RemoveSwarmConfigResponses, RemoveSwarmNetworkData, RemoveSwarmNetworkErrors, RemoveSwarmNetworkResponses, RemoveSwarmNodeData, RemoveSwarmNodeErrors, RemoveSwarmNodeResponses, RemoveSwarmSecretData, RemoveSwarmSecretErrors, RemoveSwarmSecretResponses, RemoveSwarmServiceData, RemoveSwarmServiceErrors, RemoveSwarmServiceResponses, RemoveTeamMemberData, RemoveTeamMemberErrors, RemoveTeamMemberResponses, RenameContainerData, RenameContainerErrors, RenameContainerResponses, ReplaceGenericKubeData, ReplaceGenericKubeErrors, ReplaceGenericKubeResponses, ReplaceKubeData, ReplaceKubeErrors, ReplaceKubeResponses, ResetStackGitHostKeyData, ResetStackGitHostKeyErrors, ResetStackGitHostKeyResponses, RestartKubeData, RestartKubeErrors, RestartKubeResponses, RestoreBackupData, RestoreBackupErrors, RestoreBackupResponses, RestoreSetupBackupData, RestoreSetupBackupErrors, RestoreSetupBackupResponses, ResumeKubeData, ResumeKubeErrors, ResumeKubeResponses, ResumeStackGitData, ResumeStackGitErrors, ResumeStackGitResponses, RetrustSwarmData, RetrustSwarmErrors, RetrustSwarmResponses, RevealSecretData, RevealSecretErrors, RevealSecretResponses, RevokeSessionData, RevokeSessionErrors, RevokeSessionResponses, RevokeTeamAccessData, RevokeTeamAccessErrors, RevokeTeamAccessResponses, RevokeUserAccessData, RevokeUserAccessErrors, RevokeUserAccessResponses, RoleCatalogData, RoleCatalogErrors, RoleCatalogResponses, RollbackHelmReleaseData, RollbackHelmReleaseErrors, RollbackHelmReleaseResponses, RollbackSwarmServiceData, RollbackSwarmServiceErrors, RollbackSwarmServiceResponses, RotateAgentData, RotateAgentErrors, RotateAgentResponses, RotateStackGitSecretData, RotateStackGitSecretErrors, RotateStackGitSecretResponses, RotateSwarmKeyData, RotateSwarmKeyErrors, RotateSwarmKeyResponses, RunBackupData, RunBackupErrors, RunBackupResponses, SaveStackDraftData, SaveStackDraftErrors, SaveStackDraftResponses, ScaleKubeData, ScaleKubeErrors, ScaleKubeResponses, ScaleSwarmServiceData, ScaleSwarmServiceErrors, ScaleSwarmServiceResponses, SetStackFileData, SetStackFileErrors, SetStackFileResponses, SetStackGitData, SetStackGitErrors, SetStackGitResponses, SetTeamAccessData, SetTeamAccessErrors, SetTeamAccessResponses, SetupData, SetupErrors, SetupResponses, SetUserAccessData, SetUserAccessErrors, SetUserAccessResponses, ShowHelmChartData, ShowHelmChartErrors, ShowHelmChartResponses, SsoCallbackData, SsoCallbackErrors, SsoCallbackResponses, StackActionData, StackActionErrors, StackActionResponses, StackWebhookData, StackWebhookErrors, StackWebhookResponses, StageBackupData, StageBackupErrors, StageBackupResponses, StageRecentBackupData, StageRecentBackupErrors, StageRecentBackupResponses, StageSetupBackupData, StageSetupBackupErrors, StageSetupBackupResponses, StartSsoData, StartSsoErrors, StartSsoResponses, SuspendKubeData, SuspendKubeErrors, SuspendKubeResponses, SyncStackGitData, SyncStackGitErrors, SyncStackGitResponses, TagImageData, TagImageErrors, TagImageResponses, TestBackupTargetData, TestBackupTargetErrors, TestBackupTargetResponses, TestSsoConnectionData, TestSsoConnectionErrors, TestSsoConnectionResponses, TriggerKubeData, TriggerKubeErrors, TriggerKubeResponses, TrustSwarmData, TrustSwarmErrors, TrustSwarmResponses, UncordonKubeData, UncordonKubeErrors, UncordonKubeResponses, UninstallHelmReleaseData, UninstallHelmReleaseErrors, UninstallHelmReleaseResponses, UpdateEnvData, UpdateEnvErrors, UpdateEnvResponses, UpdateRoleData, UpdateRoleErrors, UpdateRoleResponses, UpdateSsoConnectionData, UpdateSsoConnectionErrors, UpdateSsoConnectionResponses, UpdateSwarmNodeData, UpdateSwarmNodeErrors, UpdateSwarmNodeResponses, UpdateTeamData, UpdateTeamErrors, UpdateTeamResponses, UpdateUserData, UpdateUserErrors, UpdateUserResponses, UpgradeHelmReleaseData, UpgradeHelmReleaseErrors, UpgradeHelmReleaseResponses, ValidateStackData, ValidateStackErrors, ValidateStackResponses, WorkloadPodsData, WorkloadPodsErrors, WorkloadPodsResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -240,6 +240,613 @@ export const getEdition = <ThrowOnError extends boolean = true>(options?: Option
             type: 'apiKey'
         }],
     url: '/api/v1/edition',
+    ...options
+});
+
+/**
+ * Download the audit log (needs the audit_export feature)
+ */
+export const exportAudit = <ThrowOnError extends boolean = true>(options?: Options<ExportAuditData, ThrowOnError>): RequestResult<ExportAuditResponses, ExportAuditErrors, ThrowOnError> => (options?.client ?? client).get<ExportAuditResponses, ExportAuditErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/audit/export',
+    ...options
+});
+
+export const listRecentBackups = <ThrowOnError extends boolean = true>(options?: Options<ListRecentBackupsData, ThrowOnError>): RequestResult<ListRecentBackupsResponses, ListRecentBackupsErrors, ThrowOnError> => (options?.client ?? client).get<ListRecentBackupsResponses, ListRecentBackupsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/recent',
+    ...options
+});
+
+export const stageRecentBackup = <ThrowOnError extends boolean = true>(options: Options<StageRecentBackupData, ThrowOnError>): RequestResult<StageRecentBackupResponses, StageRecentBackupErrors, ThrowOnError> => (options.client ?? client).post<StageRecentBackupResponses, StageRecentBackupErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/recent/restore',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const runBackup = <ThrowOnError extends boolean = true>(options?: Options<RunBackupData, ThrowOnError>): RequestResult<RunBackupResponses, RunBackupErrors, ThrowOnError> => (options?.client ?? client).post<RunBackupResponses, RunBackupErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/run',
+    ...options
+});
+
+export const listBackupRuns = <ThrowOnError extends boolean = true>(options: Options<ListBackupRunsData, ThrowOnError>): RequestResult<ListBackupRunsResponses, ListBackupRunsErrors, ThrowOnError> => (options.client ?? client).get<ListBackupRunsResponses, ListBackupRunsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/runs',
+    ...options
+});
+
+export const getBackupSchedule = <ThrowOnError extends boolean = true>(options?: Options<GetBackupScheduleData, ThrowOnError>): RequestResult<GetBackupScheduleResponses, GetBackupScheduleErrors, ThrowOnError> => (options?.client ?? client).get<GetBackupScheduleResponses, GetBackupScheduleErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/schedule',
+    ...options
+});
+
+export const putBackupSchedule = <ThrowOnError extends boolean = true>(options: Options<PutBackupScheduleData, ThrowOnError>): RequestResult<PutBackupScheduleResponses, PutBackupScheduleErrors, ThrowOnError> => (options.client ?? client).put<PutBackupScheduleResponses, PutBackupScheduleErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/schedule',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const putBackupPassphrase = <ThrowOnError extends boolean = true>(options: Options<PutBackupPassphraseData, ThrowOnError>): RequestResult<PutBackupPassphraseResponses, PutBackupPassphraseErrors, ThrowOnError> => (options.client ?? client).put<PutBackupPassphraseResponses, PutBackupPassphraseErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/schedule/passphrase',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const getBackupStatus = <ThrowOnError extends boolean = true>(options?: Options<GetBackupStatusData, ThrowOnError>): RequestResult<GetBackupStatusResponses, GetBackupStatusErrors, ThrowOnError> => (options?.client ?? client).get<GetBackupStatusResponses, GetBackupStatusErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/status',
+    ...options
+});
+
+export const listBackupTargets = <ThrowOnError extends boolean = true>(options?: Options<ListBackupTargetsData, ThrowOnError>): RequestResult<ListBackupTargetsResponses, ListBackupTargetsErrors, ThrowOnError> => (options?.client ?? client).get<ListBackupTargetsResponses, ListBackupTargetsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/targets',
+    ...options
+});
+
+export const deleteBackupTarget = <ThrowOnError extends boolean = true>(options: Options<DeleteBackupTargetData, ThrowOnError>): RequestResult<DeleteBackupTargetResponses, DeleteBackupTargetErrors, ThrowOnError> => (options.client ?? client).delete<DeleteBackupTargetResponses, DeleteBackupTargetErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/targets/{kind}',
+    ...options
+});
+
+export const putBackupTarget = <ThrowOnError extends boolean = true>(options: Options<PutBackupTargetData, ThrowOnError>): RequestResult<PutBackupTargetResponses, PutBackupTargetErrors, ThrowOnError> => (options.client ?? client).put<PutBackupTargetResponses, PutBackupTargetErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/targets/{kind}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+export const testBackupTarget = <ThrowOnError extends boolean = true>(options: Options<TestBackupTargetData, ThrowOnError>): RequestResult<TestBackupTargetResponses, TestBackupTargetErrors, ThrowOnError> => (options.client ?? client).post<TestBackupTargetResponses, TestBackupTargetErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/backup/targets/{kind}/test',
+    ...options
+});
+
+/**
+ * Teams with access to an environment, and their members
+ */
+export const listEnvTeamAccess = <ThrowOnError extends boolean = true>(options: Options<ListEnvTeamAccessData, ThrowOnError>): RequestResult<ListEnvTeamAccessResponses, ListEnvTeamAccessErrors, ThrowOnError> => (options.client ?? client).get<ListEnvTeamAccessResponses, ListEnvTeamAccessErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/envs/{env}/teams',
+    ...options
+});
+
+/**
+ * Remove the uploaded license (falls back to --license-file)
+ */
+export const deleteLicense = <ThrowOnError extends boolean = true>(options?: Options<DeleteLicenseData, ThrowOnError>): RequestResult<DeleteLicenseResponses, DeleteLicenseErrors, ThrowOnError> => (options?.client ?? client).delete<DeleteLicenseResponses, DeleteLicenseErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/license',
+    ...options
+});
+
+/**
+ * The Enterprise license in effect
+ */
+export const getLicense = <ThrowOnError extends boolean = true>(options?: Options<GetLicenseData, ThrowOnError>): RequestResult<GetLicenseResponses, GetLicenseErrors, ThrowOnError> => (options?.client ?? client).get<GetLicenseResponses, GetLicenseErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/license',
+    ...options
+});
+
+/**
+ * Install a license (replaces any uploaded one)
+ */
+export const putLicense = <ThrowOnError extends boolean = true>(options: Options<PutLicenseData, ThrowOnError>): RequestResult<PutLicenseResponses, PutLicenseErrors, ThrowOnError> => (options.client ?? client).put<PutLicenseResponses, PutLicenseErrors, ThrowOnError>({
+    bodySerializer: null,
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/license',
+    ...options,
+    headers: {
+        'Content-Type': 'text/plain',
+        ...options.headers
+    }
+});
+
+/**
+ * List custom roles
+ */
+export const listRoles = <ThrowOnError extends boolean = true>(options?: Options<ListRolesData, ThrowOnError>): RequestResult<ListRolesResponses, ListRolesErrors, ThrowOnError> => (options?.client ?? client).get<ListRolesResponses, ListRolesErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/roles',
+    ...options
+});
+
+/**
+ * Create a custom role (needs the rbac feature)
+ */
+export const createRole = <ThrowOnError extends boolean = true>(options: Options<CreateRoleData, ThrowOnError>): RequestResult<CreateRoleResponses, CreateRoleErrors, ThrowOnError> => (options.client ?? client).post<CreateRoleResponses, CreateRoleErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/roles',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * The permission grid a role is built from
+ */
+export const roleCatalog = <ThrowOnError extends boolean = true>(options?: Options<RoleCatalogData, ThrowOnError>): RequestResult<RoleCatalogResponses, RoleCatalogErrors, ThrowOnError> => (options?.client ?? client).get<RoleCatalogResponses, RoleCatalogErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/roles/catalog',
+    ...options
+});
+
+/**
+ * Delete a role and every grant of it
+ */
+export const deleteRole = <ThrowOnError extends boolean = true>(options: Options<DeleteRoleData, ThrowOnError>): RequestResult<DeleteRoleResponses, DeleteRoleErrors, ThrowOnError> => (options.client ?? client).delete<DeleteRoleResponses, DeleteRoleErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/roles/{id}',
+    ...options
+});
+
+/**
+ * A custom role with who holds it
+ */
+export const getRole = <ThrowOnError extends boolean = true>(options: Options<GetRoleData, ThrowOnError>): RequestResult<GetRoleResponses, GetRoleErrors, ThrowOnError> => (options.client ?? client).get<GetRoleResponses, GetRoleErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/roles/{id}',
+    ...options
+});
+
+/**
+ * Rename a role or change its permissions (adding any needs the rbac feature)
+ */
+export const updateRole = <ThrowOnError extends boolean = true>(options: Options<UpdateRoleData, ThrowOnError>): RequestResult<UpdateRoleResponses, UpdateRoleErrors, ThrowOnError> => (options.client ?? client).patch<UpdateRoleResponses, UpdateRoleErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/roles/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Single sign-on connections
+ */
+export const listSsoConnections = <ThrowOnError extends boolean = true>(options?: Options<ListSsoConnectionsData, ThrowOnError>): RequestResult<ListSsoConnectionsResponses, ListSsoConnectionsErrors, ThrowOnError> => (options?.client ?? client).get<ListSsoConnectionsResponses, ListSsoConnectionsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/connections',
+    ...options
+});
+
+/**
+ * Add a single sign-on connection (needs the sso feature)
+ */
+export const createSsoConnection = <ThrowOnError extends boolean = true>(options: Options<CreateSsoConnectionData, ThrowOnError>): RequestResult<CreateSsoConnectionResponses, CreateSsoConnectionErrors, ThrowOnError> => (options.client ?? client).post<CreateSsoConnectionResponses, CreateSsoConnectionErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/connections',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete a connection: its group sync is undone and its users' sessions end
+ */
+export const deleteSsoConnection = <ThrowOnError extends boolean = true>(options: Options<DeleteSsoConnectionData, ThrowOnError>): RequestResult<DeleteSsoConnectionResponses, DeleteSsoConnectionErrors, ThrowOnError> => (options.client ?? client).delete<DeleteSsoConnectionResponses, DeleteSsoConnectionErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/connections/{id}',
+    ...options
+});
+
+/**
+ * A single sign-on connection
+ */
+export const getSsoConnection = <ThrowOnError extends boolean = true>(options: Options<GetSsoConnectionData, ThrowOnError>): RequestResult<GetSsoConnectionResponses, GetSsoConnectionErrors, ThrowOnError> => (options.client ?? client).get<GetSsoConnectionResponses, GetSsoConnectionErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/connections/{id}',
+    ...options
+});
+
+/**
+ * Change a connection; without a license only disabling is allowed
+ */
+export const updateSsoConnection = <ThrowOnError extends boolean = true>(options: Options<UpdateSsoConnectionData, ThrowOnError>): RequestResult<UpdateSsoConnectionResponses, UpdateSsoConnectionErrors, ThrowOnError> => (options.client ?? client).patch<UpdateSsoConnectionResponses, UpdateSsoConnectionErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/connections/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * A connection's group mappings
+ */
+export const listSsoMappings = <ThrowOnError extends boolean = true>(options: Options<ListSsoMappingsData, ThrowOnError>): RequestResult<ListSsoMappingsResponses, ListSsoMappingsErrors, ThrowOnError> => (options.client ?? client).get<ListSsoMappingsResponses, ListSsoMappingsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/connections/{id}/mappings',
+    ...options
+});
+
+/**
+ * Map a group to a team or to admin (needs the sso feature); applies at each member's next sign-in
+ */
+export const createSsoMapping = <ThrowOnError extends boolean = true>(options: Options<CreateSsoMappingData, ThrowOnError>): RequestResult<CreateSsoMappingResponses, CreateSsoMappingErrors, ThrowOnError> => (options.client ?? client).post<CreateSsoMappingResponses, CreateSsoMappingErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/connections/{id}/mappings',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove a mapping; members lose what it gave them now
+ */
+export const deleteSsoMapping = <ThrowOnError extends boolean = true>(options: Options<DeleteSsoMappingData, ThrowOnError>): RequestResult<DeleteSsoMappingResponses, DeleteSsoMappingErrors, ThrowOnError> => (options.client ?? client).delete<DeleteSsoMappingResponses, DeleteSsoMappingErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/connections/{id}/mappings/{mapping_id}',
+    ...options
+});
+
+/**
+ * Check that FleetOps can reach the identity provider
+ */
+export const testSsoConnection = <ThrowOnError extends boolean = true>(options: Options<TestSsoConnectionData, ThrowOnError>): RequestResult<TestSsoConnectionResponses, TestSsoConnectionErrors, ThrowOnError> => (options.client ?? client).post<TestSsoConnectionResponses, TestSsoConnectionErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/connections/{id}/test',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Who may log in with a local password
+ */
+export const getSsoSettings = <ThrowOnError extends boolean = true>(options?: Options<GetSsoSettingsData, ThrowOnError>): RequestResult<GetSsoSettingsResponses, GetSsoSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetSsoSettingsResponses, GetSsoSettingsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/settings',
+    ...options
+});
+
+/**
+ * Limit password login to local admins, or allow everyone
+ */
+export const putSsoSettings = <ThrowOnError extends boolean = true>(options: Options<PutSsoSettingsData, ThrowOnError>): RequestResult<PutSsoSettingsResponses, PutSsoSettingsErrors, ThrowOnError> => (options.client ?? client).put<PutSsoSettingsResponses, PutSsoSettingsErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/sso/settings',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Where the identity provider sends the browser back
+ */
+export const ssoCallback = <ThrowOnError extends boolean = true>(options: Options<SsoCallbackData, ThrowOnError>): RequestResult<SsoCallbackResponses, SsoCallbackErrors, ThrowOnError> => (options.client ?? client).get<SsoCallbackResponses, SsoCallbackErrors, ThrowOnError>({ url: '/api/v1/ee/sso/{id}/callback', ...options });
+
+/**
+ * Begin signing in through a connection (a browser redirect)
+ */
+export const startSso = <ThrowOnError extends boolean = true>(options: Options<StartSsoData, ThrowOnError>): RequestResult<StartSsoResponses, StartSsoErrors, ThrowOnError> => (options.client ?? client).get<StartSsoResponses, StartSsoErrors, ThrowOnError>({ url: '/api/v1/ee/sso/{id}/start', ...options });
+
+/**
+ * List teams
+ */
+export const listTeams = <ThrowOnError extends boolean = true>(options?: Options<ListTeamsData, ThrowOnError>): RequestResult<ListTeamsResponses, ListTeamsErrors, ThrowOnError> => (options?.client ?? client).get<ListTeamsResponses, ListTeamsErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/teams',
+    ...options
+});
+
+/**
+ * Create a team (needs the teams feature)
+ */
+export const createTeam = <ThrowOnError extends boolean = true>(options: Options<CreateTeamData, ThrowOnError>): RequestResult<CreateTeamResponses, CreateTeamErrors, ThrowOnError> => (options.client ?? client).post<CreateTeamResponses, CreateTeamErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/teams',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Delete a team; its members lose the access it gave
+ */
+export const deleteTeam = <ThrowOnError extends boolean = true>(options: Options<DeleteTeamData, ThrowOnError>): RequestResult<DeleteTeamResponses, DeleteTeamErrors, ThrowOnError> => (options.client ?? client).delete<DeleteTeamResponses, DeleteTeamErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/teams/{id}',
+    ...options
+});
+
+/**
+ * A team with its members and access
+ */
+export const getTeam = <ThrowOnError extends boolean = true>(options: Options<GetTeamData, ThrowOnError>): RequestResult<GetTeamResponses, GetTeamErrors, ThrowOnError> => (options.client ?? client).get<GetTeamResponses, GetTeamErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/teams/{id}',
+    ...options
+});
+
+/**
+ * Rename a team or change its description (needs the teams feature)
+ */
+export const updateTeam = <ThrowOnError extends boolean = true>(options: Options<UpdateTeamData, ThrowOnError>): RequestResult<UpdateTeamResponses, UpdateTeamErrors, ThrowOnError> => (options.client ?? client).patch<UpdateTeamResponses, UpdateTeamErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/teams/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Revoke a team's access to an environment
+ */
+export const revokeTeamAccess = <ThrowOnError extends boolean = true>(options: Options<RevokeTeamAccessData, ThrowOnError>): RequestResult<RevokeTeamAccessResponses, RevokeTeamAccessErrors, ThrowOnError> => (options.client ?? client).delete<RevokeTeamAccessResponses, RevokeTeamAccessErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/teams/{id}/access/{env_id}',
+    ...options
+});
+
+/**
+ * Grant or change a team's access to an environment (raising it needs the teams feature)
+ */
+export const setTeamAccess = <ThrowOnError extends boolean = true>(options: Options<SetTeamAccessData, ThrowOnError>): RequestResult<SetTeamAccessResponses, SetTeamAccessErrors, ThrowOnError> => (options.client ?? client).put<SetTeamAccessResponses, SetTeamAccessErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/teams/{id}/access/{env_id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Remove a user from a team
+ */
+export const removeTeamMember = <ThrowOnError extends boolean = true>(options: Options<RemoveTeamMemberData, ThrowOnError>): RequestResult<RemoveTeamMemberResponses, RemoveTeamMemberErrors, ThrowOnError> => (options.client ?? client).delete<RemoveTeamMemberResponses, RemoveTeamMemberErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/teams/{id}/members/{user_id}',
+    ...options
+});
+
+/**
+ * Add a user to a team (needs the teams feature)
+ */
+export const addTeamMember = <ThrowOnError extends boolean = true>(options: Options<AddTeamMemberData, ThrowOnError>): RequestResult<AddTeamMemberResponses, AddTeamMemberErrors, ThrowOnError> => (options.client ?? client).put<AddTeamMemberResponses, AddTeamMemberErrors, ThrowOnError>({
+    security: [{ name: 'x-csrf-token', type: 'apiKey' }, {
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/teams/{id}/members/{user_id}',
+    ...options
+});
+
+/**
+ * A user's access from direct grants and teams, with its sources
+ */
+export const listUserEffectiveAccess = <ThrowOnError extends boolean = true>(options: Options<ListUserEffectiveAccessData, ThrowOnError>): RequestResult<ListUserEffectiveAccessResponses, ListUserEffectiveAccessErrors, ThrowOnError> => (options.client ?? client).get<ListUserEffectiveAccessResponses, ListUserEffectiveAccessErrors, ThrowOnError>({
+    security: [{
+            in: 'cookie',
+            name: 'fleetops_session',
+            type: 'apiKey'
+        }],
+    url: '/api/v1/ee/users/{id}/access',
     ...options
 });
 

@@ -12,7 +12,8 @@ path = "src/main.rs"
 [features]
 # End-to-end tests against a real Docker daemon (see `make test-docker`).
 docker-it = []
-# The Enterprise edition (ee/LICENSE): `make build-ee`.
+default = ["enterprise"]
+# Enterprise code (ee/LICENSE); on by default: the only shipped build.
 enterprise = ["dep:fleetops-ee"]
 # Enterprise trusting the committed test license key: the EE e2e suite only.
 ee-test-license-key = ["enterprise", "fleetops-ee/test-license-key"]

@@ -829,6 +829,2162 @@
         ]
       }
     },
+    "/api/v1/ee/audit/export": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Download the audit log (needs the audit_export feature)",
+        "operationId": "exportAudit",
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`csv` (default) or `ndjson`.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "ndjson"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Unix seconds, inclusive.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Unix seconds, exclusive.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit rows, oldest first",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/recent": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "listRecentBackups",
+        "responses": {
+          "200": {
+            "description": "The newest backups across targets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentBackups"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/recent/restore": {
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "stageRecentBackup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreRecentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Staged; confirm with POST /backup/stage/{id}/restore",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedBackup"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/run": {
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "runBackup",
+        "responses": {
+          "202": {
+            "description": "Started; follow it in the runs"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/runs": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "listBackupRuns",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "path",
+            "description": "At most 50; default 20.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Run"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/schedule": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "getBackupSchedule",
+        "responses": {
+          "200": {
+            "description": "The schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Schedule"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "putBackupSchedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Schedule"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/schedule/passphrase": {
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "putBackupPassphrase",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PassphraseBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Saved"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/status": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "getBackupStatus",
+        "responses": {
+          "200": {
+            "description": "For the page and the banner",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/targets": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "listBackupTargets",
+        "responses": {
+          "200": {
+            "description": "Targets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TargetView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/targets/{kind}": {
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "putBackupTarget",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "`s3` or `local`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TargetBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "deleteBackupTarget",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "`s3` or `local`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/backup/targets/{kind}/test": {
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "testBackupTarget",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "description": "`s3` or `local`.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Writable"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/envs/{env}/teams": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Teams with access to an environment, and their members",
+        "operationId": "listEnvTeamAccess",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "description": "Environment name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "By team name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EnvTeamAccess"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/license": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "The Enterprise license in effect",
+        "operationId": "getLicense",
+        "responses": {
+          "200": {
+            "description": "License",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseInfo"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Install a license (replaces any uploaded one)",
+        "operationId": "putLicense",
+        "requestBody": {
+          "content": {
+            "text/plain": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "License",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseInfo"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Remove the uploaded license (falls back to --license-file)",
+        "operationId": "deleteLicense",
+        "responses": {
+          "200": {
+            "description": "License now in effect",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseInfo"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/roles": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "List custom roles",
+        "operationId": "listRoles",
+        "responses": {
+          "200": {
+            "description": "Roles, by name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoleSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Create a custom role (needs the rbac feature)",
+        "operationId": "createRole",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewRole"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/roles/catalog": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "The permission grid a role is built from",
+        "operationId": "roleCatalog",
+        "responses": {
+          "200": {
+            "description": "Rows and verbs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Catalog"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/roles/{id}": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "A custom role with who holds it",
+        "operationId": "getRole",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Role id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Delete a role and every grant of it",
+        "operationId": "deleteRole",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Role id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Rename a role or change its permissions (adding any needs the rbac feature)",
+        "operationId": "updateRole",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Role id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleChange"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/sso/connections": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Single sign-on connections",
+        "operationId": "listSsoConnections",
+        "responses": {
+          "200": {
+            "description": "Connections by name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectionView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Add a single sign-on connection (needs the sso feature)",
+        "operationId": "createSsoConnection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewConnectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/sso/connections/{id}": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "A single sign-on connection",
+        "operationId": "getSsoConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connection id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Delete a connection: its group sync is undone and its users' sessions end",
+        "operationId": "deleteSsoConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connection id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletedConnection"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Change a connection; without a license only disabling is allowed",
+        "operationId": "updateSsoConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connection id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConnectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The connection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/sso/connections/{id}/mappings": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "A connection's group mappings",
+        "operationId": "listSsoMappings",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connection id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Mappings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MappingView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Map a group to a team or to admin (needs the sso feature); applies at each member's next sign-in",
+        "operationId": "createSsoMapping",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connection id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewMapping"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/sso/connections/{id}/mappings/{mapping_id}": {
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Remove a mapping; members lose what it gave them now",
+        "operationId": "deleteSsoMapping",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connection id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "mapping_id",
+            "in": "path",
+            "description": "Mapping id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Gone"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/sso/connections/{id}/test": {
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Check that FleetOps can reach the identity provider",
+        "operationId": "testSsoConnection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connection id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What the check found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestResult"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/sso/settings": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Who may log in with a local password",
+        "operationId": "getSsoSettings",
+        "responses": {
+          "200": {
+            "description": "Settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Limit password login to local admins, or allow everyone",
+        "operationId": "putSsoSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/sso/{id}/callback": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Where the identity provider sends the browser back",
+        "operationId": "ssoCallback",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connection id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "state",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "error",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Signed in, or back to the login page with sso_error"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/ee/sso/{id}/start": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Begin signing in through a connection (a browser redirect)",
+        "operationId": "startSso",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Connection id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "return_to",
+            "in": "path",
+            "description": "A path on this server to land on after signing in.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "To the identity provider, or back to the login page with sso_error"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/v1/ee/teams": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "List teams",
+        "operationId": "listTeams",
+        "responses": {
+          "200": {
+            "description": "Teams, by name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TeamSummary"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Create a team (needs the teams feature)",
+        "operationId": "createTeam",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewTeam"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "The team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/teams/{id}": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "A team with its members and access",
+        "operationId": "getTeam",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Team id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Delete a team; its members lose the access it gave",
+        "operationId": "deleteTeam",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Team id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Rename a team or change its description (needs the teams feature)",
+        "operationId": "updateTeam",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Team id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewTeam"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/teams/{id}/access/{env_id}": {
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Grant or change a team's access to an environment (raising it needs the teams feature)",
+        "operationId": "setTeamAccess",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Team id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "env_id",
+            "in": "path",
+            "description": "Environment id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAccess"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessEntry"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Revoke a team's access to an environment",
+        "operationId": "revokeTeamAccess",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Team id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "env_id",
+            "in": "path",
+            "description": "Environment id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked (or there was nothing to revoke)"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/teams/{id}/members/{user_id}": {
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Add a user to a team (needs the teams feature)",
+        "operationId": "addTeamMember",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Team id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "A member (already, or now)"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Remove a user from a team",
+        "operationId": "removeTeamMember",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Team id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Not a member (any more)"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/users/{id}/access": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "A user's access from direct grants and teams, with its sources",
+        "operationId": "listUserEffectiveAccess",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "User id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "By environment name; empty for admins, who have full access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EffectiveAccess"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/envs": {
       "get": {
         "tags": [
@@ -9370,6 +11526,55 @@
           }
         }
       },
+      "AccessSource": {
+        "type": "object",
+        "description": "Where part of a user's access comes from.",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "namespaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "role": {
+            "$ref": "#/components/schemas/EnvRole"
+          },
+          "role_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Set when the grant is a custom role."
+          },
+          "role_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "team_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Null for a direct grant."
+          },
+          "team_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "AgentView": {
         "type": "object",
         "required": [
@@ -9720,6 +11925,48 @@
           }
         }
       },
+      "BackupStatus": {
+        "type": "object",
+        "required": [
+          "licensed",
+          "enabled",
+          "paused",
+          "last_failed"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "last_failed": {
+            "type": "boolean",
+            "description": "The most recent run failed for at least one target."
+          },
+          "last_run": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Run"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "licensed": {
+            "type": "boolean"
+          },
+          "next_run_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "paused": {
+            "type": "boolean",
+            "description": "Enabled, but not running for lack of a license."
+          }
+        }
+      },
       "BackupSummary": {
         "type": "object",
         "description": "What an admin is shown before restoring: the manifest without secrets.",
@@ -9835,6 +12082,71 @@
               "null"
             ],
             "description": "The custom role's name, when exactly one grant is a custom role."
+          }
+        }
+      },
+      "Catalog": {
+        "type": "object",
+        "description": "The role grid, so the editor isn't written down twice.",
+        "required": [
+          "rows",
+          "verbs"
+        ],
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogRow"
+            }
+          },
+          "verbs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogVerb"
+            }
+          }
+        }
+      },
+      "CatalogRow": {
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "group",
+          "cells"
+        ],
+        "properties": {
+          "cells": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The verbs this row has a cell for, in column order."
+          },
+          "group": {
+            "type": "string",
+            "description": "`docker` or `kubernetes`."
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      },
+      "CatalogVerb": {
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
           }
         }
       },
@@ -10219,6 +12531,257 @@
           "confirm": {
             "type": "string",
             "description": "Must be `RESTORE`."
+          }
+        }
+      },
+      "ConnectionSettings": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Microsoft Entra ID, one tenant.",
+            "required": [
+              "tenant",
+              "client_id",
+              "kind"
+            ],
+            "properties": {
+              "client_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "microsoft"
+                ]
+              },
+              "tenant": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "client_id",
+              "kind"
+            ],
+            "properties": {
+              "admin_email": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The Workspace admin the service account acts as to read groups."
+              },
+              "client_id": {
+                "type": "string"
+              },
+              "hosted_domains": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Workspace domains allowed to sign in; empty allows any."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "google"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "client_id",
+              "orgs",
+              "kind"
+            ],
+            "properties": {
+              "base_url": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "GitHub Enterprise Server, e.g. `https://github.acme.io`."
+              },
+              "client_id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "github"
+                ]
+              },
+              "orgs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Members of at least one of these organisations may sign in."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Any OpenID Connect provider, found by discovery.",
+            "required": [
+              "issuer",
+              "client_id",
+              "kind"
+            ],
+            "properties": {
+              "client_id": {
+                "type": "string"
+              },
+              "groups_claim": {
+                "type": "string"
+              },
+              "issuer": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "oidc"
+                ]
+              },
+              "scopes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "An LDAP directory, signed into on the password form.",
+            "required": [
+              "preset",
+              "url",
+              "user_base_dn",
+              "kind"
+            ],
+            "properties": {
+              "bind_dn": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The service account; none searches anonymously."
+              },
+              "ca_cert": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "PEM certificates to trust instead of the system's."
+              },
+              "email_attr": {
+                "type": "string"
+              },
+              "group_base_dn": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Where groups are searched; none reads no groups."
+              },
+              "group_filter": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "ldap"
+                ]
+              },
+              "preset": {
+                "$ref": "#/components/schemas/LdapPreset"
+              },
+              "skip_tls_verify": {
+                "type": "boolean"
+              },
+              "starttls": {
+                "type": "boolean"
+              },
+              "url": {
+                "type": "string",
+                "description": "`ldap://` or `ldaps://`."
+              },
+              "user_base_dn": {
+                "type": "string"
+              },
+              "user_filter": {
+                "type": "string",
+                "description": "Empty takes the preset's."
+              },
+              "username_attr": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "description": "A connection's non-secret settings, by kind."
+      },
+      "ConnectionView": {
+        "type": "object",
+        "description": "A connection as the API shows it: secrets are never returned.",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "enabled",
+          "settings",
+          "secrets_set",
+          "require_mapped_group",
+          "session_hours",
+          "user_count"
+        ],
+        "properties": {
+          "callback_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where the identity provider sends people back; null until\n`FLEETOPS_PUBLIC_URL` is set."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "require_mapped_group": {
+            "type": "boolean"
+          },
+          "secrets_set": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The names of the secrets that are saved."
+          },
+          "session_hours": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ConnectionSettings"
+          },
+          "user_count": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -10608,6 +13171,19 @@
           }
         }
       },
+      "DeletedConnection": {
+        "type": "object",
+        "required": [
+          "users_left"
+        ],
+        "properties": {
+          "users_left": {
+            "type": "integer",
+            "format": "int64",
+            "description": "SSO users the connection leaves behind; they can no longer sign in\nand an admin may delete them."
+          }
+        }
+      },
       "DeployBody": {
         "type": "object",
         "required": [
@@ -10900,6 +13476,50 @@
           }
         }
       },
+      "EffectiveAccess": {
+        "type": "object",
+        "description": "A user's access to one environment, and the grants it is made of (each\nchecked on its own).",
+        "required": [
+          "env_id",
+          "env_name",
+          "env_kind",
+          "role",
+          "sources"
+        ],
+        "properties": {
+          "env_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "env_kind": {
+            "type": "string"
+          },
+          "env_name": {
+            "type": "string"
+          },
+          "namespaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Every namespace a source covers; null when one covers the whole environment."
+          },
+          "role": {
+            "$ref": "#/components/schemas/EnvRole",
+            "description": "The strongest built-in role among the sources."
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccessSource"
+            },
+            "description": "Direct grant first, then teams by name."
+          }
+        }
+      },
       "EngineVersion": {
         "type": "object",
         "required": [
@@ -11053,6 +13673,58 @@
             }
           }
         ]
+      },
+      "EnvTeamAccess": {
+        "type": "object",
+        "description": "A team's grant on one environment, and who it reaches.",
+        "required": [
+          "team_id",
+          "team_name",
+          "role",
+          "members"
+        ],
+        "properties": {
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Usernames, sorted."
+          },
+          "namespaces": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Null for the whole environment."
+          },
+          "role": {
+            "$ref": "#/components/schemas/EnvRole"
+          },
+          "role_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "role_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "team_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "team_name": {
+            "type": "string"
+          }
+        }
       },
       "EnvVersion": {
         "oneOf": [
@@ -12379,6 +15051,120 @@
           }
         }
       },
+      "LdapPreset": {
+        "type": "string",
+        "description": "Which directory an LDAP connection talks to; sets the default filters.",
+        "enum": [
+          "active_directory",
+          "openldap",
+          "custom"
+        ]
+      },
+      "LicenseInfo": {
+        "type": "object",
+        "description": "`GET /ee/license`.",
+        "required": [
+          "status",
+          "features",
+          "users_in_use",
+          "nodes_in_use"
+        ],
+        "properties": {
+          "customer": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Feature"
+            },
+            "description": "The features the license grants, Teams always among them (in effect\nonly while it is active)."
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "max_nodes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`null`: unlimited.",
+            "minimum": 0
+          },
+          "max_users": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "`null`: unlimited.",
+            "minimum": 0
+          },
+          "nodes_in_use": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Docker or Podman hosts plus Kubernetes nodes managed now.",
+            "minimum": 0
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the license is invalid."
+          },
+          "source": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LicenseSource",
+                "description": "`null` when there is no license."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/LicenseStatus"
+          },
+          "users_in_use": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "LicenseSource": {
+        "type": "string",
+        "description": "Where the license in effect came from.",
+        "enum": [
+          "uploaded",
+          "file"
+        ]
+      },
+      "LicenseStatus": {
+        "type": "string",
+        "enum": [
+          "none",
+          "invalid",
+          "valid",
+          "grace",
+          "expired"
+        ]
+      },
       "LogLine": {
         "type": "object",
         "required": [
@@ -12481,6 +15267,40 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "MappingView": {
+        "type": "object",
+        "required": [
+          "id",
+          "group",
+          "admin"
+        ],
+        "properties": {
+          "admin": {
+            "type": "boolean"
+          },
+          "group": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "team_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Null when the group grants admin."
+          },
+          "team_name": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -12605,6 +15425,85 @@
           }
         }
       },
+      "NewConnectionBody": {
+        "type": "object",
+        "required": [
+          "name",
+          "settings"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "require_mapped_group": {
+            "type": "boolean"
+          },
+          "secrets": {
+            "$ref": "#/components/schemas/Secrets"
+          },
+          "session_hours": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ConnectionSettings",
+            "description": "Tagged by `kind`."
+          }
+        }
+      },
+      "NewMapping": {
+        "type": "object",
+        "required": [
+          "group"
+        ],
+        "properties": {
+          "admin": {
+            "type": "boolean",
+            "description": "Make members FleetOps admins instead of joining a team."
+          },
+          "group": {
+            "type": "string",
+            "description": "The group as the provider names it: a name, an id, an email or a DN."
+          },
+          "team_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "NewRole": {
+        "type": "object",
+        "required": [
+          "name",
+          "permissions"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "NewService": {
         "type": "object",
         "required": [
@@ -12661,6 +15560,23 @@
           "value": {
             "type": "string",
             "description": "Write-only for secrets: neither Docker nor FleetOps shows it again."
+          }
+        }
+      },
+      "NewTeam": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
           }
         }
       },
@@ -12825,6 +15741,25 @@
               }
             }
           }
+        ]
+      },
+      "PassphraseBody": {
+        "type": "object",
+        "required": [
+          "passphrase"
+        ],
+        "properties": {
+          "passphrase": {
+            "type": "string"
+          }
+        }
+      },
+      "PasswordLogin": {
+        "type": "string",
+        "description": "Who may log in with a local password.",
+        "enum": [
+          "everyone",
+          "local_admins"
         ]
       },
       "Plan": {
@@ -13062,6 +15997,46 @@
           }
         }
       },
+      "RecentBackup": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RemoteFile"
+          },
+          {
+            "type": "object",
+            "required": [
+              "target_kind"
+            ],
+            "properties": {
+              "target_kind": {
+                "$ref": "#/components/schemas/TargetKind"
+              }
+            }
+          }
+        ]
+      },
+      "RecentBackups": {
+        "type": "object",
+        "required": [
+          "backups",
+          "errors"
+        ],
+        "properties": {
+          "backups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RecentBackup"
+            }
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TargetError"
+            },
+            "description": "Targets that could not be listed."
+          }
+        }
+      },
       "RecreateResult": {
         "type": "object",
         "required": [
@@ -13126,6 +16101,29 @@
           }
         }
       },
+      "RemoteFile": {
+        "type": "object",
+        "required": [
+          "name",
+          "size",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "When the backup was made, from its name."
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "ReplaceBody": {
         "type": "object",
         "required": [
@@ -13169,6 +16167,77 @@
             "description": "The Docker name."
           }
         }
+      },
+      "RestoreRecentBody": {
+        "type": "object",
+        "required": [
+          "target_kind",
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "passphrase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Needed only when the backup was made with an earlier passphrase."
+          },
+          "target_kind": {
+            "$ref": "#/components/schemas/TargetKind"
+          }
+        }
+      },
+      "Retention": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "The newest N.",
+            "required": [
+              "value",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "count"
+                ]
+              },
+              "value": {
+                "type": "integer",
+                "format": "int32",
+                "description": "The newest N.",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Those made in the last N days.",
+            "required": [
+              "value",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "days"
+                ]
+              },
+              "value": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Those made in the last N days.",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "How many backups each target keeps."
       },
       "RevisionDetail": {
         "type": "object",
@@ -13286,6 +16355,150 @@
           "user"
         ]
       },
+      "RoleChange": {
+        "type": "object",
+        "description": "Any of the fields; `description: null` clears it.",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "permissions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RoleDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "permissions",
+          "holders"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "holders": {
+            "$ref": "#/components/schemas/RoleHolders"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RoleHolder": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "env"
+        ],
+        "properties": {
+          "env": {
+            "type": "string",
+            "description": "The environment it is held on."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string",
+            "description": "Username or team name."
+          }
+        }
+      },
+      "RoleHolders": {
+        "type": "object",
+        "required": [
+          "users",
+          "teams"
+        ],
+        "properties": {
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleHolder"
+            }
+          },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleHolder"
+            }
+          }
+        }
+      },
+      "RoleSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "permissions",
+          "users",
+          "teams"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`row.verb`, sorted."
+          },
+          "teams": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "users": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many users and teams hold it, on any environment."
+          }
+        }
+      },
       "RollbackBody": {
         "type": "object",
         "required": [
@@ -13321,6 +16534,66 @@
           "off"
         ]
       },
+      "Run": {
+        "type": "object",
+        "required": [
+          "id",
+          "started_at",
+          "trigger",
+          "result"
+        ],
+        "properties": {
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "file_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "result": {
+            "type": "string",
+            "description": "`success`, `failure` or `skipped`."
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "target_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`s3` or `local`; null when skipped."
+          },
+          "trigger": {
+            "type": "string",
+            "description": "`schedule`, `manual` or `catch_up`."
+          }
+        }
+      },
       "Scale": {
         "type": "object",
         "required": [
@@ -13350,6 +16623,54 @@
             "type": "integer",
             "format": "int32",
             "minimum": 0
+          }
+        }
+      },
+      "Schedule": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "hour_utc",
+          "retention",
+          "passphrase_set"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "hour_utc": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0–23, UTC.",
+            "minimum": 0
+          },
+          "passphrase_set": {
+            "type": "boolean"
+          },
+          "retention": {
+            "$ref": "#/components/schemas/Retention"
+          }
+        }
+      },
+      "ScheduleBody": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "hour_utc",
+          "retention"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "hour_utc": {
+            "type": "integer",
+            "format": "int32",
+            "description": "0–23, UTC.",
+            "minimum": 0
+          },
+          "retention": {
+            "$ref": "#/components/schemas/Retention"
           }
         }
       },
@@ -13433,6 +16754,32 @@
           "value": {
             "type": "string",
             "description": "The value as text, or base64 when it is not UTF-8."
+          }
+        }
+      },
+      "Secrets": {
+        "type": "object",
+        "description": "Secrets as an admin sends them; an absent field keeps the stored one.",
+        "properties": {
+          "bind_password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "LDAP: the service account's password."
+          },
+          "client_secret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "service_account_json": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Google: the service account's JSON key, to read groups."
           }
         }
       },
@@ -13902,6 +17249,17 @@
         "properties": {
           "chart": {
             "$ref": "#/components/schemas/ChartRef"
+          }
+        }
+      },
+      "SsoSettings": {
+        "type": "object",
+        "required": [
+          "password_login"
+        ],
+        "properties": {
+          "password_login": {
+            "$ref": "#/components/schemas/PasswordLogin"
           }
         }
       },
@@ -14603,6 +17961,23 @@
           }
         ]
       },
+      "SyncedMember": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "connection"
+        ],
+        "properties": {
+          "connection": {
+            "type": "string",
+            "description": "The SSO connection whose group mapping added the member."
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "TagBody": {
         "type": "object",
         "required": [
@@ -14614,6 +17989,130 @@
           },
           "tag": {
             "type": "string"
+          }
+        }
+      },
+      "TargetBody": {
+        "type": "object",
+        "required": [
+          "settings"
+        ],
+        "properties": {
+          "secret_access_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "S3 only; absent keeps the saved one."
+          },
+          "settings": {
+            "$ref": "#/components/schemas/TargetSettings"
+          }
+        }
+      },
+      "TargetError": {
+        "type": "object",
+        "required": [
+          "target_kind",
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "target_kind": {
+            "$ref": "#/components/schemas/TargetKind"
+          }
+        }
+      },
+      "TargetKind": {
+        "type": "string",
+        "enum": [
+          "s3",
+          "local"
+        ]
+      },
+      "TargetSettings": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "region",
+              "bucket",
+              "access_key_id",
+              "kind"
+            ],
+            "properties": {
+              "access_key_id": {
+                "type": "string"
+              },
+              "bucket": {
+                "type": "string"
+              },
+              "endpoint": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Blank means AWS."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "s3"
+                ]
+              },
+              "path_style": {
+                "type": "boolean",
+                "description": "Path-style URLs, for MinIO and similar."
+              },
+              "prefix": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "path",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "local"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "description": "An absolute directory outside the data directory."
+              }
+            }
+          }
+        ],
+        "description": "Where backups go; secrets are kept apart."
+      },
+      "TargetView": {
+        "type": "object",
+        "required": [
+          "kind",
+          "settings",
+          "secret_set"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TargetKind"
+          },
+          "secret_set": {
+            "type": "boolean",
+            "description": "Whether the S3 secret access key is saved; it is never returned."
+          },
+          "settings": {
+            "$ref": "#/components/schemas/TargetSettings"
           }
         }
       },
@@ -14761,6 +18260,127 @@
           }
         }
       },
+      "TeamDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "members",
+          "synced",
+          "access"
+        ],
+        "properties": {
+          "access": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccessEntry"
+            },
+            "description": "The team's environment access, by environment name."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "name": {
+            "type": "string"
+          },
+          "synced": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SyncedMember"
+            },
+            "description": "Members that single sign-on group sync added; they leave the team\nthrough the identity provider, not by hand."
+          }
+        }
+      },
+      "TeamSummary": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "members",
+          "environments"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "environments": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "members": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "TestBody": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Google: also list this user's groups through the service account."
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "LDAP: also look this user up and list their groups."
+          }
+        }
+      },
+      "TestResult": {
+        "type": "object",
+        "required": [
+          "ok",
+          "detail"
+        ],
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "groups": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The groups found for `email`, when asked."
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
       "Topic": {
         "type": "string",
         "enum": [
@@ -14817,6 +18437,57 @@
             "format": "int32",
             "description": "The latest revision the plan was reviewed against.",
             "minimum": 0
+          }
+        }
+      },
+      "UpdateConnectionBody": {
+        "type": "object",
+        "description": "Absent fields keep their value; absent secrets keep the saved ones.",
+        "properties": {
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "require_mapped_group": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "secrets": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Secrets"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "session_hours": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "settings": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionSettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

@@ -27,9 +27,8 @@ fn openapi_flag_prints_the_document_and_exits() {
     );
 }
 
-#[cfg(feature = "enterprise")]
 #[test]
-fn enterprise_binary_documents_its_routes_and_takes_a_license_file() {
+fn binary_documents_ee_routes_and_takes_a_license_file() {
     let doc: serde_json::Value = serde_json::from_str(&fleetops_server::openapi_json()).unwrap();
     assert!(doc["paths"]["/api/v1/ee/license"].is_object());
     let out = Command::new(env!("CARGO_BIN_EXE_fleetops"))
@@ -37,18 +36,6 @@ fn enterprise_binary_documents_its_routes_and_takes_a_license_file() {
         .output()
         .unwrap();
     assert!(String::from_utf8_lossy(&out.stdout).contains("--license-file"));
-}
-
-#[cfg(not(feature = "enterprise"))]
-#[test]
-fn community_binary_has_no_license_flag() {
-    let out = Command::new(env!("CARGO_BIN_EXE_fleetops"))
-        .arg("--help")
-        .output()
-        .unwrap();
-    assert!(!String::from_utf8_lossy(&out.stdout).contains("--license-file"));
-    let doc: serde_json::Value = serde_json::from_str(&fleetops_server::openapi_json()).unwrap();
-    assert!(doc["paths"]["/api/v1/ee/license"].is_null());
 }
 
 #[test]
