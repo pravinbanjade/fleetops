@@ -77,6 +77,6 @@ test("an agent environment comes online, serves logs, and goes offline", async (
   await test.step("stopping the agent takes the environment down", async () => {
     await page.goto("/admin/envs");
     const row = page.getByRole("table", { name: "Environments" }).getByRole("row").filter({ hasText: "e2e-remote" });
-    await expect(row.getByText(/^: agent offline/)).toBeAttached({ timeout: 60_000 });
+    await expect(row.getByText(/^agent offline/)).toBeAttached({ timeout: 60_000 });
   });
 });

@@ -63,7 +63,7 @@ test("an admin backs up to a directory and restores from the recent list", async
     const section = page.locator("section", { has: page.getByRole("heading", { name: "Recent backups" }) });
     await section.getByRole("button", { name: "Restore" }).first().click();
     await page.getByLabel("Type RESTORE to confirm").fill("RESTORE");
-    await page.getByRole("button", { name: "Restore", exact: true }).click();
+    await page.getByRole("button", { name: "Replace this server with the backup" }).click();
     await expect(page.getByText("Log in to FleetOps")).toBeVisible({ timeout: 60_000 });
     await page.getByLabel("Username").fill("admin");
     await page.getByLabel("Password").fill(PASSWORD);

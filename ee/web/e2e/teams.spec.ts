@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { pickRowMenu } from "../../../web/e2e/row-menu";
 
 // Teams end to end. Runs after license.spec (files run in name order),
 // which installs the test license and fills its two seats with "admin" and
@@ -39,8 +40,7 @@ test("an admin gives a team access and a member sees the environment", async ({ 
     await dialog.getByLabel("Name").fill("ops");
     await dialog.getByRole("button", { name: "Create" }).click();
     await expect(dialog).toBeHidden();
-    const row = page.getByRole("row", { name: /ops/ });
-    await row.getByRole("button", { name: "Access" }).click();
+    await pickRowMenu(page, "ops", "Environment access");
     await dialog.getByLabel("Role on local").selectOption("operator");
     await dialog.getByRole("button", { name: "Save" }).click();
     await expect(dialog).toBeHidden();

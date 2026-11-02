@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { pickRowMenu } from "../../../web/e2e/row-menu";
 
 // Single sign-on end to end, against mock-idp.mjs. Runs last (files run in
 // name order): the license's two seats are taken by "admin" and "e2e-one",
@@ -39,12 +40,12 @@ test("an admin connects a provider and a new user signs in into team ops", async
     await dialog.getByRole("button", { name: "Add" }).click();
     await expect(dialog.getByRole("listitem").filter({ hasText: "team ops" })).toBeVisible();
     await page.keyboard.press("Escape");
-    await row.getByRole("button", { name: "Test" }).click();
+    await pickRowMenu(page, "Mock IdP", "Test sign-in");
     await dialog.getByRole("button", { name: "Run test" }).click();
     await expect(dialog.getByRole("status")).toContainText("OK");
     await page.keyboard.press("Escape");
-    await row.getByRole("button", { name: "Enable" }).click();
-    await expect(row).toContainText("Enabled");
+    await pickRowMenu(page, "Mock IdP", "Enable");
+    await expect(row).toContainText("enabled");
   });
 
   const signIn = async () => {
@@ -64,7 +65,7 @@ test("an admin connects a provider and a new user signs in into team ops", async
 
   await test.step("with a free seat they land with team ops's access", async () => {
     await page.goto("/admin/users");
-    await page.getByRole("row", { name: /e2e-one/ }).getByRole("button", { name: "Delete" }).click();
+    await pickRowMenu(page, "e2e-one", "Delete");
     await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
     await expect(page.getByRole("row", { name: /e2e-one/ })).toHaveCount(0);
     const { ctx, p } = await signIn();

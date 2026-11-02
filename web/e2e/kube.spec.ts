@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { pickRowMenu } from "./row-menu";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -264,7 +265,7 @@ test("a kubeconfig cluster can be browsed, scaled, logged and entered", async ({
     await page.getByRole("dialog").getByRole("button", { name: "Scale" }).click();
     await page.goto("/admin/envs");
     const row = page.getByRole("row", { name: new RegExp(ENV) });
-    await row.getByRole("button", { name: "Delete" }).click();
+    await pickRowMenu(page, ENV, "Delete");
     await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
     await expect(row).toBeHidden();
   });

@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
+import { pickRowMenu } from "../../../web/e2e/row-menu";
 
 // Custom roles end to end. Runs after license.spec and before teams.spec
 // (files run in name order): e2e-one holds the role here and nothing when
@@ -67,7 +68,7 @@ test("a Deployer can create and start but not delete or prune", async ({ page, b
     await dialog.getByRole("button", { name: "Save" }).click();
     await expect(dialog).toBeHidden();
     await page.goto("/admin/roles");
-    await page.getByRole("row", { name: /Deployer/ }).getByRole("button", { name: "Delete" }).click();
+    await pickRowMenu(page, "Deployer", "Delete");
     await page.getByRole("button", { name: "Delete role" }).click();
     await expect(page.getByRole("row", { name: /Deployer/ })).toHaveCount(0);
   });
