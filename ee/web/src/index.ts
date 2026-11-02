@@ -5,6 +5,8 @@ import type { EeModule } from "@/ee-contract";
 import { AuditExport } from "./AuditExport";
 import { BackupSchedule } from "./BackupSchedule";
 import { EeBanners } from "./BackupBanner";
+import { UpgradeCard } from "./UpgradeCard";
+import { useLeftovers } from "./leftovers";
 import { rolesQuery } from "./roles";
 import { EnvTeamAccess, UserTeamAccess } from "./UserTeamAccess";
 
@@ -33,20 +35,23 @@ export const ee: EeModule = {
       component: lazyRouteComponent(() => import("./SsoPage"), "SsoPage"),
     }),
   ],
-  // Teams, Roles and SSO show without a license too: frozen ones stay visible and removable.
+  // Without a license, Teams, Roles and SSO show only when leftover data
+  // exists (useLeftovers), so frozen ones stay visible and removable.
   adminNav: [
-    { to: "/admin/teams", label: "Teams", icon: UsersRound, group: "people" },
-    { to: "/admin/roles", label: "Roles", icon: ShieldCheck, group: "people" },
-    { to: "/admin/sso", label: "Single sign-on", icon: LogIn, group: "people" },
+    { to: "/admin/teams", label: "Teams", icon: UsersRound, group: "people", feature: "teams" },
+    { to: "/admin/roles", label: "Roles", icon: ShieldCheck, group: "people", feature: "rbac" },
+    { to: "/admin/sso", label: "Single sign-on", icon: LogIn, group: "people", feature: "sso" },
     { to: "/admin/license", label: "License", icon: KeyRound, group: "license" },
   ],
   slots: {
     "shell.banner": { component: EeBanners },
+    "shell.upgrade": { component: UpgradeCard },
     "audit.toolbar": { component: AuditExport, feature: "audit_export" },
     "user.access": { component: UserTeamAccess },
     "env.access": { component: EnvTeamAccess },
-    "admin.backup": { component: BackupSchedule },
+    "admin.backup": { component: BackupSchedule, feature: "backup" },
   },
+  useLeftovers,
   // Only admin pages offer roles, so only admins ask for them.
   useRoleOptions: () => useQuery(rolesQuery).data ?? [],
 };

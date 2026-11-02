@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAdminNav, usePlanLabel } from "@/ee-slots";
+import { Slot, useAdminNav, usePlanLabel } from "@/ee-slots";
 import { envFamily, envHue, envInitials, isKube, isSwarm, splitNodeView, type EnvFamily } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { LINK } from "../sidebar";
@@ -58,7 +58,8 @@ export function Library({ env, family, collapsed }: { env?: string; family: EnvF
         ))}
       </div>
       <AdminNav collapsed={collapsed} />
-      <div className="mt-auto w-full pt-2">
+      <div className="mt-auto grid w-full gap-3 pt-2">
+        <Slot name="shell.upgrade" props={{ collapsed }} />
         <UserMenu collapsed={collapsed} />
       </div>
     </div>

@@ -29,13 +29,21 @@ export function usePlanLabel(): string {
   return edition ? `${PLAN_NAMES[edition]} ${version}` : version;
 }
 
-const allowed = (features: readonly Feature[], need?: Feature) => !need || features.includes(need);
+const noLeftovers = (): Partial<Record<Feature, boolean>> => ({});
+const leftovers = ee.useLeftovers ?? noLeftovers;
+
+/** Whether a nav item or slot needing `need` shows: licensed, or leftover data to see and remove. */
+function useShown(): (need?: Feature) => boolean {
+  const features = useFeatures();
+  const left = leftovers();
+  return (need) => !need || features.includes(need) || left[need] === true;
+}
 
 /** The Enterprise component for `name`, when this build has one and the license covers it. */
 export function Slot<N extends SlotName>({ name, props }: { name: N; props?: SlotProps[N] }) {
-  const features = useFeatures();
+  const shown = useShown();
   const slot = ee.slots[name] as EeSlot<N> | undefined;
-  if (!slot || !allowed(features, slot.feature)) return null;
+  if (!slot || !shown(slot.feature)) return null;
   return createElement(slot.component, props ?? ({} as SlotProps[N]));
 }
 
@@ -48,8 +56,8 @@ export function useRoleOptions(): RoleOption[] {
 }
 
 export function useEeAdminNav(): EeNavItem[] {
-  const features = useFeatures();
-  return ee.adminNav.filter((n) => allowed(features, n.feature));
+  const shown = useShown();
+  return ee.adminNav.filter((n) => shown(n.feature));
 }
 
 /** Every admin page, Community and Enterprise, grouped in nav order. */

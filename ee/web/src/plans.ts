@@ -1,6 +1,17 @@
 /** The paid plans, as https://fleetops.pravinb.com.np/pricing lists them. */
 
+import type { Feature } from "@/api/gen/types.gen";
+
 export const PRICING_URL = "https://fleetops.pravinb.com.np/pricing";
+
+/** What each Enterprise feature is called in running text, in the order the Upgrade card lists them. */
+export const FEATURE_LABELS: Record<Feature, string> = {
+  sso: "single sign-on",
+  teams: "teams",
+  rbac: "custom roles",
+  audit_export: "audit export",
+  backup: "scheduled backups",
+};
 export const SALES_URL = "https://fleetops.pravinb.com.np/contact#sales";
 
 export interface Plan {

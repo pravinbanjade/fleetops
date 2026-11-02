@@ -7,6 +7,8 @@ import type { Feature } from "@/api/gen/types.gen";
 export interface SlotProps {
   "audit.toolbar": object;
   "shell.banner": object;
+  /** At the foot of the sidebar, above the user menu. */
+  "shell.upgrade": { collapsed: boolean };
   /** Under a user's grants in the Access dialog. */
   "user.access": { userId: number };
   /** Under an environment's direct grants in its Access dialog. */
@@ -49,6 +51,11 @@ export interface EeModule {
   adminRoutes: (admin: AnyRoute) => AnyRoute[];
   adminNav: EeNavItem[];
   slots: { [N in SlotName]?: EeSlot<N> };
+  /**
+   * Enterprise data left from a lapsed license, by feature: its pages and
+   * sections stay visible so it can be seen and removed. A hook.
+   */
+  useLeftovers?: () => Partial<Record<Feature, boolean>>;
   /** Custom roles for the role pickers; absent in Community. A hook. */
   useRoleOptions?: () => RoleOption[];
 }
