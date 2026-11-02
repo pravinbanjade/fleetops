@@ -170,8 +170,11 @@ impl LicenseState {
 }
 
 impl Entitlements for LicenseState {
+    /// The plan: Enterprise while a license is active (valid or in grace),
+    /// Community otherwise.
     fn edition(&self) -> Edition {
-        Edition::Enterprise
+        self.active(|_| Edition::Enterprise)
+            .unwrap_or(Edition::Community)
     }
     /// Teams comes with every license, whatever its payload lists, so
     /// licenses issued before it get it too (teams spec, "Licensing").
@@ -232,7 +235,7 @@ mod tests {
         let st = LicenseState::new(vec![key.verifying_key()], None);
         st.load(&store().await).await.unwrap();
         assert_eq!(st.status(now_unix()), Status::None);
-        assert_eq!(st.edition(), Edition::Enterprise);
+        assert_eq!(st.edition(), Edition::Community);
         assert!(!st.has(Feature::AuditExport));
         assert_eq!(st.max_users(), None);
     }
@@ -309,6 +312,25 @@ mod tests {
         let none = LicenseState::new(vec![key.verifying_key()], None);
         none.load(&store().await).await.unwrap();
         assert!(!none.has(Feature::Teams), "no license");
+    }
+
+    #[test]
+    fn edition_follows_the_license() {
+        let key = key();
+        let at = |expires_at: i64| {
+            let st = LicenseState::new(vec![key.verifying_key()], None);
+            let l = crate::license::verify(&lic(&key, expires_at, "l"), &[key.verifying_key()])
+                .unwrap();
+            st.set(Loaded::Ok(l), None);
+            st.edition()
+        };
+        assert_eq!(at(now_unix() + 1000), Edition::Enterprise, "valid");
+        assert_eq!(at(now_unix() - 10), Edition::Enterprise, "in grace");
+        assert_eq!(
+            at(now_unix() - GRACE_SECS - 1),
+            Edition::Community,
+            "expired"
+        );
     }
 
     #[tokio::test]

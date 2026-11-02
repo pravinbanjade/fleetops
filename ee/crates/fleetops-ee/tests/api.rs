@@ -23,12 +23,12 @@ fn row<'a>(ts: i64, target_id: &'a str, result: &'a str) -> NewAudit<'a> {
 }
 
 #[tokio::test]
-async fn unlicensed_enterprise_has_no_features() {
+async fn unlicensed_build_is_community() {
     let k = key();
     let ee = ee_app(&k, None).await;
     let admin = ee.admin().await;
     let r = ee.send("GET", "/api/v1/edition", None, Some(&admin)).await;
-    assert_eq!(r.json(), json!({"edition": "enterprise", "features": []}));
+    assert_eq!(r.json(), json!({"edition": "community", "features": []}));
     let r = ee
         .send("GET", "/api/v1/ee/license", None, Some(&admin))
         .await;
