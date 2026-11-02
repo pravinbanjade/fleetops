@@ -12,7 +12,7 @@ const STAGED: StagedBackup = {
     created_at: 1_790_000_000,
     edition: "enterprise",
     source: null,
-    counts: { users: 3, environments: 2, audit_log: 40 },
+    counts: { users: 3, environments: 2, audit_log: 40, ee_teams: 1, ee_backup_targets: 1 },
     has_enterprise_data: true,
   },
 };
@@ -69,6 +69,25 @@ describe("backup page", () => {
     await screen.findByRole("button", { name: "Replace this server with the backup" });
     expect(screen.getByText(/It's kept but not used until you add an Enterprise license/)).toBeInTheDocument();
   });
+
+  it("no Enterprise notes when the backup holds only Enterprise tables, not data", async () => {
+    const plain = { ...STAGED, summary: { ...STAGED.summary, counts: { users: 3, ee_teams: 0, ee_backup_targets: 0 } } };
+    mockFetch({ ...loggedIn, "POST /api/v1/backup/stage": { json: plain } });
+    const { screen } = renderApp("/admin/backup");
+    await openBackup(screen);
+    await screen.findByRole("button", { name: "Replace this server with the backup" });
+    expect(screen.queryByText(/Enterprise data/)).toBeNull();
+    expect(screen.queryByText(/Scheduled-backup settings come along/)).toBeNull();
+  });
+
+  it("no 'not used' note when the backup carries a license", async () => {
+    const licensed = { ...STAGED, summary: { ...STAGED.summary, counts: { ...STAGED.summary.counts, ee_license: 1 } } };
+    mockFetch({ ...loggedIn, "POST /api/v1/backup/stage": { json: licensed } });
+    const { screen } = renderApp("/admin/backup");
+    await openBackup(screen);
+    await screen.findByRole("button", { name: "Replace this server with the backup" });
+    expect(screen.queryByText(/not used until you add an Enterprise license/)).toBeNull();
+  });
 });
 
 describe("first-run setup", () => {
@@ -84,5 +103,6 @@ describe("first-run setup", () => {
     expect(await screen.findByRole("button", { name: "Restore" })).toBeEnabled();
     expect(screen.queryByLabelText("Type RESTORE to confirm")).toBeNull();
     expect(calls.some((c) => c.path === "/api/v1/auth/setup/backup")).toBe(true);
+    expect(calls.some((c) => c.path === "/api/v1/edition")).toBe(false);
   });
 });

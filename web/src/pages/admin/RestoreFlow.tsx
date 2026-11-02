@@ -1,12 +1,11 @@
 import { ArchiveRestore, LogIn, X } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { envsQuery, usersQuery } from "@/api/queries";
+import { editionQuery, envsQuery, usersQuery } from "@/api/queries";
 import type { StagedBackup } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useEdition } from "@/ee-slots";
 import { errorMessage } from "@/lib/errors";
 import { formatTime } from "@/lib/format";
 import { FormError } from "@/pages/AuthLayout";
@@ -84,7 +83,13 @@ export function RestoreFlow({
   const [phase, setPhase] = useState<"restoring" | "restarting">("restoring");
   const s = staged.summary;
   const admin = mode === "admin";
-  const edition = useEdition();
+  // Setup has no session to ask with; a fresh install is on Community.
+  const edition = useQuery({ ...editionQuery, enabled: admin }).data?.edition;
+  const community = admin ? edition === "community" : true;
+  const count = (table: string) => s.counts[table] ?? 0;
+  // Enterprise tables exist in every backup now; these are the rows that matter.
+  const enterpriseData = count("ee_teams") + count("ee_roles") + count("ee_sso_connections") > 0;
+  const carriesLicense = count("ee_license") > 0;
   const now = useCurrentCounts(admin);
   const m = useMutation({
     mutationFn: async () => {
@@ -134,13 +139,13 @@ export function RestoreFlow({
       <ul className="grid list-disc gap-1 pl-5 text-muted-foreground">
         {mode === "admin" && <li>Everything on this server is replaced, and everyone is signed out.</li>}
         <li>Agents enrolled after this backup was made can't connect and need enrolling again.</li>
-        {s.has_enterprise_data && edition === "community" && (
+        {enterpriseData && community && !carriesLicense && (
           <li>
             This backup has Enterprise data (teams, roles, single sign-on). It's kept but not used until you add an
             Enterprise license.
           </li>
         )}
-        {s.has_enterprise_data && (
+        {count("ee_backup_targets") > 0 && (
           <li>Scheduled-backup settings come along: if the old server still runs, turn one of them off.</li>
         )}
       </ul>
