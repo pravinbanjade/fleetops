@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import { useNow, useNowRow } from "@/components/shell/now";
 import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -197,16 +198,23 @@ export function EnvironmentsPage() {
     { id: "delete", label: "Delete", icon: Trash2, danger: true, onSelect: () => setDialog({ kind: "delete", env: e }) },
   ];
   return (
-    <Page title="Environments" actions={<Button onClick={() => setDialog({ kind: "add" })}>
-<Plus aria-hidden />Add environment</Button>}>
+    <Page
+      title="Environments"
+      actions={
+        <Button onClick={() => setDialog({ kind: "add" })}>
+          <Plus aria-hidden />
+          Add environment
+        </Button>
+      }
+    >
       {active && <EnvNow key={active.id} env={active} />}
       <DataTable
         label="Environments"
         data={envs.data}
         error={envs.error}
         columns={cols}
-        onActivate={(r) => now.open(((e: EnvView) => String(e.id))(r))}
-        activeId={active ? ((e: EnvView) => String(e.id))(active) : undefined}
+        onActivate={(r) => now.open(String(r.id))}
+        activeId={active ? String(active.id) : undefined}
         getRowId={(e) => String(e.id)}
         empty="No environments."
         initialSorting={[{ id: "name", desc: false }]}
@@ -358,7 +366,7 @@ function EnvForm({
         <fieldset className="grid gap-2">
           <legend className="mb-1 text-sm font-medium">Access in the cluster</legend>
           {ACCESS.map(([value, label, hint]) => (
-            <label key={value} className="flex cursor-pointer items-start gap-2 rounded-md bg-raised p-2 text-sm has-[:checked]:border-primary">
+            <label key={value} className="flex cursor-pointer items-start gap-2 rounded-md bg-raised p-2 text-sm has-[:checked]:bg-selected has-[:checked]:shadow-[inset_0_0_0_1px_var(--primary)]">
               <input type="radio" name="env-access" className="mt-1" checked={access === value} onChange={() => setAccess(value)} />
               <span className="grid">
                 <span className="font-medium">{label}</span>
@@ -435,10 +443,10 @@ function KindPicker({ kind, onChange }: { kind: EnvKind; onChange: (k: EnvKind) 
           return (
             <label
               key={p.id}
-              className={
-                "relative grid cursor-pointer gap-3 rounded-lg bg-raised p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
-                (on ? "border-primary bg-selected" : "bg-background/40 hover:bg-accent")
-              }
+              className={cn(
+                "relative grid cursor-pointer gap-3 rounded-lg p-3 transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
+                on ? "bg-selected shadow-[inset_0_0_0_1px_var(--primary)]" : "bg-raised hover:bg-accent",
+              )}
             >
               <input
                 type="radio"
@@ -450,9 +458,7 @@ function KindPicker({ kind, onChange }: { kind: EnvKind; onChange: (k: EnvKind) 
                 aria-describedby={`${id}-${p.id}-hint`}
               />
               <span
-                className={
-                  "grid size-9 place-items-center rounded-md border " + (on ? "border-primary/40 text-primary" : "text-muted-foreground")
-                }
+                className={cn("grid size-9 place-items-center rounded-md bg-secondary", on ? "text-foreground" : "text-muted-foreground")}
               >
                 <Icon className="size-5" aria-hidden />
               </span>
@@ -472,16 +478,16 @@ function KindPicker({ kind, onChange }: { kind: EnvKind; onChange: (k: EnvKind) 
       <fieldset className="grid gap-2">
         <legend className="mb-2 text-sm font-medium">Connect with</legend>
         <div
-          className="grid gap-1 rounded-md border bg-background/40 p-1"
+          className="grid gap-1 rounded-md bg-raised p-1"
           style={{ gridTemplateColumns: `repeat(${platform.kinds.length}, minmax(0, 1fr))` }}
         >
           {platform.kinds.map(([k, label]) => (
             <label
               key={k}
-              className={
-                "flex h-8 cursor-pointer items-center justify-center rounded-sm px-2 text-sm press has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring " +
-                (kind === k ? "bg-selected font-medium text-foreground shadow-[inset_0_0_0_1px_var(--primary)]" : "text-muted-foreground hover:bg-accent hover:text-foreground")
-              }
+              className={cn(
+                "flex h-8 cursor-pointer items-center justify-center rounded-sm px-2 text-sm press has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
+                kind === k ? "bg-selected font-medium text-foreground shadow-[inset_0_0_0_1px_var(--primary)]" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
             >
               <input type="radio" name="env-kind" className="sr-only" checked={kind === k} onChange={() => onChange(k)} />
               {label}

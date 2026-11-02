@@ -88,8 +88,12 @@ export function VolumesPage() {
               Prune
             </Button>
           )}
-          {can("volumes.create") && <Button onClick={() => setCreating(true)}>
-<Plus aria-hidden />Create volume</Button>}
+          {can("volumes.create") && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus aria-hidden />
+              Create volume
+            </Button>
+          )}
         </>
       }
     >
@@ -99,7 +103,9 @@ export function VolumesPage() {
         data={rows}
         error={list.error}
         columns={cols}
-        onActivate={(r) => now.open(((v: Row) => v.name)(r))} activeId={active ? ((v: Row) => v.name)(active) : undefined} getRowId={(v) => v.name}
+        onActivate={(r) => now.open(r.name)}
+        activeId={active?.name}
+        getRowId={(v) => v.name}
         empty="No volumes in this environment."
         initialSorting={[{ id: "name", desc: false }]}
         initialHidden={["mountpoint"]}

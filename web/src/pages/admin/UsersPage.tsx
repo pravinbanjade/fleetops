@@ -116,16 +116,23 @@ export function UsersPage() {
     ];
   };
   return (
-    <Page title="Users" actions={<Button onClick={() => setDialog({ kind: "add" })}>
-<Plus aria-hidden />Add user</Button>}>
+    <Page
+      title="Users"
+      actions={
+        <Button onClick={() => setDialog({ kind: "add" })}>
+          <Plus aria-hidden />
+          Add user
+        </Button>
+      }
+    >
       {active && <UserNow key={active.id} user={active} />}
       <DataTable
         label="Users"
         data={users.data}
         error={users.error}
         columns={cols}
-        onActivate={(r) => now.open(((u: User) => String(u.id))(r))}
-        activeId={active ? ((u: User) => String(u.id))(active) : undefined}
+        onActivate={(r) => now.open(String(r.id))}
+        activeId={active ? String(active.id) : undefined}
         getRowId={(u) => String(u.id)}
         empty="No users."
         initialSorting={[{ id: "username", desc: false }]}

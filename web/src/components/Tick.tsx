@@ -30,8 +30,8 @@ export const Tick = memo(function Tick({ value, text, className }: { value: numb
   const n = text.length;
   return (
     <span className={cn("font-figure", className)}>
-      {/* Read as one value; the per-character spans are only for the eye. */}
-      <span className="sr-only">{text}</span>
+      {/* Read as one value; the per-character spans are only for the eye. Out of a copy, so it pastes once. */}
+      <span className="sr-only select-none">{text}</span>
       {[...text].map((c, i) => (
         // Keyed from the right, so a digit keeps its node (and its fade) as the figure grows.
         <span key={n - i} aria-hidden className={cn("transition-colors duration-900 ease-out", lit.dir && lit.marks[i] && `tick-${lit.dir}`)}>

@@ -448,6 +448,8 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                     onClick={
                       props.onActivate &&
                       ((e) => {
+                        // A dialog or menu portalled out of a cell still bubbles here through React.
+                        if (!e.currentTarget.contains(e.target as Node)) return;
                         if ((e.target as HTMLElement).closest(OWN_CLICK) || window.getSelection()?.toString()) return;
                         props.onActivate!(row.original);
                       })
@@ -455,7 +457,7 @@ export function DataTable<T extends RowData>(props: DataTableProps<T>) {
                     onKeyDown={
                       props.onActivate &&
                       ((e) => {
-                        if (e.key !== " " || !(e.target as HTMLElement).matches("a")) return;
+                        if (e.key !== " " || !e.currentTarget.contains(e.target as Node) || !(e.target as HTMLElement).matches("a")) return;
                         e.preventDefault();
                         props.onActivate!(row.original);
                       })

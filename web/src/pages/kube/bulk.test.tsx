@@ -170,3 +170,20 @@ describe("selecting a bay", () => {
     expect(screen.queryByRole("group", { name: "Selected" })).not.toBeInTheDocument();
   });
 });
+
+describe("the panel's actions", () => {
+  it("restarts the selected deployment from the panel, after confirming", async () => {
+    const calls = mockFetch(routes);
+    renderApp("/envs/k/k8s/deployments");
+    const table = await screen.findByRole("table", { name: "Deployments" });
+    const row = (await within(table).findByRole("link", { name: "web" })).closest("tr")!;
+    await userEvent.click(within(row).getByRole("cell", { name: "2/2" }));
+    const region = await screen.findByRole("complementary", { name: "Selected" });
+    expect(within(region).getAllByRole("button").map((b) => b.textContent)).toEqual(expect.arrayContaining(["Restart", "Scale", "Suspend", "Delete"]));
+    await userEvent.click(within(region).getByRole("button", { name: "Restart" }));
+    const dialog = await screen.findByRole("dialog", { name: "Restart Deployment web?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Restart" }));
+    await waitFor(() => expect(posted(calls, "/api/v1/envs/k/k8s/deployments/apps/web/restart")).toBe(true));
+    expect(posted(calls, "/api/v1/envs/k/k8s/deployments/apps/api/restart")).toBe(false);
+  });
+});

@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowUpRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { errorMessage } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import { NowPanel } from "./now";
 
@@ -35,7 +36,8 @@ export function ObjectNow({
   title: ReactNode;
   subtitle?: ReactNode;
   facts: NowFact[];
-  list?: { title: string; rows: NowRow[]; empty: string };
+  /** `error` and `loading` say why there are no rows, so a failed fetch never reads as "none". */
+  list?: { title: string; rows: NowRow[]; empty: string; error?: unknown; loading?: boolean };
   open?: { to: string; params: Record<string, string> };
   actions?: ReactNode;
   children?: ReactNode;
@@ -52,10 +54,14 @@ export function ObjectNow({
       {list && (
         <section aria-label={list.title} className="grid min-h-0 content-start gap-1 overflow-y-auto">
           <h3 className="text-xs text-meta">
-            {list.title} <span className="font-figure">{list.rows.length}</span>
+            {list.title} {!list.error && !list.loading && <span className="font-figure">{list.rows.length}</span>}
           </h3>
-          {list.rows.length === 0 ? (
-            <p className="text-sm text-meta">{list.empty}</p>
+          {list.rows.length === 0 && list.error ? (
+            <p role="alert" className="text-sm text-fall">
+              {errorMessage(list.error)}
+            </p>
+          ) : list.rows.length === 0 ? (
+            <p className="text-sm text-meta">{list.loading ? "Loading…" : list.empty}</p>
           ) : (
             <ul className="grid">
               {list.rows.map((r) => (

@@ -172,8 +172,12 @@ export default function HelmDeployDialog({ env, target, onClose }: { env: string
               </Button>
             )
           )}
-          {commit.data && <Button onClick={onClose}>
-<Check aria-hidden />Done</Button>}
+          {commit.data && (
+            <Button onClick={onClose}>
+              <Check aria-hidden />
+              Done
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

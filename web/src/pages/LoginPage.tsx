@@ -95,7 +95,9 @@ export function LoginPage() {
             {buttons.map((p) => (
               <Button key={p.id} variant="outline" asChild>
                 <a href={`/api/v1/ee/sso/${p.id}/start?return_to=${returnTo}`}>
-<LogIn aria-hidden />Sign in with {p.name}</a>
+                  <LogIn aria-hidden />
+                  Sign in with {p.name}
+                </a>
               </Button>
             ))}
           </div>

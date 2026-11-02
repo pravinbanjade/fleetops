@@ -11,7 +11,7 @@ const buttonVariants = cva(
         // The primary action is inverted, a white pill. Disabled, it drops to the
         // secondary step so the label stays legible instead of fading to grey on grey.
         default:
-          "bg-primary text-primary-foreground hover:bg-primary/88 hover:scale-[1.02] disabled:bg-secondary disabled:text-muted-foreground disabled:opacity-100",
+          "bg-primary text-primary-foreground hover:bg-primary/88 motion-safe:hover:scale-[1.02] disabled:bg-secondary disabled:text-muted-foreground disabled:opacity-100",
         destructive:
           "text-destructive shadow-[inset_0_0_0_1px_var(--destructive)] hover:bg-destructive hover:text-black focus-visible:ring-destructive",
         outline:

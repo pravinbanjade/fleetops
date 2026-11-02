@@ -214,4 +214,16 @@ describe("installing and upgrading", () => {
     await screen.findByRole("table", { name: "Helm releases" });
     expect(screen.queryByRole("button", { name: "Install chart" })).toBeNull();
   });
+
+  it("offers Upgrade, Roll back and Uninstall in the panel", async () => {
+    mockFetch({ ...loggedIn, ...kubeRoutes, ...helmRoutes, "GET /api/v1/envs/k/k8s/helm/capabilities": { json: { install: true } } });
+    renderApp("/envs/k/k8s/helm");
+    const table = await screen.findByRole("table", { name: "Helm releases" });
+    await userEvent.click(await within(table).findByRole("cell", { name: "demo-0.2.0" }));
+    const panel = await screen.findByRole("complementary", { name: "Selected" });
+    expect(await within(panel).findByRole("button", { name: "Upgrade" })).toBeInTheDocument();
+    expect(await within(panel).findByRole("button", { name: "Roll back to 1" })).toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole("button", { name: "Uninstall" }));
+    expect(await screen.findByRole("dialog", { name: "Uninstall demo" })).toBeInTheDocument();
+  });
 });

@@ -92,6 +92,18 @@ function Strip({
   const { pathname } = useLocation();
   const { open } = useNow();
   const shown = useMemo(() => (items === "down" ? [] : phone ? items.slice(0, 1) : items), [items, phone]);
+  const strip = useRef<HTMLElement>(null);
+  // Items clipped off the strip's end leave the tab order, so Tab does not walk into what cannot be seen.
+  useEffect(() => {
+    const root = strip.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const seen = new IntersectionObserver(
+      (entries) => entries.forEach((e) => ((e.target as HTMLElement).tabIndex = e.intersectionRatio >= 0.99 ? 0 : -1)),
+      { root, threshold: [0, 0.99] },
+    );
+    root.querySelectorAll("button[data-tape]").forEach((b) => seen.observe(b));
+    return () => seen.disconnect();
+  }, [shown]);
   const go = (t: NonNullable<TapeItem["target"]>) => {
     const href = Object.entries({ env, ...t.params }).reduce((h, [k, v]) => h.replace(`$${k}`, encodeURIComponent(v)), t.to);
     if (pathname === href && t.select) open(t.select);
@@ -99,7 +111,7 @@ function Strip({
     else void navigate({ to: t.to as never, params: { env, ...t.params } as never });
   };
   return (
-    <section aria-label="Events" className="flex h-[34px] min-w-0 items-center gap-6 overflow-hidden px-3.5 text-[12.5px] whitespace-nowrap text-muted-foreground">
+    <section ref={strip} aria-label="Events" className="flex h-[34px] min-w-0 items-center gap-6 overflow-hidden px-3.5 text-[12.5px] whitespace-nowrap text-muted-foreground">
       {state === "open" && !paused ? (
         <span className="flex shrink-0 items-center gap-1.5 font-medium text-live">
           <span aria-hidden className="size-1.5 rounded-full bg-live" />
@@ -126,6 +138,7 @@ function Strip({
           <button
             key={it.key}
             type="button"
+            data-tape
             disabled={!it.target}
             onClick={() => it.target && go(it.target)}
             className={cn(

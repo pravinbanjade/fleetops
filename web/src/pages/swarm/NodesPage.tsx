@@ -185,7 +185,7 @@ export function NodesPage({ env }: { env: string }) {
       title="Nodes"
       meta={
         <>
-          <span>{swarmStatus(rows)}</span>
+          {agents.data && <span>{swarmStatus(rows)}</span>}
           {agents.data && <span>{` · `}</span>}
           {agents.data && <span>{`${covered} of ${rows.length} nodes have an agent`}</span>}
         </>
@@ -219,7 +219,16 @@ export function NodesPage({ env }: { env: string }) {
         </p>
       )}
       {active && <NodeNow key={active.node_id} env={env} node={active} />}
-      <DataTable label="Nodes" data={agents.data} error={agents.error} columns={cols} onActivate={(r) => now.open(((n: SwarmAgentView) => n.node_id)(r))} activeId={active ? ((n: SwarmAgentView) => n.node_id)(active) : undefined} getRowId={(n) => n.node_id} empty="No nodes yet." />
+      <DataTable
+        label="Nodes"
+        data={agents.data}
+        error={agents.error}
+        columns={cols}
+        onActivate={(r) => now.open(r.node_id)}
+        activeId={active?.node_id}
+        getRowId={(n) => n.node_id}
+        empty="No nodes yet."
+      />
       {confirm === "finish" && (
         <ConfirmDialog
           open

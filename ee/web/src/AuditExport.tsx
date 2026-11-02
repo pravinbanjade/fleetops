@@ -10,7 +10,9 @@ export function AuditExport() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline">
-<Download aria-hidden />Export</Button>
+          <Download aria-hidden />
+          Export
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem asChild>

@@ -86,7 +86,9 @@ export function ImagesPage() {
                   Build
                 </Button>
                 <Button onClick={() => setPulling(true)}>
-<CloudDownload aria-hidden />Pull</Button>
+                  <CloudDownload aria-hidden />
+                  Pull
+                </Button>
               </>
             )}
           </>
@@ -100,8 +102,8 @@ export function ImagesPage() {
         error={list.error}
         columns={cols}
         getRowId={(i) => i.id}
-        onActivate={(r) => now.open(((i: ImageSummary) => i.id)(r))}
-        activeId={active ? ((i: ImageSummary) => i.id)(active) : undefined}
+        onActivate={(r) => now.open(r.id)}
+        activeId={active?.id}
         empty="No images in this environment."
         initialSorting={[{ id: "created", desc: true }]}
         selectable={canDelete}
@@ -153,6 +155,8 @@ function ImageNow({ env, image }: { env: string; image: ImageSummary }) {
       list={{
         title: "Used by",
         empty: "No container uses this image.",
+        error: containers.error,
+        loading: containers.isPending,
         rows: users.map((c) => ({ key: c.id, label: c.name, aside: c.state, link: { to: "/envs/$env/containers/$id", params: { env, id: c.id } } })),
       }}
       open={{ to: "/envs/$env/images/$id", params: { env, id: image.id } }}

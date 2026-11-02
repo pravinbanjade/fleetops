@@ -50,7 +50,9 @@ function Restarting({ phase }: { phase: "restoring" | "restarting" }) {
           </p>
           <Button variant="outline" size="sm" className="justify-self-start" asChild>
             <a href="/login">
-<LogIn aria-hidden />Go to sign in</a>
+              <LogIn aria-hidden />
+              Go to sign in
+            </a>
           </Button>
         </div>
       )}

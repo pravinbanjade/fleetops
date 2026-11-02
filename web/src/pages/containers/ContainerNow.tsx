@@ -15,15 +15,37 @@ import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useContainerStats } from "@/live/LiveProvider";
+import { RECENT_EVENTS } from "@/live/noise";
 import { actionsFor } from "./actions";
 
 /** How far back the restart count looks, in seconds. */
 const WINDOW = 600;
 
-/** How many times container `id` died in the `window` seconds before `now` (unix seconds). */
+/** A die this soon after a kill or stop was asked for, not a crash. */
+const ASKED = 30;
+
+/**
+ * How many times container `id` died on its own in the `window` seconds
+ * before `now` (unix seconds). A die that follows a kill or stop (Restart,
+ * Stop, `docker restart`) was asked for and does not count. `events` is
+ * newest first.
+ */
 export function restartsWithin(events: Pick<DockerEvent, "action" | "id" | "time">[], id: string, now: number, window = WINDOW): number {
-  return events.filter((e) => e.id === id && e.action === "die" && now - e.time <= window).length;
+  const mine = events.filter((e) => e.id === id);
+  return mine.filter(
+    (e, i) =>
+      e.action === "die" &&
+      now - e.time <= window &&
+      !mine.slice(i + 1).some((p) => (p.action === "kill" || p.action === "stop") && e.time - p.time <= ASKED),
+  ).length;
 }
+
+/**
+ * Whether the feed reaches back over the whole window: it keeps the newest
+ * RECENT_EVENTS across the host, so on a busy host the count is a floor.
+ */
+export const coversWindow = (events: Pick<DockerEvent, "time">[], now: number, window = WINDOW) =>
+  events.length < RECENT_EVENTS || now - events[events.length - 1].time >= window;
 
 /** "Exited (137) 2 minutes ago" → 137. */
 const exitCode = (status: string) => /\((\d+)\)/.exec(status)?.[1];
@@ -42,6 +64,7 @@ export function ContainerNow({ env, container: c }: { env: string; container: Co
   const last = stats.at(-1);
   const clock = useClock();
   const restarts = restartsWithin(events.data ?? [], c.id, clock);
+  const floor = !coversWindow(events.data ?? [], clock);
   const code = c.state === "running" ? undefined : exitCode(c.status);
   const allowed = actionsFor(c.state);
   const act = useMutation({
@@ -64,12 +87,17 @@ export function ContainerNow({ env, container: c }: { env: string; container: Co
     >
       <div className="grid grid-cols-3 gap-2">
         <Fact label="Restarts, 10 min">
-          <Tick value={restarts} text={String(restarts)} className={cn(restarts > 0 && "text-fall")} />
+          <Tick value={restarts} text={floor ? `≥${restarts}` : String(restarts)} className={cn(restarts > 0 && "text-fall")} />
         </Fact>
         <Fact label="Memory">{last ? <Tick value={last.memory_used} text={formatBytes(last.memory_used)} /> : <span className="text-meta">—</span>}</Fact>
         <Fact label="Limit">{last?.memory_limit ? <span className="font-figure">{formatBytes(last.memory_limit)}</span> : <span className="text-meta">—</span>}</Fact>
       </div>
-      <LogTail env={env} id={c.id} startedAt={detail.data?.State.StartedAt} />
+      {/* Opened once the start time is known: a start time arriving later would restart the stream. */}
+      {detail.isPending ? (
+        <div className="flex min-h-0 flex-1 rounded-lg bg-[#0a0a0a] p-3 text-[12.5px] text-meta">Waiting for log lines…</div>
+      ) : (
+        <LogTail env={env} id={c.id} startedAt={detail.data?.State.StartedAt} />
+      )}
       <div className="flex flex-wrap gap-2">
         <Button asChild size="sm">
           <Link to="/envs/$env/containers/$id" params={{ env, id: c.id }}>

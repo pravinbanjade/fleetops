@@ -70,8 +70,12 @@ export function NetworksPage() {
               Prune
             </Button>
           )}
-          {can("networks.create") && <Button onClick={() => setCreating(true)}>
-<Plus aria-hidden />Create network</Button>}
+          {can("networks.create") && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus aria-hidden />
+              Create network
+            </Button>
+          )}
         </>
       }
     >
@@ -81,7 +85,9 @@ export function NetworksPage() {
         data={list.data}
         error={list.error}
         columns={cols}
-        onActivate={(r) => now.open(((n: NetworkSummary) => n.id)(r))} activeId={active ? ((n: NetworkSummary) => n.id)(active) : undefined} getRowId={(n) => n.id}
+        onActivate={(r) => now.open(r.id)}
+        activeId={active?.id}
+        getRowId={(n) => n.id}
         empty="No networks in this environment."
         initialSorting={[{ id: "name", desc: false }]}
         selectable={canDelete}

@@ -157,7 +157,15 @@ export function GenericListPage() {
           Showing the first 5,000. Pick a namespace to narrow the list.
         </p>
       )}
-      {active && <GenericNow key={`${active.namespace}/${active.name}`} env={env} r={r} row={active} />}
+      {active && (
+        <GenericNow
+          key={`${active.namespace}/${active.name}`}
+          env={env}
+          r={r}
+          row={active}
+          deletable={!!k?.verbs.includes("delete") && can("k8s-other.delete", active.namespace ?? null)}
+        />
+      )}
       <DataTable
         label={label}
         data={forbidden ? [] : list.data?.rows}

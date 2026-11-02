@@ -114,7 +114,9 @@ export function SwarmEnrollment({
             </Button>
           )}
           <Button onClick={onClose}>
-<Check aria-hidden />Done</Button>
+            <Check aria-hidden />
+            Done
+          </Button>
         </DialogFooter>
       </DialogContent>
       <ConfirmDialog

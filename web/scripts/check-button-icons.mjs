@@ -1,5 +1,5 @@
 // Every text button carries an icon beside its label. Lists each <Button>
-// whose children hold words but no capitalised JSX element (a Lucide icon),
+// whose children hold words but no icon (a Lucide import, or a component named *Icon),
 // as file:line, and exits 1 when there is any. Icon-only buttons and
 // buttons that wrap a component (asChild links) are checked the same way.
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -19,6 +19,11 @@ roots.forEach(walk);
 const bad = [];
 for (const f of files) {
   const src = readFileSync(f, "utf8");
+  const icons = new Set(
+    [...src.matchAll(/import\s*\{([^}]*)\}\s*from\s*"lucide-react"/g)].flatMap(([, names]) =>
+      names.split(",").map((n) => n.trim().split(/\s+as\s+/).pop()).filter((n) => n && !n.startsWith("type ")),
+    ),
+  );
   const re = /<Button\b([^>]*?)(\/?)>/gs;
   let m;
   while ((m = re.exec(src))) {
@@ -40,7 +45,9 @@ for (const f of files) {
       .replace(/\{[^{}]*\}/g, (x) => (/^\{\s*["'`]/.test(x) || /\?\s*["'`]/.test(x) ? " word " : " "))
       .trim();
     const hasWords = /[A-Za-z]{2,}/.test(words);
-    const hasIcon = /<([A-Z][A-Za-z0-9]*|[a-z]+\.[A-Za-z]+)[\s/>]/.test(body);
+    // An icon is a Lucide import, or a component held in a variable named for one (`Icon`, `act.icon`);
+    // a link or any other component inside the button is not.
+    const hasIcon = [...body.matchAll(/<([A-Z][A-Za-z0-9]*|[a-z]+\.[A-Za-z]+)[\s/>]/g)].some(([, name]) => icons.has(name) || /icon$/i.test(name));
     if (hasWords && !hasIcon) bad.push(`${relative(process.cwd(), f)}:${src.slice(0, m.index).split("\n").length}`);
   }
 }

@@ -49,7 +49,9 @@ export function AgentEnrollment({
             Copy command
           </Button>
           <Button onClick={onClose}>
-<Check aria-hidden />Done</Button>
+            <Check aria-hidden />
+            Done
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

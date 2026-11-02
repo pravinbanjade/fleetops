@@ -21,15 +21,9 @@ const NODE_WIDE: Record<string, string> = { Images: "images.view", Volumes: "vol
  */
 export function EnvPages({ env, family, collapsed }: { env: string; family: EnvFamily; collapsed: boolean }) {
   const { can } = useEnvAccess(env);
-  if (family === "kube" && !collapsed) return <KubeSidebar env={env} />;
+  if (family === "kube") return collapsed ? <KubeCollapsed env={env} /> : <KubeSidebar env={env} />;
   const items: readonly NavItem[] =
-    family === "swarm"
-      ? SWARM_NAV
-      : family === "node"
-        ? NODE_NAV.filter((n) => !NODE_WIDE[n.label] || can(NODE_WIDE[n.label], null))
-        : family === "kube"
-          ? KUBE_SIDEBAR.flatMap((e) => (isGroup(e) ? [] : [e]))
-          : NAV;
+    family === "swarm" ? SWARM_NAV : family === "node" ? NODE_NAV.filter((n) => !NODE_WIDE[n.label] || can(NODE_WIDE[n.label], null)) : NAV;
   return (
     <>
       {items.map((item) => (
@@ -59,6 +53,42 @@ function NavRow({ item, env, nested, collapsed }: { item: NavItem; env: string; 
         </kbd>
       )}
     </Link>
+  );
+}
+
+/**
+ * The Kubernetes pages with the library collapsed: each group is its icon,
+ * leading to the group's page on screen, else its first. Every group stays
+ * one click away, as the expanded library keeps it.
+ */
+function KubeCollapsed({ env }: { env: string }) {
+  const { pathname } = useLocation();
+  const here = (item: NavItem) => {
+    const href = navHref(item, env);
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
+  return (
+    <>
+      {KUBE_SIDEBAR.map((entry) => {
+        if (!isGroup(entry)) return <NavRow key={entry.label} item={entry} env={env} collapsed />;
+        const current = entry.items.find(here);
+        const target = current ?? entry.items[0];
+        const { icon: Icon } = entry;
+        return (
+          <Link
+            key={entry.id}
+            to={target.to}
+            params={navParams(target, env)}
+            aria-label={entry.label}
+            title={current ? `${entry.label} · ${current.label}` : entry.label}
+            data-status={current ? "active" : undefined}
+            className={cn(LINK, "justify-center px-0")}
+          >
+            <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+          </Link>
+        );
+      })}
+    </>
   );
 }
 

@@ -75,10 +75,12 @@ function EnvRow({ env, current, collapsed }: { env: EnvView; current: boolean; c
       className={cn(
         "flex items-center gap-2.5 rounded-md p-1.5 text-sm text-muted-foreground press hover:bg-accent hover:text-foreground",
         current && "bg-selected text-foreground",
-        collapsed && "justify-center",
+        collapsed && "relative justify-center",
       )}
     >
       <EnvTile name={env.name} size="lg" />
+      {/* Collapsed, the tile carries the dot, and only when the environment is down. */}
+      {collapsed && <EnvStatusBadge env={env.name} kube={isKube(env.kind) || isSwarm(env.kind)} current={current} corner />}
       {!collapsed && (
         <span className="grid min-w-0 flex-1 leading-tight">
           <span className="truncate font-medium">{env.name}</span>
@@ -152,15 +154,15 @@ function AdminNav({ collapsed }: { collapsed: boolean }) {
 /** How often a cluster the operator is not in rechecks its status; Docker hosts push theirs. */
 const ELSEWHERE_POLL_MS = 60_000;
 
-export function EnvStatusBadge({ env, kube = false, current = true }: { env: string; kube?: boolean; current?: boolean }) {
+export function EnvStatusBadge({ env, kube = false, current = true, corner = false }: { env: string; kube?: boolean; current?: boolean; corner?: boolean }) {
   // Only the current environment polls at its usual rate: a row for every
   // environment must not keep every cluster busy from every page.
   const q = envStatusQuery(env, kube);
   const { data } = useQuery(current ? q : { ...q, refetchInterval: kube ? ELSEWHERE_POLL_MS : false });
   if (!data) return null;
-  if (data.state === "up") return <StatusDot state="up" />;
+  if (data.state === "up") return corner ? null : <StatusDot state="up" />;
   return (
-    <span title={data.reason}>
+    <span title={data.reason} className={cn(corner && "absolute top-0.5 right-0.5 rounded-full ring-2 ring-card")}>
       <StatusDot state="down" />
       <span className="sr-only">: {data.reason}</span>
     </span>

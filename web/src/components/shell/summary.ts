@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import type { KubeList } from "@/api/gen/types.gen";
 import { containersQuery, keys, swarmNodesQuery } from "@/api/queries";
 import type { EnvFamily } from "@/lib/env";
@@ -24,10 +24,11 @@ export function envSummary(family: EnvFamily, counts: { containers?: number; nod
  * already cached): the library never opens a subscription of its own.
  */
 export function useEnvSummary(env: string, family: EnvFamily, current: boolean): string {
-  const qc = useQueryClient();
   const containers = useQuery({ ...containersQuery(env), enabled: current && (family === "docker" || family === "node") });
   const nodes = useQuery({ ...swarmNodesQuery(env), enabled: current && family === "swarm" });
+  // Read from the cache, never fetched: follows the pod list's watch while one is open.
+  const podList = useQuery<KubeList>({ queryKey: keys.kube(env, "pods", undefined), queryFn: skipToken, enabled: current && family === "kube" });
   if (!current) return envSummary(family, {});
-  const pods = family === "kube" ? qc.getQueryData<KubeList>(keys.kube(env, "pods", undefined))?.rows.length : undefined;
+  const pods = family === "kube" ? podList.data?.rows.length : undefined;
   return envSummary(family, { containers: containers.data?.length, nodes: nodes.data?.length, pods });
 }

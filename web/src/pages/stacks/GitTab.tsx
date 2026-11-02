@@ -98,7 +98,9 @@ export function WebhookSecretDialog({ url, secret, onClose }: { url: string; sec
             Copy secret
           </Button>
           <Button onClick={onClose}>
-<Check aria-hidden />Done</Button>
+            <Check aria-hidden />
+            Done
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -171,7 +171,8 @@
       linear-gradient(color-mix(in oklch, var(--accent) 60%, transparent), color-mix(in oklch, var(--accent) 60%, transparent)),
       var(--card);
   }
-  tr[data-state="selected"] > & {
+  tr[data-state="selected"] > &,
+  tr[data-active] > & {
     background: var(--selected);
   }
   thead tr > & {

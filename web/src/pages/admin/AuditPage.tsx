@@ -287,8 +287,8 @@ export function AuditPage() {
         data={rows}
         error={audit.error}
         columns={cols}
-        onActivate={(r) => now.open(((e: AuditEntry) => String(e.id))(r))}
-        activeId={active ? ((e: AuditEntry) => String(e.id))(active) : undefined}
+        onActivate={(r) => now.open(String(r.id))}
+        activeId={active ? String(active.id) : undefined}
         getRowId={(e) => String(e.id)}
         empty={filtered ? "No entries match these filters." : "Nothing has been audited yet."}
         phoneColumns={["ts", "user", "action"]}

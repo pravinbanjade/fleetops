@@ -51,7 +51,16 @@ export function TasksPage() {
     <Page title="Tasks">
       <FeedPaused reason={paused} />
       {active && <TaskNow key={active.id} env={env} task={active} />}
-      <DataTable label="Tasks" data={tasks} columns={cols} onActivate={(r) => now.open(((t: TaskSummary) => t.id)(r))} activeId={active ? ((t: TaskSummary) => t.id)(active) : undefined} getRowId={(t) => t.id} empty="No tasks." initialSorting={[{ id: "updated_at", desc: true }]} />
+      <DataTable
+        label="Tasks"
+        data={tasks}
+        columns={cols}
+        onActivate={(r) => now.open(r.id)}
+        activeId={active?.id}
+        getRowId={(t) => t.id}
+        empty="No tasks."
+        initialSorting={[{ id: "updated_at", desc: true }]}
+      />
     </Page>
   );
 }

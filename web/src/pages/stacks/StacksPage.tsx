@@ -159,7 +159,9 @@ export function StacksPage() {
         label="Stacks"
         data={stacks.data}
         columns={cols}
-        onActivate={(r) => now.open(((r: StackSummary) => r.name)(r))} activeId={active ? ((r: StackSummary) => r.name)(active) : undefined} getRowId={(r) => r.name}
+        onActivate={(r) => now.open(r.name)}
+        activeId={active?.name}
+        getRowId={(r) => r.name}
         error={stacks.error}
         empty="No stacks in this environment yet."
       />
@@ -195,6 +197,7 @@ export function StacksPage() {
 function StackNow({ env, stack, swarm }: { env: string; stack: StackSummary; swarm: boolean }) {
   const containers = useQuery({ ...containersQuery(env), enabled: !swarm });
   const services = useQuery({ ...swarmServicesQuery(env), enabled: swarm });
+  const listed = swarm ? services : containers;
   const rows = swarm
     ? (services.data ?? [])
         .filter((s) => s.stack === stack.name)
@@ -217,7 +220,7 @@ function StackNow({ env, stack, swarm }: { env: string; stack: StackSummary; swa
         { label: "Source", value: stack.source },
         { label: "Updated", value: formatAgo(stack.updated_at) },
       ]}
-      list={{ title: swarm ? "Services" : "Containers", empty: "Nothing deployed yet.", rows }}
+      list={{ title: swarm ? "Services" : "Containers", empty: "Nothing deployed yet.", rows, error: listed.error, loading: listed.isPending }}
       open={{ to: "/envs/$env/stacks/$stack", params: { env, stack: stack.name } }}
     />
   );
