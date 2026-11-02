@@ -22,7 +22,7 @@ const LICENSE = {
 
 const page = (st: BackupStatus, extra: Record<string, unknown> = {}) => ({
   ...loggedIn,
-  "GET /api/v1/edition": { json: { edition: "enterprise", features: st.licensed ? ["backup"] : [] } },
+  "GET /api/v1/edition": { json: st.licensed ? { edition: "enterprise", features: ["backup"] } : { edition: "community", features: [] } },
   "GET /api/v1/ee/license": { json: LICENSE },
   "GET /api/v1/ee/backup/status": { json: st },
   "GET /api/v1/ee/backup/schedule": { json: { enabled: true, hour_utc: 2, retention: { kind: "count", value: 7 }, passphrase_set: true } },

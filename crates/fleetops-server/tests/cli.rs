@@ -68,3 +68,16 @@ fn helm_discard_argument_reads_stdin_and_prints_nothing() {
     assert!(out.stdout.is_empty());
     assert!(!data.exists(), "the discard must not start the server");
 }
+
+/// `crates/fleetops-api/openapi.json` is the server's whole document, Enterprise
+/// routes included, committed for the web client generator (`pnpm gen:api`)
+/// and for review of API changes.
+#[test]
+fn committed_openapi_document_matches_the_server() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../fleetops-api/openapi.json");
+    let committed = std::fs::read_to_string(path).unwrap_or_default();
+    assert!(
+        committed.trim_end() == fleetops_server::openapi_json().trim_end(),
+        "{path} is out of date; run `make openapi` and commit the result"
+    );
+}
