@@ -8,7 +8,7 @@ import { EeBanners } from "./BackupBanner";
 import { rolesQuery } from "./roles";
 import { EnvTeamAccess, UserTeamAccess } from "./UserTeamAccess";
 
-/** The Enterprise UI (ee/LICENSE). `id` is the marker CI looks for in bundles. */
+/** The Enterprise UI (ee/LICENSE), part of every build. */
 export const ee: EeModule = {
   id: "__FLEETOPS_EE__",
   adminRoutes: (admin) => [

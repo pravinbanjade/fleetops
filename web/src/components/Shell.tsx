@@ -14,7 +14,7 @@ import { CommandPalette, typing } from "./CommandPalette";
 import { useWalkKeys } from "./walk";
 import { kubeGroupOf, navHref, navOf } from "./nav";
 import { TopBarSlot } from "./topBarSlot";
-import { ee, Slot, useAdminNav } from "@/ee-slots";
+import { Slot, useAdminNav } from "@/ee-slots";
 import { Library, EnvTile } from "./shell/Library";
 import { navParams } from "./shell/EnvPages";
 import { NowHost, SHEET_QUERY, useNowFrame } from "./shell/now";
@@ -56,7 +56,6 @@ function Frame() {
   useWalkKeys();
   return (
     <div
-      data-edition={ee.id}
       className={cn(
         "min-h-svh bg-background md:grid md:h-svh md:gap-2 md:p-2",
         env ? "md:grid-rows-[minmax(0,1fr)_34px]" : "md:grid-rows-[minmax(0,1fr)]",

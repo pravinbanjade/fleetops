@@ -6,7 +6,7 @@ import type { StagedBackup } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { isEnterpriseBuild } from "@/ee-slots";
+import { useEdition } from "@/ee-slots";
 import { errorMessage } from "@/lib/errors";
 import { formatTime } from "@/lib/format";
 import { FormError } from "@/pages/AuthLayout";
@@ -84,6 +84,7 @@ export function RestoreFlow({
   const [phase, setPhase] = useState<"restoring" | "restarting">("restoring");
   const s = staged.summary;
   const admin = mode === "admin";
+  const edition = useEdition();
   const now = useCurrentCounts(admin);
   const m = useMutation({
     mutationFn: async () => {
@@ -133,10 +134,10 @@ export function RestoreFlow({
       <ul className="grid list-disc gap-1 pl-5 text-muted-foreground">
         {mode === "admin" && <li>Everything on this server is replaced, and everyone is signed out.</li>}
         <li>Agents enrolled after this backup was made can't connect and need enrolling again.</li>
-        {s.has_enterprise_data && !isEnterpriseBuild && (
+        {s.has_enterprise_data && edition === "community" && (
           <li>
-            This backup has Enterprise data (teams, roles, single sign-on). Community keeps it but doesn't use it until
-            you run the Enterprise edition.
+            This backup has Enterprise data (teams, roles, single sign-on). It's kept but not used until you add an
+            Enterprise license.
           </li>
         )}
         {s.has_enterprise_data && (

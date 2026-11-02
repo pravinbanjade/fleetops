@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap minio-up test-s3 test-web-ee web-ee e2e-ee check-editions image-ee
+.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap minio-up test-s3 e2e-ee check-editions image-ee
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -139,15 +139,6 @@ minio-up:
 
 test-s3: minio-up
 	FLEETOPS_S3_IT=http://127.0.0.1:9100 cargo test -p fleetops-ee --features s3-it --test s3_it
-
-test-web-ee:
-	cd web && pnpm install --frozen-lockfile
-	cd web && pnpm typecheck:ee
-	cd web && pnpm test:ee
-
-web-ee:
-	cd web && pnpm install --frozen-lockfile
-	cd web && pnpm build:ee
 
 # The Enterprise Playwright suite, on a build that trusts the test key.
 e2e-ee: web-ee

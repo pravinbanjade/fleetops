@@ -8,13 +8,10 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit",
-    "build:ee": "node scripts/link-ee.mjs && FLEETOPS_EDITION=ee tsc -p tsconfig.ee.json --noEmit && FLEETOPS_EDITION=ee vite build",
-    "typecheck:ee": "node scripts/link-ee.mjs && tsc -p tsconfig.ee.json --noEmit",
-    "test:ee": "node scripts/link-ee.mjs && FLEETOPS_EDITION=ee vitest run",
+    "build": "node scripts/link-ee.mjs && tsc --noEmit && vite build",
+    "typecheck": "node scripts/link-ee.mjs && tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "node scripts/link-ee.mjs && vitest run",
     "gen:api": "openapi-ts",
     "check:api": "openapi-ts && git diff --exit-code -- src/api/gen && test -z \"$(git status --porcelain -- src/api/gen)\"",
     "check:icons": "node scripts/check-button-icons.mjs"

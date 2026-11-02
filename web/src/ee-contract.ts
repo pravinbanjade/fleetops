@@ -43,7 +43,7 @@ export interface RoleOption {
 
 /** What an edition's UI module exports as `ee` (editions spec §5). */
 export interface EeModule {
-  /** "ce" in the stub; the Enterprise module's bundle marker otherwise. */
+  /** The module's marker. */
   id: string;
   /** Pages under /admin. */
   adminRoutes: (admin: AnyRoute) => AnyRoute[];

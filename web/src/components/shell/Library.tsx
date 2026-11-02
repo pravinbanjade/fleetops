@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAdminNav, editionLabel } from "@/ee-slots";
+import { useAdminNav, usePlanLabel } from "@/ee-slots";
 import { envFamily, envHue, envInitials, isKube, isSwarm, splitNodeView, type EnvFamily } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { LINK } from "../sidebar";
@@ -32,6 +32,7 @@ export function Library({ env, family, collapsed }: { env?: string; family: EnvF
   const { data: envs = [] } = useQuery(envsQuery);
   // A swarm node's view lives under its swarm's row.
   const home = splitNodeView(env)?.swarm ?? env;
+  const plan = usePlanLabel();
   return (
     <div className={cn("flex h-full flex-col gap-4 overflow-y-auto p-3", collapsed && "items-center px-2")}>
       <Link to="/" className={cn("flex items-center gap-2.5 px-1.5 pt-1", collapsed && "px-0")} aria-label="FleetOps home">
@@ -39,7 +40,7 @@ export function Library({ env, family, collapsed }: { env?: string; family: EnvF
         {!collapsed && (
           <span className="grid leading-tight">
             <span className="text-[15px] font-semibold tracking-tight">FleetOps</span>
-            <span className="text-[11px] text-meta tabular-nums">{editionLabel}</span>
+            <span className="text-[11px] text-meta tabular-nums">{plan}</span>
           </span>
         )}
       </Link>

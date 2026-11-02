@@ -15,7 +15,7 @@ import { Page } from "@/components/Page";
 import type { QuickItem } from "@/components/RowMenu";
 import { EnvTile } from "@/components/shell/Library";
 import { StateBadge } from "@/components/StateBadge";
-import { isEnterpriseBuild, Slot } from "@/ee-slots";
+import { Slot } from "@/ee-slots";
 import { Button } from "@/components/ui/button";
 import { Dialog as Modal, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -524,7 +524,7 @@ function EnvAccess({ env, onClose }: { env: string; onClose: () => void }) {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : q.data.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {isEnterpriseBuild ? "No user has a direct grant here." : "Only admins can use this environment."}
+            No user has a direct grant here.
           </p>
         ) : (
           <table aria-label={`Access to ${env}`} className="w-full text-sm">

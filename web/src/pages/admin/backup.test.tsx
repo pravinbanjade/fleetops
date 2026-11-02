@@ -2,7 +2,6 @@ import { waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { StagedBackup } from "@/api/gen/types.gen";
-import { isEnterpriseBuild } from "@/ee-slots";
 import { mockFetch } from "@/test/fetch";
 import { loggedIn, renderApp } from "@/test/app";
 
@@ -68,9 +67,7 @@ describe("backup page", () => {
     const { screen } = renderApp("/admin/backup");
     await openBackup(screen);
     await screen.findByRole("button", { name: "Replace this server with the backup" });
-    const warning = screen.queryByText(/Community keeps it but doesn't use it/);
-    if (isEnterpriseBuild) expect(warning).toBeNull();
-    else expect(warning).toBeInTheDocument();
+    expect(screen.getByText(/It's kept but not used until you add an Enterprise license/)).toBeInTheDocument();
   });
 });
 

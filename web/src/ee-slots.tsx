@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createElement } from "react";
 import { ee } from "@ee";
-import type { Feature } from "@/api/gen/types.gen";
+import type { Edition, Feature } from "@/api/gen/types.gen";
 import { editionQuery } from "@/api/queries";
 import { ADMIN_NAV } from "./components/nav";
 import { ADMIN_GROUPS, type AdminGroup, type EeNavItem, type EeSlot, type RoleOption, type SlotName, type SlotProps } from "./ee-contract";
@@ -9,16 +9,25 @@ import { ADMIN_GROUPS, type AdminGroup, type EeNavItem, type EeSlot, type RoleOp
 // The only module that imports `@ee` (scripts/check-editions.sh).
 
 export { ee };
-export const isEnterpriseBuild = ee.id !== "ce";
 
-/** The Enterprise features in effect; empty, with no request, in a Community build. */
-export function useFeatures(): readonly Feature[] {
-  const { data } = useQuery({ ...editionQuery, enabled: isEnterpriseBuild });
-  return data?.features ?? [];
+/** The plan in effect: Enterprise while a license is active; undefined until known. */
+export function useEdition(): Edition | undefined {
+  return useQuery(editionQuery).data?.edition;
 }
 
-/** This build's edition and release, e.g. "EE 0.6.0". */
-export const editionLabel = `${isEnterpriseBuild ? "EE" : "CE"} ${import.meta.env.FLEETOPS_VERSION}`;
+/** The Enterprise features in effect; empty on Community. */
+export function useFeatures(): readonly Feature[] {
+  return useQuery(editionQuery).data?.features ?? [];
+}
+
+const PLAN_NAMES: Record<Edition, string> = { community: "Community", enterprise: "Enterprise" };
+
+/** "Community 0.6.0" or "Enterprise 0.6.0"; the release alone until the plan is known. */
+export function usePlanLabel(): string {
+  const edition = useEdition();
+  const version = import.meta.env.FLEETOPS_VERSION;
+  return edition ? `${PLAN_NAMES[edition]} ${version}` : version;
+}
 
 const allowed = (features: readonly Feature[], need?: Feature) => !need || features.includes(need);
 
