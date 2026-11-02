@@ -1,7 +1,7 @@
 import { defineConfig } from "@playwright/test";
 import base from "./playwright.config";
 
-// The Enterprise suite (`make e2e-ee`): a release build with the
+// The licensed suite (second half of `make e2e`): a release build with the
 // ee-test-license-key feature, so the committed test license installs.
 // A mock identity provider runs beside it for single sign-on.
 const idpPort = Number(process.env.MOCK_IDP_PORT ?? 9124);

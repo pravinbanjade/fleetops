@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap minio-up test-s3 e2e-ee check-editions image-ee
+.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap minio-up test-s3 check-editions
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -39,13 +39,17 @@ test-docker:
 # driven in Chromium against the current docker context's daemon. It pulls
 # busybox and creates (then removes) containers named fleetops-e2e-*; the
 # second spec enrolls a real fleetops-agent against the same daemon.
-e2e: build
+e2e: web
+	cargo build --release -p fleetops-server --features fleetops-server/ee-test-license-key
 	cargo build --release -p fleetops-agent
 	cd web && pnpm exec playwright install chromium
 	cd web && DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
 		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
 		FLEETOPS_AGENT_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops-agent \
 		pnpm exec playwright test
+	cd web && DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
+		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
+		pnpm exec playwright test -c playwright.license.config.ts
 
 # The idle memory targets: a release build managing 50 containers on the
 # current docker context's daemon stays under 50 MiB of RSS, plus 1 MiB per
@@ -141,16 +145,6 @@ test-s3: minio-up
 	FLEETOPS_S3_IT=http://127.0.0.1:9100 cargo test -p fleetops-ee --features s3-it --test s3_it
 
 # The Enterprise Playwright suite, on a build that trusts the test key.
-e2e-ee: web-ee
-	cargo build --release -p fleetops-server --features fleetops-server/ee-test-license-key
-	cd web && pnpm exec playwright install chromium
-	cd web && DOCKER_HOST=$${DOCKER_HOST:-$$(docker context inspect --format '{{.Endpoints.docker.Host}}')} \
-		FLEETOPS_BIN=$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
-		pnpm exec playwright test -c playwright.ee.config.ts
-
-# Community code must not reach into ee/ (spec §6).
-check-editions: web
+# Code outside ee/ (Apache-2.0) reaches ee/ only through its declared seams.
+check-editions:
 	scripts/check-editions.sh
-
-image-ee:
-	docker buildx build --platform $(PLATFORMS) --build-arg EDITION=ee --target server --tag $(EE_IMAGE) --load .

@@ -66,9 +66,13 @@ jobs:
       - id: meta-server
         uses: docker/metadata-action@v6
         with:
+          # fleetops-ee: deprecated alias of the same image for existing
+          # Enterprise users; remove after v0.8.x.
           images: |
             ${{ env.SERVER_IMAGE }}
             ${{ env.GHCR }}/fleetops
+            ${{ env.EE_IMAGE }}
+            ${{ env.GHCR }}/fleetops-ee
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -79,16 +83,6 @@ jobs:
           images: |
             ${{ env.AGENT_IMAGE }}
             ${{ env.GHCR }}/fleetops-agent
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-      - id: meta-ee
-        uses: docker/metadata-action@v6
-        with:
-          images: |
-            ${{ env.EE_IMAGE }}
-            ${{ env.GHCR }}/fleetops-ee
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -113,16 +107,6 @@ jobs:
           tags: ${{ steps.meta-agent.outputs.tags }}
           labels: ${{ steps.meta-agent.outputs.labels }}
           cache-from: type=gha
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          target: server
-          build-args: EDITION=ee
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta-ee.outputs.tags }}
-          labels: ${{ steps.meta-ee.outputs.labels }}
-          cache-from: type=gha
 
       # The same builds (cache hits), stopped at the bare-binary stages.
       - uses: docker/build-push-action@v7
@@ -139,22 +123,16 @@ jobs:
           platforms: linux/amd64,linux/arm64
           outputs: type=local,dest=out-agent
           cache-from: type=gha
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          target: binary
-          build-args: EDITION=ee
-          platforms: linux/amd64,linux/arm64
-          outputs: type=local,dest=out-ee
-          cache-from: type=gha
 
+      # fleetops-ee-*: a copy of fleetops, kept for existing download links
+      # through v0.8.x.
       - name: Package the binaries
         run: |
           mkdir dist
           for arch in amd64 arm64; do
             for pair in "fleetops:out/linux_$arch/fleetops" \
                         "fleetops-agent:out-agent/linux_$arch/fleetops-agent" \
-                        "fleetops-ee:out-ee/linux_$arch/fleetops"; do
+                        "fleetops-ee:out/linux_$arch/fleetops"; do
               name="${pair%%:*}-$GITHUB_REF_NAME-linux-$arch"
               cp "${pair#*:}" "dist/$name"
               (cd dist && sha256sum "$name" > "$name.sha256")
@@ -170,8 +148,8 @@ jobs:
           notes=$(cat <<EOF
           Images for linux/amd64 and linux/arm64, on Docker Hub and mirrored to $GHCR:
 
-          - \`$SERVER_IMAGE:$VERSION\`: Community, Apache-2.0
-          - \`$EE_IMAGE:$VERSION\`: Enterprise, needs a license
+          - \`$SERVER_IMAGE:$VERSION\`: FleetOps. Runs as Community; a license key unlocks Enterprise
+          - \`$EE_IMAGE:$VERSION\`: deprecated alias of \`$SERVER_IMAGE\`
           - \`$AGENT_IMAGE:$VERSION\`: the agent for remote hosts and clusters
 
           Static linux binaries of each, with SHA-256 checksums, are attached below.
