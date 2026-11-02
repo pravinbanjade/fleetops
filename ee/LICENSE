@@ -11,24 +11,32 @@ License 2.0; see LICENSE at the repository root.
    Software, and builds that include it, to develop, test and evaluate
    them. This needs no subscription.
 
-2. Production use. Any other use, including any production use, needs a
-   valid FleetOps Enterprise subscription covering the number of nodes,
-   and the license key issued for it. You may not remove, disable or work
-   around the license key check or the limits it enforces.
+2. Community use. You may copy and run unmodified official FleetOps
+   builds that include the Enterprise Software for any purpose, including
+   production, without a subscription, as long as no license key is
+   installed and the Enterprise features stay off (the Community plan).
 
-3. Modifications. You may modify the Enterprise Software for the uses
-   allowed in sections 1 and 2. Contributions you send to the FleetOps
-   project for ee/ are licensed to the project under these same terms,
-   with the added right for the project to relicense them.
+3. Enterprise use. Using the Enterprise features for any purpose not
+   allowed in section 1, including any production use, needs a valid
+   FleetOps Enterprise subscription covering the number of nodes, and the
+   license key issued for it. You may not remove, disable or work around
+   the license key check or the limits it enforces, or turn on the
+   Enterprise features in any other way.
 
-4. Distribution. You may not distribute, sublicense, sell, or offer as a
+4. Modifications. You may modify the Enterprise Software for the uses
+   allowed in sections 1 and 3; section 2 covers unmodified official
+   builds only. Contributions you send to the FleetOps project for ee/
+   are licensed to the project under these same terms, with the added
+   right for the project to relicense them.
+
+5. Distribution. You may not distribute, sublicense, sell, or offer as a
    hosted service the Enterprise Software or modified versions of it.
-   Unmodified official FleetOps Enterprise builds may be copied for your
-   own use under a subscription.
+   Unmodified official FleetOps builds may be copied for your own use
+   under section 2 or 3.
 
-5. No warranty. THE ENTERPRISE SOFTWARE IS PROVIDED "AS IS", WITHOUT
+6. No warranty. THE ENTERPRISE SOFTWARE IS PROVIDED "AS IS", WITHOUT
    WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO EVENT SHALL THE AUTHORS
    OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
    LIABILITY ARISING FROM THE ENTERPRISE SOFTWARE OR ITS USE.
 
-6. Termination. These rights end automatically if you break these terms.
+7. Termination. These rights end automatically if you break these terms.

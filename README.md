@@ -174,7 +174,7 @@ Known limits of custom roles: Helm and Compose actions are checked against the H
 
 Scheduled backups come with any Enterprise license (see [Moving or recovering a server](#moving-or-recovering-a-server)). Without a license they pause, with a banner for admins, and resume once one is installed; turning them off and removing targets always works.
 
-Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and production use needs a subscription. `make build` builds the one server, Enterprise code included; it runs as Community until a license is installed.
+Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and run official builds for free on the Community plan, production included; using the Enterprise features in production needs a subscription. `make build` builds the one server, Enterprise code included; it runs as Community until a license is installed.
 
 ## Access
 
