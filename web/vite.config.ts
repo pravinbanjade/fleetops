@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -17,7 +18,11 @@ const eeEntry = ee
   ? path.resolve(import.meta.dirname, "../ee/web/src/index.ts")
   : path.resolve(import.meta.dirname, "src/ee-stub.ts");
 
+// The release, from the workspace Cargo.toml, so the UI and server agree.
+const version = /^version = "([^"]+)"/m.exec(readFileSync(path.resolve(import.meta.dirname, "../Cargo.toml"), "utf8"))?.[1] ?? "dev";
+
 export default defineConfig({
+  define: { "import.meta.env.FLEETOPS_VERSION": JSON.stringify(version) },
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@ee": eeEntry, "@": path.resolve(import.meta.dirname, "src") } },
   server: {

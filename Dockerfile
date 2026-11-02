@@ -23,6 +23,8 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 COPY web/ ./
 COPY ee/web/ /src/ee/web/
+# The UI shows the release from the workspace Cargo.toml.
+COPY Cargo.toml /src/Cargo.toml
 RUN if [ "$EDITION" = ee ]; then pnpm build:ee; else pnpm build; fi
 
 # zig and cargo-zigbuild, taken from the cargo-zigbuild project's image.

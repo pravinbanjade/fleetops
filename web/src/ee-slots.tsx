@@ -17,6 +17,9 @@ export function useFeatures(): readonly Feature[] {
   return data?.features ?? [];
 }
 
+/** This build's edition and release, e.g. "EE 0.6.0". */
+export const editionLabel = `${isEnterpriseBuild ? "EE" : "CE"} ${import.meta.env.FLEETOPS_VERSION}`;
+
 const allowed = (features: readonly Feature[], need?: Feature) => !need || features.includes(need);
 
 /** The Enterprise component for `name`, when this build has one and the license covers it. */

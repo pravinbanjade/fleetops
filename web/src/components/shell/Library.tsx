@@ -15,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAdminNav } from "@/ee-slots";
+import { useAdminNav, editionLabel } from "@/ee-slots";
 import { envFamily, envHue, envInitials, isKube, isSwarm, splitNodeView, type EnvFamily } from "@/lib/env";
 import { cn } from "@/lib/utils";
 import { LINK } from "../sidebar";
@@ -36,7 +36,12 @@ export function Library({ env, family, collapsed }: { env?: string; family: EnvF
     <div className={cn("flex h-full flex-col gap-4 overflow-y-auto p-3", collapsed && "items-center px-2")}>
       <Link to="/" className={cn("flex items-center gap-2.5 px-1.5 pt-1", collapsed && "px-0")} aria-label="FleetOps home">
         <Mark />
-        {!collapsed && <span className="text-[15px] font-semibold tracking-tight">FleetOps</span>}
+        {!collapsed && (
+          <span className="grid leading-tight">
+            <span className="text-[15px] font-semibold tracking-tight">FleetOps</span>
+            <span className="text-[11px] text-meta tabular-nums">{editionLabel}</span>
+          </span>
+        )}
       </Link>
       <div aria-label="Environments" role="region" className="grid w-full gap-1">
         {!collapsed && <div className="px-2 pb-1 text-xs text-meta">Environments</div>}
