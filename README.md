@@ -10,7 +10,7 @@ It is an open-source alternative to Portainer: roles, Kubernetes namespace scopi
 
 ![The FleetOps dashboard for a Docker host: containers that need attention, running containers with live CPU and memory, disk usage and recent events](docs/images/dashboard.png)
 
-> **Status: early development (0.x).** Docker, multi-host agents, Kubernetes, Helm and per-environment roles all work today. Expect rough edges and breaking changes between minor versions.
+> **Status: 1.0.** Docker, Docker Swarm, multi-host agents, Kubernetes, Helm and per-environment roles are stable. Releases follow [semantic versioning](https://semver.org): breaking changes only in a new major version.
 
 ## Why FleetOps
 
@@ -142,7 +142,7 @@ With an Enterprise license, FleetOps also backs up daily to S3-compatible storag
 
 ## Plans
 
-There is one image, `fleets/fleetops`. Every install starts on Community. Buy a plan on the [pricing page](https://fleetops.pravinb.com.np/pricing), paste the emailed key in **Admin → License**, and Enterprise features turn on without reinstalling. `fleets/fleetops-ee` is a deprecated alias of the same image and stops being published after v0.8.
+There is one image, `fleets/fleetops`. Every install starts on Community. Buy a plan on the [pricing page](https://fleetops.pravinb.com.np/pricing), paste the emailed key in **Admin → License**, and Enterprise features turn on without reinstalling. `fleets/fleetops-ee` is a deprecated alias of the same image, still published with 1.0; switch to `fleets/fleetops`, as a later release stops publishing it.
 
 | | Community | Enterprise |
 |---|---|---|
