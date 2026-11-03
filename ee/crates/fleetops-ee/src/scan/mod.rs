@@ -4,5 +4,6 @@
 
 pub mod config;
 pub mod db;
+pub mod inventory;
 pub mod model;
 pub mod trivy;
