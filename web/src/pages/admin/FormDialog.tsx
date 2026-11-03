@@ -13,6 +13,8 @@ export function FormDialog(props: {
   submitLabel: string;
   onSubmit: () => Promise<unknown>;
   onClose: () => void;
+  /** Keeps the submit button disabled, e.g. while the form is incomplete. */
+  submitDisabled?: boolean;
   children: ReactNode;
 }) {
   const m = useMutation({ mutationFn: props.onSubmit, meta: { inline: true }, onSuccess: props.onClose });
@@ -35,7 +37,7 @@ export function FormDialog(props: {
               <X aria-hidden />
               Cancel
             </Button>
-            <Button type="submit" disabled={m.isPending}>
+            <Button type="submit" disabled={m.isPending || props.submitDisabled}>
               {props.submitLabel}
             </Button>
           </DialogFooter>
