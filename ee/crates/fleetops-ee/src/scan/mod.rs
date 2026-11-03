@@ -4,6 +4,9 @@
 
 pub mod config;
 pub mod db;
+pub mod docker;
 pub mod inventory;
+pub mod kube;
 pub mod model;
+pub mod runner;
 pub mod trivy;

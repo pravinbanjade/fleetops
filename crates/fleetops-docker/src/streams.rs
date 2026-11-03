@@ -270,6 +270,28 @@ impl StreamOps for LocalDocker {
         Box::pin(s)
     }
 
+    fn pull_image_auth(
+        &self,
+        image: &str,
+        tag: &str,
+        auth: Option<(&str, &str)>,
+    ) -> BoxStream<Value> {
+        let o = CreateImageOptionsBuilder::new()
+            .from_image(image)
+            .tag(tag)
+            .build();
+        let creds = auth.map(|(u, p)| bollard::auth::DockerCredentials {
+            username: Some(u.to_string()),
+            password: Some(p.to_string()),
+            ..Default::default()
+        });
+        let s = self
+            .client
+            .create_image(Some(o), None, creds)
+            .map(|r| r.map_err(map_err).and_then(to_json));
+        Box::pin(s)
+    }
+
     fn build_image(&self, spec: BuildSpec) -> BoxStream<Value> {
         let tar = match &spec.context {
             BuildContext::Tar(t) => Ok(t.clone()),

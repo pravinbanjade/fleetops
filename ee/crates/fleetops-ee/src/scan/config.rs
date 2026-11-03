@@ -96,10 +96,13 @@ pub fn resolve_socket(info: &Value, version: &Value, override_path: Option<&str>
     }) || info["DockerRootDir"]
         .as_str()
         .is_some_and(|d| d.starts_with("/home/"));
+    // Podman's compat `/info` keeps its own storage path; `/version` may name it.
     let podman = version["Components"].as_array().is_some_and(|c| {
         c.iter()
             .any(|c| c["Name"].as_str().is_some_and(|n| n.contains("Podman")))
-    });
+    }) || info["DockerRootDir"]
+        .as_str()
+        .is_some_and(|d| d.contains("/containers/storage"));
     match (rootless, podman) {
         (true, _) => SocketChoice::Export,
         (false, true) => SocketChoice::Mount(PODMAN_SOCKET.into()),

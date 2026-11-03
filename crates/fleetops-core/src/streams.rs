@@ -192,6 +192,22 @@ pub trait StreamOps: Send + Sync {
     async fn exec_exit_code(&self, exec_id: &str) -> Result<Option<i64>>;
     /// Docker's pull progress messages, verbatim.
     fn pull_image(&self, image: &str, tag: &str) -> BoxStream<Value>;
+    /// [`StreamOps::pull_image`] with registry credentials (`X-Registry-Auth`).
+    fn pull_image_auth(
+        &self,
+        image: &str,
+        tag: &str,
+        auth: Option<(&str, &str)>,
+    ) -> BoxStream<Value> {
+        match auth {
+            None => self.pull_image(image, tag),
+            Some(_) => Box::pin(futures_util::stream::once(async {
+                Err(crate::Error::Invalid(
+                    "pulling with credentials is not available for this environment".into(),
+                ))
+            })),
+        }
+    }
     /// Docker's build messages, verbatim.
     fn build_image(&self, spec: BuildSpec) -> BoxStream<Value>;
 }

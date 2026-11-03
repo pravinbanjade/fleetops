@@ -14,6 +14,8 @@ test-license-key = []
 ldap-it = []
 # The MinIO suite (make test-s3).
 s3-it = []
+# Real Trivy scans against the current docker context's daemon.
+docker-it = []
 
 [dependencies]
 fleetops-core.workspace = true
@@ -39,13 +41,15 @@ serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-util.workspace = true
+tokio-util = { workspace = true, features = ["io"] }
+tar.workspace = true
 tracing.workspace = true
 url.workspace = true
 utoipa.workspace = true
 utoipa-axum.workspace = true
 
 [dev-dependencies]
+fleetops-docker.workspace = true
 http-body-util.workspace = true
 rand.workspace = true
 tempfile.workspace = true
@@ -59,3 +63,7 @@ required-features = ["ldap-it"]
 [[test]]
 name = "s3_it"
 required-features = ["s3-it"]
+
+[[test]]
+name = "scan_docker_it"
+required-features = ["docker-it"]

@@ -598,14 +598,19 @@ mod streams {
         while let Some(chunk) = export.next().await {
             image.extend_from_slice(&chunk.unwrap());
         }
-        assert!(image.len() > 1024, "an image tar, got {} bytes", image.len());
+        assert!(
+            image.len() > 1024,
+            "an image tar, got {} bytes",
+            image.len()
+        );
         let name = unique("stream-upload");
         let id = d.create_container(&sleeper(&name)).await.unwrap();
         let mut b = tar::Builder::new(Vec::new());
         let mut h = tar::Header::new_gnu();
         h.set_size(image.len() as u64);
         h.set_mode(0o644);
-        b.append_data(&mut h, "image.tar", image.as_slice()).unwrap();
+        b.append_data(&mut h, "image.tar", image.as_slice())
+            .unwrap();
         let tar = b.into_inner().unwrap();
         let chunks: Vec<fleetops_core::Result<Vec<u8>>> =
             tar.chunks(64 * 1024).map(|c| Ok(c.to_vec())).collect();
