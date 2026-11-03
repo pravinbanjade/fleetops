@@ -166,7 +166,7 @@ async fn run(
 async fn log_tail(d: &dyn DockerOps, id: &str) -> String {
     let opts = LogOptions {
         follow: false,
-        tail: Some(20),
+        tail: Some(400),
         stdout: true,
         stderr: true,
         ..Default::default()
@@ -176,7 +176,28 @@ async fn log_tail(d: &dyn DockerOps, id: &str) -> String {
         .filter_map(|l| async move { l.ok().map(|l| l.text) })
         .collect()
         .await;
-    lines.join("\n")
+    error_lines(&lines)
+}
+
+/// What explains a failed run: Trivy's FATAL/ERROR lines or a Go panic's
+/// first lines when there are any (a goroutine dump's tail says nothing),
+/// else the last 20 lines.
+pub fn error_lines(lines: &[String]) -> String {
+    let key: Vec<&str> = lines
+        .iter()
+        .map(String::as_str)
+        .filter(|l| {
+            l.contains("FATAL")
+                || l.contains("ERROR")
+                || l.starts_with("panic:")
+                || l.starts_with("fatal error:")
+        })
+        .take(5)
+        .collect();
+    if !key.is_empty() {
+        return key.join("\n");
+    }
+    lines[lines.len().saturating_sub(20)..].join("\n")
 }
 
 /// Exports the image to a file under `tmp_dir`, then streams it into the
@@ -326,6 +347,21 @@ mod tests {
             "sha256:0123456789abcdef0123"
         );
         assert_eq!(container_name(&target(), 7), "fleetops-scan-0123456789ab-7");
+    }
+
+    #[test]
+    fn error_lines_prefer_fatal_over_a_goroutine_dump() {
+        let mut lines: Vec<String> = vec![
+            "2026 INFO scanning".into(),
+            "2026 FATAL Fatal error: image scan failed: unable to open tar".into(),
+        ];
+        lines.extend((0..50).map(|i| format!("\tgoroutine frame {i}")));
+        assert_eq!(
+            error_lines(&lines),
+            "2026 FATAL Fatal error: image scan failed: unable to open tar"
+        );
+        let plain: Vec<String> = (0..30).map(|i| format!("line {i}")).collect();
+        assert!(error_lines(&plain).starts_with("line 10"));
     }
 
     #[test]

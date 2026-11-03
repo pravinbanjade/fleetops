@@ -390,13 +390,10 @@ async fn viewer_cannot_scan_operator_can() {
     let (st, r) = fx.send("POST", "/api/v1/ee/security/scan", body, &op).await;
     assert_eq!(st, StatusCode::OK, "{r}");
     assert_eq!(r["queued"], 1);
-    assert_eq!(
-        db::active_scan(&fx.ee.store, &ImageKey("sha256:a".into()))
-            .await
-            .unwrap()
-            .is_some(),
-        true
-    );
+    assert!(db::active_scan(&fx.ee.store, &ImageKey("sha256:a".into()))
+        .await
+        .unwrap()
+        .is_some());
     assert!(fx.ee.actions().await.contains(&"security.scan".to_string()));
 }
 

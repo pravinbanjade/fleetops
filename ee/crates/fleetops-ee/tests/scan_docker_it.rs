@@ -43,13 +43,13 @@ fn cfg() -> Effective {
     effective(&GlobalConfig::default(), None, None, None)
 }
 
-async fn no_scan_containers_left(d: &dyn DockerOps) {
+async fn no_scan_containers_left(d: &dyn DockerOps, key: &str) {
     let left: Vec<_> = d
         .list_containers()
         .await
         .unwrap()
         .into_iter()
-        .filter(|c| c.labels.contains_key(SCAN_LABEL))
+        .filter(|c| c.labels.get("fleetops.scan.key").map(String::as_str) == Some(key))
         .collect();
     assert!(left.is_empty(), "{left:?}");
 }
@@ -64,7 +64,7 @@ async fn scans_alpine_via_socket() {
         .await
         .unwrap();
     parse_report(&report).unwrap();
-    no_scan_containers_left(&d).await;
+    no_scan_containers_left(&d, "local:1::socket").await;
 }
 
 #[tokio::test]
@@ -83,7 +83,7 @@ async fn scans_via_export_fallback() {
         0,
         "the spooled image is removed"
     );
-    no_scan_containers_left(&d).await;
+    no_scan_containers_left(&d, "local:1::export").await;
 }
 
 #[tokio::test]

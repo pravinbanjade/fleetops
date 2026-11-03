@@ -64,8 +64,7 @@ describe("security page", () => {
   it("always shows failed and unscanned counts", async () => {
     mockFetch(routes(summary([row({})], { failed: 0, unscanned: 0 })));
     renderApp("/security");
-    await table();
-    const figures = screen.getByRole("group", { name: "Totals" });
+    const figures = await screen.findByRole("group", { name: "Totals" });
     expect(within(figures).getByText("scan failed")).toBeInTheDocument();
     expect(within(figures).getByText("not scanned")).toBeInTheDocument();
   });
@@ -80,6 +79,7 @@ describe("security page", () => {
     );
     renderApp("/security");
     const t = await table();
+    await within(t).findByText("bad:1");
     const r = within(t).getAllByRole("row")[1];
     expect(r).toHaveTextContent("Scan failed");
     expect(within(r).queryByText("0")).toBeNull();

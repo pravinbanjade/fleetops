@@ -66,6 +66,8 @@ pub struct Engine {
     wake: Notify,
     signal_at: Mutex<(Option<Instant>, bool)>,
     pruned_at: Mutex<i64>,
+    /// One enqueue at a time, so two inventories never both queue a digest.
+    enqueueing: tokio::sync::Mutex<()>,
 }
 
 impl Engine {
@@ -81,6 +83,7 @@ impl Engine {
             wake: Notify::new(),
             signal_at: Mutex::new((None, false)),
             pruned_at: Mutex::new(0),
+            enqueueing: tokio::sync::Mutex::new(()),
         };
         if let Some(b) = backend {
             let _ = e.backend.set(b);
@@ -144,6 +147,7 @@ impl Engine {
 
     /// Queues a scan of `t`'s image, unless one is already queued or running.
     pub async fn enqueue(&self, s: &AppState, t: ScanTarget, trig: Trigger) -> Result<i64> {
+        let _one = self.enqueueing.lock().await;
         if let Some(id) = db::active_scan(&s.store, &t.key).await? {
             return Ok(id);
         }
@@ -480,7 +484,14 @@ impl Engine {
                     && k.last.status == Status::Failed
                     && k.last.finished_at.is_some_and(|t| now - t >= RESCAN_SECS)
             });
-            let why = if fresh.contains(&key) {
+            // A digest already scanned recently (on another host) shares that result.
+            let recent = st
+                .and_then(|k| k.last_done.as_ref())
+                .and_then(|d| d.finished_at)
+                .is_some_and(|t| now - t < RESCAN_SECS);
+            let busy =
+                st.is_some_and(|k| matches!(k.last.status, Status::Queued | Status::Running));
+            let why = if fresh.contains(&key) && !recent && !busy {
                 Some(trig)
             } else if never {
                 Some(if trig == Trigger::Enable {
