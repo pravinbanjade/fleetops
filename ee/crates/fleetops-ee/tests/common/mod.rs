@@ -37,6 +37,102 @@ pub struct Ee {
     pub router: Router,
     pub store: Store,
     pub state: AppState,
+    pub scan: Arc<fleetops_ee::scan::engine::Engine>,
+}
+
+/// Environments that are only names and kinds: enough for the scan engine
+/// and routes, whose runner and inventory are faked. Names in `down` report
+/// down.
+#[derive(Default, Clone)]
+pub struct StubEnvs {
+    pub down: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+}
+
+struct StubEnv {
+    id: i64,
+    name: String,
+    kind: fleetops_core::env::EnvKind,
+    down: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+}
+
+#[async_trait::async_trait]
+impl Environment for StubEnv {
+    fn id(&self) -> i64 {
+        self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn kind(&self) -> fleetops_core::env::EnvKind {
+        self.kind
+    }
+    async fn status(&self) -> fleetops_core::env::EnvStatus {
+        if self.down.lock().unwrap().contains(&self.name) {
+            fleetops_core::env::EnvStatus::Down {
+                reason: "stub down".into(),
+            }
+        } else {
+            fleetops_core::env::EnvStatus::Up {
+                version: fleetops_core::env::EnvVersion::Docker(
+                    fleetops_core::docker::EngineVersion {
+                        version: "27".into(),
+                        api_version: "1.47".into(),
+                        os: "linux".into(),
+                        arch: "amd64".into(),
+                    },
+                ),
+            }
+        }
+    }
+    fn docker(&self) -> Option<Arc<dyn fleetops_core::docker::DockerOps>> {
+        None
+    }
+}
+
+impl EnvFactory for StubEnvs {
+    fn build(&self, spec: &EnvSpec) -> Result<Arc<dyn Environment>> {
+        Ok(Arc::new(StubEnv {
+            id: spec.id,
+            name: spec.name.clone(),
+            kind: spec.kind,
+            down: self.down.clone(),
+        }))
+    }
+}
+
+/// A server with stub environments and a fake scan backend.
+pub async fn ee_scan_app(
+    key: &SigningKey,
+    envs: StubEnvs,
+    backend: (
+        Arc<dyn fleetops_ee::scan::runner::Runner>,
+        Arc<dyn fleetops_ee::scan::inventory::Inventory>,
+    ),
+) -> Ee {
+    let store = Store::in_memory().await.unwrap();
+    let parts = fleetops_ee::init_with_keys(
+        &store,
+        EeConfig {
+            license_file: None,
+            sso_endpoints: Default::default(),
+            scan_backend: Some(backend),
+        },
+        vec![key.verifying_key()],
+    )
+    .await
+    .unwrap();
+    let state = AppState::new(store.clone(), ApiConfig::default(), Arc::new(envs))
+        .with_entitlements(parts.entitlements)
+        .with_extra_grants(parts.grants)
+        .with_custom_roles(parts.roles)
+        .with_external_auth(parts.external_auth)
+        .with_backup_hooks(parts.backup_hooks);
+    Ee {
+        router: fleetops_api::app_with(state.clone(), Router::new(), parts.routes),
+        store,
+        state,
+        scan: parts.scan_engine,
+    }
 }
 
 pub struct Resp {
@@ -123,6 +219,7 @@ pub async fn ee_app_full(
         EeConfig {
             license_file: file,
             sso_endpoints: endpoints,
+            scan_backend: None,
         },
         vec![key.verifying_key()],
     )
@@ -138,10 +235,23 @@ pub async fn ee_app_full(
         router: fleetops_api::app_with(state.clone(), Router::new(), parts.routes),
         store,
         state,
+        scan: parts.scan_engine,
     }
 }
 
 impl Ee {
+    /// Adds an environment row and loads it into the registry.
+    pub async fn env(&self, name: &str, kind: &str) -> i64 {
+        let id = self
+            .store
+            .create_environment(name, kind, "unix:///stub.sock", 0)
+            .await
+            .unwrap()
+            .id;
+        self.state.envs.load(&self.store).await.unwrap();
+        id
+    }
+
     pub async fn send(
         &self,
         method: &str,

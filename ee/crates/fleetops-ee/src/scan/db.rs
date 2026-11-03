@@ -630,3 +630,15 @@ pub async fn prune_unused(store: &Store, older_than: i64) -> Result<()> {
     .map_err(db_err)?;
     Ok(())
 }
+
+/// Queued scans, oldest first.
+pub async fn queued(store: &Store, limit: i64) -> Result<Vec<ScanRow>> {
+    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT {SCAN_COLS} FROM ee_scans WHERE status = 'queued' ORDER BY id LIMIT ?"
+    )))
+    .bind(limit)
+    .fetch_all(store.pool())
+    .await
+    .map_err(db_err)?;
+    Ok(rows.iter().map(scan_from).collect())
+}

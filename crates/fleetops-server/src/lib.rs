@@ -58,6 +58,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             fleetops_ee::EeConfig {
                 license_file: config.license_file.clone(),
                 sso_endpoints: Default::default(),
+                scan_backend: None,
             },
         )
         .await?;
@@ -72,6 +73,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             state.clone(),
             ee.backup_runner,
         ));
+        tokio::spawn(ee.scan_engine.run(state.clone()));
         fleetops_api::app_with(state, static_files::router(), ee.routes)
     };
     #[cfg(not(feature = "enterprise"))]

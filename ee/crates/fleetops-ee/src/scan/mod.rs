@@ -5,6 +5,7 @@
 pub mod config;
 pub mod db;
 pub mod docker;
+pub mod engine;
 pub mod inventory;
 pub mod kube;
 pub mod model;

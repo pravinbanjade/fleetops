@@ -34,6 +34,12 @@ pub struct EeConfig {
     /// Where identity providers live; tests point these at a mock.
     #[doc(hidden)]
     pub sso_endpoints: sso::flow::Endpoints,
+    /// Replaces the live scan runner and inventory; tests only.
+    #[doc(hidden)]
+    pub scan_backend: Option<(
+        Arc<dyn scan::runner::Runner>,
+        Arc<dyn scan::inventory::Inventory>,
+    )>,
 }
 
 /// What the server wires in (editions spec §3.4).
@@ -53,6 +59,9 @@ pub struct EeParts {
     pub backup_runner: Arc<backup::run::Runner>,
     /// Logs license status changes; spawn it.
     pub background: BoxFuture<'static, ()>,
+    /// Image scanning; spawn [`scan::engine::Engine::run`] with the finished
+    /// app state.
+    pub scan_engine: Arc<scan::engine::Engine>,
 }
 
 /// The Enterprise routes, for the OpenAPI document (no license attached).
@@ -136,12 +145,14 @@ pub async fn init_with_keys(
     roles::db::reconcile_direct_grants(store.pool()).await?;
     let state = Arc::new(LicenseState::new(keys, config.license_file));
     let runner = Arc::new(backup::run::Runner::default());
+    let scan_engine = scan::engine::Engine::new(config.scan_backend);
     state.load(store).await?;
     Ok(EeParts {
         entitlements: state.clone(),
         routes: api_routes()
             .layer(Extension(state.clone()))
             .layer(Extension(runner.clone()))
+            .layer(Extension(scan_engine.clone()))
             .layer(Extension(Arc::new(sso::flow::Runtime::new(
                 config.sso_endpoints,
             )))),
@@ -154,6 +165,7 @@ pub async fn init_with_keys(
         backup_hooks: Arc::new(backup::hooks::EeBackupHooks),
         backup_runner: runner,
         background: Box::pin(watch(state)),
+        scan_engine,
     })
 }
 
