@@ -35,6 +35,28 @@ pub const DEBOUNCE_SECS: i64 = 5;
 /// A scan longer than this is given up (the runners have their own limits).
 pub const SCAN_DEADLINE: Duration = Duration::from_secs(25 * 60);
 
+/// What the engine tells other features (notifications) as it works.
+#[async_trait::async_trait]
+pub trait ScanEvents: Send + Sync {
+    /// A scan of `key` finished with `findings`.
+    async fn scan_finished(
+        &self,
+        s: &AppState,
+        key: &super::model::ImageKey,
+        findings: &[super::model::Finding],
+    );
+    /// An environment's image uses were re-read. `enabling`: the first
+    /// inventory after scanning was turned on for it.
+    async fn inventory_changed(
+        &self,
+        s: &AppState,
+        env_id: i64,
+        before: &[ImageUse],
+        after: &[ImageUse],
+        enabling: bool,
+    );
+}
+
 /// Whether an environment's scanner can run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -68,6 +90,7 @@ pub struct Engine {
     pruned_at: Mutex<i64>,
     /// One enqueue at a time, so two inventories never both queue a digest.
     enqueueing: tokio::sync::Mutex<()>,
+    events: OnceLock<Arc<dyn ScanEvents>>,
 }
 
 impl Engine {
@@ -84,6 +107,7 @@ impl Engine {
             signal_at: Mutex::new((None, false)),
             pruned_at: Mutex::new(0),
             enqueueing: tokio::sync::Mutex::new(()),
+            events: OnceLock::new(),
         };
         if let Some(b) = backend {
             let _ = e.backend.set(b);
@@ -104,6 +128,11 @@ impl Engine {
                 Arc::new(LiveInventory) as Arc<dyn Inventory>,
             )
         })
+    }
+
+    /// Who hears about finished scans and inventories (set once, at startup).
+    pub fn set_events(&self, ev: Arc<dyn ScanEvents>) {
+        let _ = self.events.set(ev);
     }
 
     pub fn status(&self, env_id: i64) -> ScannerStatus {
@@ -485,6 +514,10 @@ impl Engine {
         if before != after {
             self.changed(s);
         }
+        if let Some(ev) = self.events.get() {
+            ev.inventory_changed(s, id, &before, &after, trig == Trigger::Enable)
+                .await;
+        }
         let fresh: HashSet<ImageKey> = new_keys(&before, &after).into_iter().collect();
         let mut keys: Vec<ImageKey> = after.iter().map(|u| u.key.clone()).collect();
         keys.sort();
@@ -590,8 +623,13 @@ impl Engine {
         let result = self.scan(s, id, &t).await;
         match result {
             Ok((image, findings)) => {
-                if let Err(e) = db::finish_ok(&s.store, id, &image, &findings, now_unix()).await {
-                    tracing::warn!(error = %e, "could not save a scan result");
+                match db::finish_ok(&s.store, id, &image, &findings, now_unix()).await {
+                    Err(e) => tracing::warn!(error = %e, "could not save a scan result"),
+                    Ok(_) => {
+                        if let Some(ev) = self.events.get() {
+                            ev.scan_finished(s, &t.key, &findings).await;
+                        }
+                    }
                 }
             }
             Err(e) => {
