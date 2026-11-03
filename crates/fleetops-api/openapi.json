@@ -1560,6 +1560,582 @@
         ]
       }
     },
+    "/api/v1/ee/notifications/deliveries": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "listNotificationDeliveries",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Default 50, at most 200.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeliveryView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/notifications/destinations": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "listNotificationDestinations",
+        "responses": {
+          "200": {
+            "description": "Destinations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DestinationView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "createNotificationDestination",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DestinationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/notifications/destinations/{id}": {
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "updateNotificationDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DestinationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DestinationView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "deleteNotificationDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/notifications/destinations/{id}/test": {
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "testNotificationDestination",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Delivered"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/notifications/rules": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "listNotificationRules",
+        "responses": {
+          "200": {
+            "description": "Rules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RuleView"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "createNotificationRule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/notifications/rules/{id}": {
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "updateNotificationRule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleView"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "deleteNotificationRule",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/notifications/smtp": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "getSmtpSettings",
+        "responses": {
+          "200": {
+            "description": "SMTP settings, if saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SmtpView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "putSmtpSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmtpBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/SmtpView"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/notifications/smtp/test": {
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "operationId": "testSmtp",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmtpTestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Sent"
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/ee/roles": {
       "get": {
         "tags": [
@@ -13634,6 +14210,69 @@
           }
         }
       },
+      "DeliveryStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "sent",
+          "failed"
+        ]
+      },
+      "DeliveryView": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "title",
+          "status",
+          "attempts"
+        ],
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "destination": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sent_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeliveryStatus"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "DeployBody": {
         "type": "object",
         "required": [
@@ -13704,6 +14343,119 @@
           },
           "task_id": {
             "type": "string"
+          }
+        }
+      },
+      "DestinationBody": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/DestinationKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "recipients": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Email only."
+          },
+          "routing_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "PagerDuty only; write-only."
+          },
+          "signing_secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Generic webhook only; write-only. An empty string removes it."
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Write-only. Omit on update to keep the saved one."
+          }
+        }
+      },
+      "DestinationKind": {
+        "type": "string",
+        "enum": [
+          "slack",
+          "email",
+          "webhook",
+          "pagerduty",
+          "teams",
+          "discord"
+        ]
+      },
+      "DestinationView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "recipients",
+          "secret_set",
+          "signing_secret_set"
+        ],
+        "properties": {
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The URL's host; never the URL."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DestinationKind"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "secret_set": {
+            "type": "boolean",
+            "description": "A URL or routing key is saved."
+          },
+          "signing_secret_set": {
+            "type": "boolean"
           }
         }
       },
@@ -17439,6 +18191,96 @@
           "failed"
         ]
       },
+      "RuleBody": {
+        "type": "object",
+        "required": [
+          "name",
+          "enabled",
+          "envs",
+          "min_severity",
+          "fixable_only",
+          "running_only",
+          "destinations"
+        ],
+        "properties": {
+          "destinations": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "envs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Environment names; empty is every environment."
+          },
+          "fixable_only": {
+            "type": "boolean"
+          },
+          "min_severity": {
+            "$ref": "#/components/schemas/Severity"
+          },
+          "name": {
+            "type": "string"
+          },
+          "running_only": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RuleView": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "enabled",
+          "envs",
+          "min_severity",
+          "fixable_only",
+          "running_only",
+          "destinations"
+        ],
+        "properties": {
+          "destinations": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "envs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fixable_only": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "min_severity": {
+            "$ref": "#/components/schemas/Severity"
+          },
+          "name": {
+            "type": "string"
+          },
+          "running_only": {
+            "type": "boolean"
+          }
+        }
+      },
       "Run": {
         "type": "object",
         "required": [
@@ -18322,6 +19164,101 @@
         "properties": {
           "chart": {
             "$ref": "#/components/schemas/ChartRef"
+          }
+        }
+      },
+      "SmtpBody": {
+        "type": "object",
+        "required": [
+          "host",
+          "port",
+          "security",
+          "from_address"
+        ],
+        "properties": {
+          "clear_password": {
+            "type": "boolean"
+          },
+          "from_address": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Write-only; omit to keep the saved one."
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "security": {
+            "$ref": "#/components/schemas/SmtpSecurity"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SmtpSecurity": {
+        "type": "string",
+        "enum": [
+          "starttls",
+          "tls",
+          "none"
+        ]
+      },
+      "SmtpTestBody": {
+        "type": "object",
+        "required": [
+          "to"
+        ],
+        "properties": {
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "SmtpView": {
+        "type": "object",
+        "required": [
+          "host",
+          "port",
+          "security",
+          "password_set",
+          "from_address"
+        ],
+        "properties": {
+          "from_address": {
+            "type": "string"
+          },
+          "host": {
+            "type": "string"
+          },
+          "password_set": {
+            "type": "boolean"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "security": {
+            "$ref": "#/components/schemas/SmtpSecurity"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

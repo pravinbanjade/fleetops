@@ -677,6 +677,20 @@ export type DeletedConnection = {
     users_left: number;
 };
 
+export type DeliveryStatus = 'queued' | 'sent' | 'failed';
+
+export type DeliveryView = {
+    attempts: number;
+    created_at: number;
+    destination?: string | null;
+    error?: string | null;
+    id: number;
+    rule?: string | null;
+    sent_at?: number | null;
+    status: DeliveryStatus;
+    title: string;
+};
+
 export type DeployBody = {
     from: DeploySource;
     /**
@@ -698,6 +712,47 @@ export type DeploySource = {
 export type DeployStarted = {
     revision: number;
     task_id: string;
+};
+
+export type DestinationBody = {
+    kind: DestinationKind;
+    name: string;
+    /**
+     * Email only.
+     */
+    recipients?: Array<string> | null;
+    /**
+     * PagerDuty only; write-only.
+     */
+    routing_key?: string | null;
+    /**
+     * Generic webhook only; write-only. An empty string removes it.
+     */
+    signing_secret?: string | null;
+    /**
+     * Write-only. Omit on update to keep the saved one.
+     */
+    url?: string | null;
+};
+
+export type DestinationKind = 'slack' | 'email' | 'webhook' | 'pagerduty' | 'teams' | 'discord';
+
+export type DestinationView = {
+    /**
+     * The URL's host; never the URL.
+     */
+    host?: string | null;
+    id: number;
+    kind: DestinationKind;
+    last_error?: string | null;
+    last_error_at?: number | null;
+    name: string;
+    recipients: Array<string>;
+    /**
+     * A URL or routing key is saved.
+     */
+    secret_set: boolean;
+    signing_secret_set: boolean;
 };
 
 export type DigestDetail = {
@@ -2115,6 +2170,30 @@ export type RowHealth = 'ok' | 'warn' | 'bad' | 'unknown' | 'off';
  */
 export type RowState = 'scanned' | 'queued' | 'scanning' | 'stale' | 'never_scanned' | 'scanner_unavailable' | 'failed';
 
+export type RuleBody = {
+    destinations: Array<number>;
+    enabled: boolean;
+    /**
+     * Environment names; empty is every environment.
+     */
+    envs: Array<string>;
+    fixable_only: boolean;
+    min_severity: Severity;
+    name: string;
+    running_only: boolean;
+};
+
+export type RuleView = {
+    destinations: Array<number>;
+    enabled: boolean;
+    envs: Array<string>;
+    fixable_only: boolean;
+    id: number;
+    min_severity: Severity;
+    name: string;
+    running_only: boolean;
+};
+
 export type Run = {
     error?: string | null;
     file_name?: string | null;
@@ -2415,6 +2494,34 @@ export type Severity = 'unknown' | 'low' | 'medium' | 'high' | 'critical';
 
 export type ShowBody = {
     chart: ChartRef;
+};
+
+export type SmtpBody = {
+    clear_password?: boolean;
+    from_address: string;
+    host: string;
+    /**
+     * Write-only; omit to keep the saved one.
+     */
+    password?: string | null;
+    port: number;
+    security: SmtpSecurity;
+    username?: string | null;
+};
+
+export type SmtpSecurity = 'starttls' | 'tls' | 'none';
+
+export type SmtpTestBody = {
+    to: string;
+};
+
+export type SmtpView = {
+    from_address: string;
+    host: string;
+    password_set: boolean;
+    port: number;
+    security: SmtpSecurity;
+    username?: string | null;
 };
 
 export type SsoSettings = {
@@ -3961,6 +4068,346 @@ export type PutLicenseResponses = {
 };
 
 export type PutLicenseResponse = PutLicenseResponses[keyof PutLicenseResponses];
+
+export type ListNotificationDeliveriesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Default 50, at most 200.
+         */
+        limit?: number;
+    };
+    url: '/api/v1/ee/notifications/deliveries';
+};
+
+export type ListNotificationDeliveriesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListNotificationDeliveriesError = ListNotificationDeliveriesErrors[keyof ListNotificationDeliveriesErrors];
+
+export type ListNotificationDeliveriesResponses = {
+    /**
+     * Newest first
+     */
+    200: Array<DeliveryView>;
+};
+
+export type ListNotificationDeliveriesResponse = ListNotificationDeliveriesResponses[keyof ListNotificationDeliveriesResponses];
+
+export type ListNotificationDestinationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/notifications/destinations';
+};
+
+export type ListNotificationDestinationsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListNotificationDestinationsError = ListNotificationDestinationsErrors[keyof ListNotificationDestinationsErrors];
+
+export type ListNotificationDestinationsResponses = {
+    /**
+     * Destinations
+     */
+    200: Array<DestinationView>;
+};
+
+export type ListNotificationDestinationsResponse = ListNotificationDestinationsResponses[keyof ListNotificationDestinationsResponses];
+
+export type CreateNotificationDestinationData = {
+    body: DestinationBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/notifications/destinations';
+};
+
+export type CreateNotificationDestinationErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateNotificationDestinationError = CreateNotificationDestinationErrors[keyof CreateNotificationDestinationErrors];
+
+export type CreateNotificationDestinationResponses = {
+    /**
+     * Created
+     */
+    200: DestinationView;
+};
+
+export type CreateNotificationDestinationResponse = CreateNotificationDestinationResponses[keyof CreateNotificationDestinationResponses];
+
+export type DeleteNotificationDestinationData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/notifications/destinations/{id}';
+};
+
+export type DeleteNotificationDestinationErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteNotificationDestinationError = DeleteNotificationDestinationErrors[keyof DeleteNotificationDestinationErrors];
+
+export type DeleteNotificationDestinationResponses = {
+    /**
+     * Deleted
+     */
+    204: void;
+};
+
+export type DeleteNotificationDestinationResponse = DeleteNotificationDestinationResponses[keyof DeleteNotificationDestinationResponses];
+
+export type UpdateNotificationDestinationData = {
+    body: DestinationBody;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/notifications/destinations/{id}';
+};
+
+export type UpdateNotificationDestinationErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type UpdateNotificationDestinationError = UpdateNotificationDestinationErrors[keyof UpdateNotificationDestinationErrors];
+
+export type UpdateNotificationDestinationResponses = {
+    /**
+     * Saved
+     */
+    200: DestinationView;
+};
+
+export type UpdateNotificationDestinationResponse = UpdateNotificationDestinationResponses[keyof UpdateNotificationDestinationResponses];
+
+export type TestNotificationDestinationData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/notifications/destinations/{id}/test';
+};
+
+export type TestNotificationDestinationErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type TestNotificationDestinationError = TestNotificationDestinationErrors[keyof TestNotificationDestinationErrors];
+
+export type TestNotificationDestinationResponses = {
+    /**
+     * Delivered
+     */
+    204: void;
+};
+
+export type TestNotificationDestinationResponse = TestNotificationDestinationResponses[keyof TestNotificationDestinationResponses];
+
+export type ListNotificationRulesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/notifications/rules';
+};
+
+export type ListNotificationRulesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListNotificationRulesError = ListNotificationRulesErrors[keyof ListNotificationRulesErrors];
+
+export type ListNotificationRulesResponses = {
+    /**
+     * Rules
+     */
+    200: Array<RuleView>;
+};
+
+export type ListNotificationRulesResponse = ListNotificationRulesResponses[keyof ListNotificationRulesResponses];
+
+export type CreateNotificationRuleData = {
+    body: RuleBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/notifications/rules';
+};
+
+export type CreateNotificationRuleErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type CreateNotificationRuleError = CreateNotificationRuleErrors[keyof CreateNotificationRuleErrors];
+
+export type CreateNotificationRuleResponses = {
+    /**
+     * Created
+     */
+    200: RuleView;
+};
+
+export type CreateNotificationRuleResponse = CreateNotificationRuleResponses[keyof CreateNotificationRuleResponses];
+
+export type DeleteNotificationRuleData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/notifications/rules/{id}';
+};
+
+export type DeleteNotificationRuleErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type DeleteNotificationRuleError = DeleteNotificationRuleErrors[keyof DeleteNotificationRuleErrors];
+
+export type DeleteNotificationRuleResponses = {
+    /**
+     * Deleted
+     */
+    204: void;
+};
+
+export type DeleteNotificationRuleResponse = DeleteNotificationRuleResponses[keyof DeleteNotificationRuleResponses];
+
+export type UpdateNotificationRuleData = {
+    body: RuleBody;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/v1/ee/notifications/rules/{id}';
+};
+
+export type UpdateNotificationRuleErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type UpdateNotificationRuleError = UpdateNotificationRuleErrors[keyof UpdateNotificationRuleErrors];
+
+export type UpdateNotificationRuleResponses = {
+    /**
+     * Saved
+     */
+    200: RuleView;
+};
+
+export type UpdateNotificationRuleResponse = UpdateNotificationRuleResponses[keyof UpdateNotificationRuleResponses];
+
+export type GetSmtpSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/notifications/smtp';
+};
+
+export type GetSmtpSettingsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetSmtpSettingsError = GetSmtpSettingsErrors[keyof GetSmtpSettingsErrors];
+
+export type GetSmtpSettingsResponses = {
+    /**
+     * SMTP settings, if saved
+     */
+    200: SmtpView | null;
+};
+
+export type GetSmtpSettingsResponse = GetSmtpSettingsResponses[keyof GetSmtpSettingsResponses];
+
+export type PutSmtpSettingsData = {
+    body: SmtpBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/notifications/smtp';
+};
+
+export type PutSmtpSettingsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type PutSmtpSettingsError = PutSmtpSettingsErrors[keyof PutSmtpSettingsErrors];
+
+export type PutSmtpSettingsResponses = {
+    /**
+     * Saved
+     */
+    200: SmtpView | null;
+};
+
+export type PutSmtpSettingsResponse = PutSmtpSettingsResponses[keyof PutSmtpSettingsResponses];
+
+export type TestSmtpData = {
+    body: SmtpTestBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/notifications/smtp/test';
+};
+
+export type TestSmtpErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type TestSmtpError = TestSmtpErrors[keyof TestSmtpErrors];
+
+export type TestSmtpResponses = {
+    /**
+     * Sent
+     */
+    204: void;
+};
+
+export type TestSmtpResponse = TestSmtpResponses[keyof TestSmtpResponses];
 
 export type ListRolesData = {
     body?: never;

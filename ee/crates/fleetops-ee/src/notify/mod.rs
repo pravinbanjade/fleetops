@@ -6,4 +6,5 @@ pub mod format;
 pub mod matcher;
 pub mod model;
 pub mod notifier;
+pub mod routes;
 pub mod send;

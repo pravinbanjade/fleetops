@@ -147,6 +147,26 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
             scan::routes::put_settings
         ))
         .routes(routes!(scan::routes::put_env_settings))
+        .routes(routes!(
+            notify::routes::list_destinations,
+            notify::routes::create_destination
+        ))
+        .routes(routes!(
+            notify::routes::update_destination,
+            notify::routes::delete_destination
+        ))
+        .routes(routes!(notify::routes::test_destination))
+        .routes(routes!(
+            notify::routes::list_rules,
+            notify::routes::create_rule
+        ))
+        .routes(routes!(
+            notify::routes::update_rule,
+            notify::routes::delete_rule
+        ))
+        .routes(routes!(notify::routes::get_smtp, notify::routes::put_smtp))
+        .routes(routes!(notify::routes::test_smtp))
+        .routes(routes!(notify::routes::list_deliveries))
 }
 
 pub async fn init(store: &Store, config: EeConfig) -> Result<EeParts> {

@@ -166,10 +166,12 @@ pub async fn baseline_rule(s: &AppState, rule_id: i64) -> Result<()> {
     };
     let names = env_names(s).await?;
     let uses = all_uses(s, &names).await?;
-    // Repositories it already knew keep their state; only new scope baselines.
     let mut fresh = Vec::new();
     for u in &uses {
-        if covers(&rule, u.env_id) && db::known(&s.store, rule.id, &repo_of(u)).await?.is_none() {
+        // New scope, and repositories set to re-baseline (a lowered threshold).
+        if covers(&rule, u.env_id)
+            && db::known(&s.store, rule.id, &repo_of(u)).await? != Some(false)
+        {
             fresh.push(u.clone());
         }
     }
