@@ -8,6 +8,8 @@ import { EeBanners } from "./BackupBanner";
 import { EnvSecuritySettings } from "./EnvSecuritySettings";
 import { securitySearch } from "./security";
 import { SecurityNav } from "./SecurityNav";
+import { ImageBadge } from "./ImageBadge";
+import { ImageVulnContent, ImageVulnTrigger } from "./ImageVulnTab";
 import { UpgradeCard } from "./UpgradeCard";
 import { useLeftovers } from "./leftovers";
 import { rolesQuery } from "./roles";
@@ -75,6 +77,9 @@ export const ee: EeModule = {
     "admin.backup": { component: BackupSchedule, feature: "backup" },
     "env.settings": { component: EnvSecuritySettings, feature: "vuln_scan" },
     "shell.nav": { component: SecurityNav, feature: "vuln_scan" },
+    "image.tabs.trigger": { component: ImageVulnTrigger, feature: "vuln_scan" },
+    "image.tabs.content": { component: ImageVulnContent, feature: "vuln_scan" },
+    "image.badge": { component: ImageBadge, feature: "vuln_scan" },
   },
   useLeftovers,
   // Only admin pages offer roles, so only admins ask for them.
