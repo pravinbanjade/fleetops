@@ -42,11 +42,17 @@ pub fn docker_for(env: &Arc<dyn Environment>, node: &str) -> Result<Arc<dyn Dock
     d.ok_or_else(|| Error::EnvUnavailable(format!("environment '{}' is unreachable", env.name())))
 }
 
+fn kube_for(env: &Arc<dyn Environment>) -> Result<Arc<dyn fleetops_core::kube::KubeOps>> {
+    env.kube().ok_or_else(|| {
+        Error::EnvUnavailable(format!("environment '{}' is unreachable", env.name()))
+    })
+}
+
 #[async_trait]
 impl Runner for LiveRunner {
     async fn prepare(&self, env: &Arc<dyn Environment>, node: &str, cfg: &Effective) -> Result<()> {
         if env.kind().is_kube() {
-            return super::kube::prepare(env, cfg).await;
+            return super::kube::prepare(kube_for(env)?.as_ref(), cfg).await;
         }
         super::docker::prepare(docker_for(env, node)?.as_ref(), cfg).await
     }
@@ -59,7 +65,7 @@ impl Runner for LiveRunner {
         scan_id: i64,
     ) -> Result<Vec<u8>> {
         if env.kind().is_kube() {
-            return super::kube::scan(env, t, cfg, scan_id).await;
+            return super::kube::scan(kube_for(env)?.as_ref(), t, cfg, scan_id).await;
         }
         let d = docker_for(env, &t.node)?;
         super::docker::scan(d.as_ref(), t, cfg, scan_id, &self.tmp_dir).await
@@ -67,7 +73,7 @@ impl Runner for LiveRunner {
 
     async fn cleanup_orphans(&self, env: &Arc<dyn Environment>) -> Result<()> {
         if env.kind().is_kube() {
-            return super::kube::cleanup_orphans(env).await;
+            return super::kube::cleanup_orphans(kube_for(env)?.as_ref()).await;
         }
         if env.kind().is_swarm() {
             let Some(swarm) = env.swarm() else {

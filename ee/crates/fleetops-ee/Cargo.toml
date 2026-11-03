@@ -16,6 +16,8 @@ ldap-it = []
 s3-it = []
 # Real Trivy scans against the current docker context's daemon.
 docker-it = []
+# A real Trivy Job on the kind cluster from `make kind-up`.
+kube-it = []
 
 [dependencies]
 fleetops-core.workspace = true
@@ -50,6 +52,7 @@ utoipa-axum.workspace = true
 
 [dev-dependencies]
 fleetops-docker.workspace = true
+fleetops-kube.workspace = true
 http-body-util.workspace = true
 rand.workspace = true
 tempfile.workspace = true
@@ -67,3 +70,7 @@ required-features = ["s3-it"]
 [[test]]
 name = "scan_docker_it"
 required-features = ["docker-it"]
+
+[[test]]
+name = "scan_kube_it"
+required-features = ["kube-it"]
