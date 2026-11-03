@@ -110,3 +110,16 @@ export function scannerLabel(s: ScannerStatus): string {
       return `Unavailable: ${s.reason}`;
   }
 }
+
+export interface SecuritySearch {
+  envs?: string;
+  running?: boolean;
+  fixable?: boolean;
+}
+
+/** `?running=false` and `?fixable=false` turn the filters off; anything else keeps them on. */
+export const securitySearch = (s: Record<string, unknown>): SecuritySearch => ({
+  envs: typeof s.envs === "string" && s.envs ? s.envs : undefined,
+  running: s.running === false || s.running === "false" ? false : undefined,
+  fixable: s.fixable === false || s.fixable === "false" ? false : undefined,
+});

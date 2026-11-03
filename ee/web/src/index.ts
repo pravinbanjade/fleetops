@@ -6,6 +6,8 @@ import { AuditExport } from "./AuditExport";
 import { BackupSchedule } from "./BackupSchedule";
 import { EeBanners } from "./BackupBanner";
 import { EnvSecuritySettings } from "./EnvSecuritySettings";
+import { securitySearch } from "./security";
+import { SecurityNav } from "./SecurityNav";
 import { UpgradeCard } from "./UpgradeCard";
 import { useLeftovers } from "./leftovers";
 import { rolesQuery } from "./roles";
@@ -41,6 +43,20 @@ export const ee: EeModule = {
       component: lazyRouteComponent(() => import("./SecuritySettingsPage"), "SecuritySettingsPage"),
     }),
   ],
+  shellRoutes: (shell) => [
+    createRoute({
+      getParentRoute: () => shell,
+      path: "/security",
+      validateSearch: securitySearch,
+      component: lazyRouteComponent(() => import("./SecurityPage"), "SecurityPage"),
+    }),
+    createRoute({
+      getParentRoute: () => shell,
+      path: "/security/image",
+      validateSearch: (s: Record<string, unknown>): { image: string } => ({ image: typeof s.image === "string" ? s.image : "" }),
+      component: lazyRouteComponent(() => import("./SecurityImagePage"), "SecurityImagePage"),
+    }),
+  ],
   // Without a license, Teams, Roles and SSO show only when leftover data
   // exists (useLeftovers), so frozen ones stay visible and removable.
   adminNav: [
@@ -58,6 +74,7 @@ export const ee: EeModule = {
     "env.access": { component: EnvTeamAccess },
     "admin.backup": { component: BackupSchedule, feature: "backup" },
     "env.settings": { component: EnvSecuritySettings, feature: "vuln_scan" },
+    "shell.nav": { component: SecurityNav, feature: "vuln_scan" },
   },
   useLeftovers,
   // Only admin pages offer roles, so only admins ask for them.
