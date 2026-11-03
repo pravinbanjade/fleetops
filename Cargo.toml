@@ -35,6 +35,7 @@ gix = { version = "0.90", default-features = false, features = ["blocking-http-t
 flate2 = "1"
 hex = "0.4"
 hmac = "0.13"
+lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1-rustls-tls"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["client", "server", "http1"] }
 hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "tls12", "logging"] }

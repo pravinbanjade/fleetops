@@ -2,5 +2,7 @@
 //! the scanner and send them to Slack, email and webhooks.
 
 pub mod db;
+pub mod format;
 pub mod matcher;
 pub mod model;
+pub mod send;
