@@ -130,6 +130,16 @@ pub fn api_routes() -> OpenApiRouter<AppState> {
         .routes(routes!(backup::routes::status))
         .routes(routes!(backup::routes::recent))
         .routes(routes!(backup::routes::restore_recent))
+        .routes(routes!(scan::routes::list_images))
+        .routes(routes!(scan::routes::get_image))
+        .routes(routes!(scan::routes::get_env_image))
+        .routes(routes!(scan::routes::list_badges))
+        .routes(routes!(scan::routes::scan_now))
+        .routes(routes!(
+            scan::routes::get_settings,
+            scan::routes::put_settings
+        ))
+        .routes(routes!(scan::routes::put_env_settings))
 }
 
 pub async fn init(store: &Store, config: EeConfig) -> Result<EeParts> {

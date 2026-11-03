@@ -590,6 +590,16 @@ export type ContainerSummary = {
     volumes: Array<string>;
 };
 
+export type Counts = {
+    critical: number;
+    critical_fixable: number;
+    high: number;
+    high_fixable: number;
+    low: number;
+    medium: number;
+    unknown: number;
+};
+
 export type CreateBody = ContainerSpec & {
     /**
      * Start the container after creating it (default true).
@@ -688,6 +698,17 @@ export type DeploySource = {
 export type DeployStarted = {
     revision: number;
     task_id: string;
+};
+
+export type DigestDetail = {
+    counts?: Counts | null;
+    error?: string | null;
+    findings: Array<FindingView>;
+    key: string;
+    last_scan_at?: number | null;
+    state: RowState;
+    trivy_image?: string | null;
+    used_by: Array<UseView>;
 };
 
 export type DirEntry = {
@@ -834,9 +855,31 @@ export type EnvAccessEntry = {
     username: string;
 };
 
+export type EnvBody = {
+    /**
+     * `None` inherits the global switch.
+     */
+    enabled?: boolean | null;
+    mirror?: MirrorBody | null;
+    socket_path?: string | null;
+};
+
 export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent' | 'swarm-agent' | 'swarm-node';
 
 export type EnvRole = 'viewer' | 'operator';
+
+export type EnvSettingsView = {
+    effective_enabled: boolean;
+    /**
+     * `None` inherits the global switch.
+     */
+    enabled?: boolean | null;
+    env: string;
+    kind: EnvKind;
+    mirror?: MirrorView | null;
+    socket_path?: string | null;
+    status: ScannerStatus;
+};
 
 export type EnvStatus = {
     state: 'up';
@@ -936,6 +979,17 @@ export type ExecOptions = {
 export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso' | 'backup' | 'vuln_scan';
 
 export type FileKind = 'secret' | 'config';
+
+export type FindingView = {
+    first_seen_at: number;
+    fixed_version?: string | null;
+    installed_version: string;
+    pkg_name: string;
+    severity: Severity;
+    title?: string | null;
+    url?: string | null;
+    vuln_id: string;
+};
 
 export type GitBody = {
     auto_deploy?: boolean;
@@ -1040,6 +1094,20 @@ export type GitStatus = {
      * Where git hosts send push events. Relative when no public URL is set.
      */
     webhook_url: string;
+};
+
+export type GlobalBody = {
+    enabled: boolean;
+    mirror?: MirrorBody | null;
+};
+
+export type GlobalView = {
+    /**
+     * The Trivy image scans use when no mirror names one.
+     */
+    default_trivy_image: string;
+    enabled: boolean;
+    mirror?: MirrorView | null;
 };
 
 /**
@@ -1189,6 +1257,21 @@ export type HookStep = {
     weight: number;
 };
 
+export type ImageBadge = {
+    /**
+     * Fixable critical and high vulnerabilities.
+     */
+    fixable: number;
+    image_id: string;
+    severity?: Severity | null;
+    state: RowState;
+};
+
+export type ImageDetail = {
+    digests: Array<DigestDetail>;
+    image: string;
+};
+
 export type ImagePlan = {
     /**
      * Built on the environment from the service's `build:`.
@@ -1203,6 +1286,34 @@ export type ImageRemoved = {
      * Image ids deleted and tags removed, as Docker reports them.
      */
     removed: Array<string>;
+};
+
+export type ImageRow = {
+    critical: number;
+    critical_fixable: number;
+    /**
+     * How many digests the image has across environments.
+     */
+    digests: number;
+    envs: Array<string>;
+    error?: string | null;
+    /**
+     * Whether any digest has a result: without one the counts mean nothing.
+     */
+    has_result: boolean;
+    high: number;
+    high_fixable: number;
+    /**
+     * repo:tag (or the image id when it has none).
+     */
+    image: string;
+    last_scan_at?: number | null;
+    /**
+     * Running containers or pods.
+     */
+    running: number;
+    state: RowState;
+    total: number;
 };
 
 export type ImageSummary = {
@@ -1517,6 +1628,26 @@ export type MappingView = {
      */
     team_id?: number | null;
     team_name?: string | null;
+};
+
+export type MirrorBody = {
+    clear_password?: boolean;
+    db_repository?: string | null;
+    java_db_repository?: string | null;
+    /**
+     * Write-only; omit to keep the saved one.
+     */
+    password?: string | null;
+    trivy_image?: string | null;
+    username?: string | null;
+};
+
+export type MirrorView = {
+    db_repository?: string | null;
+    java_db_repository?: string | null;
+    password_set: boolean;
+    trivy_image?: string | null;
+    username?: string | null;
 };
 
 export type NameBody = {
@@ -1975,6 +2106,11 @@ export type RollbackBody = {
  */
 export type RowHealth = 'ok' | 'warn' | 'bad' | 'unknown' | 'off';
 
+/**
+ * Where an image's results stand, worst last in [`RowState::worst`]'s order.
+ */
+export type RowState = 'scanned' | 'queued' | 'scanning' | 'stale' | 'never_scanned' | 'scanner_unavailable' | 'failed';
+
 export type Run = {
     error?: string | null;
     file_name?: string | null;
@@ -2003,6 +2139,32 @@ export type Scale = {
 
 export type ScaleBody = {
     replicas: number;
+};
+
+export type ScanNowBody = {
+    env: string;
+    /**
+     * repo:tag or Docker image ids; omit for every image in the environment.
+     */
+    images?: Array<string> | null;
+};
+
+export type ScanQueued = {
+    queued: number;
+};
+
+/**
+ * Whether an environment's scanner can run.
+ */
+export type ScannerStatus = {
+    state: 'off';
+} | {
+    state: 'preparing';
+} | {
+    state: 'ready';
+} | {
+    reason: string;
+    state: 'unavailable';
 };
 
 export type Schedule = {
@@ -2074,6 +2236,28 @@ export type Secrets = {
      * Google: the service account's JSON key, to read groups.
      */
     service_account_json?: string | null;
+};
+
+export type SecuritySettings = {
+    envs: Array<EnvSettingsView>;
+    global: GlobalView;
+};
+
+export type SecuritySummary = {
+    /**
+     * Images with a fixable critical vulnerability and a running container.
+     */
+    critical_fixable_running: number;
+    failed: number;
+    rows: Array<ImageRow>;
+    /**
+     * Images with a result.
+     */
+    scanned: number;
+    /**
+     * Images without a result yet, including those waiting for a scanner.
+     */
+    unscanned: number;
 };
 
 /**
@@ -2222,6 +2406,8 @@ export type SetAccess = {
     role?: EnvRole | null;
     role_id?: number | null;
 };
+
+export type Severity = 'unknown' | 'low' | 'medium' | 'high' | 'critical';
 
 export type ShowBody = {
     chart: ChartRef;
@@ -2728,6 +2914,15 @@ export type UpgradeBody = {
      * YAML; masked values sent back unchanged keep their stored value.
      */
     values?: string;
+};
+
+export type UseView = {
+    container: string;
+    env: string;
+    namespace: string;
+    node: string;
+    running: boolean;
+    workload: string;
 };
 
 export type User = {
@@ -3927,6 +4122,235 @@ export type UpdateRoleResponses = {
 };
 
 export type UpdateRoleResponse = UpdateRoleResponses[keyof UpdateRoleResponses];
+
+export type ListImageBadgesData = {
+    body?: never;
+    path: {
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/ee/security/envs/{env}/badges';
+};
+
+export type ListImageBadgesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListImageBadgesError = ListImageBadgesErrors[keyof ListImageBadgesErrors];
+
+export type ListImageBadgesResponses = {
+    /**
+     * Badges
+     */
+    200: Array<ImageBadge>;
+};
+
+export type ListImageBadgesResponse = ListImageBadgesResponses[keyof ListImageBadgesResponses];
+
+export type GetEnvImageSecurityData = {
+    body?: never;
+    path: {
+        env: string;
+        /**
+         * Docker image id
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/ee/security/envs/{env}/images/{id}';
+};
+
+export type GetEnvImageSecurityErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetEnvImageSecurityError = GetEnvImageSecurityErrors[keyof GetEnvImageSecurityErrors];
+
+export type GetEnvImageSecurityResponses = {
+    /**
+     * Per digest
+     */
+    200: ImageDetail;
+};
+
+export type GetEnvImageSecurityResponse = GetEnvImageSecurityResponses[keyof GetEnvImageSecurityResponses];
+
+export type PutEnvSecuritySettingsData = {
+    body: EnvBody;
+    path: {
+        env: string;
+    };
+    query?: never;
+    url: '/api/v1/ee/security/envs/{env}/settings';
+};
+
+export type PutEnvSecuritySettingsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type PutEnvSecuritySettingsError = PutEnvSecuritySettingsErrors[keyof PutEnvSecuritySettingsErrors];
+
+export type PutEnvSecuritySettingsResponses = {
+    /**
+     * Settings
+     */
+    200: SecuritySettings;
+};
+
+export type PutEnvSecuritySettingsResponse = PutEnvSecuritySettingsResponses[keyof PutEnvSecuritySettingsResponses];
+
+export type GetSecurityImageData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * repo:tag, as the patch queue lists it.
+         */
+        image: string;
+    };
+    url: '/api/v1/ee/security/image';
+};
+
+export type GetSecurityImageErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetSecurityImageError = GetSecurityImageErrors[keyof GetSecurityImageErrors];
+
+export type GetSecurityImageResponses = {
+    /**
+     * Per digest
+     */
+    200: ImageDetail;
+};
+
+export type GetSecurityImageResponse = GetSecurityImageResponses[keyof GetSecurityImageResponses];
+
+export type ListSecurityImagesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Comma-separated environment names; all when omitted.
+         */
+        envs?: string;
+        /**
+         * Only images with a running container (default true).
+         */
+        running?: boolean;
+        /**
+         * Only images with a fixable critical or high vulnerability, plus any
+         * without a clean result (default true).
+         */
+        fixable?: boolean;
+    };
+    url: '/api/v1/ee/security/images';
+};
+
+export type ListSecurityImagesErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ListSecurityImagesError = ListSecurityImagesErrors[keyof ListSecurityImagesErrors];
+
+export type ListSecurityImagesResponses = {
+    /**
+     * Summary and rows
+     */
+    200: SecuritySummary;
+};
+
+export type ListSecurityImagesResponse = ListSecurityImagesResponses[keyof ListSecurityImagesResponses];
+
+export type ScanNowData = {
+    body: ScanNowBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/security/scan';
+};
+
+export type ScanNowErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type ScanNowError = ScanNowErrors[keyof ScanNowErrors];
+
+export type ScanNowResponses = {
+    /**
+     * Queued
+     */
+    200: ScanQueued;
+};
+
+export type ScanNowResponse = ScanNowResponses[keyof ScanNowResponses];
+
+export type GetSecuritySettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/security/settings';
+};
+
+export type GetSecuritySettingsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type GetSecuritySettingsError = GetSecuritySettingsErrors[keyof GetSecuritySettingsErrors];
+
+export type GetSecuritySettingsResponses = {
+    /**
+     * Settings
+     */
+    200: SecuritySettings;
+};
+
+export type GetSecuritySettingsResponse = GetSecuritySettingsResponses[keyof GetSecuritySettingsResponses];
+
+export type PutSecuritySettingsData = {
+    body: GlobalBody;
+    path?: never;
+    query?: never;
+    url: '/api/v1/ee/security/settings';
+};
+
+export type PutSecuritySettingsErrors = {
+    /**
+     * Error: `{code, message, request_id}`
+     */
+    default: ErrorBody;
+};
+
+export type PutSecuritySettingsError = PutSecuritySettingsErrors[keyof PutSecuritySettingsErrors];
+
+export type PutSecuritySettingsResponses = {
+    /**
+     * Settings
+     */
+    200: SecuritySettings;
+};
+
+export type PutSecuritySettingsResponse = PutSecuritySettingsResponses[keyof PutSecuritySettingsResponses];
 
 export type ListSsoConnectionsData = {
     body?: never;

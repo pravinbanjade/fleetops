@@ -9,5 +9,7 @@ pub mod engine;
 pub mod inventory;
 pub mod kube;
 pub mod model;
+pub mod routes;
 pub mod runner;
 pub mod trivy;
+pub mod view;

@@ -1825,6 +1825,407 @@
         ]
       }
     },
+    "/api/v1/ee/security/envs/{env}/badges": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "A severity badge per Docker image, for the image list",
+        "operationId": "listImageBadges",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Badges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImageBadge"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/security/envs/{env}/images/{id}": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "A Docker image's vulnerabilities, for its image page",
+        "operationId": "getEnvImageSecurity",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Docker image id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per digest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/security/envs/{env}/settings": {
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "One environment's scanning: inherit, on or off; its own mirror and socket",
+        "operationId": "putEnvSecuritySettings",
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecuritySettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/security/image": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "One image's vulnerabilities and where it is used",
+        "operationId": "getSecurityImage",
+        "parameters": [
+          {
+            "name": "image",
+            "in": "query",
+            "description": "repo:tag, as the patch queue lists it.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per digest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageDetail"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/security/images": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "The patch queue: images ranked by fixable vulnerabilities on running containers",
+        "operationId": "listSecurityImages",
+        "parameters": [
+          {
+            "name": "envs",
+            "in": "query",
+            "description": "Comma-separated environment names; all when omitted.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "running",
+            "in": "query",
+            "description": "Only images with a running container (default true).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "fixable",
+            "in": "query",
+            "description": "Only images with a fixable critical or high vulnerability, plus any\nwithout a clean result (default true).",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Summary and rows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecuritySummary"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/security/scan": {
+      "post": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Scan images now",
+        "operationId": "scanNow",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScanNowBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanQueued"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ee/security/settings": {
+      "get": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Scanning settings and each environment's scanner",
+        "operationId": "getSecuritySettings",
+        "responses": {
+          "200": {
+            "description": "Settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecuritySettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "enterprise"
+        ],
+        "summary": "Turn scanning on or off for every environment that inherits, and set the mirror",
+        "operationId": "putSecuritySettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GlobalBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecuritySettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error: `{code, message, request_id}`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "csrf": [],
+            "session": []
+          }
+        ]
+      }
+    },
     "/api/v1/ee/sso/connections": {
       "get": {
         "tags": [
@@ -12988,6 +13389,55 @@
           }
         }
       },
+      "Counts": {
+        "type": "object",
+        "required": [
+          "critical",
+          "high",
+          "medium",
+          "low",
+          "unknown",
+          "critical_fixable",
+          "high_fixable"
+        ],
+        "properties": {
+          "critical": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "critical_fixable": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "high": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "high_fixable": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "low": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "medium": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "unknown": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "CreateBody": {
         "allOf": [
           {
@@ -13254,6 +13704,64 @@
           },
           "task_id": {
             "type": "string"
+          }
+        }
+      },
+      "DigestDetail": {
+        "type": "object",
+        "required": [
+          "key",
+          "state",
+          "findings",
+          "used_by"
+        ],
+        "properties": {
+          "counts": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Counts"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            }
+          },
+          "key": {
+            "type": "string"
+          },
+          "last_scan_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "state": {
+            "$ref": "#/components/schemas/RowState"
+          },
+          "trivy_image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "used_by": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UseView"
+            }
           }
         }
       },
@@ -13616,6 +14124,34 @@
           }
         }
       },
+      "EnvBody": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`None` inherits the global switch."
+          },
+          "mirror": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MirrorBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "socket_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "EnvKind": {
         "type": "string",
         "enum": [
@@ -13633,6 +14169,52 @@
           "viewer",
           "operator"
         ]
+      },
+      "EnvSettingsView": {
+        "type": "object",
+        "required": [
+          "env",
+          "kind",
+          "effective_enabled",
+          "status"
+        ],
+        "properties": {
+          "effective_enabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "`None` inherits the global switch."
+          },
+          "env": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/EnvKind"
+          },
+          "mirror": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MirrorView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "socket_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScannerStatus"
+          }
+        }
       },
       "EnvStatus": {
         "oneOf": [
@@ -13968,6 +14550,52 @@
           "config"
         ]
       },
+      "FindingView": {
+        "type": "object",
+        "required": [
+          "vuln_id",
+          "severity",
+          "pkg_name",
+          "installed_version",
+          "first_seen_at"
+        ],
+        "properties": {
+          "first_seen_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "fixed_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "installed_version": {
+            "type": "string"
+          },
+          "pkg_name": {
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "vuln_id": {
+            "type": "string"
+          }
+        }
+      },
       "GitBody": {
         "type": "object",
         "required": [
@@ -14171,6 +14799,53 @@
           "webhook_url": {
             "type": "string",
             "description": "Where git hosts send push events. Relative when no public URL is set."
+          }
+        }
+      },
+      "GlobalBody": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "mirror": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MirrorBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "GlobalView": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "default_trivy_image"
+        ],
+        "properties": {
+          "default_trivy_image": {
+            "type": "string",
+            "description": "The Trivy image scans use when no mirror names one."
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "mirror": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MirrorView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -14509,6 +15184,57 @@
           }
         }
       },
+      "ImageBadge": {
+        "type": "object",
+        "required": [
+          "image_id",
+          "fixable",
+          "state"
+        ],
+        "properties": {
+          "fixable": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Fixable critical and high vulnerabilities.",
+            "minimum": 0
+          },
+          "image_id": {
+            "type": "string"
+          },
+          "severity": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Severity",
+                "description": "The highest severity that has a fix."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/RowState"
+          }
+        }
+      },
+      "ImageDetail": {
+        "type": "object",
+        "required": [
+          "image",
+          "digests"
+        ],
+        "properties": {
+          "digests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DigestDetail"
+            }
+          },
+          "image": {
+            "type": "string"
+          }
+        }
+      },
       "ImagePlan": {
         "type": "object",
         "required": [
@@ -14541,6 +15267,91 @@
               "type": "string"
             },
             "description": "Image ids deleted and tags removed, as Docker reports them."
+          }
+        }
+      },
+      "ImageRow": {
+        "type": "object",
+        "required": [
+          "image",
+          "digests",
+          "critical",
+          "high",
+          "critical_fixable",
+          "high_fixable",
+          "total",
+          "running",
+          "envs",
+          "state",
+          "has_result"
+        ],
+        "properties": {
+          "critical": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "critical_fixable": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "digests": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many digests the image has across environments.",
+            "minimum": 0
+          },
+          "envs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "has_result": {
+            "type": "boolean",
+            "description": "Whether any digest has a result: without one the counts mean nothing."
+          },
+          "high": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "high_fixable": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "image": {
+            "type": "string",
+            "description": "repo:tag (or the image id when it has none)."
+          },
+          "last_scan_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "running": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Running containers or pods.",
+            "minimum": 0
+          },
+          "state": {
+            "$ref": "#/components/schemas/RowState"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
@@ -15298,6 +16109,80 @@
             "description": "Null when the group grants admin."
           },
           "team_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MirrorBody": {
+        "type": "object",
+        "properties": {
+          "clear_password": {
+            "type": "boolean"
+          },
+          "db_repository": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "java_db_repository": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Write-only; omit to keep the saved one."
+          },
+          "trivy_image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MirrorView": {
+        "type": "object",
+        "required": [
+          "password_set"
+        ],
+        "properties": {
+          "db_repository": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "java_db_repository": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "password_set": {
+            "type": "boolean"
+          },
+          "trivy_image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
             "type": [
               "string",
               "null"
@@ -16535,6 +17420,19 @@
           "off"
         ]
       },
+      "RowState": {
+        "type": "string",
+        "description": "Where an image's results stand, worst last in [`RowState::worst`]'s order.",
+        "enum": [
+          "scanned",
+          "queued",
+          "scanning",
+          "stale",
+          "never_scanned",
+          "scanner_unavailable",
+          "failed"
+        ]
+      },
       "Run": {
         "type": "object",
         "required": [
@@ -16626,6 +17524,105 @@
             "minimum": 0
           }
         }
+      },
+      "ScanNowBody": {
+        "type": "object",
+        "required": [
+          "env"
+        ],
+        "properties": {
+          "env": {
+            "type": "string"
+          },
+          "images": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "repo:tag or Docker image ids; omit for every image in the environment."
+          }
+        }
+      },
+      "ScanQueued": {
+        "type": "object",
+        "required": [
+          "queued"
+        ],
+        "properties": {
+          "queued": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ScannerStatus": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "off"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "preparing"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "state"
+            ],
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "ready"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "reason",
+              "state"
+            ],
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "unavailable"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Whether an environment's scanner can run."
       },
       "Schedule": {
         "type": "object",
@@ -16781,6 +17778,65 @@
               "null"
             ],
             "description": "Google: the service account's JSON key, to read groups."
+          }
+        }
+      },
+      "SecuritySettings": {
+        "type": "object",
+        "required": [
+          "global",
+          "envs"
+        ],
+        "properties": {
+          "envs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnvSettingsView"
+            }
+          },
+          "global": {
+            "$ref": "#/components/schemas/GlobalView"
+          }
+        }
+      },
+      "SecuritySummary": {
+        "type": "object",
+        "required": [
+          "critical_fixable_running",
+          "scanned",
+          "failed",
+          "unscanned",
+          "rows"
+        ],
+        "properties": {
+          "critical_fixable_running": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Images with a fixable critical vulnerability and a running container.",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImageRow"
+            }
+          },
+          "scanned": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Images with a result.",
+            "minimum": 0
+          },
+          "unscanned": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Images without a result yet, including those waiting for a scanner.",
+            "minimum": 0
           }
         }
       },
@@ -17241,6 +18297,16 @@
             "format": "int64"
           }
         }
+      },
+      "Severity": {
+        "type": "string",
+        "enum": [
+          "unknown",
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ]
       },
       "ShowBody": {
         "type": "object",
@@ -18575,6 +19641,37 @@
           "values": {
             "type": "string",
             "description": "YAML; masked values sent back unchanged keep their stored value."
+          }
+        }
+      },
+      "UseView": {
+        "type": "object",
+        "required": [
+          "env",
+          "node",
+          "namespace",
+          "workload",
+          "container",
+          "running"
+        ],
+        "properties": {
+          "container": {
+            "type": "string"
+          },
+          "env": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "workload": {
+            "type": "string"
           }
         }
       },
