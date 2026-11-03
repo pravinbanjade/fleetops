@@ -38,6 +38,10 @@ In **Admin → Security scanning → Mirror** (or per environment), set where Tr
 - **Scan now** needs *create* on images (Docker hosts and swarms) or *operate* on workloads in a namespace that uses the image (clusters).
 - Only admins change the settings. Turning scanning on or off, mirror changes, Scan now and failed scans are in the audit log.
 
+## Notifications
+
+To be told about new CVEs instead of watching the page, set up [notifications](notifications.md).
+
 ## Turning it off
 
 Turning scanning off for an environment stops new scans and removes the environment's images from the Security page. Results for an image no environment uses any more are deleted after 30 days.
