@@ -41,6 +41,9 @@ pub struct EeConfig {
         Arc<dyn scan::runner::Runner>,
         Arc<dyn scan::inventory::Inventory>,
     )>,
+    /// Replaces HTTP and SMTP for notifications; tests only.
+    #[doc(hidden)]
+    pub notify_transport: Option<Arc<dyn notify::send::Transport>>,
 }
 
 /// What the server wires in (editions spec §3.4).
@@ -63,6 +66,9 @@ pub struct EeParts {
     /// Image scanning; spawn [`scan::engine::Engine::run`] with the finished
     /// app state.
     pub scan_engine: Arc<scan::engine::Engine>,
+    /// Notifications; spawn [`notify::notifier::Notifier::run`] with the
+    /// finished app state. Already listening to `scan_engine`.
+    pub notifier: Arc<notify::notifier::Notifier>,
 }
 
 /// The Enterprise routes, for the OpenAPI document (no license attached).
@@ -157,6 +163,8 @@ pub async fn init_with_keys(
     let state = Arc::new(LicenseState::new(keys, config.license_file));
     let runner = Arc::new(backup::run::Runner::default());
     let scan_engine = scan::engine::Engine::new(config.scan_backend);
+    scan_engine.set_events(Arc::new(notify::matcher::Matcher));
+    let notifier = notify::notifier::Notifier::new(config.notify_transport);
     state.load(store).await?;
     Ok(EeParts {
         entitlements: state.clone(),
@@ -164,6 +172,7 @@ pub async fn init_with_keys(
             .layer(Extension(state.clone()))
             .layer(Extension(runner.clone()))
             .layer(Extension(scan_engine.clone()))
+            .layer(Extension(notifier.clone()))
             .layer(Extension(Arc::new(sso::flow::Runtime::new(
                 config.sso_endpoints,
             )))),
@@ -177,6 +186,7 @@ pub async fn init_with_keys(
         backup_runner: runner,
         background: Box::pin(watch(state)),
         scan_engine,
+        notifier,
     })
 }
 

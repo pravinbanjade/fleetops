@@ -38,6 +38,7 @@ pub struct Ee {
     pub store: Store,
     pub state: AppState,
     pub scan: Arc<fleetops_ee::scan::engine::Engine>,
+    pub notifier: Arc<fleetops_ee::notify::notifier::Notifier>,
 }
 
 /// Environments that are only names and kinds: enough for the scan engine
@@ -100,14 +101,31 @@ impl EnvFactory for StubEnvs {
     }
 }
 
+pub type ScanBackend = (
+    Arc<dyn fleetops_ee::scan::runner::Runner>,
+    Arc<dyn fleetops_ee::scan::inventory::Inventory>,
+);
+
 /// A server with stub environments and a fake scan backend.
-pub async fn ee_scan_app(
+pub async fn ee_scan_app(key: &SigningKey, envs: StubEnvs, backend: ScanBackend) -> Ee {
+    ee_app_inner(key, envs, backend, None).await
+}
+
+/// [`ee_scan_app`] with a fake notification transport.
+pub async fn ee_notify_app(
     key: &SigningKey,
     envs: StubEnvs,
-    backend: (
-        Arc<dyn fleetops_ee::scan::runner::Runner>,
-        Arc<dyn fleetops_ee::scan::inventory::Inventory>,
-    ),
+    backend: ScanBackend,
+    transport: Arc<dyn fleetops_ee::notify::send::Transport>,
+) -> Ee {
+    ee_app_inner(key, envs, backend, Some(transport)).await
+}
+
+async fn ee_app_inner(
+    key: &SigningKey,
+    envs: StubEnvs,
+    backend: ScanBackend,
+    transport: Option<Arc<dyn fleetops_ee::notify::send::Transport>>,
 ) -> Ee {
     let store = Store::in_memory().await.unwrap();
     let parts = fleetops_ee::init_with_keys(
@@ -116,6 +134,7 @@ pub async fn ee_scan_app(
             license_file: None,
             sso_endpoints: Default::default(),
             scan_backend: Some(backend),
+            notify_transport: transport,
         },
         vec![key.verifying_key()],
     )
@@ -132,6 +151,7 @@ pub async fn ee_scan_app(
         store,
         state,
         scan: parts.scan_engine,
+        notifier: parts.notifier,
     }
 }
 
@@ -220,6 +240,7 @@ pub async fn ee_app_full(
             license_file: file,
             sso_endpoints: endpoints,
             scan_backend: None,
+            notify_transport: None,
         },
         vec![key.verifying_key()],
     )
@@ -236,6 +257,7 @@ pub async fn ee_app_full(
         store,
         state,
         scan: parts.scan_engine,
+        notifier: parts.notifier,
     }
 }
 

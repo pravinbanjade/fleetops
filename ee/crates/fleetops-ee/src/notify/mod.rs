@@ -5,4 +5,5 @@ pub mod db;
 pub mod format;
 pub mod matcher;
 pub mod model;
+pub mod notifier;
 pub mod send;

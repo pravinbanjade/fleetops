@@ -720,3 +720,63 @@ pub async fn prune_deliveries(store: &Store, before: i64) -> Result<()> {
         .map_err(db_err)?;
     Ok(())
 }
+
+/// Turns one due batch into deliveries, in one transaction: queues `message`
+/// for each of `destinations`, records each (repository, CVE) of the batch as
+/// reported, marks image batches' repositories known, and drops the batch.
+pub async fn flush_group(
+    store: &Store,
+    group: &PendingGroup,
+    message: &Message,
+    destinations: &[i64],
+    now: i64,
+) -> Result<()> {
+    let mut tx = store.pool().begin().await.map_err(db_err)?;
+    let body = serde_json::to_string(message).map_err(json_err)?;
+    for d in destinations {
+        sqlx::query(
+            "INSERT INTO ee_notify_deliveries (destination_id, rule_id, title, message, status, next_at, created_at)
+             VALUES (?, ?, ?, ?, 'queued', ?, ?)",
+        )
+        .bind(d)
+        .bind(group.rule_id)
+        .bind(message.title())
+        .bind(&body)
+        .bind(now)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+    }
+    for i in &group.items {
+        sqlx::query(
+            "INSERT OR IGNORE INTO ee_notify_reported (rule_id, repository, cve, reported_at) VALUES (?, ?, ?, ?)",
+        )
+        .bind(group.rule_id)
+        .bind(&i.repository)
+        .bind(&i.cve)
+        .bind(now)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+        if group.kind == PendingKind::Image {
+            sqlx::query(
+                "INSERT INTO ee_notify_known (rule_id, repository, baseline_pending) VALUES (?, ?, 0)
+                 ON CONFLICT (rule_id, repository) DO UPDATE SET baseline_pending = 0",
+            )
+            .bind(group.rule_id)
+            .bind(&i.repository)
+            .execute(&mut *tx)
+            .await
+            .map_err(db_err)?;
+        }
+    }
+    sqlx::query("DELETE FROM ee_notify_pending WHERE rule_id = ? AND kind = ? AND group_key = ?")
+        .bind(group.rule_id)
+        .bind(group.kind.as_str())
+        .bind(&group.group_key)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_err)?;
+    tx.commit().await.map_err(db_err)
+}
