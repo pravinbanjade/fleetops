@@ -1262,6 +1262,10 @@ export type ImageBadge = {
      * Fixable critical and high vulnerabilities.
      */
     fixable: number;
+    /**
+     * Whether there is a result: without one, no severity means "unknown", not clean.
+     */
+    has_result: boolean;
     image_id: string;
     severity?: Severity | null;
     state: RowState;

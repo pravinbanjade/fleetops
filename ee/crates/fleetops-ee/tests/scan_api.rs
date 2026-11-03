@@ -594,8 +594,8 @@ async fn badges_mark_fixable_severity_per_image() {
     assert_eq!(
         body,
         json!([
-            {"image_id": "sha256:cfg-sha256:a", "severity": "high", "fixable": 1, "state": "scanned"},
-            {"image_id": "sha256:cfg-sha256:b", "severity": null, "fixable": 0, "state": "never_scanned"},
+            {"image_id": "sha256:cfg-sha256:a", "severity": "high", "fixable": 1, "state": "scanned", "has_result": true},
+            {"image_id": "sha256:cfg-sha256:b", "severity": null, "fixable": 0, "state": "never_scanned", "has_result": false},
         ])
     );
 }

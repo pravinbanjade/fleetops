@@ -49,6 +49,26 @@ pub fn image_args(image_ref: &str, cfg: &Effective, src: ImageSource) -> Vec<Str
     a
 }
 
+/// `trivy …` that only downloads the vulnerability database into the cache:
+/// what turning scanning on checks.
+pub fn db_args(cfg: &Effective) -> Vec<String> {
+    let mut a: Vec<String> = [
+        "image",
+        "--download-db-only",
+        "--cache-dir",
+        "/cache",
+        "--timeout",
+        "15m",
+        "--quiet",
+    ]
+    .map(String::from)
+    .into();
+    if let Some(r) = &cfg.db_repository {
+        a.extend(["--db-repository".into(), r.clone()]);
+    }
+    a
+}
+
 /// Registry credentials for the mirror, as Trivy reads them.
 pub fn auth_env(cfg: &Effective) -> Vec<String> {
     match &cfg.auth {
@@ -229,6 +249,28 @@ mod tests {
                 "nginx@sha256:1"
             ]
         );
+    }
+
+    #[test]
+    fn db_args_download_only_from_the_mirror() {
+        let mut c = cfg();
+        assert_eq!(
+            db_args(&c),
+            [
+                "image",
+                "--download-db-only",
+                "--cache-dir",
+                "/cache",
+                "--timeout",
+                "15m",
+                "--quiet"
+            ]
+        );
+        c.db_repository = Some("mirror.local/trivy-db".into());
+        let a = db_args(&c);
+        assert!(a
+            .windows(2)
+            .any(|w| w == ["--db-repository", "mirror.local/trivy-db"]));
     }
 
     #[test]

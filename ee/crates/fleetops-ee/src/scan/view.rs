@@ -90,6 +90,8 @@ pub struct ImageBadge {
     /// Fixable critical and high vulnerabilities.
     pub fixable: u32,
     pub state: RowState,
+    /// Whether there is a result: without one, no severity means "unknown", not clean.
+    pub has_result: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
@@ -385,6 +387,7 @@ pub fn badges(uses: &[ImageUse], c: &Ctx) -> Vec<ImageBadge> {
                 },
                 fixable: n.critical_fixable + n.high_fixable,
                 state: v.state,
+                has_result: v.counts.is_some(),
             }
         })
         .collect();

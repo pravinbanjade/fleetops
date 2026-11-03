@@ -15189,7 +15189,8 @@
         "required": [
           "image_id",
           "fixable",
-          "state"
+          "state",
+          "has_result"
         ],
         "properties": {
           "fixable": {
@@ -15197,6 +15198,10 @@
             "format": "int32",
             "description": "Fixable critical and high vulnerabilities.",
             "minimum": 0
+          },
+          "has_result": {
+            "type": "boolean",
+            "description": "Whether there is a result: without one, no severity means \"unknown\", not clean."
           },
           "image_id": {
             "type": "string"

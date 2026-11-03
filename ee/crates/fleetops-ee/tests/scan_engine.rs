@@ -332,9 +332,57 @@ async fn unavailable_scanner_never_reads_clean() {
         1,
         "inventoried anyway"
     );
-    let st = f.state("sha256:a").await;
-    assert_eq!(st.last.status, Status::Queued, "waits for the scanner");
-    assert!(st.last_done.is_none(), "never a clean result");
+    assert!(
+        db::latest(&f.ee.store, &[ImageKey("sha256:a".into())])
+            .await
+            .unwrap()
+            .is_empty(),
+        "nothing queued that cannot run, and never a clean result"
+    );
+}
+
+#[tokio::test]
+async fn stuck_rows_of_a_gone_environment_do_not_block_the_fleet() {
+    let f = fx(true).await;
+    for i in 0..60 {
+        let t = ScanTarget {
+            env_id: 9_999,
+            node: String::new(),
+            key: ImageKey(format!("sha256:gone{i}")),
+            image_ref: "x".into(),
+            namespace: String::new(),
+            pull_secrets: vec![],
+        };
+        db::insert_scan(
+            &f.ee.store,
+            &t,
+            fleetops_ee::scan::model::Trigger::Arrival,
+            now_unix(),
+        )
+        .await
+        .unwrap();
+    }
+    let b = f.ee.env("b", "docker-agent").await;
+    f.set_uses(b, vec![running(b, "sha256:up", "y:1")]);
+    f.enable().await;
+    f.run(now_unix()).await;
+    assert_eq!(f.state("sha256:up").await.last.status, Status::Done);
+    let gone = f.state("sha256:gone0").await;
+    assert_eq!(gone.last.status, Status::Failed, "its environment is gone");
+}
+
+#[tokio::test]
+async fn an_unavailable_environment_does_not_hold_a_shared_digest() {
+    let f = fx(true).await;
+    let a = f.ee.env("a", "docker-local").await;
+    let b = f.ee.env("b", "docker-agent").await;
+    f.runner.fail_prepare.lock().unwrap().insert("a".into());
+    f.set_uses(a, vec![running(a, "sha256:same", "x:1")]);
+    f.set_uses(b, vec![running(b, "sha256:same", "x:1")]);
+    f.enable().await;
+    f.run(now_unix()).await;
+    assert_eq!(f.state("sha256:same").await.last.status, Status::Done);
+    assert_eq!(f.scans(), [("b".to_string(), "sha256:same".to_string())]);
 }
 
 #[tokio::test]
@@ -372,11 +420,25 @@ async fn periodic_rescan_after_24h() {
 async fn turning_off_clears_uses_and_queue() {
     let f = fx(true).await;
     let id = f.ee.env("local", "docker-local").await;
-    f.runner.fail_prepare.lock().unwrap().insert("local".into());
     f.set_uses(id, vec![running(id, "sha256:a", "nginx:1")]);
     f.enable().await;
     f.run(now_unix()).await;
-    assert_eq!(f.state("sha256:a").await.last.status, Status::Queued);
+    let t = ScanTarget {
+        env_id: id,
+        node: String::new(),
+        key: ImageKey("sha256:b".into()),
+        image_ref: "redis:7".into(),
+        namespace: String::new(),
+        pull_secrets: vec![],
+    };
+    db::insert_scan(
+        &f.ee.store,
+        &t,
+        fleetops_ee::scan::model::Trigger::Arrival,
+        1,
+    )
+    .await
+    .unwrap();
     let off = EnvOverride {
         enabled: Some(false),
         ..Default::default()
@@ -390,7 +452,7 @@ async fn turning_off_clears_uses_and_queue() {
         .await
         .unwrap()
         .is_empty());
-    let st = f.state("sha256:a").await;
+    let st = f.state("sha256:b").await;
     assert_eq!(st.last.status, Status::Failed);
     assert_eq!(st.last.error.as_deref(), Some("scanning turned off"));
 }

@@ -11,9 +11,9 @@ const B = image({ id: "sha256:bbb111222333444", repo_tags: ["redis:7"] });
 const C = image({ id: "sha256:ccc111222333444", repo_tags: ["bad:1"] });
 
 const badges: ImageBadge[] = [
-  { image_id: A.id, severity: "critical", fixable: 4, state: "scanned" },
-  { image_id: B.id, severity: null, fixable: 0, state: "never_scanned" },
-  { image_id: C.id, severity: null, fixable: 0, state: "failed" },
+  { image_id: A.id, severity: "critical", fixable: 4, state: "scanned", has_result: true },
+  { image_id: B.id, severity: null, fixable: 0, state: "queued", has_result: false },
+  { image_id: C.id, severity: null, fixable: 0, state: "failed", has_result: false },
 ];
 
 const routes = (extra: Record<string, unknown> = {}) => ({
@@ -40,7 +40,8 @@ describe("image list badges", () => {
     renderApp("/envs/local/images");
     await waitFor(() => expect(rows()).toHaveLength(3));
     expect(await screen.findByText("Scan failed")).toBeInTheDocument();
-    expect(screen.getByText("Not scanned")).toBeInTheDocument();
+    expect(screen.getByText("Queued")).toBeInTheDocument();
+    expect(screen.queryByText("No fixable issues")).toBeNull();
   });
 });
 

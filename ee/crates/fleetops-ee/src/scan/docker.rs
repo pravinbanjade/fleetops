@@ -74,6 +74,11 @@ async fn drain(mut s: BoxStream<Value>, what: &str) -> Result<()> {
 }
 
 pub async fn prepare(d: &dyn DockerOps, cfg: &Effective) -> Result<()> {
+    prepare_with_cache(d, cfg, CACHE_VOLUME).await
+}
+
+/// [`prepare`] with the database cache in `volume`.
+pub async fn prepare_with_cache(d: &dyn DockerOps, cfg: &Effective, volume: &str) -> Result<()> {
     let (repo, tag) = split_image_reference(&cfg.trivy_image)?;
     let auth = cfg.auth.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
     drain(
@@ -81,16 +86,42 @@ pub async fn prepare(d: &dyn DockerOps, cfg: &Effective) -> Result<()> {
         &format!("pulling {}", cfg.trivy_image),
     )
     .await?;
-    if d.inspect_volume(CACHE_VOLUME).await.is_err() {
+    if d.inspect_volume(volume).await.is_err() {
         d.create_volume(&VolumeSpec {
-            name: CACHE_VOLUME.into(),
+            name: volume.into(),
             driver: None,
             driver_opts: BTreeMap::new(),
             labels: BTreeMap::from([(SCAN_LABEL.to_string(), "1".to_string())]),
         })
         .await?;
     }
-    Ok(())
+    // Download the database now, so a mirror or network problem shows as
+    // "scanner unavailable" rather than as one failed scan per image.
+    let body = json!({
+        "Image": cfg.trivy_image,
+        "Cmd": trivy::db_args(cfg),
+        "Env": trivy::auth_env(cfg),
+        "Labels": {SCAN_LABEL: "1"},
+        "HostConfig": {
+            "Mounts": [{"Type": "volume", "Source": volume, "Target": "/cache"}],
+            "NanoCpus": NANO_CPUS,
+            "Memory": MEMORY,
+        },
+    });
+    let name = format!("{SCAN_NAME_PREFIX}db-{:08x}", rand::random::<u32>());
+    let id = d.create_container_raw(&name, &body).await?;
+    let out = match start_and_wait(d, &id).await {
+        Ok(0) => Ok(()),
+        Ok(code) => Err(Error::Invalid(format!(
+            "downloading the vulnerability database failed (trivy exited {code}): {}",
+            log_tail(d, &id).await
+        ))),
+        Err(e) => Err(Error::Invalid(format!(
+            "downloading the vulnerability database: {e}"
+        ))),
+    };
+    let _ = d.remove_container(&id, true, false).await;
+    out
 }
 
 fn missing_socket(e: &Error) -> bool {
@@ -138,12 +169,24 @@ async fn run(
     if *choice == SocketChoice::Export {
         upload_export(d, id, &t.image_ref, tmp_dir).await?;
     }
+    let code = start_and_wait(d, id).await?;
+    if code != 0 {
+        return Err(Error::Internal(format!(
+            "trivy exited {code}: {}",
+            log_tail(d, id).await
+        )));
+    }
+    d.read_file(id, REPORT_PATH, REPORT_MAX).await
+}
+
+/// Starts `id` and waits for it to exit; its exit code.
+async fn start_and_wait(d: &dyn DockerOps, id: &str) -> Result<i64> {
     d.container_action(id, ContainerAction::Start).await?;
     let started = std::time::Instant::now();
-    let code = loop {
+    loop {
         let v = d.inspect_container(id).await?;
         if v["State"]["Running"] != true && v["State"]["Status"] != "created" {
-            break v["State"]["ExitCode"].as_i64().unwrap_or(-1);
+            return Ok(v["State"]["ExitCode"].as_i64().unwrap_or(-1));
         }
         if started.elapsed() > SCAN_TIMEOUT {
             let _ = d.container_action(id, ContainerAction::Kill).await;
@@ -153,14 +196,7 @@ async fn run(
             )));
         }
         tokio::time::sleep(POLL).await;
-    };
-    if code != 0 {
-        return Err(Error::Internal(format!(
-            "trivy exited {code}: {}",
-            log_tail(d, id).await
-        )));
     }
-    d.read_file(id, REPORT_PATH, REPORT_MAX).await
 }
 
 async fn log_tail(d: &dyn DockerOps, id: &str) -> String {

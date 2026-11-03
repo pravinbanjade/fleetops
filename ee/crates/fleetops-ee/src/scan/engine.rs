@@ -149,7 +149,17 @@ impl Engine {
     pub async fn enqueue(&self, s: &AppState, t: ScanTarget, trig: Trigger) -> Result<i64> {
         let _one = self.enqueueing.lock().await;
         if let Some(id) = db::active_scan(&s.store, &t.key).await? {
-            return Ok(id);
+            let row = db::scan(&s.store, id).await?;
+            let stuck = row.as_ref().is_some_and(|r| {
+                r.status == Status::Queued
+                    && r.target.env_id != t.env_id
+                    && self.status(r.target.env_id) != ScannerStatus::Ready
+            });
+            if !stuck {
+                return Ok(id);
+            }
+            // Its scanner can't run: a ready host scans the digest instead.
+            db::finish_failed(&s.store, id, "scanned from another environment", now_unix()).await?;
         }
         let id = db::insert_scan(&s.store, &t, trig, now_unix()).await?;
         self.changed(s);
@@ -242,6 +252,7 @@ impl Engine {
             }
             keep
         });
+        db::fail_queued_of_gone_envs(&s.store, now).await?;
         let prune = {
             let mut p = self.pruned_at.lock().unwrap();
             let due = now - *p >= 86_400;
@@ -341,6 +352,11 @@ impl Engine {
         let due =
             now - inventoried_at >= every || dirty_since.is_some_and(|t| now - t >= DEBOUNCE_SECS);
         if due {
+            if env.kind().is_kube() {
+                // Copied pull secrets of a scan a crash interrupted go here.
+                let (runner, _) = self.backend(s).clone();
+                let _ = runner.cleanup_orphans(env).await;
+            }
             self.inventory(s, env, Trigger::Arrival, now).await;
         }
     }
@@ -370,12 +386,14 @@ impl Engine {
         } else {
             Trigger::Arrival
         };
+        let mut results = Vec::new();
         for node in &nodes {
-            if let Err(e) = runner.prepare(env, node, cfg).await {
-                self.unavailable(s, env.id(), now, e.to_string());
-                self.inventory(s, env, trig, now).await;
-                return;
-            }
+            results.push((node.clone(), runner.prepare(env, node, cfg).await));
+        }
+        if let Err(reason) = prepared(results) {
+            self.unavailable(s, env.id(), now, reason);
+            self.inventory(s, env, trig, now).await;
+            return;
         }
         {
             let mut m = self.envs.lock().unwrap();
@@ -505,14 +523,28 @@ impl Engine {
                 None
             };
             if let Some(why) = why {
+                if self.status(id) != ScannerStatus::Ready {
+                    // Shown as waiting for the scanner; nothing is queued that can't run.
+                    continue;
+                }
                 let u = target_use(&after, &key);
-                let _ = self.enqueue(s, target_of(u), why).await;
+                if let Err(e) = self.enqueue(s, target_of(u), why).await {
+                    tracing::warn!(error = %e, "could not queue a scan");
+                }
             }
         }
     }
 
     async fn dispatch(self: &Arc<Self>, s: &AppState) -> Result<()> {
-        for row in db::queued(&s.store, 50).await? {
+        let ready: Vec<i64> = self
+            .envs
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, st)| st.status == Some(ScannerStatus::Ready))
+            .map(|(id, _)| *id)
+            .collect();
+        for row in db::queued(&s.store, &ready, 50).await? {
             if self.running.available_permits() == 0 {
                 break;
             }
@@ -623,6 +655,24 @@ impl Engine {
     }
 }
 
+/// Ready when any node (or the one host) prepared; a down Swarm node alone
+/// does not stop the others.
+pub fn prepared(results: Vec<(String, Result<()>)>) -> std::result::Result<(), String> {
+    let mut first = None;
+    for (node, r) in results {
+        match r {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                if !node.is_empty() {
+                    tracing::info!(node, error = %e, "scanner not prepared on a swarm node");
+                }
+                first.get_or_insert(e.to_string());
+            }
+        }
+    }
+    Err(first.unwrap_or_else(|| "no nodes to scan on".into()))
+}
+
 /// The use a scan of `key` starts from: a running one, if any.
 fn target_use<'a>(uses: &'a [ImageUse], key: &ImageKey) -> &'a ImageUse {
     let mine: Vec<&ImageUse> = uses.iter().filter(|u| &u.key == key).collect();
@@ -641,5 +691,25 @@ pub fn target_of(u: &ImageUse) -> ScanTarget {
             .unwrap_or_else(|| u.image_ref.clone()),
         namespace: u.namespace.clone(),
         pull_secrets: u.pull_secrets.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fleetops_core::Error;
+
+    #[test]
+    fn one_ready_node_is_enough() {
+        let r = prepared(vec![
+            ("n1".into(), Err(Error::EnvUnavailable("down".into()))),
+            ("n2".into(), Ok(())),
+        ]);
+        assert_eq!(r, Ok(()));
+        let none = prepared(vec![(
+            "n1".into(),
+            Err(Error::Invalid("pull failed".into())),
+        )]);
+        assert!(none.unwrap_err().contains("pull failed"));
     }
 }

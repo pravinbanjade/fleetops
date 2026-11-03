@@ -3,7 +3,7 @@
 //! Pulls the pinned Trivy image and alpine:3.20; downloads Trivy's database.
 #![cfg(feature = "docker-it")]
 
-use fleetops_core::docker::{ContainerOps, DockerOps};
+use fleetops_core::docker::{ContainerOps, DockerOps, VolumeOps};
 use fleetops_core::streams::StreamOps;
 use fleetops_docker::LocalDocker;
 use fleetops_ee::scan::{
@@ -106,4 +106,18 @@ async fn cleanup_removes_labelled_containers() {
         .unwrap();
     docker::cleanup_orphans(&d).await.unwrap();
     assert!(d.inspect_container(&id).await.is_err());
+}
+
+#[tokio::test]
+async fn unreachable_db_repository_fails_prepare() {
+    let d = docker().await;
+    let mut c = cfg();
+    c.db_repository = Some("127.0.0.1:9/fleetops-nope/trivy-db".into());
+    // An empty cache, as on first turn-on: a fresh cached database is not downloaded again.
+    let volume = format!("fleetops-trivy-cache-it-{}", std::process::id());
+    let e = docker::prepare_with_cache(&d, &c, &volume)
+        .await
+        .unwrap_err();
+    let _ = d.remove_volume(&volume, true).await;
+    assert!(e.to_string().contains("database"), "{e}");
 }

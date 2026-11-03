@@ -14,6 +14,10 @@ use std::time::Duration;
 
 pub const CACHE_PVC: &str = "fleetops-trivy-cache";
 pub const MIRROR_SECRET: &str = "fleetops-scan-mirror";
+/// The mirror's username and password for Trivy itself, read by the Job
+/// through `secretKeyRef` so they never appear in its spec.
+pub const MIRROR_AUTH_SECRET: &str = "fleetops-scan-mirror-auth";
+pub const PREPARE_JOB: &str = "fleetops-scan-prepare";
 /// The Job's own deadline; FleetOps waits a minute longer.
 pub const DEADLINE_SECS: i64 = 1200;
 const POLL: Duration = Duration::from_secs(3);
@@ -45,6 +49,130 @@ fn labels() -> Value {
     json!({ SCAN_LABEL: "1" })
 }
 
+fn job_env(cfg: &Effective) -> Vec<Value> {
+    let mut env = vec![json!({"name": "DOCKER_CONFIG", "value": "/docker"})];
+    if cfg.auth.is_some() {
+        for (name, key) in [
+            ("TRIVY_USERNAME", "username"),
+            ("TRIVY_PASSWORD", "password"),
+        ] {
+            env.push(json!({"name": name,
+                "valueFrom": {"secretKeyRef": {"name": MIRROR_AUTH_SECRET, "key": key}}}));
+        }
+    }
+    env
+}
+
+/// The mirror credentials Trivy reads, as an Opaque Secret.
+pub fn mirror_auth_secret(cfg: &Effective) -> Option<String> {
+    let (u, p) = cfg.auth.as_ref()?;
+    let b = |s: &str| base64::engine::general_purpose::STANDARD.encode(s);
+    Some(
+        json!({
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "type": "Opaque",
+            "metadata": {"name": MIRROR_AUTH_SECRET, "namespace": NAMESPACE, "labels": labels()},
+            "data": {"username": b(u), "password": b(p)},
+        })
+        .to_string(),
+    )
+}
+
+/// The Job that only downloads the vulnerability database.
+pub fn prepare_manifest(cfg: &Effective, mirror_secret: Option<&str>) -> String {
+    let mut pod = json!({
+        "restartPolicy": "Never",
+        "containers": [{
+            "name": "trivy",
+            "image": cfg.trivy_image,
+            "args": trivy::db_args(cfg),
+            "env": job_env(cfg),
+            "resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
+            "volumeMounts": [{"name": "cache", "mountPath": "/cache"}],
+        }],
+        "volumes": [{"name": "cache", "persistentVolumeClaim": {"claimName": CACHE_PVC}}],
+    });
+    if let Some(m) = mirror_secret {
+        pod["imagePullSecrets"] = json!([{ "name": m }]);
+    }
+    json!({
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {"name": PREPARE_JOB, "namespace": NAMESPACE, "labels": labels()},
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 300,
+            "activeDeadlineSeconds": DEADLINE_SECS,
+            "template": {"metadata": {"labels": labels()}, "spec": pod},
+        },
+    })
+    .to_string()
+}
+
+/// A pod that will never start because its image can't be pulled.
+pub fn pull_failure(pods: &[fleetops_core::kube::KubeRow]) -> Option<String> {
+    const STUCK: [&str; 4] = [
+        "ImagePullBackOff",
+        "ErrImagePull",
+        "InvalidImageName",
+        "CreateContainerConfigError",
+    ];
+    pods.iter()
+        .find(|p| STUCK.iter().any(|s| p.status.contains(s)))
+        .map(|p| format!("the scan pod can't start: {}", p.status))
+}
+
+/// Waits for `job`: `Ok(true)` when it failed, an error when its pod can't
+/// start or it runs out of time.
+async fn wait_job(k: &dyn KubeOps, job: &str) -> Result<bool> {
+    let until = now_unix() + DEADLINE_SECS + 60;
+    loop {
+        let o = k.get(KubeKind::Jobs, NAMESPACE, job).await?;
+        let done = |ty: &str| {
+            o.conditions
+                .iter()
+                .any(|c| c.type_ == ty && c.status == "True")
+        };
+        if done("Complete") {
+            return Ok(false);
+        }
+        if done("Failed") {
+            return Ok(true);
+        }
+        if let Ok(pods) = k.workload_pods(KubeKind::Jobs, NAMESPACE, job).await {
+            if let Some(why) = pull_failure(&pods.rows) {
+                return Err(Error::Invalid(why));
+            }
+        }
+        if now_unix() > until {
+            return Err(Error::Internal(
+                "the scan job did not finish in time".into(),
+            ));
+        }
+        tokio::time::sleep(POLL).await;
+    }
+}
+
+async fn job_logs(k: &dyn KubeOps, job: &str) -> Result<Vec<String>> {
+    let pods = k.workload_pods(KubeKind::Jobs, NAMESPACE, job).await?;
+    let pod = pods
+        .rows
+        .first()
+        .map(|r| r.name.clone())
+        .ok_or_else(|| Error::Internal("the scan job left no pod".into()))?;
+    let opts = LogOptions {
+        follow: false,
+        stdout: true,
+        stderr: true,
+        ..Default::default()
+    };
+    Ok(k.logs(NAMESPACE, &pod, &opts)
+        .filter_map(|l| async move { l.ok().map(|l| l.text) })
+        .collect()
+        .await)
+}
+
 /// The Job, as JSON (which `apply` reads as YAML).
 pub fn job_manifest(
     cfg: &Effective,
@@ -53,12 +181,7 @@ pub fn job_manifest(
     pull_secret: Option<&str>,
     mirror_secret: Option<&str>,
 ) -> String {
-    let mut env = vec![json!({"name": "DOCKER_CONFIG", "value": "/docker"})];
-    for kv in trivy::auth_env(cfg) {
-        if let Some((k, v)) = kv.split_once('=') {
-            env.push(json!({"name": k, "value": v}));
-        }
-    }
+    let env = job_env(cfg);
     let mut mounts = vec![json!({"name": "cache", "mountPath": "/cache"})];
     let mut volumes =
         vec![json!({"name": "cache", "persistentVolumeClaim": {"claimName": CACHE_PVC}})];
@@ -180,13 +303,37 @@ pub async fn prepare(k: &dyn KubeOps, cfg: &Effective) -> Result<()> {
         .to_string(),
     ];
     docs.extend(mirror_secret(cfg));
+    docs.extend(mirror_auth_secret(cfg));
     apply(
         k,
         &docs.join("\n---\n"),
         "create",
         "namespaces, persistentvolumeclaims and secrets",
     )
-    .await
+    .await?;
+    if cfg.auth.is_none() {
+        // A mirror login that was removed: forget its copies.
+        let _ = k
+            .delete(KubeKind::Secrets, NAMESPACE, MIRROR_AUTH_SECRET)
+            .await;
+        let _ = k.delete(KubeKind::Secrets, NAMESPACE, MIRROR_SECRET).await;
+    }
+    let _ = k.delete(KubeKind::Jobs, NAMESPACE, PREPARE_JOB).await;
+    let mirror = cfg.auth.is_some().then_some(MIRROR_SECRET);
+    apply(k, &prepare_manifest(cfg, mirror), "create", "jobs").await?;
+    let out = match wait_job(k, PREPARE_JOB).await {
+        Ok(false) => Ok(()),
+        Ok(true) => {
+            let lines = job_logs(k, PREPARE_JOB).await.unwrap_or_default();
+            Err(Error::Invalid(format!(
+                "downloading the vulnerability database failed: {}",
+                super::docker::error_lines(&lines)
+            )))
+        }
+        Err(e) => Err(e),
+    };
+    let _ = k.delete(KubeKind::Jobs, NAMESPACE, PREPARE_JOB).await;
+    out
 }
 
 pub async fn scan(
@@ -245,47 +392,13 @@ async fn run(
     ));
     apply(k, &docs.join("\n---\n"), "create", "jobs and secrets").await?;
 
-    let until = now_unix() + DEADLINE_SECS + 60;
-    let failed = loop {
-        let o = k.get(KubeKind::Jobs, NAMESPACE, job).await?;
-        let done = |ty: &str| {
-            o.conditions
-                .iter()
-                .any(|c| c.type_ == ty && c.status == "True")
-        };
-        if done("Complete") {
-            break false;
-        }
-        if done("Failed") {
-            break true;
-        }
-        if now_unix() > until {
-            return Err(Error::Internal(
-                "the scan job did not finish in time".into(),
-            ));
-        }
-        tokio::time::sleep(POLL).await;
-    };
-    let pods = k.workload_pods(KubeKind::Jobs, NAMESPACE, job).await?;
-    let pod = pods
-        .rows
-        .first()
-        .map(|r| r.name.clone())
-        .ok_or_else(|| Error::Internal("the scan job left no pod".into()))?;
-    let opts = LogOptions {
-        follow: false,
-        stdout: true,
-        stderr: true,
-        ..Default::default()
-    };
-    let lines: Vec<String> = k
-        .logs(NAMESPACE, &pod, &opts)
-        .filter_map(|l| async move { l.ok().map(|l| l.text) })
-        .collect()
-        .await;
+    let failed = wait_job(k, job).await?;
+    let lines = job_logs(k, job).await?;
     if failed {
-        let tail = lines[lines.len().saturating_sub(20)..].join("\n");
-        return Err(Error::Internal(format!("trivy failed: {tail}")));
+        return Err(Error::Internal(format!(
+            "trivy failed: {}",
+            super::docker::error_lines(&lines)
+        )));
     }
     Ok(lines.join("\n").into_bytes())
 }
@@ -300,7 +413,9 @@ pub async fn cleanup_orphans(k: &dyn KubeOps) -> Result<()> {
             Err(e) => return Err(e),
         };
         for r in list.rows {
-            let ours = r.name.starts_with("fleetops-scan-") && r.name != MIRROR_SECRET;
+            let ours = r.name.starts_with("fleetops-scan-")
+                && r.name != MIRROR_SECRET
+                && r.name != MIRROR_AUTH_SECRET;
             if ours && r.created < old {
                 let _ = k.delete(kind, NAMESPACE, &r.name).await;
             }
@@ -418,6 +533,48 @@ mod tests {
             registry_of("aquasec/trivy:1"),
             "https://index.docker.io/v1/"
         );
+    }
+
+    #[test]
+    fn mirror_password_is_never_in_the_job() {
+        let mut c = cfg();
+        c.auth = Some(("bot".into(), "hunter2".into()));
+        let j = job_manifest(
+            &c,
+            &target("sha256:d", "nginx:1.25"),
+            9,
+            None,
+            Some(MIRROR_SECRET),
+        );
+        assert!(!j.contains("hunter2"), "{j}");
+        let v: Value = serde_json::from_str(&j).unwrap();
+        let env = v["spec"]["template"]["spec"]["containers"][0]["env"]
+            .as_array()
+            .unwrap();
+        let pw = env.iter().find(|e| e["name"] == "TRIVY_PASSWORD").unwrap();
+        assert_eq!(
+            pw["valueFrom"]["secretKeyRef"],
+            json!({"name": MIRROR_AUTH_SECRET, "key": "password"})
+        );
+        let secret = mirror_auth_secret(&c).unwrap();
+        assert!(!secret.contains("hunter2"), "base64 in data");
+    }
+
+    #[test]
+    fn pull_errors_fail_fast() {
+        let row = |status: &str| fleetops_core::kube::KubeRow {
+            name: "p".into(),
+            namespace: Some(NAMESPACE.into()),
+            created: 0,
+            status: status.into(),
+            health: fleetops_core::kube::RowHealth::Ok,
+            columns: Default::default(),
+        };
+        assert!(pull_failure(&[row("ImagePullBackOff")])
+            .unwrap()
+            .contains("ImagePullBackOff"));
+        assert!(pull_failure(&[row("ErrImagePull")]).is_some());
+        assert_eq!(pull_failure(&[row("Running")]), None);
     }
 
     #[test]

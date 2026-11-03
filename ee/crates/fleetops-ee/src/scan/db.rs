@@ -631,14 +631,36 @@ pub async fn prune_unused(store: &Store, older_than: i64) -> Result<()> {
     Ok(())
 }
 
-/// Queued scans, oldest first.
-pub async fn queued(store: &Store, limit: i64) -> Result<Vec<ScanRow>> {
-    let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
-        "SELECT {SCAN_COLS} FROM ee_scans WHERE status = 'queued' ORDER BY id LIMIT ?"
-    )))
-    .bind(limit)
-    .fetch_all(store.pool())
+/// Queued scans of `env_ids`, oldest first.
+pub async fn queued(store: &Store, env_ids: &[i64], limit: i64) -> Result<Vec<ScanRow>> {
+    if env_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let marks = vec!["?"; env_ids.len()].join(", ");
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT {SCAN_COLS} FROM ee_scans WHERE status = 'queued' AND env_id IN ({marks})
+         ORDER BY id LIMIT ?"
+    )));
+    for id in env_ids {
+        q = q.bind(id);
+    }
+    let rows = q
+        .bind(limit)
+        .fetch_all(store.pool())
+        .await
+        .map_err(db_err)?;
+    Ok(rows.iter().map(scan_from).collect())
+}
+
+/// Fails queued scans of environments that no longer exist.
+pub async fn fail_queued_of_gone_envs(store: &Store, now: i64) -> Result<()> {
+    sqlx::query(
+        "UPDATE ee_scans SET status = 'failed', finished_at = ?, error = 'environment removed'
+         WHERE status = 'queued' AND env_id NOT IN (SELECT id FROM environments)",
+    )
+    .bind(now)
+    .execute(store.pool())
     .await
     .map_err(db_err)?;
-    Ok(rows.iter().map(scan_from).collect())
+    Ok(())
 }
