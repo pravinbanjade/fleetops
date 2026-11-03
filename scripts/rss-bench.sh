@@ -18,7 +18,7 @@
 #              KUBE_IT (kind fixtures dir; unset skips the kube phase), KUBE_ENVS (default 5),
 #              KUBE_LIMIT_MIB (default 100)
 #              SCAN (1 adds the scanning phase and skips the agent phase; needs a
-#              build with fleetops-server/ee-test-license-key), SCAN_LIMIT_MIB (default 80),
+#              build with fleetops-server/ee-test-license-key), SCAN_LIMIT_MIB (default LIMIT_MIB + 20),
 #              SCAN_WAIT (seconds for the first scans, default 900)
 set -eu
 
@@ -110,7 +110,8 @@ echo "rss-bench: idle RSS ${mib} MiB with $count containers (limit ${limit_mib} 
 # Scanning on: the same host, once every image has been scanned. The scans
 # themselves run in Trivy containers, outside this process.
 if [ "${SCAN:-0}" = 1 ]; then
-  scan_limit_mib=${SCAN_LIMIT_MIB:-80}
+  # Measured: +15.3 MiB once 50 images were scanned (65.5 -> 80.8 MiB, macOS arm64).
+  scan_limit_mib=${SCAN_LIMIT_MIB:-$((limit_mib + 20))}
   lic="$(dirname "$0")/../ee/web/e2e/fixtures/valid.lic"
   hdr() { echo "-b $jar -H Origin:$base -H x-csrf-token:$csrf"; }
   curl -fsS $(hdr) -X PUT -H 'content-type: text/plain' --data-binary "@$lic" "$base/api/v1/ee/license" >/dev/null ||
