@@ -85,6 +85,6 @@ describe("notifications page", () => {
     renderApp("/admin/notifications");
     expect(await screen.findByText(/Notifications need a license/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add destination" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Delete on-call" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Delete on-call" })).toBeInTheDocument();
   });
 });

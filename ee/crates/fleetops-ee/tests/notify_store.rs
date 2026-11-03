@@ -218,7 +218,7 @@ async fn pending_merges_and_is_due_after_quiet_or_max() {
 async fn deliveries_retry_then_fail() {
     let s = store().await;
     let d = db::create_destination(&s, &slack("a"), 1).await.unwrap();
-    let id = db::enqueue_delivery(&s, d, Some(1), &message(), 10)
+    let id = db::enqueue_delivery(&s, d, None, &message(), 10)
         .await
         .unwrap();
     assert_eq!(db::due_deliveries(&s, 9, 10).await.unwrap().len(), 0);
