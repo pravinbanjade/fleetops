@@ -66,8 +66,30 @@ async fn hooks_list_every_sealed_ee_column() {
     )
     .await
     .unwrap();
+    use fleetops_ee::scan::{config, db as scan_db};
+    scan_db::put_global(
+        &store,
+        &config::GlobalConfig::default(),
+        scan_db::PasswordChange::Set("mirror-pw".into()),
+        0,
+    )
+    .await
+    .unwrap();
+    let env = store
+        .create_environment("local", "docker-local", "unix:///var/run/docker.sock", 0)
+        .await
+        .unwrap();
+    scan_db::put_env(
+        &store,
+        env.id,
+        &config::EnvOverride::default(),
+        scan_db::PasswordChange::Set("env-pw".into()),
+        0,
+    )
+    .await
+    .unwrap();
     let cols = hooks::sealed();
-    assert_eq!(cols.len(), 3);
+    assert_eq!(cols.len(), 5);
     let boxed: &SecretBox = store.secrets();
     for col in cols {
         let rows: Vec<(i64, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(

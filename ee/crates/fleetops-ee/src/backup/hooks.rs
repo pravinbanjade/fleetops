@@ -14,6 +14,8 @@ pub fn sealed() -> Vec<SealedColumn> {
         SealedColumn::new("ee_sso_connections", "secrets", "id", "sso:{id}"),
         SealedColumn::new("ee_backup_schedule", "passphrase", "id", "backup:{id}"),
         SealedColumn::new("ee_backup_targets", "secrets", "id", "backup-target:{id}"),
+        SealedColumn::new("ee_scan_global", "mirror_secret", "id", "scan-global:{id}"),
+        SealedColumn::new("ee_scan_env", "mirror_secret", "env_id", "scan-env:{id}"),
     ]
 }
 

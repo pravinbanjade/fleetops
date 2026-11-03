@@ -107,3 +107,25 @@ async fn stack_verb_migration() {
         ]
     );
 }
+
+#[tokio::test]
+async fn scan_tables_exist() {
+    let store = Store::in_memory().await.unwrap();
+    fleetops_ee::db::migrate(store.pool()).await.unwrap();
+    for table in [
+        "ee_scan_global",
+        "ee_scan_env",
+        "ee_scans",
+        "ee_scan_findings",
+        "ee_scan_first_seen",
+        "ee_scan_uses",
+    ] {
+        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE name = ?")
+            .bind(table)
+            .fetch_one(store.pool())
+            .await
+            .unwrap();
+        assert_eq!(n, 1, "{table}");
+    }
+    assert_eq!(fleetops_ee::db::migration_max(), 1_000_006);
+}

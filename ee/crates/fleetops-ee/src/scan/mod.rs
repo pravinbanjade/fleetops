@@ -3,5 +3,6 @@
 //! cluster, and the results feed a fleet-wide patch queue.
 
 pub mod config;
+pub mod db;
 pub mod model;
 pub mod trivy;
