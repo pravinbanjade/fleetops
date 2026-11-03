@@ -118,6 +118,15 @@ impl ImageOps for LocalDocker {
             space_reclaimed: res.space_reclaimed.unwrap_or(0),
         })
     }
+
+    fn export_image(&self, image: &str) -> fleetops_core::streams::BoxStream<Vec<u8>> {
+        use futures_util::StreamExt;
+        Box::pin(
+            self.client
+                .export_image(image)
+                .map(|r| r.map(|b| b.to_vec()).map_err(map_err)),
+        )
+    }
 }
 
 #[async_trait]

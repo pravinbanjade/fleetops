@@ -13957,7 +13957,8 @@
           "teams",
           "rbac",
           "sso",
-          "backup"
+          "backup",
+          "vuln_scan"
         ]
       },
       "FileKind": {
@@ -18391,7 +18392,8 @@
           "task",
           "kube-watch",
           "swarm-tasks",
-          "audit"
+          "audit",
+          "signal"
         ]
       },
       "TriggerResult": {

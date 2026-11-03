@@ -354,6 +354,20 @@ pub trait ContainerOps: Send + Sync {
     /// (`PUT /containers/{id}/archive`); the stacks deploy writes secrets
     /// and configs this way before starting a container.
     async fn put_archive(&self, id: &str, path: &str, tar: Vec<u8>) -> Result<()>;
+    /// [`ContainerOps::put_archive`] with the tar streamed, for archives too
+    /// large to hold in memory.
+    async fn put_archive_stream(
+        &self,
+        _id: &str,
+        _path: &str,
+        _tar: crate::streams::BoxStream<Vec<u8>>,
+    ) -> Result<()> {
+        Err(transfer_unsupported())
+    }
+}
+
+fn transfer_unsupported() -> Error {
+    Error::Invalid("streaming image transfer is not available for this environment".into())
 }
 
 #[async_trait]
@@ -366,6 +380,12 @@ pub trait ImageOps: Send + Sync {
     async fn remove_image(&self, id: &str, force: bool) -> Result<Vec<String>>;
     /// `all = false` prunes only dangling images.
     async fn prune_images(&self, all: bool) -> Result<PruneReport>;
+    /// The image as a `docker save` tar (`GET /images/{name}/get`), streamed.
+    fn export_image(&self, _image: &str) -> crate::streams::BoxStream<Vec<u8>> {
+        Box::pin(futures_util::stream::once(async {
+            Err(transfer_unsupported())
+        }))
+    }
 }
 
 #[async_trait]

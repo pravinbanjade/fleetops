@@ -1184,3 +1184,48 @@ async fn a_slow_exec_plugin_times_out_with_its_name() {
         "{e}"
     );
 }
+
+#[tokio::test]
+async fn image_uses_lists_pods_and_idle_templates() {
+    let ops = common::ops();
+    let dep = uniq("imguse");
+    let cron = uniq("imgcron");
+    let yaml = format!(
+        "apiVersion: apps/v1\nkind: Deployment\nmetadata: {{name: {dep}, namespace: {NS}}}\nspec:\n  replicas: 1\n  selector: {{matchLabels: {{app: {dep}}}}}\n  template:\n    metadata: {{labels: {{app: {dep}}}}}\n    spec:\n      terminationGracePeriodSeconds: 1\n      imagePullSecrets: [{{name: {dep}-reg}}]\n      containers:\n        - {{name: main, image: busybox:1.37, imagePullPolicy: IfNotPresent, command: [sleep, '3600']}}\n---\napiVersion: batch/v1\nkind: CronJob\nmetadata: {{name: {cron}, namespace: {NS}}}\nspec:\n  schedule: '0 2 * * *'\n  jobTemplate:\n    spec:\n      template:\n        spec:\n          restartPolicy: Never\n          containers:\n          - name: main\n            image: busybox:1.36\n"
+    );
+    let r = ops
+        .apply(&yaml, NS, ApplyMode::Commit { force: false }, &|_| Ok(()))
+        .await
+        .unwrap();
+    assert!(r.iter().all(|r| r.error.is_none()), "{r:?}");
+    common::eventually("the deployment's pod runs with a digest", || async {
+        ops.image_uses().await.unwrap().iter().any(|u| {
+            u.owner_kind == "Deployment"
+                && u.owner_name == dep
+                && u.running
+                && u.image_id
+                    .as_deref()
+                    .is_some_and(|d| d.starts_with("sha256:"))
+                && u.pull_secrets == [format!("{dep}-reg")]
+        })
+    })
+    .await;
+    let uses = ops.image_uses().await.unwrap();
+    let c: Vec<_> = uses
+        .iter()
+        .filter(|u| u.owner_kind == "CronJob" && u.owner_name == cron)
+        .collect();
+    assert_eq!(c.len(), 1, "{uses:?}");
+    assert_eq!(c[0].image, "busybox:1.36");
+    assert_eq!(c[0].image_id, None);
+    assert!(!c[0].running);
+    assert_eq!(
+        uses.iter()
+            .filter(|u| u.owner_kind == "Deployment" && u.owner_name == dep)
+            .count(),
+        1,
+        "a deployment with a pod is not listed again as a template"
+    );
+    ops.delete(KubeKind::Deployments, NS, &dep).await.unwrap();
+    ops.delete(KubeKind::CronJobs, NS, &cron).await.unwrap();
+}

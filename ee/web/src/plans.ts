@@ -11,6 +11,7 @@ export const FEATURE_LABELS: Record<Feature, string> = {
   rbac: "custom roles",
   audit_export: "audit export",
   backup: "scheduled backups",
+  vuln_scan: "vulnerability scanning",
 };
 export const SALES_URL = "https://fleetops.pravinb.com.np/contact#sales";
 

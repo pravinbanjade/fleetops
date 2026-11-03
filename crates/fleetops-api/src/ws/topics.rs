@@ -898,6 +898,41 @@ pub(super) async fn audit(c: &Ctx<'_>) -> Result<Sub> {
     })
 }
 
+pub(super) async fn signal(c: &Ctx<'_>, key: Option<String>) -> Result<Sub> {
+    let key = required(&key, "id")?.to_string();
+    let mut feed = c.s.hubs.signal().subscribe();
+    let sub = c.sub;
+    let q = c.queue(Policy::DropOldest);
+    let qq = q.clone();
+    let handle = tokio::spawn(async move {
+        loop {
+            match feed.recv().await {
+                Ok(k) if k == key => {
+                    if !qq.push(protocol::data(sub, json!({ "key": k })), 1) {
+                        return;
+                    }
+                }
+                Ok(_) => {}
+                // A missed ping only means one refetch is late; send one now.
+                Err(RecvError::Lagged(_)) => {
+                    if !qq.push(protocol::data(sub, json!({ "key": key })), 1) {
+                        return;
+                    }
+                }
+                Err(RecvError::Closed) => {
+                    return qq.finish(protocol::end(sub, "closed", Value::Null))
+                }
+            }
+        }
+    });
+    Ok(Sub {
+        queue: q,
+        task: handle.abort_handle(),
+        keep_on_access: true,
+        exec: None,
+    })
+}
+
 /// Exec is root-equivalent access to the container, so every attempt is
 /// audited with the command.
 async fn audit_exec(

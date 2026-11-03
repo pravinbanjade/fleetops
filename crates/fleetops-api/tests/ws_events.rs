@@ -171,3 +171,25 @@ async fn a_reachability_change_cuts_the_reconnect_backoff_short() {
     .expect("the backoff was not cut short");
     assert_eq!(up["status"]["state"], "up");
 }
+
+#[tokio::test]
+async fn signal_topic_forwards_only_its_key() {
+    let t = app().await;
+    let admin = t.with_local().await;
+    let mut ws = Ws::open(t.serve().await, &admin).await;
+    ws.send(ws_sub(1, "signal", Some("security"), Value::Null))
+        .await;
+    let signal = t.state.hubs.signal();
+    eventually("signal subscribed", || signal.receiver_count() > 0).await;
+    signal.send("backup".into()).unwrap();
+    signal.send("security".into()).unwrap();
+    let got = ws.until(|v| is(v, 1, "data")).await;
+    assert_eq!(got["data"], json!({"key": "security"}));
+    signal.send("security".into()).unwrap();
+    let again = ws.until(|v| is(v, 1, "data")).await;
+    assert_eq!(
+        again["data"],
+        json!({"key": "security"}),
+        "the backup signal was never forwarded"
+    );
+}

@@ -9,6 +9,7 @@ pub mod errors;
 pub mod exec_auth;
 mod generic;
 pub mod helm;
+pub mod images;
 pub mod kinds;
 pub mod kubeconfig;
 pub mod mask;

@@ -591,6 +591,36 @@ mod streams {
     }
 
     #[tokio::test]
+    async fn export_and_stream_upload_round_trip() {
+        let d = docker().await;
+        let mut image = Vec::new();
+        let mut export = d.export_image(IMAGE);
+        while let Some(chunk) = export.next().await {
+            image.extend_from_slice(&chunk.unwrap());
+        }
+        assert!(image.len() > 1024, "an image tar, got {} bytes", image.len());
+        let name = unique("stream-upload");
+        let id = d.create_container(&sleeper(&name)).await.unwrap();
+        let mut b = tar::Builder::new(Vec::new());
+        let mut h = tar::Header::new_gnu();
+        h.set_size(image.len() as u64);
+        h.set_mode(0o644);
+        b.append_data(&mut h, "image.tar", image.as_slice()).unwrap();
+        let tar = b.into_inner().unwrap();
+        let chunks: Vec<fleetops_core::Result<Vec<u8>>> =
+            tar.chunks(64 * 1024).map(|c| Ok(c.to_vec())).collect();
+        d.put_archive_stream(&id, "/tmp", Box::pin(futures_util::stream::iter(chunks)))
+            .await
+            .unwrap();
+        let back = d
+            .read_file(&id, "/tmp/image.tar", image.len() as u64)
+            .await
+            .unwrap();
+        assert_eq!(back.len(), image.len());
+        d.remove_container(&id, true, false).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn logs_come_back_as_lines_per_stream() {
         let d = docker().await;
         let name = unique("logs");

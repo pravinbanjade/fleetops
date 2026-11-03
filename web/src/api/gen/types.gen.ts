@@ -933,7 +933,7 @@ export type ExecOptions = {
 /**
  * An Enterprise feature a license can grant.
  */
-export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso' | 'backup';
+export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso' | 'backup' | 'vuln_scan';
 
 export type FileKind = 'secret' | 'config';
 
@@ -2663,7 +2663,7 @@ export type TestResult = {
     ok: boolean;
 };
 
-export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch' | 'swarm-tasks' | 'audit';
+export type Topic = 'events' | 'stats' | 'logs' | 'exec' | 'task' | 'kube-watch' | 'swarm-tasks' | 'audit' | 'signal';
 
 export type TriggerResult = {
     /**

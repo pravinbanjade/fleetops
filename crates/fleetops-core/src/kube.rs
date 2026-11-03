@@ -309,6 +309,23 @@ pub struct KubeRef {
     pub link: Option<KubeKind>,
 }
 
+/// One container image in use on a cluster: a container of a Pod, or of a
+/// workload template that has no Pod right now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KubeImageUse {
+    pub namespace: String,
+    /// The top controller (`Deployment`, `CronJob`…), or `Pod` for a bare pod.
+    pub owner_kind: String,
+    pub owner_name: String,
+    pub container: String,
+    /// The image reference as written in the spec.
+    pub image: String,
+    /// The `sha256:` digest the node pulled; `None` for templates.
+    pub image_id: Option<String>,
+    pub running: bool,
+    pub pull_secrets: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct KubeObject {
     pub row: KubeRow,
@@ -818,6 +835,14 @@ pub trait KubeOps: Send + Sync {
         Err(helm_unsupported())
     }
     /// Every served `group/version` (`v1` for core), for helm's `--api-versions`.
+    /// Every image in use: each container of every Pod, plus each container
+    /// of a Deployment, StatefulSet, DaemonSet, Job or CronJob template that
+    /// has no Pod.
+    async fn image_uses(&self) -> Result<Vec<KubeImageUse>> {
+        Err(Error::Invalid(
+            "image inventory is not available for this environment".into(),
+        ))
+    }
     async fn api_versions(&self) -> Result<Vec<String>> {
         Err(helm_unsupported())
     }

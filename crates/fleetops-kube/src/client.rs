@@ -355,6 +355,39 @@ impl KubeOps for KubeClient {
         self.count_impl(kind, ns).await
     }
 
+    async fn image_uses(&self) -> Result<Vec<fleetops_core::kube::KubeImageUse>> {
+        async fn all<K>(c: &kube::Client) -> Result<Vec<K>>
+        where
+            K: kube::Resource<Scope = k8s_openapi::NamespaceResourceScope>
+                + Clone
+                + serde::de::DeserializeOwned
+                + std::fmt::Debug,
+            K::DynamicType: Default,
+        {
+            let api: Api<K> = Api::all(c.clone());
+            Ok(timed(api.list(&ListParams::default())).await?.items)
+        }
+        let c = &self.client;
+        let (pods, replica_sets, deployments, stateful_sets, daemon_sets, jobs, cron_jobs) = tokio::try_join!(
+            all::<Pod>(c),
+            all::<ReplicaSet>(c),
+            all::<k8s_openapi::api::apps::v1::Deployment>(c),
+            all::<k8s_openapi::api::apps::v1::StatefulSet>(c),
+            all::<k8s_openapi::api::apps::v1::DaemonSet>(c),
+            all::<Job>(c),
+            all::<CronJob>(c),
+        )?;
+        Ok(crate::images::uses(&crate::images::Objects {
+            pods,
+            replica_sets,
+            deployments,
+            stateful_sets,
+            daemon_sets,
+            jobs,
+            cron_jobs,
+        }))
+    }
+
     async fn secret_values(&self, ns: &str, name: &str) -> Result<Vec<(String, Vec<u8>)>> {
         let api: Api<Secret> = Api::namespaced(self.client.clone(), ns);
         let secret = timed(api.get(name)).await?;

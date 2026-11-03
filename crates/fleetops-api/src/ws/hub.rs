@@ -237,6 +237,8 @@ pub struct Hubs {
     status: Mutex<Option<broadcast::Sender<StatusChange>>>,
     /// User ids whose access changed (spec §3.3).
     access: Mutex<Option<broadcast::Sender<i64>>>,
+    /// "Refetch" pings by key, for pages fed by an edition's own data.
+    signal: Mutex<Option<broadcast::Sender<String>>>,
     /// Shared Kubernetes watches (spec §2.4).
     pub kube_watches: Arc<crate::ws::watches::Watches>,
     /// Shared Swarm task feeds (swarm spec §7).
@@ -271,6 +273,16 @@ impl Hubs {
     /// Ends `user_id`'s subscriptions on every connection they have open.
     pub fn access_changed(&self, user_id: i64) {
         let _ = self.access().send(user_id);
+    }
+
+    /// The bus behind the `signal` topic: send a key, and every page
+    /// subscribed to that key refetches. Carries no data.
+    pub fn signal(&self) -> broadcast::Sender<String> {
+        self.signal
+            .lock()
+            .unwrap()
+            .get_or_insert_with(|| broadcast::channel(16).0)
+            .clone()
     }
 
     /// The bus every connection listens on for `env_status`.

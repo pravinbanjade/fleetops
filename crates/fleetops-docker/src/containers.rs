@@ -172,4 +172,24 @@ impl ContainerOps for LocalDocker {
             .await
             .map_err(map_err)
     }
+
+    async fn put_archive_stream(
+        &self,
+        id: &str,
+        path: &str,
+        tar: fleetops_core::streams::BoxStream<Vec<u8>>,
+    ) -> Result<()> {
+        use futures_util::StreamExt;
+        let opts = bollard::query_parameters::UploadToContainerOptionsBuilder::default()
+            .path(path)
+            .build();
+        let body = tar.map(|r| {
+            r.map(bytes::Bytes::from)
+                .map_err(|e| std::io::Error::other(e.to_string()))
+        });
+        self.client
+            .upload_to_container(id, Some(opts), bollard::body_try_stream(body))
+            .await
+            .map_err(map_err)
+    }
 }

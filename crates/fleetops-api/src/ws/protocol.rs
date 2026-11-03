@@ -24,6 +24,9 @@ pub enum Topic {
     SwarmTasks,
     /// The id of each audit entry as it is written; admins only.
     Audit,
+    /// A ping each time the key in `id` is signalled (`Hubs::signal`), for
+    /// any signed-in user; it carries no data, only "refetch".
+    Signal,
 }
 
 /// A text frame from the client. Exec stdin may also arrive as a binary
