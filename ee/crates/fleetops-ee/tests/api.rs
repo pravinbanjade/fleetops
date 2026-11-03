@@ -66,7 +66,8 @@ async fn admin_installs_a_license_and_features_turn_on() {
             "rbac",
             "sso",
             "backup",
-            "vuln_scan"
+            "vuln_scan",
+            "notifications"
         ])
     );
     let r = ee.send("GET", "/api/v1/edition", None, Some(&admin)).await;
@@ -78,7 +79,8 @@ async fn admin_installs_a_license_and_features_turn_on() {
             "rbac",
             "sso",
             "backup",
-            "vuln_scan"
+            "vuln_scan",
+            "notifications"
         ])
     );
     assert!(ee.actions().await.contains(&"license.update".to_string()));
@@ -185,7 +187,14 @@ async fn delete_falls_back_to_file_then_none() {
     assert_eq!(r.json()["source"], "file");
     assert_eq!(
         r.json()["features"],
-        json!(["teams", "rbac", "sso", "backup", "vuln_scan"]),
+        json!([
+            "teams",
+            "rbac",
+            "sso",
+            "backup",
+            "vuln_scan",
+            "notifications"
+        ]),
         "back on the file's license, which names no features"
     );
     std::fs::remove_file(&file).unwrap();

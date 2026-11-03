@@ -976,7 +976,7 @@ export type ExecOptions = {
 /**
  * An Enterprise feature a license can grant.
  */
-export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso' | 'backup' | 'vuln_scan';
+export type Feature = 'audit_export' | 'teams' | 'rbac' | 'sso' | 'backup' | 'vuln_scan' | 'notifications';
 
 export type FileKind = 'secret' | 'config';
 

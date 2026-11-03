@@ -30,6 +30,9 @@ pub enum Feature {
     /// Image vulnerability scanning (`/ee/security`). Every active license
     /// has it.
     VulnScan,
+    /// Notifications to Slack, email and webhooks (`/ee/notifications`).
+    /// Every active license has it.
+    Notifications,
 }
 
 impl Feature {
@@ -40,6 +43,7 @@ impl Feature {
         Feature::Sso,
         Feature::Backup,
         Feature::VulnScan,
+        Feature::Notifications,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -50,6 +54,7 @@ impl Feature {
             Feature::Sso => "sso",
             Feature::Backup => "backup",
             Feature::VulnScan => "vuln_scan",
+            Feature::Notifications => "notifications",
         }
     }
 
@@ -119,6 +124,14 @@ mod tests {
         fn max_users(&self) -> Option<u32> {
             Some(3)
         }
+    }
+
+    #[test]
+    fn notifications_has_its_wire_name() {
+        assert_eq!(
+            Feature::parse("notifications"),
+            Some(Feature::Notifications)
+        );
     }
 
     #[test]

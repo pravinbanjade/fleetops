@@ -14540,7 +14540,8 @@
           "rbac",
           "sso",
           "backup",
-          "vuln_scan"
+          "vuln_scan",
+          "notifications"
         ]
       },
       "FileKind": {

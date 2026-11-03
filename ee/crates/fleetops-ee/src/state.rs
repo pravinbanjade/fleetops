@@ -152,6 +152,7 @@ impl LicenseState {
                         Feature::Sso,
                         Feature::Backup,
                         Feature::VulnScan,
+                        Feature::Notifications,
                     ] {
                         if !f.contains(&always) {
                             f.push(always);
@@ -188,7 +189,12 @@ impl Entitlements for LicenseState {
         self.active(|l| {
             matches!(
                 feature,
-                Feature::Teams | Feature::Rbac | Feature::Sso | Feature::Backup | Feature::VulnScan
+                Feature::Teams
+                    | Feature::Rbac
+                    | Feature::Sso
+                    | Feature::Backup
+                    | Feature::VulnScan
+                    | Feature::Notifications
             ) || l.features.contains(&feature)
         })
         .unwrap_or(false)
@@ -369,5 +375,16 @@ mod tests {
             .info(now_unix(), 0, 0)
             .features
             .contains(&Feature::VulnScan));
+    }
+
+    #[tokio::test]
+    async fn notifications_come_with_any_active_license() {
+        let key = key();
+        let st = LicenseState::new(vec![key.verifying_key()], None);
+        assert!(!st.has(Feature::Notifications), "no license");
+        let l = crate::license::verify(&lic(&key, now_unix() + 1000, "l"), &[key.verifying_key()])
+            .unwrap();
+        st.set(Loaded::Ok(l), None);
+        assert!(st.has(Feature::Notifications));
     }
 }
