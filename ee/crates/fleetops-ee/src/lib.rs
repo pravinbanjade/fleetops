@@ -9,6 +9,7 @@ pub mod keys;
 pub mod license;
 pub mod roles;
 pub mod routes;
+pub mod scan;
 pub mod sso;
 pub mod state;
 pub mod teams;

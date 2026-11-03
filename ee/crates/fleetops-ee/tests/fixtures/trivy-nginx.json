@@ -1,0 +1,89 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2026-11-03T10:00:00Z",
+  "ArtifactName": "nginx:1.25.3",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "OS": { "Family": "debian", "Name": "12.4" },
+    "ImageID": "sha256:a8758716bb6aa4d90071160d27028fe4eaee7ce8166221a97d30440c8eac2be6",
+    "RepoTags": ["nginx:1.25.3"],
+    "RepoDigests": ["nginx@sha256:4c0fdaa8b6341bfdeca5f18f7837462c80cff90527ee35ef185571e1c327beac"]
+  },
+  "Results": [
+    {
+      "Target": "nginx:1.25.3 (debian 12.4)",
+      "Class": "os-pkgs",
+      "Type": "debian",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2024-5535",
+          "PkgID": "libssl3@3.0.11-1~deb12u2",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.0.11-1~deb12u2",
+          "FixedVersion": "3.0.14-1~deb12u2",
+          "Status": "fixed",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-5535",
+          "Title": "openssl: SSL_select_next_proto buffer overread",
+          "Severity": "CRITICAL"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-5535",
+          "PkgID": "libssl3@3.0.11-1~deb12u2",
+          "PkgName": "libssl3",
+          "InstalledVersion": "3.0.11-1~deb12u2",
+          "FixedVersion": "3.0.14-1~deb12u2",
+          "Status": "fixed",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-5535",
+          "Title": "openssl: SSL_select_next_proto buffer overread",
+          "Severity": "CRITICAL"
+        },
+        {
+          "VulnerabilityID": "CVE-2023-45853",
+          "PkgName": "zlib1g",
+          "InstalledVersion": "1:1.2.13.dfsg-1",
+          "FixedVersion": "",
+          "Status": "will_not_fix",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2023-45853",
+          "Title": "zlib: integer overflow in zipOpenNewFileInZip4_6",
+          "Severity": "CRITICAL"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-2398",
+          "PkgName": "curl",
+          "InstalledVersion": "7.88.1-10+deb12u4",
+          "FixedVersion": "7.88.1-10+deb12u6",
+          "Status": "fixed",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-2398",
+          "Title": "curl: HTTP/2 push headers memory-leak",
+          "Severity": "HIGH"
+        },
+        {
+          "VulnerabilityID": "CVE-2011-3374",
+          "PkgName": "apt",
+          "InstalledVersion": "2.6.1",
+          "Status": "affected",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2011-3374",
+          "Severity": "LOW"
+        }
+      ]
+    },
+    {
+      "Target": "usr/local/bin/helper",
+      "Class": "lang-pkgs",
+      "Type": "gobinary",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2023-44487",
+          "PkgName": "golang.org/x/net",
+          "InstalledVersion": "v0.15.0",
+          "FixedVersion": "0.17.0",
+          "Status": "fixed",
+          "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2023-44487",
+          "Title": "HTTP/2: Multiple HTTP/2 enabled web servers are vulnerable to a DDoS attack (Rapid Reset Attack)",
+          "Severity": "HIGH"
+        }
+      ]
+    },
+    { "Target": "Java", "Class": "lang-pkgs", "Type": "jar" }
+  ]
+}
