@@ -27,6 +27,9 @@ pub enum Feature {
     Sso,
     /// Scheduled backups (`/ee/backup`). Every active license has it.
     Backup,
+    /// Image vulnerability scanning (`/ee/security`). Every active license
+    /// has it.
+    VulnScan,
 }
 
 impl Feature {
@@ -36,6 +39,7 @@ impl Feature {
         Feature::Rbac,
         Feature::Sso,
         Feature::Backup,
+        Feature::VulnScan,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -45,6 +49,7 @@ impl Feature {
             Feature::Rbac => "rbac",
             Feature::Sso => "sso",
             Feature::Backup => "backup",
+            Feature::VulnScan => "vuln_scan",
         }
     }
 
@@ -114,6 +119,12 @@ mod tests {
         fn max_users(&self) -> Option<u32> {
             Some(3)
         }
+    }
+
+    #[test]
+    fn vuln_scan_has_its_wire_name() {
+        assert_eq!(Feature::parse("vuln_scan"), Some(Feature::VulnScan));
+        assert_eq!(Feature::VulnScan.as_str(), "vuln_scan");
     }
 
     #[test]

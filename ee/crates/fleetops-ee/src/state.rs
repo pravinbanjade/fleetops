@@ -146,7 +146,13 @@ impl LicenseState {
                 max_users: l.payload.max_users,
                 features: {
                     let mut f = l.features.clone();
-                    for always in [Feature::Teams, Feature::Rbac, Feature::Sso, Feature::Backup] {
+                    for always in [
+                        Feature::Teams,
+                        Feature::Rbac,
+                        Feature::Sso,
+                        Feature::Backup,
+                        Feature::VulnScan,
+                    ] {
                         if !f.contains(&always) {
                             f.push(always);
                         }
@@ -182,7 +188,7 @@ impl Entitlements for LicenseState {
         self.active(|l| {
             matches!(
                 feature,
-                Feature::Teams | Feature::Rbac | Feature::Sso | Feature::Backup
+                Feature::Teams | Feature::Rbac | Feature::Sso | Feature::Backup | Feature::VulnScan
             ) || l.features.contains(&feature)
         })
         .unwrap_or(false)
@@ -346,5 +352,22 @@ mod tests {
             .info(now_unix(), 0, 0)
             .features
             .contains(&Feature::Backup));
+    }
+
+    #[tokio::test]
+    async fn vuln_scan_comes_with_any_active_license() {
+        let key = key();
+        let none = LicenseState::new(vec![key.verifying_key()], None);
+        assert!(!none.has(Feature::VulnScan), "no license");
+        let st = LicenseState::new(vec![key.verifying_key()], None);
+        let l = crate::license::verify(&lic(&key, now_unix() + 1000, "l"), &[key.verifying_key()])
+            .unwrap();
+        assert_eq!(l.features, vec![Feature::AuditExport]);
+        st.set(Loaded::Ok(l), None);
+        assert!(st.has(Feature::VulnScan));
+        assert!(st
+            .info(now_unix(), 0, 0)
+            .features
+            .contains(&Feature::VulnScan));
     }
 }
