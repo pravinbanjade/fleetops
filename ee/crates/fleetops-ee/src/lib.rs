@@ -7,6 +7,7 @@ pub mod db;
 pub mod export;
 pub mod keys;
 pub mod license;
+pub mod notify;
 pub mod roles;
 pub mod routes;
 pub mod scan;
