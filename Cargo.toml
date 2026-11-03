@@ -4,7 +4,7 @@ members = ["crates/*", "ee/crates/*", "ee/tools/*"]
 default-members = ["crates/*", "ee/crates/*", "ee/tools/*"]
 
 [workspace.package]
-version = "0.6.0"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.89"
 license = "Apache-2.0"
