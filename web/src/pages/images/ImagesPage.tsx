@@ -10,6 +10,7 @@ import { columns, DataTable, type Column } from "@/components/DataTable";
 import { ImageRef } from "@/components/ImageRef";
 import { Page } from "@/components/Page";
 import { Badge } from "@/components/ui/badge";
+import { Slot, useSlotShown } from "@/ee-slots";
 import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { formatAgo, formatBytes, shortId } from "@/lib/format";
@@ -18,7 +19,16 @@ import { BuildDialog, PullDialog } from "./TaskDialogs";
 
 const col = columns<ImageSummary>();
 
-function imageColumns(env: string): Column<ImageSummary>[] {
+function imageColumns(env: string, security: boolean): Column<ImageSummary>[] {
+  const securityColumn: Column<ImageSummary>[] = security
+    ? [
+        col.display({
+          id: "security",
+          header: "Security",
+          cell: (c) => <Slot name="image.badge" props={{ env, imageId: c.row.original.id }} />,
+        }),
+      ]
+    : [];
   return [
     col.accessor((i) => imageName(i.repo_tags, i.id), {
       id: "tags",
@@ -51,6 +61,7 @@ function imageColumns(env: string): Column<ImageSummary>[] {
       header: "Used",
       cell: (c) => (c.row.original.in_use ? <Badge variant="secondary">in use</Badge> : <span className="text-muted-foreground">unused</span>),
     }),
+    ...securityColumn,
   ];
 }
 
@@ -62,7 +73,8 @@ export function ImagesPage() {
   const list = useQuery(imagesQuery(env));
   const now = useNow();
   const active = useNowRow(list.data, (i: ImageSummary) => i.id);
-  const cols = useMemo(() => imageColumns(env), [env]);
+  const security = useSlotShown("image.badge");
+  const cols = useMemo(() => imageColumns(env, security), [env, security]);
   const [removing, setRemoving] = useState<ImageSummary[] | null>(null);
   const [pruning, setPruning] = useState(false);
   const [pulling, setPulling] = useState(false);

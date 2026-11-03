@@ -12,6 +12,7 @@ import { useEnvAccess } from "@/api/access";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Slot } from "@/ee-slots";
 import { joinArgs } from "@/lib/args";
 import { errorMessage } from "@/lib/errors";
 import { formatAgo, formatBytes, shortId } from "@/lib/format";
@@ -60,6 +61,7 @@ export function ImagePage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
           <TabsTrigger value="inspect">Inspect</TabsTrigger>
+          <Slot name="image.tabs.trigger" />
         </TabsList>
         <TabsContent value="overview">
           <Overview img={img} />
@@ -74,6 +76,7 @@ export function ImagePage() {
             label="Image JSON"
           />
         </TabsContent>
+        <Slot name="image.tabs.content" props={{ env, imageId: id }} />
       </Tabs>
       {tagging && <TagDialog env={env} id={img.Id} onClose={() => setTagging(false)} />}
       {removing && (

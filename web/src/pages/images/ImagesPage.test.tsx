@@ -13,6 +13,13 @@ const rows = (screen: typeof import("@testing-library/react").screen) =>
   within(screen.getByRole("table", { name: "Images" })).getAllByRole("row").slice(1);
 
 describe("images list", () => {
+  it("has no Security column on Community", async () => {
+    mockFetch(routes);
+    const { screen } = renderApp("/envs/local/images");
+    await waitFor(() => expect(rows(screen)).toHaveLength(2));
+    expect(within(screen.getByRole("table", { name: "Images" })).queryByRole("columnheader", { name: /Security/ })).toBeNull();
+  });
+
   it("lists tags, short ids, sizes and use, newest first", async () => {
     mockFetch(routes);
     const { screen } = renderApp("/envs/local/images");

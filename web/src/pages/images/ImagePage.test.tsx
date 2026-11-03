@@ -28,6 +28,13 @@ const routes = {
 const PATH = "/envs/local/images/sha256%3Aaaa111222333444";
 
 describe("image page", () => {
+  it("has no Vulnerabilities tab on Community", async () => {
+    mockFetch(routes);
+    const { screen } = renderApp(PATH);
+    expect(await screen.findByRole("tab", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Vulnerabilities" })).toBeNull();
+  });
+
   it("shows the image's config", async () => {
     mockFetch(routes);
     const { screen } = renderApp(PATH);

@@ -15,6 +15,16 @@ export interface SlotProps {
   "env.access": { env: string };
   /** Below the Backup page's download and restore sections. */
   "admin.backup": object;
+  /** In the sidebar, between the environments and the Administration nav. */
+  "shell.nav": { collapsed: boolean };
+  /** At the end of an image page's tab list. */
+  "image.tabs.trigger": object;
+  /** After an image page's tab panels: the panels for the triggers above. */
+  "image.tabs.content": { env: string; imageId: string };
+  /** A cell of the image list's Security column, shown only when this slot is. */
+  "image.badge": { env: string; imageId: string };
+  /** In an environment's panel on the Environments admin page. */
+  "env.settings": { env: string; kind: string };
 }
 
 export type SlotName = keyof SlotProps;
@@ -49,6 +59,8 @@ export interface EeModule {
   id: string;
   /** Pages under /admin. */
   adminRoutes: (admin: AnyRoute) => AnyRoute[];
+  /** Pages under the signed-in shell, outside any one environment. */
+  shellRoutes?: (shell: AnyRoute) => AnyRoute[];
   adminNav: EeNavItem[];
   slots: { [N in SlotName]?: EeSlot<N> };
   /**

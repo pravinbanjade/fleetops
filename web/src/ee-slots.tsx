@@ -47,6 +47,13 @@ export function Slot<N extends SlotName>({ name, props }: { name: N; props?: Slo
   return createElement(slot.component, props ?? ({} as SlotProps[N]));
 }
 
+/** Whether `name` would render: this build has it and the license (or leftover data) covers it. */
+export function useSlotShown(name: SlotName): boolean {
+  const shown = useShown();
+  const slot = ee.slots[name] as EeSlot | undefined;
+  return !!slot && shown(slot.feature);
+}
+
 const noRoles = (): RoleOption[] => [];
 const roleOptions = ee.useRoleOptions ?? noRoles;
 

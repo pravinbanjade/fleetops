@@ -567,6 +567,7 @@ function EnvNow({ env: e }: { env: EnvView }) {
       open={{ to: "/envs/$env", params: { env: e.name } }}
     >
       {status.data?.state === "down" && <p className="rounded-md bg-raised p-3 text-sm text-fall">{status.data.reason}</p>}
+      <Slot name="env.settings" props={{ env: e.name, kind: e.kind }} />
     </ObjectNow>
   );
 }

@@ -57,6 +57,7 @@ export function Library({ env, family, collapsed }: { env?: string; family: EnvF
           </div>
         ))}
       </div>
+      <Slot name="shell.nav" props={{ collapsed }} />
       <AdminNav collapsed={collapsed} />
       <div className="mt-auto grid w-full gap-3 pt-2">
         <Slot name="shell.upgrade" props={{ collapsed }} />

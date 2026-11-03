@@ -412,6 +412,7 @@ const routeTree = rootRoute.addChildren([
       ]),
       adminRoute.addChildren([usersRoute, envsAdminRoute, auditRoute, backupRoute, ...(ee.adminRoutes(adminRoute) as [])]),
       accountRoute,
+      ...((ee.shellRoutes?.(shellRoute) ?? []) as []),
     ]),
   ]),
 ]);
