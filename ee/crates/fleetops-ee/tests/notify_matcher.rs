@@ -406,3 +406,88 @@ async fn unlicensed_matches_nothing() {
         .await;
     assert!(x.pending().await.is_empty());
 }
+
+#[tokio::test]
+async fn baseline_covers_every_digest_of_a_repository() {
+    let x = fx(true).await;
+    let prod = x.ee.env("prod", "docker-local").await;
+    x.rule("prod", vec![prod], Severity::Critical).await;
+    x.uses(
+        prod,
+        vec![
+            use_of(prod, "sha256:v1", "app/api:1", true),
+            use_of(prod, "sha256:v2", "app/api:2", true),
+        ],
+        true,
+    )
+    .await;
+    x.scanned(prod, "sha256:v1", &[f("CVE-1", Severity::Critical)])
+        .await;
+    x.scanned(
+        prod,
+        "sha256:v2",
+        &[
+            f("CVE-1", Severity::Critical),
+            f("CVE-2", Severity::Critical),
+        ],
+    )
+    .await;
+    assert!(
+        x.pending().await.is_empty(),
+        "both digests are the existing state"
+    );
+    x.scanned(
+        prod,
+        "sha256:v2",
+        &[
+            f("CVE-1", Severity::Critical),
+            f("CVE-2", Severity::Critical),
+            f("CVE-3", Severity::Critical),
+        ],
+    )
+    .await;
+    assert_eq!(x.pending().await.len(), 1, "only the genuinely new CVE");
+}
+
+#[tokio::test]
+async fn a_restart_does_not_rebaseline() {
+    let x = fx(true).await;
+    let prod = x.ee.env("prod", "docker-local").await;
+    x.rule("prod", vec![prod], Severity::Critical).await;
+    x.uses(prod, vec![use_of(prod, "sha256:a", "nginx:1", true)], true)
+        .await;
+    x.scanned(prod, "sha256:a", &[]).await;
+    // A new image arrives; its scan is still queued when the server restarts,
+    // and the engine's first inventory after a restart says "enabling".
+    let both = vec![
+        use_of(prod, "sha256:a", "nginx:1", true),
+        use_of(prod, "sha256:w", "app/worker:1", true),
+    ];
+    x.uses(prod, both.clone(), false).await;
+    x.uses(prod, both, true).await;
+    x.scanned(prod, "sha256:w", &[f("CVE-1", Severity::Critical)])
+        .await;
+    let p = x.pending().await;
+    assert_eq!(p.len(), 1, "the new image still alerts: {p:?}");
+    assert_eq!(p[0].1, PendingKind::Image);
+}
+
+#[tokio::test]
+async fn turning_scanning_off_and_on_rebaselines() {
+    let x = fx(true).await;
+    let prod = x.ee.env("prod", "docker-local").await;
+    x.rule("prod", vec![prod], Severity::Critical).await;
+    x.uses(prod, vec![use_of(prod, "sha256:a", "nginx:1", true)], true)
+        .await;
+    x.scanned(prod, "sha256:a", &[]).await;
+    Matcher.scanning_disabled(&x.ee.state, prod).await;
+    x.uses(prod, vec![], false).await;
+    x.uses(prod, vec![use_of(prod, "sha256:a", "nginx:1", true)], true)
+        .await;
+    x.scanned(prod, "sha256:a", &[f("CVE-OLD", Severity::Critical)])
+        .await;
+    assert!(
+        x.pending().await.is_empty(),
+        "turning it on again is a fresh start"
+    );
+}

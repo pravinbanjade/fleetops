@@ -76,7 +76,7 @@ async fn process(
 ) -> Result<()> {
     let now = now_unix();
     let of_key: Vec<&ImageUse> = uses.iter().filter(|u| &u.key == key).collect();
-    for rule in rules.iter().filter(|r| r.enabled) {
+    for rule in rules {
         let mut by_repo: BTreeMap<String, Vec<&ImageUse>> = BTreeMap::new();
         for u in of_key.iter().filter(|u| in_scope(rule, u)) {
             by_repo.entry(repo_of(u)).or_default().push(u);
@@ -85,10 +85,14 @@ async fn process(
         for (repo, us) in by_repo {
             match db::known(&s.store, rule.id, &repo).await? {
                 // Baseline: the existing state, recorded without a message.
+                // It stays open until every digest in scope at baseline time
+                // has been recorded, so a second digest isn't "new".
                 Some(true) => {
                     let cves: Vec<String> = hits.iter().map(|f| f.vuln_id.clone()).collect();
                     db::mark_reported(&s.store, rule.id, &repo, &cves, now).await?;
-                    db::set_known(&s.store, rule.id, &repo, false).await?;
+                    if db::remove_baseline_key(&s.store, rule.id, &repo, key.as_str()).await? == 0 {
+                        db::set_known(&s.store, rule.id, &repo, false).await?;
+                    }
                 }
                 // New to the rule: one summary for the repository.
                 None => {
@@ -148,10 +152,18 @@ async fn baseline(
             .iter()
             .filter(|u| covers(rule, u.env_id) && env.is_none_or(|e| u.env_id == e))
         {
-            db::set_known(&s.store, rule.id, &repo_of(u), true).await?;
+            let repo = repo_of(u);
+            db::set_known(&s.store, rule.id, &repo, true).await?;
+            db::add_baseline_key(&s.store, rule.id, &repo, u.key.as_str()).await?;
             keys.insert(u.key.clone());
         }
     }
+    // Scanning just turned on: the scans it queues are the existing state,
+    // so the baseline closes on their results, not on older stored ones.
+    if env.is_some() {
+        return Ok(());
+    }
+    // A new or changed rule: what is stored now is the existing state.
     let keys: Vec<ImageKey> = keys.into_iter().collect();
     for (key, findings) in stored(s, &keys).await? {
         process(s, rules, &key, &findings, uses, names).await?;
@@ -183,7 +195,11 @@ impl Matcher {
         if !s.entitlements.has(Feature::Notifications) {
             return Ok(());
         }
-        let rules = db::list_rules(&s.store).await?;
+        let rules: Vec<Rule> = db::list_rules(&s.store)
+            .await?
+            .into_iter()
+            .filter(|r| r.enabled)
+            .collect();
         if rules.is_empty() {
             return Ok(());
         }
@@ -205,15 +221,18 @@ impl Matcher {
         let rules: Vec<Rule> = db::list_rules(&s.store)
             .await?
             .into_iter()
-            .filter(|r| covers(r, env_id))
+            .filter(|r| r.enabled && covers(r, env_id))
             .collect();
         if rules.is_empty() {
             return Ok(());
         }
         let names = env_names(s).await?;
         let uses = all_uses(s, &names).await?;
-        if enabling {
-            return baseline(s, &rules, Some(env_id), after, &names).await;
+        // The engine reports "enabling" after every restart too: baseline
+        // only the first time since scanning was turned on.
+        if enabling && !db::env_baselined(&s.store, env_id).await? {
+            baseline(s, &rules, Some(env_id), after, &names).await?;
+            return db::set_env_baselined(&s.store, env_id, true).await;
         }
         // Repositories new to a rule here (promoted, or arrived and already
         // scanned elsewhere) are judged on the results FleetOps already has.
@@ -238,6 +257,12 @@ impl ScanEvents for Matcher {
     async fn scan_finished(&self, s: &AppState, key: &ImageKey, findings: &[Finding]) {
         if let Err(e) = self.on_scan(s, key, findings).await {
             tracing::warn!(error = %e, "notifications: could not match a scan");
+        }
+    }
+
+    async fn scanning_disabled(&self, s: &AppState, env_id: i64) {
+        if let Err(e) = db::set_env_baselined(&s.store, env_id, false).await {
+            tracing::warn!(error = %e, "notifications: could not reset a baseline");
         }
     }
 

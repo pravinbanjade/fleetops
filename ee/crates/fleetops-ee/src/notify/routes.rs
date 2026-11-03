@@ -355,6 +355,18 @@ pub async fn delete_destination(
     ApiPath(id): ApiPath<i64>,
 ) -> ApiResult<StatusCode> {
     let (d, _) = db::get_destination(&s.store, id).await?;
+    let only = db::rules_only_sending_to(&s.store, id).await?;
+    if !only.is_empty() {
+        let one = only.len() == 1;
+        return Err(Error::Conflict(format!(
+            "{} only send{} here: give {} another destination or delete {} first",
+            only.join(", "),
+            if one { "s" } else { "" },
+            if one { "it" } else { "them" },
+            if one { "it" } else { "them" },
+        ))
+        .into());
+    }
     db::delete_destination(&s.store, id).await?;
     audit(
         &s,
@@ -476,8 +488,17 @@ pub async fn create_rule(
 ) -> ApiResult<Json<RuleView>> {
     require_feature(&s, Feature::Notifications)?;
     let row = rule_row(&s, &b).await?;
-    let id = db::create_rule(&s.store, &row, now_unix()).await?;
+    // Created off, baselined, then turned on: a scan finishing meanwhile can't
+    // make the existing state look new.
+    let off = RuleRow {
+        enabled: false,
+        ..row.clone()
+    };
+    let id = db::create_rule(&s.store, &off, now_unix()).await?;
     baseline_rule(&s, id).await?;
+    if row.enabled {
+        db::update_rule(&s.store, id, &row, now_unix()).await?;
+    }
     audit(
         &s,
         cu.user.id,
@@ -502,19 +523,24 @@ pub async fn update_rule(
     let before = db::get_rule(&s.store, id)
         .await?
         .ok_or_else(|| Error::NotFound(format!("rule {id}")))?;
-    db::update_rule(&s.store, id, &row, now_unix()).await?;
-    // A lower threshold makes already-known CVEs match: record them, silently.
-    if row.min_severity < before.min_severity
+    // A lower threshold, dropping a filter, or turning back on makes CVEs it
+    // was never told about match: record them silently, with the rule off.
+    let rebaseline = row.min_severity < before.min_severity
         || (before.fixable_only && !row.fixable_only)
         || (before.running_only && !row.running_only)
-    {
-        sqlx::query("UPDATE ee_notify_known SET baseline_pending = 1 WHERE rule_id = ?")
-            .bind(id)
-            .execute(s.store.pool())
-            .await
-            .map_err(|e| Error::Internal(format!("database: {e}")))?;
+        || (!before.enabled && row.enabled);
+    let off = RuleRow {
+        enabled: false,
+        ..row.clone()
+    };
+    db::update_rule(&s.store, id, &off, now_unix()).await?;
+    if rebaseline {
+        db::rebaseline_rule(&s.store, id).await?;
     }
     baseline_rule(&s, id).await?;
+    if row.enabled {
+        db::update_rule(&s.store, id, &row, now_unix()).await?;
+    }
     audit(
         &s,
         cu.user.id,

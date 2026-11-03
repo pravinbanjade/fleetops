@@ -430,3 +430,107 @@ async fn smtp_password_is_write_only() {
     assert!(!t.contains("pw-secret"));
     assert_eq!(v["password_set"], true);
 }
+
+#[tokio::test]
+async fn deleting_a_rules_only_destination_is_refused() {
+    let x = fx(true).await;
+    let d = x.slack().await;
+    let body = json!({"name": "prod", "enabled": true, "envs": [], "min_severity": "critical", "fixable_only": true, "running_only": true, "destinations": [d]});
+    let (st, _, _) = x
+        .send(
+            "POST",
+            "/api/v1/ee/notifications/rules",
+            Some(body),
+            &x.admin,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, v, _) = x
+        .send(
+            "DELETE",
+            &format!("/api/v1/ee/notifications/destinations/{d}"),
+            None,
+            &x.admin,
+        )
+        .await;
+    assert_eq!(st, StatusCode::CONFLICT, "{v}");
+    assert!(v["message"].as_str().unwrap().contains("prod"));
+}
+
+#[tokio::test]
+async fn re_enabling_a_rule_baselines() {
+    let x = fx(true).await;
+    let e = seed_known_cve(&x).await;
+    let d = x.slack().await;
+    let body = json!({"name": "prod", "enabled": true, "envs": ["prod"], "min_severity": "high", "fixable_only": true, "running_only": true, "destinations": [d]});
+    let (_, v, _) = x
+        .send(
+            "POST",
+            "/api/v1/ee/notifications/rules",
+            Some(body.clone()),
+            &x.admin,
+        )
+        .await;
+    let id = v["id"].as_i64().unwrap();
+    let mut off = body.clone();
+    off["enabled"] = json!(false);
+    x.send(
+        "PUT",
+        &format!("/api/v1/ee/notifications/rules/{id}"),
+        Some(off),
+        &x.admin,
+    )
+    .await;
+    // While it is off, a new CVE is found on the known image.
+    let t = ScanTarget {
+        env_id: e,
+        node: String::new(),
+        key: ImageKey("sha256:a".into()),
+        image_ref: "nginx:1".into(),
+        namespace: String::new(),
+        pull_secrets: vec![],
+    };
+    let scan = sdb::insert_scan(&x.ee.store, &t, Trigger::Periodic, now_unix())
+        .await
+        .unwrap();
+    let f = |id: &str| Finding {
+        vuln_id: id.into(),
+        pkg_name: "p".into(),
+        installed_version: "1".into(),
+        fixed_version: Some("2".into()),
+        severity: Severity::High,
+        title: None,
+        url: None,
+    };
+    sdb::finish_ok(
+        &x.ee.store,
+        scan,
+        "trivy",
+        &[f("CVE-1"), f("CVE-OFF")],
+        now_unix(),
+    )
+    .await
+    .unwrap();
+    let (st, _, t) = x
+        .send(
+            "PUT",
+            &format!("/api/v1/ee/notifications/rules/{id}"),
+            Some(body),
+            &x.admin,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{t}");
+    use fleetops_ee::scan::engine::ScanEvents;
+    fleetops_ee::notify::matcher::Matcher
+        .scan_finished(
+            &x.ee.state,
+            &ImageKey("sha256:a".into()),
+            &[f("CVE-1"), f("CVE-OFF")],
+        )
+        .await;
+    assert_eq!(
+        pending_count(&x).await,
+        0,
+        "what happened while it was off is not news"
+    );
+}

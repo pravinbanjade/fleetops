@@ -125,10 +125,21 @@ fn worst(m: &Message) -> Severity {
     }
 }
 
+/// `s` cut to at most `max` characters, ending in "…" when cut.
+pub fn cut(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
+/// Block Kit: header text at most 150 characters, section text 3000.
 pub fn slack(m: &Message, public: Option<&str>) -> Value {
     let mut blocks = vec![
-        json!({"type": "header", "text": {"type": "plain_text", "text": m.title(), "emoji": false}}),
-        json!({"type": "section", "text": {"type": "mrkdwn", "text": body_lines(m).join("\n")}}),
+        json!({"type": "header", "text": {"type": "plain_text", "text": cut(&m.title(), 150), "emoji": false}}),
+        json!({"type": "section", "text": {"type": "mrkdwn", "text": cut(&body_lines(m).join("\n"), 3000)}}),
         json!({"type": "context", "elements": [{"type": "mrkdwn", "text": format!("FleetOps rule: {}", m.rule().name)}]}),
     ];
     if let Some(url) = link(m, public) {
@@ -170,8 +181,8 @@ pub fn discord(m: &Message, public: Option<&str>) -> Value {
         _ => 0x949494,
     };
     let mut embed = json!({
-        "title": m.title(),
-        "description": body_lines(m).join("\n"),
+        "title": cut(&m.title(), 256),
+        "description": cut(&body_lines(m).join("\n"), 4096),
         "color": color,
         "footer": {"text": format!("FleetOps rule: {}", m.rule().name)},
     });
@@ -419,6 +430,64 @@ mod tests {
         assert!(text.contains("and 4 more"));
         assert!(html.contains("<li>CVE-1 (High)"), "{html}");
         assert!(html.contains("href=\"https://fleet.test/security/image?image=app%2Fworker%3A1\""));
+    }
+
+    #[test]
+    fn slack_and_discord_stay_within_limits() {
+        let long = format!(
+            "{}.dkr.ecr.eu-west-1.amazonaws.com/team/service@sha256:{}",
+            "123456789012",
+            "a".repeat(64)
+        );
+        let mut m = image();
+        if let Message::NewImage {
+            image_ref, cves, ..
+        } = &mut m
+        {
+            *image_ref = long.clone();
+            for i in 0..20 {
+                cves.push(CveLine {
+                    cve: format!("CVE-2026-{i:05}"),
+                    severity: Severity::High,
+                    pkg_name: "x".repeat(120),
+                    installed_version: "1".repeat(40),
+                    fixed_version: Some("2".repeat(40)),
+                    title: None,
+                });
+            }
+        }
+        let s = slack(&m, None);
+        assert!(
+            s["blocks"][0]["text"]["text"]
+                .as_str()
+                .unwrap()
+                .chars()
+                .count()
+                <= 150
+        );
+        assert!(
+            s["blocks"][1]["text"]["text"]
+                .as_str()
+                .unwrap()
+                .chars()
+                .count()
+                <= 3000
+        );
+        assert_eq!(
+            s["text"].as_str().unwrap(),
+            m.title(),
+            "the full title stays in the fallback text"
+        );
+        let d = discord(&m, None);
+        assert!(d["embeds"][0]["title"].as_str().unwrap().chars().count() <= 256);
+        assert!(
+            d["embeds"][0]["description"]
+                .as_str()
+                .unwrap()
+                .chars()
+                .count()
+                <= 4096
+        );
     }
 
     #[test]

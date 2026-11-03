@@ -80,3 +80,16 @@ CREATE TABLE ee_notify_deliveries (
     sent_at        INTEGER
 );
 CREATE INDEX ee_notify_deliveries_due ON ee_notify_deliveries(status, next_at);
+-- A repository's baseline stays open until every digest of it in scope at
+-- baseline time has a result.
+CREATE TABLE ee_notify_baseline_keys (
+    rule_id    INTEGER NOT NULL REFERENCES ee_notify_rules(id) ON DELETE CASCADE,
+    repository TEXT    NOT NULL,
+    image_key  TEXT    NOT NULL,
+    PRIMARY KEY (rule_id, repository, image_key)
+);
+-- Environments already baselined since scanning was turned on, so a restart
+-- (which looks like "turned on" to the scan engine) doesn't baseline again.
+CREATE TABLE ee_notify_env_baselined (
+    env_id INTEGER PRIMARY KEY REFERENCES environments(id) ON DELETE CASCADE
+);

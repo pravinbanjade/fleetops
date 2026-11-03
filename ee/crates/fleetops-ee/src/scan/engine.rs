@@ -55,6 +55,8 @@ pub trait ScanEvents: Send + Sync {
         after: &[ImageUse],
         enabling: bool,
     );
+    /// Scanning was turned off for `env_id` (its uses were cleared).
+    async fn scanning_disabled(&self, _s: &AppState, _env_id: i64) {}
 }
 
 /// Whether an environment's scanner can run.
@@ -336,6 +338,9 @@ impl Engine {
             {
                 let _ = db::replace_uses(&s.store, id, &[]).await;
                 let _ = db::fail_queued_for_env(&s.store, id, "scanning turned off", now).await;
+                if let Some(ev) = self.events.get() {
+                    ev.scanning_disabled(s, id).await;
+                }
                 self.changed(s);
             }
             return;

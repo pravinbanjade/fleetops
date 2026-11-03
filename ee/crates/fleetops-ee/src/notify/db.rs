@@ -780,3 +780,77 @@ pub async fn flush_group(
         .map_err(db_err)?;
     tx.commit().await.map_err(db_err)
 }
+
+pub async fn add_baseline_key(store: &Store, rule: i64, repo: &str, key: &str) -> Result<()> {
+    sqlx::query("INSERT OR IGNORE INTO ee_notify_baseline_keys (rule_id, repository, image_key) VALUES (?, ?, ?)")
+        .bind(rule)
+        .bind(repo)
+        .bind(key)
+        .execute(store.pool())
+        .await
+        .map_err(db_err)?;
+    Ok(())
+}
+
+/// Closes `key`'s part of the baseline; how many digests remain open.
+pub async fn remove_baseline_key(store: &Store, rule: i64, repo: &str, key: &str) -> Result<i64> {
+    sqlx::query("DELETE FROM ee_notify_baseline_keys WHERE rule_id = ? AND repository = ? AND image_key = ?")
+        .bind(rule)
+        .bind(repo)
+        .bind(key)
+        .execute(store.pool())
+        .await
+        .map_err(db_err)?;
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM ee_notify_baseline_keys WHERE rule_id = ? AND repository = ?",
+    )
+    .bind(rule)
+    .bind(repo)
+    .fetch_one(store.pool())
+    .await
+    .map_err(db_err)
+}
+
+pub async fn env_baselined(store: &Store, env_id: i64) -> Result<bool> {
+    let n: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ee_notify_env_baselined WHERE env_id = ?")
+            .bind(env_id)
+            .fetch_one(store.pool())
+            .await
+            .map_err(db_err)?;
+    Ok(n > 0)
+}
+
+pub async fn set_env_baselined(store: &Store, env_id: i64, on: bool) -> Result<()> {
+    let q = if on {
+        "INSERT OR IGNORE INTO ee_notify_env_baselined (env_id) VALUES (?)"
+    } else {
+        "DELETE FROM ee_notify_env_baselined WHERE env_id = ?"
+    };
+    sqlx::query(q)
+        .bind(env_id)
+        .execute(store.pool())
+        .await
+        .map_err(db_err)?;
+    Ok(())
+}
+
+/// Sets every repository `rule` knows back to baseline-pending.
+pub async fn rebaseline_rule(store: &Store, rule: i64) -> Result<()> {
+    sqlx::query("UPDATE ee_notify_known SET baseline_pending = 1 WHERE rule_id = ?")
+        .bind(rule)
+        .execute(store.pool())
+        .await
+        .map_err(db_err)?;
+    Ok(())
+}
+
+/// Rules whose only destination is `dest`.
+pub async fn rules_only_sending_to(store: &Store, dest: i64) -> Result<Vec<String>> {
+    Ok(list_rules(store)
+        .await?
+        .into_iter()
+        .filter(|r| r.destinations == [dest])
+        .map(|r| r.name)
+        .collect())
+}

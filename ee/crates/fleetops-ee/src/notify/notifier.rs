@@ -72,6 +72,11 @@ impl Notifier {
                 db::delete_pending(&s.store, g.rule_id, g.kind, &g.group_key).await?;
                 continue;
             };
+            if rule.destinations.is_empty() {
+                // Kept until the rule has somewhere to send again.
+                tracing::warn!(rule = rule.name, "notifications: a rule has no destination");
+                continue;
+            }
             if g.items.is_empty() {
                 db::delete_pending(&s.store, g.rule_id, g.kind, &g.group_key).await?;
                 continue;
