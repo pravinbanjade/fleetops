@@ -1,10 +1,11 @@
 import { createRoute, lazyRouteComponent } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { KeyRound, LogIn, ShieldCheck, UsersRound } from "lucide-react";
+import { KeyRound, LogIn, ShieldAlert, ShieldCheck, UsersRound } from "lucide-react";
 import type { EeModule } from "@/ee-contract";
 import { AuditExport } from "./AuditExport";
 import { BackupSchedule } from "./BackupSchedule";
 import { EeBanners } from "./BackupBanner";
+import { EnvSecuritySettings } from "./EnvSecuritySettings";
 import { UpgradeCard } from "./UpgradeCard";
 import { useLeftovers } from "./leftovers";
 import { rolesQuery } from "./roles";
@@ -34,6 +35,11 @@ export const ee: EeModule = {
       path: "sso",
       component: lazyRouteComponent(() => import("./SsoPage"), "SsoPage"),
     }),
+    createRoute({
+      getParentRoute: () => admin,
+      path: "security",
+      component: lazyRouteComponent(() => import("./SecuritySettingsPage"), "SecuritySettingsPage"),
+    }),
   ],
   // Without a license, Teams, Roles and SSO show only when leftover data
   // exists (useLeftovers), so frozen ones stay visible and removable.
@@ -41,6 +47,7 @@ export const ee: EeModule = {
     { to: "/admin/teams", label: "Teams", icon: UsersRound, group: "people", feature: "teams" },
     { to: "/admin/roles", label: "Roles", icon: ShieldCheck, group: "people", feature: "rbac" },
     { to: "/admin/sso", label: "Single sign-on", icon: LogIn, group: "people", feature: "sso" },
+    { to: "/admin/security", label: "Security scanning", icon: ShieldAlert, group: "infra", feature: "vuln_scan" },
     { to: "/admin/license", label: "License", icon: KeyRound, group: "license" },
   ],
   slots: {
@@ -50,6 +57,7 @@ export const ee: EeModule = {
     "user.access": { component: UserTeamAccess },
     "env.access": { component: EnvTeamAccess },
     "admin.backup": { component: BackupSchedule, feature: "backup" },
+    "env.settings": { component: EnvSecuritySettings, feature: "vuln_scan" },
   },
   useLeftovers,
   // Only admin pages offer roles, so only admins ask for them.
