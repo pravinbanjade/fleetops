@@ -16,6 +16,13 @@ pub fn sealed() -> Vec<SealedColumn> {
         SealedColumn::new("ee_backup_targets", "secrets", "id", "backup-target:{id}"),
         SealedColumn::new("ee_scan_global", "mirror_secret", "id", "scan-global:{id}"),
         SealedColumn::new("ee_scan_env", "mirror_secret", "env_id", "scan-env:{id}"),
+        SealedColumn::new(
+            "ee_notify_destinations",
+            "secrets",
+            "id",
+            "notify-dest:{id}",
+        ),
+        SealedColumn::new("ee_notify_smtp", "password", "id", "notify-smtp:{id}"),
     ]
 }
 

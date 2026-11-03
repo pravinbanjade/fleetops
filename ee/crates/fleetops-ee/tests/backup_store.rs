@@ -88,8 +88,39 @@ async fn hooks_list_every_sealed_ee_column() {
     )
     .await
     .unwrap();
+    use fleetops_ee::notify::{db as notify_db, model as nm};
+    notify_db::create_destination(
+        &store,
+        &notify_db::NewDestination {
+            name: "slack".into(),
+            kind: nm::DestinationKind::Slack,
+            host: None,
+            recipients: vec![],
+            secrets: nm::DestinationSecrets {
+                url: Some("https://hooks.slack.com/x".into()),
+                ..Default::default()
+            },
+        },
+        0,
+    )
+    .await
+    .unwrap();
+    notify_db::put_smtp(
+        &store,
+        &notify_db::SmtpRow {
+            host: "smtp".into(),
+            port: 587,
+            security: nm::SmtpSecurity::Starttls,
+            username: None,
+            from_address: "a@b".into(),
+        },
+        scan_db::PasswordChange::Set("pw".into()),
+        0,
+    )
+    .await
+    .unwrap();
     let cols = hooks::sealed();
-    assert_eq!(cols.len(), 5);
+    assert_eq!(cols.len(), 7);
     let boxed: &SecretBox = store.secrets();
     for col in cols {
         let rows: Vec<(i64, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
