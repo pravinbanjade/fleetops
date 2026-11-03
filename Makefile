@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap minio-up test-s3 check-editions
+.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench rss-bench-scan lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap minio-up test-s3 check-editions
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -70,6 +70,12 @@ rss-bench: build
 	cargo build --release -p fleetops-agent
 	KUBE_IT="$(KUBE_IT_RSS)" scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops \
 		$(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops-agent
+
+# The idle memory target with image scanning on (Enterprise, test license):
+# pulls Trivy and its database on the current docker context's daemon.
+rss-bench-scan: web
+	cargo build --release -p fleetops-server --features fleetops-server/ee-test-license-key
+	SCAN=1 AGENTS=0 scripts/rss-bench.sh $(abspath $(or $(CARGO_TARGET_DIR),target))/release/fleetops
 
 e2e-kube: build kind-up
 	cd web && pnpm exec playwright install chromium

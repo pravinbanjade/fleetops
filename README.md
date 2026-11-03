@@ -158,6 +158,7 @@ There is one image, `fleets/fleetops`. Every install starts on Community. Buy a 
 | Single sign-on: Microsoft, Google, GitHub, any OIDC provider | | ✓ |
 | LDAP sign-in: Active Directory, OpenLDAP | | ✓ |
 | Scheduled backups (S3, local directory) | | ✓ |
+| Image vulnerability scanning (Trivy) with a fleet-wide patch queue | | ✓ |
 | API tokens | | planned |
 
 Enterprise is for paying customers only: there is no free tier or trial license, since Community is already free on any number of nodes. FleetOps runs as Community until a license is installed: upload it in **Admin → License**, or start the server with `--license-file` / `FLEETOPS_LICENSE_FILE`. Licenses are checked offline. After expiry, Enterprise features keep working for 14 days, then turn off; Community features and data are never affected. A license covers a number of nodes: each Docker or Podman host is one, and a Kubernetes cluster counts its nodes. At the limit, new environments are refused; a cluster that grows past it only warns admins. Users are never limited.
@@ -173,6 +174,8 @@ Without a license, teams and custom roles are read-only and keep granting access
 Known limits of custom roles: Helm and Compose actions are checked against the Helm and Stacks rows only, not against what a chart or stack creates; Shell reaches whatever the container or pod can read; and *Create* on "everything else" includes Kubernetes RBAC objects, so it can bind a service account to cluster-admin inside the cluster (FleetOps access itself is not widened).
 
 Scheduled backups come with any Enterprise license (see [Moving or recovering a server](#moving-or-recovering-a-server)). Without a license they pause, with a banner for admins, and resume once one is installed; turning them off and removing targets always works.
+
+Image vulnerability scanning comes with any Enterprise license. It is off until an admin turns it on in **Admin → Security scanning**, for every environment or one at a time; turning it on pulls the [Trivy](https://trivy.dev) image and its vulnerability database. FleetOps then scans each image when it arrives and once a day, and **Security** in the sidebar lists every image across the fleet with fixable critical vulnerabilities on running containers first. Air-gapped environments can use a mirror. See [docs/security-scanning.md](docs/security-scanning.md).
 
 Everything outside `ee/` is Apache-2.0. The `ee/` directory is source-available: you may read, modify and test it, and run official builds for free on the Community plan, production included; using the Enterprise features in production needs a subscription. `make build` builds the one server, Enterprise code included; it runs as Community until a license is installed.
 
@@ -229,7 +232,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 
 ## Roadmap
 
-**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · backup and restore · Compose stacks with plan, deploy and rollback, from the browser or a git repository · Enterprise audit export, teams, custom roles, single sign-on (OIDC, LDAP) and scheduled backups.
+**Done:** core and local Docker · remote hosts through agents · Kubernetes (live lists, YAML editing, custom resources, events and metrics, suspend and resume, workload logs and exec, EKS/GKE/AKS kubeconfigs) · per-environment roles with namespace scoping · Helm releases, install and upgrade · backup and restore · Compose stacks with plan, deploy and rollback, from the browser or a git repository · Enterprise audit export, teams, custom roles, single sign-on (OIDC, LDAP), scheduled backups and image vulnerability scanning.
 
 **Next:**
 - **Port-forward:** reach a pod's port through FleetOps.
@@ -240,6 +243,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md). Please don't open a p
 - [Kubernetes and Helm](docs/kubernetes.md)
 - [Docker Swarm](docs/swarm.md): adding a swarm, FleetOps inside or outside it, stacks, key rotation
 - [Single sign-on](docs/sso.md): connecting Microsoft, Google, GitHub and OpenID Connect providers
+- [Security scanning](docs/security-scanning.md): image vulnerability scanning with Trivy, the patch queue, mirrors for air-gapped environments
 - [Development](docs/development.md): toolchain, make targets, tests and CI
 - [Architecture](docs/architecture.md): crates, request pipeline, agent tunnel, REST API and websocket protocol
 

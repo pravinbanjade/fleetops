@@ -39,6 +39,16 @@ Browse the common kinds (workloads, ReplicaSets, services, ingresses, network po
 - **CPU and memory.** When the cluster runs [metrics-server](https://github.com/kubernetes-sigs/metrics-server), the overview shows the cluster's CPU and memory against what its nodes can allocate and the busiest pods, and the Nodes and Pods lists gain CPU and Memory columns. Figures refresh every 15 s. Without metrics-server the pages say so; nothing else changes. An agent installed before this release needs its command re-applied to read metrics.
 - **Secrets.** Values are never shown, including the copy kubectl keeps in the `last-applied-configuration` annotation. Leave a masked value unchanged and the real one is kept; change it and the new value is written.
 
+## Image scanning
+
+With an Enterprise license and scanning on (see [security-scanning.md](security-scanning.md)), FleetOps scans a cluster's images with a Trivy Job per image in the `fleetops-scan` namespace. Its identity needs:
+
+- `create` and `get` on `namespaces` (once, for `fleetops-scan`; or create the namespace yourself);
+- in `fleetops-scan`: `create`, `get`, `list`, `patch` and `delete` on `jobs`, `secrets` and `persistentvolumeclaims`, and `get` on `pods` and `pods/log`;
+- `get` on `secrets` in the namespaces whose pods use image pull secrets, to copy them for the scan.
+
+The **Cluster admin** agent access level has all of this. With **Standard**, create the `fleetops-scan` namespace first. When something is missing, the environment shows *Scanner unavailable* with the permission it lacks.
+
 ## Helm
 
 *Helm releases* in the sidebar lists the releases in one namespace or all of them, with chart, app version, status and revision; the list refreshes every 10 s. A release page shows its overview, revision history, values, rendered manifest and notes.

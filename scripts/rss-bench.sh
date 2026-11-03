@@ -17,6 +17,9 @@
 #              AGENTS (default 10, 0 skips the agent phase), AGENT_LIMIT_MIB (default 15),
 #              KUBE_IT (kind fixtures dir; unset skips the kube phase), KUBE_ENVS (default 5),
 #              KUBE_LIMIT_MIB (default 100)
+#              SCAN (1 adds the scanning phase and skips the agent phase; needs a
+#              build with fleetops-server/ee-test-license-key), SCAN_LIMIT_MIB (default 80),
+#              SCAN_WAIT (seconds for the first scans, default 900)
 set -eu
 
 bin=${1:-target/release/fleetops}
@@ -103,6 +106,31 @@ max=$(peak_rss "$pid")
 mib=$(to_mib "$max")
 echo "rss-bench: idle RSS ${mib} MiB with $count containers (limit ${limit_mib} MiB)"
 [ "$max" -le $((limit_mib * 1024)) ] || fail "idle RSS ${mib} MiB is over the ${limit_mib} MiB target"
+
+# Scanning on: the same host, once every image has been scanned. The scans
+# themselves run in Trivy containers, outside this process.
+if [ "${SCAN:-0}" = 1 ]; then
+  scan_limit_mib=${SCAN_LIMIT_MIB:-80}
+  lic="$(dirname "$0")/../ee/web/e2e/fixtures/valid.lic"
+  hdr() { echo "-b $jar -H Origin:$base -H x-csrf-token:$csrf"; }
+  curl -fsS $(hdr) -X PUT -H 'content-type: text/plain' --data-binary "@$lic" "$base/api/v1/ee/license" >/dev/null ||
+    fail "installing the test license failed (build with fleetops-server/ee-test-license-key)"
+  curl -fsS $(hdr) -X PUT -H 'content-type: application/json' -d '{"enabled":true}' \
+    "$base/api/v1/ee/security/settings" >/dev/null || fail "turning scanning on failed"
+  i=0
+  until curl -fsS -b "$jar" "$base/api/v1/ee/security/images?running=false&fixable=false" |
+    python3 -c 'import json,sys; s=json.load(sys.stdin); sys.exit(0 if s["rows"] and s["unscanned"] == 0 else 1)'; do
+    i=$((i + 5))
+    [ "$i" -lt "${SCAN_WAIT:-900}" ] || fail "images still unscanned after ${SCAN_WAIT:-900}s"
+    sleep 5
+  done
+  sleep "$settle"
+  max=$(peak_rss "$pid")
+  mib=$(to_mib "$max")
+  echo "rss-bench: idle RSS ${mib} MiB with scanning on (limit ${scan_limit_mib} MiB)"
+  [ "$max" -le $((scan_limit_mib * 1024)) ] || fail "idle RSS ${mib} MiB with scanning on is over ${scan_limit_mib} MiB"
+  exit 0
+fi
 
 [ "$agents" -gt 0 ] || exit 0
 [ -x "$agent_bin" ] || fail "no agent binary at $agent_bin (cargo build --release -p fleetops-agent)"
