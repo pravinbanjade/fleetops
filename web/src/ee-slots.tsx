@@ -22,7 +22,7 @@ export function useFeatures(): readonly Feature[] {
 
 const PLAN_NAMES: Record<Edition, string> = { community: "Community", enterprise: "Enterprise" };
 
-/** "Community 1.0.0" or "Enterprise 1.0.0"; the release alone until the plan is known. */
+/** "Community 1.1.0" or "Enterprise 1.1.0"; the release alone until the plan is known. */
 export function usePlanLabel(): string {
   const edition = useEdition();
   const version = import.meta.env.FLEETOPS_VERSION;
