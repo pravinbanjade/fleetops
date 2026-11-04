@@ -3,7 +3,7 @@
 use super::config::Effective;
 use super::inventory::{SCAN_LABEL, SCAN_NAMESPACE as NAMESPACE};
 use super::model::ScanTarget;
-use super::trivy::{self, ImageSource};
+use super::trivy;
 use base64::Engine as _;
 use fleetops_core::kube::{ApplyMode, KubeKind, KubeOps};
 use fleetops_core::streams::LogOptions;
@@ -54,7 +54,7 @@ fn labels() -> Value {
 }
 
 fn job_env(cfg: &Effective) -> Vec<Value> {
-    let mut env = vec![json!({"name": "DOCKER_CONFIG", "value": "/docker"})];
+    let mut env = vec![];
     if cfg.auth.is_some() {
         for (name, key) in [
             ("TRIVY_USERNAME", "username"),
@@ -209,7 +209,14 @@ async fn job_logs(k: &dyn KubeOps, job: &str) -> Result<Vec<String>> {
         .await)
 }
 
-/// The Job, as JSON (which `apply` reads as YAML).
+/// Where the injected Trivy binary and its scratch space live.
+pub const BIN_DIR: &str = "/fleetops";
+
+/// The scan Job, as JSON (which `apply` reads as YAML). Its pod runs the
+/// scanned image itself, so the kubelet pulls it with whatever lets the
+/// node run the workload (node identity, `pull_secret`), with a Trivy
+/// binary copied in by an init container in place of the image's own
+/// entrypoint.
 pub fn job_manifest(
     cfg: &Effective,
     t: &ScanTarget,
@@ -217,32 +224,72 @@ pub fn job_manifest(
     pull_secret: Option<&str>,
     mirror_secret: Option<&str>,
 ) -> String {
-    let env = job_env(cfg);
-    let mut mounts = vec![json!({"name": "cache", "mountPath": "/cache"})];
-    let mut volumes =
-        vec![json!({"name": "cache", "persistentVolumeClaim": {"claimName": CACHE_PVC}})];
-    if let Some(s) = pull_secret {
-        mounts.push(json!({"name": "pull", "mountPath": "/docker", "readOnly": true}));
-        volumes.push(json!({"name": "pull", "secret": {"secretName": s,
-            "items": [{"key": ".dockerconfigjson", "path": "config.json"}]}}));
-    }
+    let cache = json!({"name": "cache", "mountPath": "/cache"});
+    let bin = json!({"name": "fleetops", "mountPath": BIN_DIR});
+    let small = json!({"limits": {"cpu": "1", "memory": "1Gi"}});
+    let download = |name: &str, args: Vec<String>| {
+        json!({
+            "name": name,
+            "image": cfg.trivy_image,
+            "args": args,
+            "env": job_env(cfg),
+            "resources": small,
+            "volumeMounts": [cache],
+        })
+    };
+    let env: Vec<Value> = [
+        ("TRIVY_SERVER", ""),
+        ("TRIVY_IGNORE_UNFIXED", "false"),
+        ("TRIVY_SEVERITY", trivy::SEVERITIES),
+        ("TMPDIR", "/fleetops/tmp"),
+    ]
+    .iter()
+    .map(|(n, v)| json!({"name": n, "value": v}))
+    .collect();
     let mut pod = json!({
         "restartPolicy": "Never",
+        "automountServiceAccountToken": false,
+        "enableServiceLinks": false,
+        "initContainers": [
+            download("db", trivy::db_args(cfg)),
+            download("java-db", trivy::java_db_args(cfg)),
+            {
+                "name": "copy",
+                "image": cfg.trivy_image,
+                "command": ["cp", "/usr/local/bin/trivy", format!("{BIN_DIR}/trivy")],
+                "resources": small,
+                "volumeMounts": [bin],
+            },
+        ],
         "containers": [{
             "name": "trivy",
-            "image": cfg.trivy_image,
-            "args": trivy::image_args(&pinned_ref(t), cfg, ImageSource::Remote),
+            "image": pinned_ref(t),
+            "imagePullPolicy": "IfNotPresent",
+            "command": [format!("{BIN_DIR}/trivy")],
+            "args": trivy::rootfs_args(cfg),
             "env": env,
+            "securityContext": {"runAsUser": 0},
             "resources": {
                 "limits": {"cpu": "1", "memory": "1Gi"},
                 "requests": {"cpu": "100m", "memory": "256Mi"},
             },
-            "volumeMounts": mounts,
+            "volumeMounts": [cache, bin],
         }],
-        "volumes": volumes,
+        "volumes": [
+            {"name": "cache", "persistentVolumeClaim": {"claimName": CACHE_PVC}},
+            {"name": "fleetops", "emptyDir": {}},
+        ],
     });
-    if let Some(m) = mirror_secret {
-        pod["imagePullSecrets"] = json!([{ "name": m }]);
+    let pulls: Vec<Value> = mirror_secret
+        .into_iter()
+        .chain(pull_secret)
+        .map(|n| json!({ "name": n }))
+        .collect();
+    if !pulls.is_empty() {
+        pod["imagePullSecrets"] = Value::Array(pulls);
+    }
+    if let Some((os, arch)) = t.platform.as_deref().and_then(|p| p.split_once('/')) {
+        pod["nodeSelector"] = json!({"kubernetes.io/os": os, "kubernetes.io/arch": arch});
     }
     json!({
         "apiVersion": "batch/v1",
@@ -537,6 +584,14 @@ mod tests {
         .unwrap()
     }
 
+    fn strs(v: &Value) -> Vec<String> {
+        serde_json::from_value(v.clone()).unwrap()
+    }
+
+    fn pod(j: &Value) -> &Value {
+        &j["spec"]["template"]["spec"]
+    }
+
     #[test]
     fn job_has_limits_ttl_and_deadline() {
         let j = job(None, None);
@@ -545,48 +600,114 @@ mod tests {
         assert_eq!(j["spec"]["backoffLimit"], 0);
         assert_eq!(j["spec"]["ttlSecondsAfterFinished"], 300);
         assert_eq!(j["spec"]["activeDeadlineSeconds"], 1200);
-        let c = &j["spec"]["template"]["spec"]["containers"][0];
+        let c = &pod(&j)["containers"][0];
         assert_eq!(
             c["resources"]["limits"],
             json!({"cpu": "1", "memory": "1Gi"})
         );
-        assert_eq!(j["spec"]["template"]["spec"]["restartPolicy"], "Never");
-        let args: Vec<&str> = c["args"]
+        assert_eq!(pod(&j)["restartPolicy"], "Never");
+        assert!(
+            !strs(&c["args"]).contains(&"--output".to_string()),
+            "the report goes to the log"
+        );
+    }
+
+    #[test]
+    fn scan_container_runs_the_image_with_injected_trivy() {
+        let j = job(None, None);
+        let c = &pod(&j)["containers"][0];
+        assert_eq!(c["image"], "nginx@sha256:d", "pinned to the digest");
+        assert_eq!(c["imagePullPolicy"], "IfNotPresent");
+        assert_eq!(strs(&c["command"]), ["/fleetops/trivy"]);
+        assert_eq!(strs(&c["args"]), trivy::rootfs_args(&cfg()));
+        assert_eq!(c["securityContext"]["runAsUser"], 0);
+        assert_eq!(pod(&j)["automountServiceAccountToken"], false);
+        assert_eq!(pod(&j)["enableServiceLinks"], false);
+        let mounts: Vec<&str> = c["volumeMounts"]
             .as_array()
             .unwrap()
             .iter()
-            .filter_map(|a| a.as_str())
+            .map(|m| m["mountPath"].as_str().unwrap())
             .collect();
-        assert_eq!(args.last(), Some(&"nginx@sha256:d"), "pinned to the digest");
-        assert!(!args.contains(&"--output"), "the report goes to the log");
+        assert_eq!(mounts, ["/cache", "/fleetops"]);
     }
 
     #[test]
-    fn job_mounts_pull_secret_only_when_given() {
-        let without = job(None, None);
+    fn init_containers_refresh_dbs_then_copy() {
+        let c = cfg();
+        let j = job(None, None);
+        let init = pod(&j)["initContainers"].as_array().unwrap();
+        let names: Vec<&str> = init.iter().map(|i| i["name"].as_str().unwrap()).collect();
+        assert_eq!(names, ["db", "java-db", "copy"]);
+        assert!(init.iter().all(|i| i["image"] == c.trivy_image.as_str()));
+        assert_eq!(strs(&init[0]["args"]), trivy::db_args(&c));
+        assert_eq!(strs(&init[1]["args"]), trivy::java_db_args(&c));
         assert_eq!(
-            without["spec"]["template"]["spec"]["volumes"]
-                .as_array()
-                .unwrap()
-                .len(),
-            1
+            strs(&init[2]["command"]),
+            ["cp", "/usr/local/bin/trivy", "/fleetops/trivy"]
         );
-        let with = job(Some("fleetops-scan-9-pull"), None);
-        let vols = with["spec"]["template"]["spec"]["volumes"]
-            .as_array()
-            .unwrap();
-        assert_eq!(vols[1]["secret"]["secretName"], "fleetops-scan-9-pull");
-        assert_eq!(vols[1]["secret"]["items"][0]["path"], "config.json");
     }
 
     #[test]
-    fn job_uses_mirror_pull_secret() {
-        let j = job(None, Some(MIRROR_SECRET));
+    fn scan_container_overrides_trivy_env() {
+        let mut c = cfg();
+        c.auth = Some(("bot".into(), "pw".into()));
+        let j: Value = serde_json::from_str(&job_manifest(
+            &c,
+            &target("sha256:d", "nginx:1.25"),
+            9,
+            None,
+            Some(MIRROR_SECRET),
+        ))
+        .unwrap();
+        let env: Vec<(String, String)> = pod(&j)["containers"][0]["env"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                (
+                    e["name"].as_str().unwrap().to_string(),
+                    e["value"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        let want: Vec<(String, String)> = [
+            ("TRIVY_SERVER", ""),
+            ("TRIVY_IGNORE_UNFIXED", "false"),
+            ("TRIVY_SEVERITY", "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"),
+            ("TMPDIR", "/fleetops/tmp"),
+        ]
+        .iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+        assert_eq!(env, want);
+    }
+
+    #[test]
+    fn pull_secrets_become_image_pull_secrets() {
+        let j = job(Some("fleetops-scan-9-pull"), Some(MIRROR_SECRET));
         assert_eq!(
-            j["spec"]["template"]["spec"]["imagePullSecrets"],
-            json!([{"name": MIRROR_SECRET}])
+            pod(&j)["imagePullSecrets"],
+            json!([{"name": MIRROR_SECRET}, {"name": "fleetops-scan-9-pull"}])
         );
         assert!(job(None, None)["spec"]["template"]["spec"]["imagePullSecrets"].is_null());
+        let s = job(Some("fleetops-scan-9-pull"), None).to_string();
+        assert!(
+            !s.contains("DOCKER_CONFIG") && !s.contains("/docker"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn platform_sets_node_selector() {
+        let mut t = target("sha256:d", "nginx:1.25");
+        t.platform = Some("linux/arm64".into());
+        let j: Value = serde_json::from_str(&job_manifest(&cfg(), &t, 9, None, None)).unwrap();
+        assert_eq!(
+            pod(&j)["nodeSelector"],
+            json!({"kubernetes.io/os": "linux", "kubernetes.io/arch": "arm64"})
+        );
+        assert!(pod(&job(None, None))["nodeSelector"].is_null());
     }
 
     #[test]
@@ -629,7 +750,7 @@ mod tests {
         );
         assert!(!j.contains("hunter2"), "{j}");
         let v: Value = serde_json::from_str(&j).unwrap();
-        let env = v["spec"]["template"]["spec"]["containers"][0]["env"]
+        let env = v["spec"]["template"]["spec"]["initContainers"][0]["env"]
             .as_array()
             .unwrap();
         let pw = env.iter().find(|e| e["name"] == "TRIVY_PASSWORD").unwrap();

@@ -18,24 +18,26 @@ pub enum ImageSource {
     Socket,
     /// From an exported tar at [`INPUT_PATH`].
     Tar,
-    /// From the registry (Kubernetes).
-    Remote,
 }
 
-/// `trivy …` arguments for one image. `Remote` scans print the report to
-/// stdout; the others write it to [`REPORT_PATH`].
+/// `trivy …` arguments for one image on a Docker host; the report goes to
+/// [`REPORT_PATH`].
 pub fn image_args(image_ref: &str, cfg: &Effective, src: ImageSource) -> Vec<String> {
-    let mut a: Vec<String> = ["image", "--scanners", "vuln", "--format", "json"]
-        .map(String::from)
-        .into();
-    if src != ImageSource::Remote {
-        a.extend(["--output".into(), REPORT_PATH.into()]);
-    }
+    let mut a: Vec<String> = [
+        "image",
+        "--scanners",
+        "vuln",
+        "--format",
+        "json",
+        "--output",
+        REPORT_PATH,
+    ]
+    .map(String::from)
+    .into();
     a.extend(["--cache-dir", "/cache", "--timeout", "15m", "--quiet"].map(String::from));
     match src {
         ImageSource::Socket => a.extend(["--image-src".into(), "docker".into()]),
         ImageSource::Tar => a.extend(["--input".into(), INPUT_PATH.into()]),
-        ImageSource::Remote => a.extend(["--image-src".into(), "remote".into()]),
     }
     if let Some(r) = &cfg.db_repository {
         a.extend(["--db-repository".into(), r.clone()]);
@@ -48,6 +50,43 @@ pub fn image_args(image_ref: &str, cfg: &Effective, src: ImageSource) -> Vec<Str
     }
     a
 }
+
+/// `trivy rootfs …` run inside the scanned image (Kubernetes): offline, on
+/// databases the init containers refreshed, with every option that changes
+/// findings explicit so the image's own `TRIVY_*` settings can't. The
+/// report goes to stdout.
+pub fn rootfs_args(_cfg: &Effective) -> Vec<String> {
+    [
+        "rootfs",
+        "--scanners",
+        "vuln",
+        "--format",
+        "json",
+        "--cache-dir",
+        "/cache",
+        "--timeout",
+        "15m",
+        "--quiet",
+        "--skip-db-update",
+        "--skip-java-db-update",
+        "--offline-scan",
+        "--severity",
+        SEVERITIES,
+        "--ignore-unfixed=false",
+        "--ignorefile",
+        "/fleetops/none/.trivyignore",
+        "--config",
+        "/fleetops/none/trivy.yaml",
+        "--skip-dirs",
+        "/fleetops,/cache,/proc,/sys,/dev",
+        "/",
+    ]
+    .map(String::from)
+    .into()
+}
+
+/// Every severity, so none is filtered out.
+pub const SEVERITIES: &str = "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL";
 
 /// `trivy …` that only downloads the vulnerability database into the cache:
 /// what turning scanning on checks.
@@ -251,30 +290,43 @@ mod tests {
                 INPUT_PATH
             ]
         );
-        let mut m = base.clone();
-        m.db_repository = Some("mirror.local/trivy-db".into());
-        m.java_db_repository = Some("mirror.local/trivy-java-db".into());
+    }
+
+    #[test]
+    fn rootfs_args_are_exact_and_offline() {
+        let want = [
+            "rootfs",
+            "--scanners",
+            "vuln",
+            "--format",
+            "json",
+            "--cache-dir",
+            "/cache",
+            "--timeout",
+            "15m",
+            "--quiet",
+            "--skip-db-update",
+            "--skip-java-db-update",
+            "--offline-scan",
+            "--severity",
+            "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL",
+            "--ignore-unfixed=false",
+            "--ignorefile",
+            "/fleetops/none/.trivyignore",
+            "--config",
+            "/fleetops/none/trivy.yaml",
+            "--skip-dirs",
+            "/fleetops,/cache,/proc,/sys,/dev",
+            "/",
+        ];
+        let mut c = cfg();
+        assert_eq!(rootfs_args(&c), want);
+        c.db_repository = Some("mirror.local/trivy-db".into());
+        c.java_db_repository = Some("mirror.local/trivy-java-db".into());
         assert_eq!(
-            image_args("nginx@sha256:1", &m, ImageSource::Remote),
-            [
-                "image",
-                "--scanners",
-                "vuln",
-                "--format",
-                "json",
-                "--cache-dir",
-                "/cache",
-                "--timeout",
-                "15m",
-                "--quiet",
-                "--image-src",
-                "remote",
-                "--db-repository",
-                "mirror.local/trivy-db",
-                "--java-db-repository",
-                "mirror.local/trivy-java-db",
-                "nginx@sha256:1"
-            ]
+            rootfs_args(&c),
+            want,
+            "repositories only matter to downloads"
         );
     }
 
