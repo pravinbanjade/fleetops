@@ -95,11 +95,36 @@ pub async fn prepare_with_cache(d: &dyn DockerOps, cfg: &Effective, volume: &str
         })
         .await?;
     }
-    // Download the database now, so a mirror or network problem shows as
+    // Download the databases now, so a mirror or network problem shows as
     // "scanner unavailable" rather than as one failed scan per image.
+    download(
+        d,
+        cfg,
+        volume,
+        trivy::db_args(cfg),
+        "the vulnerability database",
+    )
+    .await?;
+    download(
+        d,
+        cfg,
+        volume,
+        trivy::java_db_args(cfg),
+        "the Java database",
+    )
+    .await
+}
+
+async fn download(
+    d: &dyn DockerOps,
+    cfg: &Effective,
+    volume: &str,
+    args: Vec<String>,
+    what: &str,
+) -> Result<()> {
     let body = json!({
         "Image": cfg.trivy_image,
-        "Cmd": trivy::db_args(cfg),
+        "Cmd": args,
         "Env": trivy::auth_env(cfg),
         "Labels": {SCAN_LABEL: "1"},
         "HostConfig": {
@@ -113,12 +138,10 @@ pub async fn prepare_with_cache(d: &dyn DockerOps, cfg: &Effective, volume: &str
     let out = match start_and_wait(d, &id).await {
         Ok(0) => Ok(()),
         Ok(code) => Err(Error::Invalid(format!(
-            "downloading the vulnerability database failed (trivy exited {code}): {}",
+            "downloading {what} failed (trivy exited {code}): {}",
             log_tail(d, &id).await
         ))),
-        Err(e) => Err(Error::Invalid(format!(
-            "downloading the vulnerability database: {e}"
-        ))),
+        Err(e) => Err(Error::Invalid(format!("downloading {what}: {e}"))),
     };
     let _ = d.remove_container(&id, true, false).await;
     out

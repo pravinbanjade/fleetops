@@ -52,9 +52,23 @@ pub fn image_args(image_ref: &str, cfg: &Effective, src: ImageSource) -> Vec<Str
 /// `trivy …` that only downloads the vulnerability database into the cache:
 /// what turning scanning on checks.
 pub fn db_args(cfg: &Effective) -> Vec<String> {
+    download_args("--download-db-only", "--db-repository", &cfg.db_repository)
+}
+
+/// `trivy …` that only downloads the Java database into the cache, so no
+/// scan has to fetch it midway.
+pub fn java_db_args(cfg: &Effective) -> Vec<String> {
+    download_args(
+        "--download-java-db-only",
+        "--java-db-repository",
+        &cfg.java_db_repository,
+    )
+}
+
+fn download_args(only: &str, repo_flag: &str, repo: &Option<String>) -> Vec<String> {
     let mut a: Vec<String> = [
         "image",
-        "--download-db-only",
+        only,
         "--cache-dir",
         "/cache",
         "--timeout",
@@ -63,10 +77,23 @@ pub fn db_args(cfg: &Effective) -> Vec<String> {
     ]
     .map(String::from)
     .into();
-    if let Some(r) = &cfg.db_repository {
-        a.extend(["--db-repository".into(), r.clone()]);
+    if let Some(r) = repo {
+        a.extend([repo_flag.into(), r.clone()]);
     }
     a
+}
+
+/// The JSON report in a scan pod's log, which also carries whatever Trivy
+/// said on stderr: from the first line that opens an object to the last
+/// that closes one. Trivy indents its report, so only those two lines sit
+/// in column 0.
+pub fn report_from_log(lines: &[String]) -> Vec<u8> {
+    let start = lines.iter().position(|l| l.starts_with('{'));
+    let end = lines.iter().rposition(|l| l.starts_with('}'));
+    match (start, end) {
+        (Some(s), Some(e)) if s <= e => lines[s..=e].join("\n").into_bytes(),
+        _ => lines.join("\n").into_bytes(),
+    }
 }
 
 /// Registry credentials for the mirror, as Trivy reads them.
@@ -271,6 +298,45 @@ mod tests {
         assert!(a
             .windows(2)
             .any(|w| w == ["--db-repository", "mirror.local/trivy-db"]));
+    }
+
+    #[test]
+    fn java_db_args_download_only_from_the_mirror() {
+        let mut c = cfg();
+        assert_eq!(
+            java_db_args(&c),
+            [
+                "image",
+                "--download-java-db-only",
+                "--cache-dir",
+                "/cache",
+                "--timeout",
+                "15m",
+                "--quiet"
+            ]
+        );
+        c.java_db_repository = Some("mirror.local/trivy-java-db".into());
+        assert!(java_db_args(&c)
+            .windows(2)
+            .any(|w| w == ["--java-db-repository", "mirror.local/trivy-java-db"]));
+    }
+
+    #[test]
+    fn report_from_log_skips_stray_lines() {
+        let lines: Vec<String> = [
+            "2026-11-03T21:37:13Z\tWARN\tsomething",
+            "{",
+            "  \"Results\": [",
+            "    {\"Target\": \"x\"}",
+            "  ]",
+            "}",
+            "2026-11-03T21:37:14Z\tINFO\tdone",
+        ]
+        .map(String::from)
+        .into();
+        let r = report_from_log(&lines);
+        assert!(parse_report(&r).unwrap().is_empty());
+        assert!(String::from_utf8(r).unwrap().starts_with('{'));
     }
 
     #[test]

@@ -18,6 +18,10 @@ pub const MIRROR_SECRET: &str = "fleetops-scan-mirror";
 /// through `secretKeyRef` so they never appear in its spec.
 pub const MIRROR_AUTH_SECRET: &str = "fleetops-scan-mirror-auth";
 pub const PREPARE_JOB: &str = "fleetops-scan-prepare";
+pub const PREPARE_JAVA_JOB: &str = "fleetops-scan-prepare-java";
+/// Room for the vulnerability and Java databases, each over a gigabyte
+/// unpacked, while Trivy replaces them.
+pub const CACHE_SIZE: &str = "10Gi";
 /// The Job's own deadline; FleetOps waits a minute longer.
 pub const DEADLINE_SECS: i64 = 1200;
 const POLL: Duration = Duration::from_secs(3);
@@ -79,14 +83,41 @@ pub fn mirror_auth_secret(cfg: &Effective) -> Option<String> {
     )
 }
 
-/// The Job that only downloads the vulnerability database.
-pub fn prepare_manifest(cfg: &Effective, mirror_secret: Option<&str>) -> String {
+/// The download-only Jobs turning scanning on runs, in order: Job name and
+/// Trivy arguments.
+pub fn prepare_jobs(cfg: &Effective) -> Vec<(&'static str, Vec<String>)> {
+    vec![
+        (PREPARE_JOB, trivy::db_args(cfg)),
+        (PREPARE_JAVA_JOB, trivy::java_db_args(cfg)),
+    ]
+}
+
+/// The database cache's claim.
+pub fn cache_pvc() -> String {
+    json!({"apiVersion": "v1", "kind": "PersistentVolumeClaim",
+        "metadata": {"name": CACHE_PVC, "namespace": NAMESPACE, "labels": labels()},
+        "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": CACHE_SIZE}}}})
+    .to_string()
+}
+
+/// Kubernetes refusing to grow a claim whose storage class can't expand.
+pub fn refuses_resize(message: &str) -> bool {
+    message.contains("resize")
+}
+
+/// A Job that only downloads a database.
+pub fn prepare_manifest(
+    cfg: &Effective,
+    name: &str,
+    args: &[String],
+    mirror_secret: Option<&str>,
+) -> String {
     let mut pod = json!({
         "restartPolicy": "Never",
         "containers": [{
             "name": "trivy",
             "image": cfg.trivy_image,
-            "args": trivy::db_args(cfg),
+            "args": args,
             "env": job_env(cfg),
             "resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
             "volumeMounts": [{"name": "cache", "mountPath": "/cache"}],
@@ -99,7 +130,7 @@ pub fn prepare_manifest(cfg: &Effective, mirror_secret: Option<&str>) -> String 
     json!({
         "apiVersion": "batch/v1",
         "kind": "Job",
-        "metadata": {"name": PREPARE_JOB, "namespace": NAMESPACE, "labels": labels()},
+        "metadata": {"name": name, "namespace": NAMESPACE, "labels": labels()},
         "spec": {
             "backoffLimit": 0,
             "ttlSecondsAfterFinished": 300,
@@ -154,6 +185,17 @@ async fn wait_job(k: &dyn KubeOps, job: &str) -> Result<bool> {
     }
 }
 
+/// The whole log: the report is longer than any default tail.
+pub fn report_log_options() -> LogOptions {
+    LogOptions {
+        follow: false,
+        tail: None,
+        stdout: true,
+        stderr: true,
+        ..Default::default()
+    }
+}
+
 async fn job_logs(k: &dyn KubeOps, job: &str) -> Result<Vec<String>> {
     let pods = k.workload_pods(KubeKind::Jobs, NAMESPACE, job).await?;
     let pod = pods
@@ -161,13 +203,7 @@ async fn job_logs(k: &dyn KubeOps, job: &str) -> Result<Vec<String>> {
         .first()
         .map(|r| r.name.clone())
         .ok_or_else(|| Error::Internal("the scan job left no pod".into()))?;
-    let opts = LogOptions {
-        follow: false,
-        stdout: true,
-        stderr: true,
-        ..Default::default()
-    };
-    Ok(k.logs(NAMESPACE, &pod, &opts)
+    Ok(k.logs(NAMESPACE, &pod, &report_log_options())
         .filter_map(|l| async move { l.ok().map(|l| l.text) })
         .collect()
         .await)
@@ -293,24 +329,13 @@ async fn apply(k: &dyn KubeOps, docs: &str, verb: &str, what: &str) -> Result<()
 }
 
 pub async fn prepare(k: &dyn KubeOps, cfg: &Effective) -> Result<()> {
-    let mut docs = vec![
-        json!({"apiVersion": "v1", "kind": "Namespace",
-            "metadata": {"name": NAMESPACE, "labels": labels()}})
-        .to_string(),
-        json!({"apiVersion": "v1", "kind": "PersistentVolumeClaim",
-            "metadata": {"name": CACHE_PVC, "namespace": NAMESPACE, "labels": labels()},
-            "spec": {"accessModes": ["ReadWriteOnce"], "resources": {"requests": {"storage": "2Gi"}}}})
-        .to_string(),
-    ];
+    let mut docs = vec![json!({"apiVersion": "v1", "kind": "Namespace",
+        "metadata": {"name": NAMESPACE, "labels": labels()}})
+    .to_string()];
     docs.extend(mirror_secret(cfg));
     docs.extend(mirror_auth_secret(cfg));
-    apply(
-        k,
-        &docs.join("\n---\n"),
-        "create",
-        "namespaces, persistentvolumeclaims and secrets",
-    )
-    .await?;
+    apply(k, &docs.join("\n---\n"), "create", "namespaces and secrets").await?;
+    ensure_cache(k).await?;
     if cfg.auth.is_none() {
         // A mirror login that was removed: forget its copies.
         let _ = k
@@ -318,21 +343,76 @@ pub async fn prepare(k: &dyn KubeOps, cfg: &Effective) -> Result<()> {
             .await;
         let _ = k.delete(KubeKind::Secrets, NAMESPACE, MIRROR_SECRET).await;
     }
-    let _ = k.delete(KubeKind::Jobs, NAMESPACE, PREPARE_JOB).await;
     let mirror = cfg.auth.is_some().then_some(MIRROR_SECRET);
-    apply(k, &prepare_manifest(cfg, mirror), "create", "jobs").await?;
-    let out = match wait_job(k, PREPARE_JOB).await {
+    for (job, args) in prepare_jobs(cfg) {
+        download(k, cfg, job, &args, mirror).await?;
+    }
+    Ok(())
+}
+
+/// Creates the cache claim at [`CACHE_SIZE`], growing an older, smaller
+/// one, or replacing it when its storage class can't grow: it only holds
+/// databases Trivy downloads again.
+async fn ensure_cache(k: &dyn KubeOps) -> Result<()> {
+    let what = "persistentvolumeclaims";
+    match apply(k, &cache_pvc(), "create", what).await {
+        Err(e) if refuses_resize(&e.to_string()) => {}
+        r => return r,
+    }
+    tracing::info!("replacing the scan cache with a larger one");
+    k.delete(KubeKind::PersistentVolumeClaims, NAMESPACE, CACHE_PVC)
+        .await
+        .map_err(|e| rbac(e, "delete", what))?;
+    let until = now_unix() + 120;
+    loop {
+        match k
+            .get(KubeKind::PersistentVolumeClaims, NAMESPACE, CACHE_PVC)
+            .await
+        {
+            Err(Error::NotFound(_)) => break,
+            _ if now_unix() > until => {
+                return Err(Error::Internal(
+                    "the old scan cache is still in use; FleetOps will retry".into(),
+                ))
+            }
+            _ => tokio::time::sleep(POLL).await,
+        }
+    }
+    apply(k, &cache_pvc(), "create", what).await
+}
+
+async fn download(
+    k: &dyn KubeOps,
+    cfg: &Effective,
+    job: &str,
+    args: &[String],
+    mirror: Option<&str>,
+) -> Result<()> {
+    let _ = k.delete(KubeKind::Jobs, NAMESPACE, job).await;
+    apply(
+        k,
+        &prepare_manifest(cfg, job, args, mirror),
+        "create",
+        "jobs",
+    )
+    .await?;
+    let out = match wait_job(k, job).await {
         Ok(false) => Ok(()),
         Ok(true) => {
-            let lines = job_logs(k, PREPARE_JOB).await.unwrap_or_default();
+            let lines = job_logs(k, job).await.unwrap_or_default();
+            let what = if job == PREPARE_JAVA_JOB {
+                "the Java database"
+            } else {
+                "the vulnerability database"
+            };
             Err(Error::Invalid(format!(
-                "downloading the vulnerability database failed: {}",
+                "downloading {what} failed: {}",
                 super::docker::error_lines(&lines)
             )))
         }
         Err(e) => Err(e),
     };
-    let _ = k.delete(KubeKind::Jobs, NAMESPACE, PREPARE_JOB).await;
+    let _ = k.delete(KubeKind::Jobs, NAMESPACE, job).await;
     out
 }
 
@@ -400,7 +480,7 @@ async fn run(
             super::docker::error_lines(&lines)
         )));
     }
-    Ok(lines.join("\n").into_bytes())
+    Ok(trivy::report_from_log(&lines))
 }
 
 /// Deletes scan Jobs and Secrets older than half an hour.
@@ -575,6 +655,46 @@ mod tests {
             .contains("ImagePullBackOff"));
         assert!(pull_failure(&[row("ErrImagePull")]).is_some());
         assert_eq!(pull_failure(&[row("Running")]), None);
+    }
+
+    #[test]
+    fn report_log_reads_the_whole_log() {
+        let o = report_log_options();
+        assert_eq!(o.tail, None, "a report longer than the default tail is cut");
+        assert!(!o.follow);
+    }
+
+    #[test]
+    fn cache_holds_both_databases() {
+        let p: Value = serde_json::from_str(&cache_pvc()).unwrap();
+        assert_eq!(p["metadata"]["name"], CACHE_PVC);
+        assert_eq!(p["spec"]["resources"]["requests"]["storage"], "10Gi");
+    }
+
+    #[test]
+    fn resize_refusals_are_recognised() {
+        assert!(refuses_resize("persistentvolumeclaims \"fleetops-trivy-cache\" is forbidden: only dynamically provisioned pvc can be resized and the storageclass that provisions the pvc must support resize"));
+        assert!(!refuses_resize(
+            "namespaces is forbidden: User cannot create"
+        ));
+    }
+
+    #[test]
+    fn prepare_jobs_download_each_database() {
+        let c = cfg();
+        let jobs = prepare_jobs(&c);
+        assert_eq!(jobs.len(), 2);
+        let args = |j: &str| -> Vec<String> {
+            let v: Value = serde_json::from_str(j).unwrap();
+            serde_json::from_value(v["spec"]["template"]["spec"]["containers"][0]["args"].clone())
+                .unwrap()
+        };
+        assert_eq!(jobs[0].0, PREPARE_JOB);
+        assert!(args(&prepare_manifest(&c, jobs[0].0, &jobs[0].1, None))
+            .contains(&"--download-db-only".to_string()));
+        assert_eq!(jobs[1].0, PREPARE_JAVA_JOB);
+        assert!(args(&prepare_manifest(&c, jobs[1].0, &jobs[1].1, None))
+            .contains(&"--download-java-db-only".to_string()));
     }
 
     #[test]

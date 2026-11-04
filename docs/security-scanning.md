@@ -22,7 +22,7 @@ Results are kept per image digest, so the same image on ten hosts is scanned onc
 
 Rootless engines keep their socket at a path FleetOps can't know. For those, FleetOps exports the image instead and streams it into the scan container (it is spooled under the FleetOps data directory while it is copied), or you can set the socket's path on the host in the environment's panel.
 
-**Kubernetes.** FleetOps runs a Trivy Job per image in the `fleetops-scan` namespace (1 CPU, 1 GiB, a 20-minute deadline), pinned to the digest your pods run. If the pods use image pull secrets, FleetOps copies them into the namespace for the scan and deletes them afterwards. The database is cached on a 2 GiB `fleetops-trivy-cache` claim. The permissions this needs are in [kubernetes.md](kubernetes.md#image-scanning).
+**Kubernetes.** FleetOps runs a Trivy Job per image in the `fleetops-scan` namespace (1 CPU, 1 GiB, a 20-minute deadline), pinned to the digest your pods run. If the pods use image pull secrets, FleetOps copies them into the namespace for the scan and deletes them afterwards. The vulnerability and Java databases are downloaded when scanning is turned on and cached on a 10 GiB `fleetops-trivy-cache` claim; a smaller claim from an earlier version is grown, or replaced if its storage class can't grow. The report is read from the Job's log, so it is limited by the kubelet's container log size (10 MiB by default). The permissions this needs are in [kubernetes.md](kubernetes.md#image-scanning).
 
 ## Air-gapped environments
 
