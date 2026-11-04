@@ -79,6 +79,12 @@ pub fn rootfs_args(_cfg: &Effective) -> Vec<String> {
         "/dev/null",
         "--skip-dirs",
         "/fleetops,/cache,/proc,/sys,/dev",
+        "--pkg-types",
+        "os,library",
+        "--exit-code",
+        "0",
+        "--cache-backend",
+        "fs",
         "/",
     ]
     .map(String::from)
@@ -317,6 +323,12 @@ mod tests {
             "/dev/null",
             "--skip-dirs",
             "/fleetops,/cache,/proc,/sys,/dev",
+            "--pkg-types",
+            "os,library",
+            "--exit-code",
+            "0",
+            "--cache-backend",
+            "fs",
             "/",
         ];
         let mut c = cfg();

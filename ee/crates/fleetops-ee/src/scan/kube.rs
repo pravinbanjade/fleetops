@@ -243,6 +243,14 @@ pub fn unschedulable(
             && c.status == "False"
             && c.reason.as_deref() == Some("Unschedulable")
     })?;
+    // A full cluster may be adding a node: only a pod no node could ever
+    // take (platform, taints) fails early; the deadline covers the rest.
+    if c.message
+        .as_deref()
+        .is_some_and(|m| m.contains("Insufficient"))
+    {
+        return None;
+    }
     Some(format!(
         "no node can run the scan pod: {}",
         c.message.as_deref().unwrap_or("Unschedulable")
@@ -312,6 +320,25 @@ async fn job_logs(k: &dyn KubeOps, job: &str) -> Result<Vec<String>> {
         .await)
 }
 
+/// `TRIVY_*` variables the scan container clears, overriding the image's.
+const CLEARED_ENV: [&str; 15] = [
+    "TRIVY_SERVER",
+    "TRIVY_PKG_TYPES",
+    "TRIVY_VULN_TYPE",
+    "TRIVY_SKIP_FILES",
+    "TRIVY_FILE_PATTERNS",
+    "TRIVY_IGNORE_POLICY",
+    "TRIVY_VEX",
+    "TRIVY_IGNORE_STATUS",
+    "TRIVY_DETECTION_PRIORITY",
+    "TRIVY_DISTRO",
+    "TRIVY_INCLUDE_DEV_DEPS",
+    "TRIVY_EXIT_CODE",
+    "TRIVY_OUTPUT",
+    "TRIVY_CACHE_BACKEND",
+    "TRIVY_TEMPLATE",
+];
+
 /// Where the injected Trivy binary and its scratch space live.
 pub const BIN_DIR: &str = "/fleetops";
 
@@ -329,7 +356,12 @@ pub fn job_manifest(
 ) -> String {
     let cache = json!({"name": "cache", "mountPath": "/cache"});
     let bin = json!({"name": "fleetops", "mountPath": BIN_DIR});
-    let small = json!({"limits": {"cpu": "1", "memory": "1Gi"}});
+    // Init containers need requests too: limits alone would make the whole
+    // pod request a CPU and a gigabyte.
+    let small = json!({
+        "limits": {"cpu": "1", "memory": "1Gi"},
+        "requests": {"cpu": "100m", "memory": "256Mi"},
+    });
     let download = |name: &str, args: Vec<String>| {
         json!({
             "name": name,
@@ -340,13 +372,16 @@ pub fn job_manifest(
             "volumeMounts": [cache],
         })
     };
+    // Every Trivy setting the scanned image's ENV could carry that changes
+    // findings or the report: flags cover most; these are cleared (an
+    // empty variable is unset to Trivy) or pinned.
     let env: Vec<Value> = [
-        ("TRIVY_SERVER", ""),
         ("TRIVY_IGNORE_UNFIXED", "false"),
         ("TRIVY_SEVERITY", trivy::SEVERITIES),
-        ("TMPDIR", "/fleetops"),
+        ("TMPDIR", BIN_DIR),
     ]
-    .iter()
+    .into_iter()
+    .chain(CLEARED_ENV.map(|n| (n, "")))
     .map(|(n, v)| json!({"name": n, "value": v}))
     .collect();
     let mut pod = json!({
@@ -729,6 +764,13 @@ mod tests {
             strs(&init[2]["command"]),
             ["cp", "/usr/local/bin/trivy", "/fleetops/trivy"]
         );
+        for i in init {
+            assert_eq!(
+                i["resources"]["requests"],
+                json!({"cpu": "100m", "memory": "256Mi"}),
+                "init limits alone would make the pod request a whole CPU"
+            );
+        }
     }
 
     #[test]
@@ -754,8 +796,7 @@ mod tests {
                 )
             })
             .collect();
-        let want: Vec<(String, String)> = [
-            ("TRIVY_SERVER", ""),
+        let mut want: Vec<(String, String)> = [
             ("TRIVY_IGNORE_UNFIXED", "false"),
             ("TRIVY_SEVERITY", "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"),
             ("TMPDIR", "/fleetops"),
@@ -763,6 +804,26 @@ mod tests {
         .iter()
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
+        // Cleared: an empty variable is unset to Trivy.
+        for n in [
+            "TRIVY_SERVER",
+            "TRIVY_PKG_TYPES",
+            "TRIVY_VULN_TYPE",
+            "TRIVY_SKIP_FILES",
+            "TRIVY_FILE_PATTERNS",
+            "TRIVY_IGNORE_POLICY",
+            "TRIVY_VEX",
+            "TRIVY_IGNORE_STATUS",
+            "TRIVY_DETECTION_PRIORITY",
+            "TRIVY_DISTRO",
+            "TRIVY_INCLUDE_DEV_DEPS",
+            "TRIVY_EXIT_CODE",
+            "TRIVY_OUTPUT",
+            "TRIVY_CACHE_BACKEND",
+            "TRIVY_TEMPLATE",
+        ] {
+            want.push((n.to_string(), String::new()));
+        }
         assert_eq!(env, want);
     }
 
@@ -893,6 +954,15 @@ mod tests {
             Some(format!("no node can run the scan pod: {msg}"))
         );
         assert_eq!(unschedulable(&[cond("True")], 1000, 5000), None);
+        let busy = fleetops_core::kube::KubeCondition {
+            message: Some("0/3 nodes are available: 3 Insufficient cpu.".into()),
+            ..cond("False")
+        };
+        assert_eq!(
+            unschedulable(&[busy], 1000, 5000),
+            None,
+            "a full cluster may be scaling up: wait for the deadline"
+        );
     }
 
     #[test]

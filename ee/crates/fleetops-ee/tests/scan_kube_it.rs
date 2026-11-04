@@ -63,6 +63,7 @@ async fn scans_a_pod_image() {
     };
     assert!(t.platform.is_some(), "kind's node has os/arch labels");
     let report = kube::scan(&k, &t, &cfg, 4242).await.unwrap();
+    assert_eq!(os_family(&report), "alpine", "rootfs read the image");
     let node_pull = findings(&report);
     let remote = remote_scan(&k, &cfg, &kube::pinned_ref(&t)).await;
     assert_eq!(
@@ -185,5 +186,14 @@ async fn scans_a_distroless_image() {
     };
     let report = kube::scan(&k, &t, &cfg, 4243).await.unwrap();
     parse_report(&report).unwrap();
+    assert_eq!(os_family(&report), "debian", "rootfs read the image");
     k.delete(KubeKind::Deployments, NS, &name).await.unwrap();
+}
+
+fn os_family(report: &[u8]) -> String {
+    let v: serde_json::Value = serde_json::from_slice(report).unwrap();
+    v["Metadata"]["OS"]["Family"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
 }
