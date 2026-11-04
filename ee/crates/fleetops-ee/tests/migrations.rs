@@ -127,7 +127,16 @@ async fn scan_tables_exist() {
             .unwrap();
         assert_eq!(n, 1, "{table}");
     }
-    assert_eq!(fleetops_ee::db::migration_max(), 1_000_007);
+    for table in ["ee_scans", "ee_scan_uses"] {
+        let n: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = 'platform'"
+        )))
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+        assert_eq!(n, 1, "{table}.platform");
+    }
+    assert_eq!(fleetops_ee::db::migration_max(), 1_000_008);
 }
 
 #[tokio::test]
