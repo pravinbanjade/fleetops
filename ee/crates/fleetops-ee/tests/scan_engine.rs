@@ -117,6 +117,7 @@ fn running(env_id: i64, key: &str, image: &str) -> ImageUse {
         container: format!("c-{key}"),
         running: true,
         pull_secrets: vec![],
+        platform: None,
     }
 }
 
@@ -352,6 +353,7 @@ async fn stuck_rows_of_a_gone_environment_do_not_block_the_fleet() {
             image_ref: "x".into(),
             namespace: String::new(),
             pull_secrets: vec![],
+            platform: None,
         };
         db::insert_scan(
             &f.ee.store,
@@ -430,6 +432,7 @@ async fn turning_off_clears_uses_and_queue() {
         image_ref: "redis:7".into(),
         namespace: String::new(),
         pull_secrets: vec![],
+        platform: None,
     };
     db::insert_scan(
         &f.ee.store,
@@ -468,6 +471,7 @@ async fn restart_requeues_interrupted() {
         image_ref: "nginx:1".into(),
         namespace: String::new(),
         pull_secrets: vec![],
+        platform: None,
     };
     let old = db::insert_scan(
         &f.ee.store,

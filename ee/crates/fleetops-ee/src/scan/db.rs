@@ -211,7 +211,8 @@ pub async fn replace_uses(store: &Store, env_id: i64, uses: &[ImageUse]) -> Resu
     for u in uses {
         sqlx::query(
             "INSERT INTO ee_scan_uses (env_id, node, image_key, image_ref, image_id, namespace,
-                 workload, container, running, pull_secrets) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 workload, container, running, pull_secrets, platform)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(env_id)
         .bind(&u.node)
@@ -223,6 +224,7 @@ pub async fn replace_uses(store: &Store, env_id: i64, uses: &[ImageUse]) -> Resu
         .bind(&u.container)
         .bind(u.running)
         .bind(json_list(&u.pull_secrets))
+        .bind(&u.platform)
         .execute(&mut *tx)
         .await
         .map_err(db_err)?;
@@ -237,7 +239,7 @@ pub async fn uses_for_envs(store: &Store, env_ids: &[i64]) -> Result<Vec<ImageUs
     let marks = vec!["?"; env_ids.len()].join(", ");
     let mut q = sqlx::query(sqlx::AssertSqlSafe(format!(
         "SELECT env_id, node, image_key, image_ref, image_id, namespace, workload, container,
-             running, pull_secrets FROM ee_scan_uses WHERE env_id IN ({marks})
+             running, pull_secrets, platform FROM ee_scan_uses WHERE env_id IN ({marks})
          ORDER BY env_id, image_ref, namespace, workload, container"
     )));
     for id in env_ids {
@@ -257,6 +259,7 @@ pub async fn uses_for_envs(store: &Store, env_ids: &[i64]) -> Result<Vec<ImageUs
             container: r.get("container"),
             running: r.get("running"),
             pull_secrets: list_from(r.get::<String, _>("pull_secrets").as_str()),
+            platform: r.get("platform"),
         })
         .collect())
 }
@@ -295,7 +298,8 @@ pub struct ScanRow {
     pub counts: Option<Counts>,
 }
 
-const SCAN_COLS: &str = "id, image_key, env_id, node, image_ref, namespace, pull_secrets, trigger,
+const SCAN_COLS: &str =
+    "id, image_key, env_id, node, image_ref, namespace, pull_secrets, platform, trigger,
     status, queued_at, started_at, finished_at, error, trivy_image, critical, high, medium, low,
     unknown, critical_fixable, high_fixable";
 
@@ -319,6 +323,7 @@ fn scan_from(r: &sqlx::sqlite::SqliteRow) -> ScanRow {
             image_ref: r.get("image_ref"),
             namespace: r.get("namespace"),
             pull_secrets: list_from(r.get::<String, _>("pull_secrets").as_str()),
+            platform: r.get("platform"),
         },
         trigger: Trigger::parse(r.get::<String, _>("trigger").as_str()).unwrap_or(Trigger::Manual),
         status: Status::parse(r.get::<String, _>("status").as_str()),
@@ -333,8 +338,8 @@ fn scan_from(r: &sqlx::sqlite::SqliteRow) -> ScanRow {
 
 pub async fn insert_scan(store: &Store, t: &ScanTarget, trigger: Trigger, now: i64) -> Result<i64> {
     let r = sqlx::query(
-        "INSERT INTO ee_scans (image_key, env_id, node, image_ref, namespace, pull_secrets, trigger,
-             status, queued_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?)",
+        "INSERT INTO ee_scans (image_key, env_id, node, image_ref, namespace, pull_secrets, platform,
+             trigger, status, queued_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)",
     )
     .bind(t.key.as_str())
     .bind(t.env_id)
@@ -342,6 +347,7 @@ pub async fn insert_scan(store: &Store, t: &ScanTarget, trigger: Trigger, now: i
     .bind(&t.image_ref)
     .bind(&t.namespace)
     .bind(json_list(&t.pull_secrets))
+    .bind(&t.platform)
     .bind(trigger.as_str())
     .bind(now)
     .execute(store.pool())

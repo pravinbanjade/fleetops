@@ -377,6 +377,18 @@ impl KubeOps for KubeClient {
             all::<Job>(c),
             all::<CronJob>(c),
         )?;
+        // Nodes only give each Pod its platform: without them scans still run.
+        let nodes = match timed(
+            Api::<k8s_openapi::api::core::v1::Node>::all(c.clone()).list(&ListParams::default()),
+        )
+        .await
+        {
+            Ok(l) => l.items,
+            Err(e) => {
+                tracing::info!(error = %e, "nodes unreadable; image uses get no platform");
+                vec![]
+            }
+        };
         Ok(crate::images::uses(&crate::images::Objects {
             pods,
             replica_sets,
@@ -385,6 +397,7 @@ impl KubeOps for KubeClient {
             daemon_sets,
             jobs,
             cron_jobs,
+            nodes,
         }))
     }
 

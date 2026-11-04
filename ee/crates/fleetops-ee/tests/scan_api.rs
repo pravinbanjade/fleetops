@@ -86,6 +86,7 @@ fn use_of(env_id: i64, key: &str, image: &str, ns: &str, running: bool) -> Image
         container: "c".into(),
         running,
         pull_secrets: vec![],
+        platform: None,
     }
 }
 
@@ -128,6 +129,7 @@ impl Fx {
             image_ref: image.into(),
             namespace: String::new(),
             pull_secrets: vec![],
+            platform: None,
         };
         let id = db::insert_scan(&self.ee.store, &t, Trigger::Arrival, now_unix())
             .await
@@ -145,6 +147,7 @@ impl Fx {
             image_ref: "x".into(),
             namespace: String::new(),
             pull_secrets: vec![],
+            platform: None,
         };
         let id = db::insert_scan(&self.ee.store, &t, Trigger::Arrival, now_unix())
             .await

@@ -36,6 +36,7 @@ fn target(env_id: i64, key: &str) -> ScanTarget {
         image_ref: "nginx:1.25".into(),
         namespace: String::new(),
         pull_secrets: vec![],
+        platform: None,
     }
 }
 
@@ -63,6 +64,7 @@ fn use_of(env_id: i64, key: &str, container: &str) -> ImageUse {
         container: container.into(),
         running: !container.is_empty(),
         pull_secrets: vec![],
+        platform: None,
     }
 }
 
@@ -373,4 +375,34 @@ async fn prune_keeps_keys_in_use() {
     let st = db::latest(&store, &keys).await.unwrap();
     assert!(st.contains_key(&keys[0]));
     assert!(!st.contains_key(&keys[1]));
+}
+
+#[tokio::test]
+async fn uses_round_trip_platform() {
+    let store = store().await;
+    let e = env(&store, "k").await;
+    let mut a = use_of(e, "sha256:a", "app");
+    a.platform = Some("linux/amd64".into());
+    let b = use_of(e, "sha256:b", "web");
+    db::replace_uses(&store, e, &[a.clone(), b.clone()])
+        .await
+        .unwrap();
+    let got = db::uses_for_envs(&store, &[e]).await.unwrap();
+    let p = |k: &str| {
+        got.iter()
+            .find(|u| u.key.as_str() == k)
+            .unwrap()
+            .platform
+            .clone()
+    };
+    assert_eq!(p("sha256:a").as_deref(), Some("linux/amd64"));
+    assert_eq!(p("sha256:b"), None);
+
+    let mut t = target(e, "sha256:a");
+    t.platform = Some("linux/arm64".into());
+    let id = db::insert_scan(&store, &t, Trigger::Manual, 1)
+        .await
+        .unwrap();
+    let row = db::scan(&store, id).await.unwrap().unwrap();
+    assert_eq!(row.target.platform.as_deref(), Some("linux/arm64"));
 }

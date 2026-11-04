@@ -56,6 +56,7 @@ async fn scans_a_pod_image() {
         image_ref: u.image_ref.clone(),
         namespace: u.namespace.clone(),
         pull_secrets: u.pull_secrets.clone(),
+        platform: None,
     };
     let report = kube::scan(&k, &t, &cfg, 4242).await.unwrap();
     parse_report(&report).unwrap();

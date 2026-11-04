@@ -518,6 +518,7 @@ mod tests {
             image_ref: image.into(),
             namespace: "web".into(),
             pull_secrets: vec!["reg".into()],
+            platform: None,
         }
     }
 

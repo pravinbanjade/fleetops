@@ -5,7 +5,7 @@ use fleetops_core::kube::KubeImageUse;
 use k8s_openapi::api::{
     apps::v1::{DaemonSet, Deployment, ReplicaSet, StatefulSet},
     batch::v1::{CronJob, Job},
-    core::v1::{Pod, PodSpec},
+    core::v1::{Node, Pod, PodSpec},
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use std::collections::{HashMap, HashSet};
@@ -20,6 +20,8 @@ pub struct Objects {
     pub daemon_sets: Vec<DaemonSet>,
     pub jobs: Vec<Job>,
     pub cron_jobs: Vec<CronJob>,
+    /// For each Pod's platform; empty when nodes can't be listed.
+    pub nodes: Vec<Node>,
 }
 
 type Key = (String, String, String); // namespace, kind, name
@@ -70,6 +72,17 @@ pub fn uses(o: &Objects) -> Vec<KubeImageUse> {
         }
     };
 
+    let platforms: HashMap<&str, String> = o
+        .nodes
+        .iter()
+        .filter_map(|n| {
+            let l = n.metadata.labels.as_ref()?;
+            let os = l.get("kubernetes.io/os")?;
+            let arch = l.get("kubernetes.io/arch")?;
+            Some((n.metadata.name.as_deref()?, format!("{os}/{arch}")))
+        })
+        .collect();
+
     let mut out = Vec::new();
     let mut with_pods: HashSet<Key> = HashSet::new();
     for pod in &o.pods {
@@ -80,6 +93,10 @@ pub fn uses(o: &Objects) -> Vec<KubeImageUse> {
         };
         with_pods.insert((ns.clone(), kind.clone(), owner.clone()));
         let Some(spec) = &pod.spec else { continue };
+        let platform = spec
+            .node_name
+            .as_deref()
+            .and_then(|n| platforms.get(n).cloned());
         let statuses: HashMap<&str, _> = pod
             .status
             .iter()
@@ -104,6 +121,7 @@ pub fn uses(o: &Objects) -> Vec<KubeImageUse> {
                     .and_then(|s| s.state.as_ref())
                     .is_some_and(|s| s.running.is_some()),
                 pull_secrets: pull_secrets(spec),
+                platform: platform.clone(),
             });
         }
     }
@@ -124,6 +142,7 @@ pub fn uses(o: &Objects) -> Vec<KubeImageUse> {
                 image_id: None,
                 running: false,
                 pull_secrets: pull_secrets(spec),
+                platform: None,
             });
         }
     };
@@ -231,6 +250,35 @@ mod tests {
         assert_eq!(u[0].image_id.as_deref(), Some("sha256:abc"));
         assert!(u[0].running);
         assert_eq!(u[0].pull_secrets, ["reg"]);
+    }
+
+    #[test]
+    fn pod_use_has_its_nodes_platform() {
+        let pod = |name: &str, node: &str| -> Pod {
+            from(json!({
+                "metadata": {"name": name, "namespace": "a"},
+                "spec": {"nodeName": node, "containers": [{"name": "app", "image": "nginx:1.25"}]},
+            }))
+        };
+        let o = Objects {
+            nodes: vec![from(json!({"metadata": {"name": "n1", "labels": {
+                "kubernetes.io/os": "linux", "kubernetes.io/arch": "arm64"}}}))],
+            pods: vec![pod("p1", "n1"), pod("p2", "gone")],
+            deployments: vec![from(json!({"metadata": {"name": "idle", "namespace": "a"},
+                "spec": {"selector": {}, "template": template("busybox:1.37")}}))],
+            ..Default::default()
+        };
+        let u = uses(&o);
+        let of = |owner: &str| {
+            u.iter()
+                .find(|u| u.owner_name == owner)
+                .unwrap()
+                .platform
+                .clone()
+        };
+        assert_eq!(of("p1").as_deref(), Some("linux/arm64"));
+        assert_eq!(of("p2"), None, "unknown node");
+        assert_eq!(of("idle"), None, "a template has no node");
     }
 
     #[test]

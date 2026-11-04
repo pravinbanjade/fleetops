@@ -36,6 +36,7 @@ fn target(scan: &str) -> ScanTarget {
         image_ref: "alpine:3.20".into(),
         namespace: String::new(),
         pull_secrets: vec![],
+        platform: None,
     }
 }
 

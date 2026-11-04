@@ -342,6 +342,7 @@ mod tests {
             image_ref: "nginx:1.25".into(),
             namespace: String::new(),
             pull_secrets: vec![],
+            platform: None,
         }
     }
 

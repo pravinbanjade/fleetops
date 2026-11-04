@@ -463,6 +463,7 @@ mod tests {
             container: "c".into(),
             running: true,
             pull_secrets: vec![],
+            platform: None,
         };
         assert!(in_scope(&rule(), &u));
         u.running = false;

@@ -125,6 +125,7 @@ pub fn docker_uses(
             container: c.name.trim_start_matches('/').to_string(),
             running: c.state == "running",
             pull_secrets: vec![],
+            platform: None,
         });
     }
     for img in images.iter().filter(|i| !used.contains(i.0.id.as_str())) {
@@ -143,6 +144,7 @@ pub fn docker_uses(
             container: String::new(),
             running: false,
             pull_secrets: vec![],
+            platform: None,
         });
     }
     out
@@ -175,6 +177,7 @@ pub fn kube_uses(env_id: i64, uses: Vec<KubeImageUse>) -> Vec<ImageUse> {
                 container: u.container,
                 running: u.running,
                 pull_secrets: u.pull_secrets,
+                platform: u.platform,
             }
         })
         .collect()
@@ -283,6 +286,7 @@ mod tests {
             image_id: id.map(Into::into),
             running: id.is_some(),
             pull_secrets: vec![],
+            platform: None,
         }
     }
 

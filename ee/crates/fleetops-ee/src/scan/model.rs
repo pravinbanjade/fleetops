@@ -143,6 +143,8 @@ pub struct ImageUse {
     pub container: String,
     pub running: bool,
     pub pull_secrets: Vec<String>,
+    /// Kubernetes: `os/arch` of the Pod's node; `None` elsewhere.
+    pub platform: Option<String>,
 }
 
 /// What one scan runs on.
@@ -155,6 +157,8 @@ pub struct ScanTarget {
     /// The namespace whose pull secrets apply (Kubernetes).
     pub namespace: String,
     pub pull_secrets: Vec<String>,
+    /// Kubernetes: the `os/arch` the scan pod must run on, if known.
+    pub platform: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

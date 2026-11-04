@@ -261,6 +261,7 @@ async fn seed_known_cve(x: &Fx) -> i64 {
         container: "c".into(),
         running: true,
         pull_secrets: vec![],
+        platform: None,
     };
     sdb::replace_uses(&x.ee.store, e, &[u]).await.unwrap();
     let t = ScanTarget {
@@ -270,6 +271,7 @@ async fn seed_known_cve(x: &Fx) -> i64 {
         image_ref: "nginx:1".into(),
         namespace: String::new(),
         pull_secrets: vec![],
+        platform: None,
     };
     let id = sdb::insert_scan(&x.ee.store, &t, Trigger::Arrival, now_unix())
         .await
@@ -489,6 +491,7 @@ async fn re_enabling_a_rule_baselines() {
         image_ref: "nginx:1".into(),
         namespace: String::new(),
         pull_secrets: vec![],
+        platform: None,
     };
     let scan = sdb::insert_scan(&x.ee.store, &t, Trigger::Periodic, now_unix())
         .await

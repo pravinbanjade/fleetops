@@ -324,6 +324,10 @@ pub struct KubeImageUse {
     pub image_id: Option<String>,
     pub running: bool,
     pub pull_secrets: Vec<String>,
+    /// `os/arch` of the Pod's node, from its `kubernetes.io/os` and
+    /// `kubernetes.io/arch` labels; `None` for templates or unknown nodes.
+    #[serde(default)]
+    pub platform: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

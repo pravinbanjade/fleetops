@@ -719,7 +719,12 @@ pub fn prepared(results: Vec<(String, Result<()>)>) -> std::result::Result<(), S
 /// The use a scan of `key` starts from: a running one, if any.
 fn target_use<'a>(uses: &'a [ImageUse], key: &ImageKey) -> &'a ImageUse {
     let mine: Vec<&ImageUse> = uses.iter().filter(|u| &u.key == key).collect();
-    mine.iter().find(|u| u.running).copied().unwrap_or(mine[0])
+    // One stable platform per digest: the lowest known one, then unknown.
+    mine.iter()
+        .filter(|u| u.running)
+        .min_by_key(|u| (u.platform.is_none(), u.platform.clone()))
+        .copied()
+        .unwrap_or(mine[0])
 }
 
 pub fn target_of(u: &ImageUse) -> ScanTarget {
@@ -734,6 +739,7 @@ pub fn target_of(u: &ImageUse) -> ScanTarget {
             .unwrap_or_else(|| u.image_ref.clone()),
         namespace: u.namespace.clone(),
         pull_secrets: u.pull_secrets.clone(),
+        platform: u.platform.clone(),
     }
 }
 
@@ -741,6 +747,31 @@ pub fn target_of(u: &ImageUse) -> ScanTarget {
 mod tests {
     use super::*;
     use fleetops_core::Error;
+
+    #[test]
+    fn target_prefers_running_lowest_platform() {
+        let u = |running: bool, platform: Option<&str>| ImageUse {
+            env_id: 1,
+            node: String::new(),
+            key: ImageKey("sha256:d".into()),
+            image_ref: "app:1".into(),
+            image_id: None,
+            namespace: "a".into(),
+            workload: "Deployment/app".into(),
+            container: "app".into(),
+            running,
+            pull_secrets: vec![],
+            platform: platform.map(String::from),
+        };
+        let uses = [
+            u(false, None),
+            u(true, Some("linux/arm64")),
+            u(true, Some("linux/amd64")),
+            u(true, None),
+        ];
+        let t = target_of(target_use(&uses, &ImageKey("sha256:d".into())));
+        assert_eq!(t.platform.as_deref(), Some("linux/amd64"));
+    }
 
     #[test]
     fn one_ready_node_is_enough() {
