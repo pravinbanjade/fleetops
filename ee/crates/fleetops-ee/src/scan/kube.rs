@@ -344,7 +344,7 @@ pub fn job_manifest(
         ("TRIVY_SERVER", ""),
         ("TRIVY_IGNORE_UNFIXED", "false"),
         ("TRIVY_SEVERITY", trivy::SEVERITIES),
-        ("TMPDIR", "/fleetops/tmp"),
+        ("TMPDIR", "/fleetops"),
     ]
     .iter()
     .map(|(n, v)| json!({"name": n, "value": v}))
@@ -758,7 +758,7 @@ mod tests {
             ("TRIVY_SERVER", ""),
             ("TRIVY_IGNORE_UNFIXED", "false"),
             ("TRIVY_SEVERITY", "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"),
-            ("TMPDIR", "/fleetops/tmp"),
+            ("TMPDIR", "/fleetops"),
         ]
         .iter()
         .map(|(a, b)| (a.to_string(), b.to_string()))

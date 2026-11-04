@@ -45,7 +45,8 @@ With an Enterprise license and scanning on (see [security-scanning.md](security-
 
 - `create` and `get` on `namespaces` (once, for `fleetops-scan`; or create the namespace yourself);
 - in `fleetops-scan`: `create`, `get`, `list`, `patch` and `delete` on `jobs`, `secrets` and `persistentvolumeclaims`, and `get` on `pods` and `pods/log`;
-- `get` on `secrets` in the namespaces whose pods use image pull secrets, to copy them for the scan.
+- `get` on `secrets` in the namespaces whose pods use image pull secrets, to copy them for the scan;
+- optionally, `list` on `nodes`, so a scan runs on a node of the same OS and architecture as your pods. Without it, scans still run, on any node.
 
 The **Cluster admin** agent access level has all of this. With **Standard**, create the `fleetops-scan` namespace first. When something is missing, the environment shows *Scanner unavailable* with the permission it lacks.
 
