@@ -19,6 +19,8 @@ pub const MIRROR_SECRET: &str = "fleetops-scan-mirror";
 pub const MIRROR_AUTH_SECRET: &str = "fleetops-scan-mirror-auth";
 pub const PREPARE_JOB: &str = "fleetops-scan-prepare";
 pub const PREPARE_JAVA_JOB: &str = "fleetops-scan-prepare-java";
+/// Checks the Trivy image has the binary scans copy into the scanned image.
+pub const PREPARE_COPY_JOB: &str = "fleetops-scan-prepare-copy";
 /// Room for the vulnerability and Java databases, each over a gigabyte
 /// unpacked, while Trivy replaces them.
 pub const CACHE_SIZE: &str = "10Gi";
@@ -141,22 +143,116 @@ pub fn prepare_manifest(
     .to_string()
 }
 
-/// A pod that will never start because its image can't be pulled.
-pub fn pull_failure(pods: &[fleetops_core::kube::KubeRow]) -> Option<String> {
+/// The Job that copies the `trivy` binary the way every scan does, so a
+/// Trivy image without it fails when scanning is turned on.
+pub fn copy_check_manifest(cfg: &Effective, mirror_secret: Option<&str>) -> String {
+    let mut pod = json!({
+        "restartPolicy": "Never",
+        "automountServiceAccountToken": false,
+        "containers": [{
+            "name": "copy",
+            "image": cfg.trivy_image,
+            "command": ["cp", "/usr/local/bin/trivy", format!("{BIN_DIR}/trivy")],
+            "resources": {"limits": {"cpu": "1", "memory": "1Gi"}},
+            "volumeMounts": [{"name": "fleetops", "mountPath": BIN_DIR}],
+        }],
+        "volumes": [{"name": "fleetops", "emptyDir": {}}],
+    });
+    if let Some(m) = mirror_secret {
+        pod["imagePullSecrets"] = json!([{ "name": m }]);
+    }
+    json!({
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {"name": PREPARE_COPY_JOB, "namespace": NAMESPACE, "labels": labels()},
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 300,
+            "activeDeadlineSeconds": DEADLINE_SECS,
+            "template": {"metadata": {"labels": labels()}, "spec": pod},
+        },
+    })
+    .to_string()
+}
+
+/// What a failed prepare Job means, with Trivy's own error lines.
+pub fn prepare_failure_message(job: &str, lines: &[String]) -> String {
+    let why = super::docker::error_lines(lines);
+    match job {
+        PREPARE_COPY_JOB => format!(
+            "the Trivy image has no /usr/local/bin/trivy or cp; use a copy of the official image: {why}"
+        ),
+        PREPARE_JAVA_JOB => format!("downloading the Java database failed: {why}"),
+        _ => format!("downloading the vulnerability database failed: {why}"),
+    }
+}
+
+/// A pod that will never start because an image can't be pulled: one of
+/// FleetOps' Trivy containers, or the scanned `image` (empty for Jobs of
+/// Trivy containers only). Reads each container's reason from the row's
+/// `containers` column, which also covers init containers.
+pub fn pull_failure(pods: &[fleetops_core::kube::KubeRow], image: &str) -> Option<String> {
     const STUCK: [&str; 4] = [
         "ImagePullBackOff",
         "ErrImagePull",
         "InvalidImageName",
         "CreateContainerConfigError",
     ];
-    pods.iter()
-        .find(|p| STUCK.iter().any(|s| p.status.contains(s)))
-        .map(|p| format!("the scan pod can't start: {}", p.status))
+    let stuck = |r: &str| STUCK.iter().any(|s| r.contains(s));
+    for p in pods {
+        let containers: Vec<Value> = p
+            .columns
+            .get("containers")
+            .and_then(|c| serde_json::from_str(c).ok())
+            .unwrap_or_default();
+        for c in &containers {
+            let reason = c["reason"].as_str().unwrap_or_default();
+            if !stuck(reason) {
+                continue;
+            }
+            if c["init"].as_bool().unwrap_or(false) || image.is_empty() {
+                return Some(format!("the scan pod can't start: {reason}"));
+            }
+            return Some(format!(
+                "the cluster could not pull {image} for the scan: {reason}. \
+                 Its nodes or pull secrets don't grant access to it."
+            ));
+        }
+        if stuck(&p.status) {
+            return Some(format!("the scan pod can't start: {}", p.status));
+        }
+    }
+    None
+}
+
+/// How long a scan pod may wait for a node before the scan fails.
+pub const SCHEDULE_GRACE_SECS: i64 = 120;
+
+/// The scheduler's reason, once a pod created at `created` has been
+/// unschedulable for [`SCHEDULE_GRACE_SECS`].
+pub fn unschedulable(
+    conds: &[fleetops_core::kube::KubeCondition],
+    created: i64,
+    now: i64,
+) -> Option<String> {
+    if now - created < SCHEDULE_GRACE_SECS {
+        return None;
+    }
+    let c = conds.iter().find(|c| {
+        c.type_ == "PodScheduled"
+            && c.status == "False"
+            && c.reason.as_deref() == Some("Unschedulable")
+    })?;
+    Some(format!(
+        "no node can run the scan pod: {}",
+        c.message.as_deref().unwrap_or("Unschedulable")
+    ))
 }
 
 /// Waits for `job`: `Ok(true)` when it failed, an error when its pod can't
-/// start or it runs out of time.
-async fn wait_job(k: &dyn KubeOps, job: &str) -> Result<bool> {
+/// start, can't be scheduled, or it runs out of time. `image` is the
+/// scanned image, empty for prepare Jobs.
+async fn wait_job(k: &dyn KubeOps, job: &str, image: &str) -> Result<bool> {
     let until = now_unix() + DEADLINE_SECS + 60;
     loop {
         let o = k.get(KubeKind::Jobs, NAMESPACE, job).await?;
@@ -172,8 +268,15 @@ async fn wait_job(k: &dyn KubeOps, job: &str) -> Result<bool> {
             return Ok(true);
         }
         if let Ok(pods) = k.workload_pods(KubeKind::Jobs, NAMESPACE, job).await {
-            if let Some(why) = pull_failure(&pods.rows) {
+            if let Some(why) = pull_failure(&pods.rows, image) {
                 return Err(Error::Invalid(why));
+            }
+            for p in pods.rows.iter().filter(|p| p.status == "Pending") {
+                if let Ok(pod) = k.get(KubeKind::Pods, NAMESPACE, &p.name).await {
+                    if let Some(why) = unschedulable(&pod.conditions, p.created, now_unix()) {
+                        return Err(Error::Invalid(why));
+                    }
+                }
             }
         }
         if now_unix() > until {
@@ -392,9 +495,9 @@ pub async fn prepare(k: &dyn KubeOps, cfg: &Effective) -> Result<()> {
     }
     let mirror = cfg.auth.is_some().then_some(MIRROR_SECRET);
     for (job, args) in prepare_jobs(cfg) {
-        download(k, cfg, job, &args, mirror).await?;
+        run_prepare(k, job, &prepare_manifest(cfg, job, &args, mirror)).await?;
     }
-    Ok(())
+    run_prepare(k, PREPARE_COPY_JOB, &copy_check_manifest(cfg, mirror)).await
 }
 
 /// Creates the cache claim at [`CACHE_SIZE`], growing an older, smaller
@@ -428,34 +531,14 @@ async fn ensure_cache(k: &dyn KubeOps) -> Result<()> {
     apply(k, &cache_pvc(), "create", what).await
 }
 
-async fn download(
-    k: &dyn KubeOps,
-    cfg: &Effective,
-    job: &str,
-    args: &[String],
-    mirror: Option<&str>,
-) -> Result<()> {
+async fn run_prepare(k: &dyn KubeOps, job: &str, manifest: &str) -> Result<()> {
     let _ = k.delete(KubeKind::Jobs, NAMESPACE, job).await;
-    apply(
-        k,
-        &prepare_manifest(cfg, job, args, mirror),
-        "create",
-        "jobs",
-    )
-    .await?;
-    let out = match wait_job(k, job).await {
+    apply(k, manifest, "create", "jobs").await?;
+    let out = match wait_job(k, job, "").await {
         Ok(false) => Ok(()),
         Ok(true) => {
             let lines = job_logs(k, job).await.unwrap_or_default();
-            let what = if job == PREPARE_JAVA_JOB {
-                "the Java database"
-            } else {
-                "the vulnerability database"
-            };
-            Err(Error::Invalid(format!(
-                "downloading {what} failed: {}",
-                super::docker::error_lines(&lines)
-            )))
+            Err(Error::Invalid(prepare_failure_message(job, &lines)))
         }
         Err(e) => Err(e),
     };
@@ -519,7 +602,7 @@ async fn run(
     ));
     apply(k, &docs.join("\n---\n"), "create", "jobs and secrets").await?;
 
-    let failed = wait_job(k, job).await?;
+    let failed = wait_job(k, job, &pinned_ref(t)).await?;
     let lines = job_logs(k, job).await?;
     if failed {
         return Err(Error::Internal(format!(
@@ -762,21 +845,72 @@ mod tests {
         assert!(!secret.contains("hunter2"), "base64 in data");
     }
 
-    #[test]
-    fn pull_errors_fail_fast() {
-        let row = |status: &str| fleetops_core::kube::KubeRow {
+    fn row(containers: Value) -> fleetops_core::kube::KubeRow {
+        fleetops_core::kube::KubeRow {
             name: "p".into(),
             namespace: Some(NAMESPACE.into()),
             created: 0,
+            status: "PodInitializing".into(),
+            health: fleetops_core::kube::RowHealth::Warn,
+            columns: [("containers".to_string(), containers.to_string())].into(),
+        }
+    }
+
+    #[test]
+    fn pull_failure_names_the_image() {
+        let img = "123.dkr.ecr.us-east-1.amazonaws.com/app@sha256:d";
+        let init = row(json!([
+            {"name": "trivy", "init": false, "state": "waiting", "reason": "PodInitializing"},
+            {"name": "db", "init": true, "state": "error", "reason": "ImagePullBackOff"},
+        ]));
+        assert_eq!(
+            pull_failure(&[init], img).as_deref(),
+            Some("the scan pod can't start: ImagePullBackOff")
+        );
+        let main = row(json!([
+            {"name": "trivy", "init": false, "state": "error", "reason": "ErrImagePull"},
+        ]));
+        assert_eq!(
+            pull_failure(&[main], img).as_deref(),
+            Some("the cluster could not pull 123.dkr.ecr.us-east-1.amazonaws.com/app@sha256:d for the scan: ErrImagePull. Its nodes or pull secrets don't grant access to it.")
+        );
+        let ok = row(json!([{"name": "trivy", "init": false, "state": "running", "reason": ""}]));
+        assert_eq!(pull_failure(&[ok], img), None);
+    }
+
+    #[test]
+    fn unschedulable_after_grace() {
+        let msg = "0/3 nodes are available: 3 node(s) didn't match Pod's node affinity/selector.";
+        let cond = |status: &str| fleetops_core::kube::KubeCondition {
+            type_: "PodScheduled".into(),
             status: status.into(),
-            health: fleetops_core::kube::RowHealth::Ok,
-            columns: Default::default(),
+            reason: Some("Unschedulable".into()),
+            message: Some(msg.into()),
         };
-        assert!(pull_failure(&[row("ImagePullBackOff")])
-            .unwrap()
-            .contains("ImagePullBackOff"));
-        assert!(pull_failure(&[row("ErrImagePull")]).is_some());
-        assert_eq!(pull_failure(&[row("Running")]), None);
+        assert_eq!(unschedulable(&[cond("False")], 1000, 1119), None);
+        assert_eq!(
+            unschedulable(&[cond("False")], 1000, 1120),
+            Some(format!("no node can run the scan pod: {msg}"))
+        );
+        assert_eq!(unschedulable(&[cond("True")], 1000, 5000), None);
+    }
+
+    #[test]
+    fn prepare_checks_the_trivy_binary() {
+        let j: Value = serde_json::from_str(&copy_check_manifest(&cfg(), None)).unwrap();
+        assert_eq!(j["metadata"]["name"], PREPARE_COPY_JOB);
+        let p = &j["spec"]["template"]["spec"];
+        assert_eq!(
+            strs(&p["containers"][0]["command"]),
+            ["cp", "/usr/local/bin/trivy", "/fleetops/trivy"]
+        );
+        assert_eq!(p["volumes"][0]["emptyDir"], json!({}));
+        assert!(
+            prepare_failure_message(PREPARE_COPY_JOB, &["cp: can't stat".into()])
+                .starts_with("the Trivy image has no /usr/local/bin/trivy or cp")
+        );
+        assert!(prepare_failure_message(PREPARE_JAVA_JOB, &[])
+            .starts_with("downloading the Java database failed"));
     }
 
     #[test]
