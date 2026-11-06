@@ -460,9 +460,9 @@ impl russh::server::Handler for SshShared {
     async fn auth_publickey(
         &mut self,
         _user: &str,
-        key: &russh::keys::PublicKey,
+        key: russh::server::VerifiedPublicKey<'_>,
     ) -> Result<russh::server::Auth, Self::Error> {
-        let line = key.to_openssh().unwrap();
+        let line = key.public_key.to_openssh().unwrap();
         let sent = line.split(' ').take(2).collect::<Vec<_>>();
         let ok = self
             .opts

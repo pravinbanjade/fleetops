@@ -416,10 +416,11 @@ mod tests {
             (Some(1), Some("cve.new"))
         );
         assert_eq!(generic(&image())["event"], "image.new");
-        let mut mac = Hmac::<Sha256>::new_from_slice(b"k").unwrap();
+        let key: [u8; 32] = rand::random();
+        let mut mac = Hmac::<Sha256>::new_from_slice(&key).unwrap();
         mac.update(b"{}");
         let want = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
-        assert_eq!(signature(b"k", b"{}"), want);
+        assert_eq!(signature(&key, b"{}"), want);
     }
 
     #[test]

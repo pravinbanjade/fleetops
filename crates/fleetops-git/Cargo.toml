@@ -22,7 +22,7 @@ tar.workspace = true
 gix-transport = "0.62"
 # SSH in-process, on ring: the default features pull in aws-lc-rs and the
 # `rsa` crate.
-russh = { version = "0.64", default-features = false, features = ["ring"] }
+russh = { version = "0.65.1", default-features = false, features = ["ring"] }
 tokio.workspace = true
 tracing.workspace = true
 url.workspace = true
