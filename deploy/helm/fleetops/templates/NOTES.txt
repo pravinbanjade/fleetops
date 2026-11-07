@@ -1,0 +1,46 @@
+FleetOps {{ .Chart.AppVersion }} is starting in namespace {{ .Release.Namespace }}.
+{{- $fullName := include "fleetops.fullname" . }}
+
+1. Open the UI and create the admin account within 10 minutes of the pod
+   starting (setup locks after that until the pod restarts):
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+     http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else if eq .Values.service.type "LoadBalancer" }}
+     kubectl -n {{ .Release.Namespace }} get svc {{ $fullName }} -w   # wait for EXTERNAL-IP
+{{- else }}
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ $fullName }} {{ .Values.service.httpPort }}:{{ .Values.service.httpPort }}
+     then open http://localhost:{{ .Values.service.httpPort }}
+{{- end }}
+
+2. Manage this cluster: in Admin -> Environments -> Add environment, choose
+   the in-cluster agent and run the kubectl command it shows.
+{{- if .Values.tls.enabled }}
+   The command dials the URL your browser is on. Agents need HTTPS that
+   FleetOps terminates itself, so open the UI through
+{{- if and .Values.ingress.enabled (eq .Values.ingress.backendPort "https") }}
+   the ingress (its controller must speak HTTPS to the backend).
+{{- else }}
+   https on port {{ .Values.service.httpsPort }} (a LoadBalancer, NodePort, or an ingress
+   with ingress.backendPort=https) before adding agents.
+{{- end }}
+{{- if not .Values.tls.existingSecret }}
+   The generated certificate is self-signed for `localhost` and `fleetops`:
+   give agents its CA with --ca, or set tls.existingSecret.
+{{- end }}
+{{- else }}
+   tls.enabled is false: agents cannot enroll. Enable it to add agents.
+{{- end }}
+
+{{- if not .Values.persistence.enabled }}
+
+WARNING: persistence is disabled. Users, environments and the audit log are
+lost when the pod is replaced.
+{{- end }}
+{{- if not .Values.secretKey.existingSecret }}
+
+The key that seals stored credentials is kept at /data/secret.key on the
+volume. Back it up with the database (Admin -> Backup), or provide it with
+secretKey.existingSecret.
+{{- end }}

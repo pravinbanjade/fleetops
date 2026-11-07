@@ -7,6 +7,12 @@ name: Release
 # as secrets of the Production environment; GHCR uses the job's token. A
 # package pushed to GHCR for the first time is private: make it public once
 # in its package settings.
+#
+# The Helm chart (deploy/helm/fleetops) is published with each release: as an
+# OCI artifact at oci://ghcr.io/pravinbanjade/charts/fleetops, and as a
+# classic Helm repository whose index.yaml lives on the gh-pages branch
+# (served by GitHub Pages at https://pravinbanjade.github.io/fleetops) and
+# points at the chart attached to the GitHub release.
 
 on:
   push:
@@ -44,6 +50,10 @@ jobs:
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME, Cargo.toml $version" >&2; exit 1; }
+          for field in version appVersion; do
+            chart=$(sed -n "s/^$field: *\"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p" deploy/helm/fleetops/Chart.yaml)
+            [ "$chart" = "$version" ] || { echo "Chart.yaml $field $chart, Cargo.toml $version" >&2; exit 1; }
+          done
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/setup
@@ -140,6 +150,15 @@ jobs:
           done
           ls -l dist
 
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.19.0
+      - name: Package the Helm chart
+        run: |
+          helm lint --strict deploy/helm/fleetops
+          helm package deploy/helm/fleetops --destination chart
+          cp chart/*.tgz dist/
+
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -153,7 +172,41 @@ jobs:
           - \`$AGENT_IMAGE:$VERSION\`: the agent for remote hosts and clusters
 
           Static linux binaries of each, with SHA-256 checksums, are attached below.
+
+          Helm chart \`fleetops $VERSION\`: \`helm repo add fleetops https://pravinbanjade.github.io/fleetops\`, or \`oci://$GHCR/charts/fleetops\`.
           EOF
           )
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
             --title "FleetOps $GITHUB_REF_NAME" --notes "$notes" --generate-notes
+
+      - name: Push the Helm chart to GHCR
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "${{ github.token }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push "chart/fleetops-$VERSION.tgz" "oci://$GHCR/charts"
+
+      # Merges this release into the repository index on gh-pages, creating
+      # the branch on the first release. The chart itself stays on the
+      # GitHub release.
+      - name: Update the Helm repository index
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin gh-pages; then
+            git worktree add pages origin/gh-pages
+            git -C pages checkout -B gh-pages
+          else
+            git worktree add --orphan -b gh-pages pages
+          fi
+          mkdir index-work && cp "chart/fleetops-$VERSION.tgz" index-work/
+          merge=""; [ -f pages/index.yaml ] && merge="--merge pages/index.yaml"
+          helm repo index index-work --url "https://github.com/$REPO/releases/download/v$VERSION" $merge
+          cp index-work/index.yaml pages/index.yaml
+          touch pages/.nojekyll
+          git -C pages add index.yaml .nojekyll
+          git -C pages commit -m "helm: fleetops $VERSION"
+          git -C pages push origin gh-pages

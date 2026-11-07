@@ -51,6 +51,19 @@ jobs:
           rust: "false"
       - run: make test-web
 
+  helm-chart:
+    name: Helm chart (lint, plain manifest drift)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.19.0
+      - run: make helm-lint
+      - run: make k8s-manifest
+      - name: Check deploy/kubernetes/fleetops.yaml is up to date
+        run: git diff --exit-code deploy/kubernetes/ || { echo "run make k8s-manifest and commit the result" >&2; exit 1; }
+
   editions:
     name: Edition boundary
     runs-on: ubuntu-latest

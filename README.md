@@ -67,6 +67,15 @@ The image runs as a non-root user on `distroless/static` for linux/amd64 and lin
   ./fleetops --data ./data --bind 127.0.0.1:9000
   ```
 
+- **Kubernetes.** A Helm chart runs the server in a cluster, with its database on a persistent volume:
+
+  ```sh
+  helm repo add fleetops https://pravinbanjade.github.io/fleetops
+  helm install fleetops fleetops/fleetops --namespace fleetops --create-namespace
+  ```
+
+  See the [chart's README](deploy/helm/fleetops/README.md) for ingress, TLS and license settings, and [deploy/kubernetes/fleetops.yaml](deploy/kubernetes/fleetops.yaml) for a plain `kubectl apply`.
+
 - **From source.** Needs Rust (stable), Node.js 24+ and pnpm 12. See [docs/development.md](docs/development.md).
 
   ```sh

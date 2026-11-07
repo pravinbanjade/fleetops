@@ -1,0 +1,175 @@
+# FleetOps runs as one replica: its SQLite database lives on the volume
+# below, so the chart never scales it and replaces the pod with Recreate.
+
+image:
+  repository: docker.io/fleets/fleetops
+  # Defaults to the chart's appVersion.
+  tag: ""
+  # Pin an exact image instead of the tag, e.g. sha256:...
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Where browsers reach FleetOps, e.g. https://fleet.example.com. Single
+# sign-on redirects need it. When unset and the ingress has TLS, the first
+# ingress host is used.
+publicUrl: ""
+
+# tracing filter, e.g. `info` or `fleetops_api=debug,info`.
+logLevel: info
+
+# HTTPS listener. Agents (remote Docker hosts, swarms, clusters) must reach
+# FleetOps over HTTPS that FleetOps itself terminates: a connection that
+# arrives on the plain-HTTP port is refused unless it comes from loopback.
+tls:
+  enabled: true
+  port: 9443
+  # A kubernetes.io/tls Secret (tls.crt, tls.key), e.g. from cert-manager.
+  # When empty, FleetOps generates a self-signed certificate for `localhost`
+  # and `fleetops` and keeps it on the data volume.
+  existingSecret: ""
+  # Send HSTS on HTTPS responses. Only when browsers never use plain HTTP.
+  hsts: false
+
+# 32 bytes, base64, that seal stored credentials. When no Secret is given,
+# FleetOps creates <data>/secret.key on the volume on first start; back it up
+# with the database either way.
+secretKey:
+  existingSecret: ""
+  key: secret-key
+
+# Enterprise license file. A license uploaded in Admin -> License takes
+# precedence. Create it with:
+#   kubectl create secret generic fleetops-license --from-file=license=fleetops.license
+license:
+  existingSecret: ""
+  key: license
+
+# Extra environment variables for the server, e.g.
+#   - name: FLEETOPS_KUBE_EXEC_PLUGINS
+#     value: default
+extraEnv: []
+extraEnvFrom: []
+
+persistence:
+  enabled: true
+  # Use an existing PVC instead of creating one.
+  existingClaim: ""
+  # "" uses the cluster's default StorageClass; "-" sets storageClassName: "".
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 5Gi
+  annotations: {}
+  # Keep the PVC when the release is uninstalled.
+  retain: true
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # The server talks to clusters through agents or kubeconfigs, never through
+  # its own service account.
+  automount: false
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+service:
+  type: ClusterIP
+  httpPort: 9000
+  # Exposed when tls.enabled.
+  httpsPort: 9443
+  # For type NodePort.
+  httpNodePort: null
+  httpsNodePort: null
+  # For type LoadBalancer.
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  externalTrafficPolicy: ""
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  # Which service port the ingress sends traffic to. `https` (with
+  # tls.enabled) keeps agents working through the ingress; the controller must
+  # then speak HTTPS to the backend, e.g. for ingress-nginx:
+  #   nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+  # `http` serves the web UI only: agents dialing the ingress are refused.
+  backendPort: https
+  annotations: {}
+  hosts:
+    - host: fleetops.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: fleetops-example-tls
+  #    hosts:
+  #      - fleetops.example.com
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: http
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+startupProbe:
+  httpGet:
+    path: /api/v1/health
+    port: http
+  periodSeconds: 5
+  failureThreshold: 60
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+priorityClassName: ""
+
+extraVolumes: []
+extraVolumeMounts: []
+
+networkPolicy:
+  # Allow ingress to FleetOps only from the given peers (plus same-namespace
+  # pods). Egress is left open: FleetOps reaches registries, git hosts,
+  # kubeconfig API servers and identity providers.
+  enabled: false
+  from: []
+  #  - namespaceSelector:
+  #      matchLabels:
+  #        kubernetes.io/metadata.name: ingress-nginx

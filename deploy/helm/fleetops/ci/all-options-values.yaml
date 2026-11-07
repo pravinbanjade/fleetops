@@ -1,0 +1,37 @@
+# Every optional template on, for `make helm-lint`.
+publicUrl: https://fleetops.example.com
+tls:
+  existingSecret: fleetops-tls
+  hsts: true
+secretKey:
+  existingSecret: fleetops-secret-key
+license:
+  existingSecret: fleetops-license
+extraEnv:
+  - name: FLEETOPS_KUBE_EXEC_PLUGINS
+    value: default
+persistence:
+  storageClass: "-"
+service:
+  type: NodePort
+  httpsNodePort: 30443
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+  hosts:
+    - host: fleetops.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: fleetops-example-tls
+      hosts:
+        - fleetops.example.com
+networkPolicy:
+  enabled: true
+  from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
