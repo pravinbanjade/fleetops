@@ -45,7 +45,7 @@ ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ri
 kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "ring", "ws", "runtime"] }
 jiff = "0.2.37"
 jsonwebtoken = { version = "11.1", default-features = false, features = ["rust_crypto", "use_pem"] }
-jsonschema = { version = "0.58", default-features = false }
+jsonschema = { version = "0.60", default-features = false }
 mime_guess = "2"
 p256 = "0.13"
 rand = "0.10"
