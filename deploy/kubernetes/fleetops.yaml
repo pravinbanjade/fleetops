@@ -16,7 +16,6 @@ metadata:
     app.kubernetes.io/version: "1.2.0"
     app.kubernetes.io/component: server
 automountServiceAccountToken: false
-
 ---
 # Source: fleetops/templates/pvc.yaml
 apiVersion: v1
@@ -36,7 +35,6 @@ spec:
   resources:
     requests:
       storage: "5Gi"
-
 ---
 # Source: fleetops/templates/service.yaml
 apiVersion: v1
@@ -62,7 +60,6 @@ spec:
       port: 9443
       targetPort: https
       protocol: TCP
-
 ---
 # Source: fleetops/templates/deployment.yaml
 apiVersion: apps/v1

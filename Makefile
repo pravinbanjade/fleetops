@@ -174,5 +174,5 @@ k8s-manifest:
 		'#   kubectl apply -n fleetops -f fleetops.yaml' \
 		'#'; \
 	  helm template fleetops $(CHART) --namespace fleetops --skip-tests \
-		| grep -v -E '^ *(helm.sh/chart|app.kubernetes.io/managed-by):'; \
+		| grep -v -E '^ *(helm.sh/chart|app.kubernetes.io/managed-by):|^ *$$'; \
 	} > deploy/kubernetes/fleetops.yaml
