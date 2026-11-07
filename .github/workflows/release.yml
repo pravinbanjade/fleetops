@@ -43,7 +43,7 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check the tag matches the workspace version
         id: version
@@ -62,19 +62,19 @@ jobs:
           web: "false"
           free-disk: "true"
       # No QEMU: the Dockerfile cross-compiles on the build platform.
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
       - id: meta-server
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           # fleetops-ee: deprecated alias of the same image for existing
           # Enterprise users; remove after v0.8.x.
@@ -88,7 +88,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
       - id: meta-agent
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: |
             ${{ env.AGENT_IMAGE }}
@@ -98,7 +98,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: server
@@ -108,7 +108,7 @@ jobs:
           labels: ${{ steps.meta-server.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: agent
@@ -119,14 +119,14 @@ jobs:
           cache-from: type=gha
 
       # The same builds (cache hits), stopped at the bare-binary stages.
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: binary
           platforms: linux/amd64,linux/arm64
           outputs: type=local,dest=out
           cache-from: type=gha
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: agent-binary
