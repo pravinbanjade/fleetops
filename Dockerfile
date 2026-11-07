@@ -15,7 +15,7 @@ ARG ZIGBUILD_VERSION=0.23.4
 FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-trixie-slim AS web
 WORKDIR /src/web
 RUN corepack enable
-COPY web/package.json web/pnpm-lock.yaml ./
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 COPY web/ ./
