@@ -2,6 +2,17 @@
 
 FleetOps manages Kubernetes clusters next to Docker hosts. This page covers adding a cluster, what the in-cluster agent may do, and what you can do once a cluster is connected.
 
+## Run FleetOps in Kubernetes
+
+The Helm chart in [deploy/helm/fleetops](../deploy/helm/fleetops/README.md) runs the server in a cluster: one pod with its database on a persistent volume, the UI on port 9000, HTTPS for agents on 9443, and an optional Ingress.
+
+```sh
+helm repo add fleetops https://pravinbanjade.github.io/fleetops
+helm install fleetops fleetops/fleetops --namespace fleetops --create-namespace
+```
+
+The chart is also at `oci://ghcr.io/pravinbanjade/charts/fleetops`, and [deploy/kubernetes/fleetops.yaml](../deploy/kubernetes/fleetops.yaml) is the same thing rendered for `kubectl apply`. To manage the cluster FleetOps runs in, add it with the in-cluster agent below; the chart's README covers which URL to open the UI on so the agent can dial back.
+
 ## Add a cluster
 
 There are two ways in, both under **Admin → Environments → Add environment**:

@@ -7,6 +7,12 @@ name: Release
 # as secrets of the Production environment; GHCR uses the job's token. A
 # package pushed to GHCR for the first time is private: make it public once
 # in its package settings.
+#
+# The Helm chart (deploy/helm/fleetops) is published with each release: as an
+# OCI artifact at oci://ghcr.io/pravinbanjade/charts/fleetops, and as a
+# classic Helm repository whose index.yaml lives on the gh-pages branch
+# (served by GitHub Pages at https://pravinbanjade.github.io/fleetops) and
+# points at the chart attached to the GitHub release.
 
 on:
   push:
@@ -37,13 +43,17 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check the tag matches the workspace version
         id: version
         run: |
           version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME, Cargo.toml $version" >&2; exit 1; }
+          for field in version appVersion; do
+            chart=$(sed -n "s/^$field: *\"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p" deploy/helm/fleetops/Chart.yaml)
+            [ "$chart" = "$version" ] || { echo "Chart.yaml $field $chart, Cargo.toml $version" >&2; exit 1; }
+          done
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/setup
@@ -52,19 +62,19 @@ jobs:
           web: "false"
           free-disk: "true"
       # No QEMU: the Dockerfile cross-compiles on the build platform.
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
       - id: meta-server
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           # fleetops-ee: deprecated alias of the same image for existing
           # Enterprise users; remove after v0.8.x.
@@ -78,7 +88,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
       - id: meta-agent
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: |
             ${{ env.AGENT_IMAGE }}
@@ -88,7 +98,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: server
@@ -98,7 +108,7 @@ jobs:
           labels: ${{ steps.meta-server.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: agent
@@ -109,14 +119,14 @@ jobs:
           cache-from: type=gha
 
       # The same builds (cache hits), stopped at the bare-binary stages.
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: binary
           platforms: linux/amd64,linux/arm64
           outputs: type=local,dest=out
           cache-from: type=gha
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           target: agent-binary
@@ -140,6 +150,15 @@ jobs:
           done
           ls -l dist
 
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: v3.19.0
+      - name: Package the Helm chart
+        run: |
+          helm lint --strict deploy/helm/fleetops
+          helm package deploy/helm/fleetops --destination chart
+          cp chart/*.tgz dist/
+
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -153,7 +172,41 @@ jobs:
           - \`$AGENT_IMAGE:$VERSION\`: the agent for remote hosts and clusters
 
           Static linux binaries of each, with SHA-256 checksums, are attached below.
+
+          Helm chart \`fleetops $VERSION\`: \`helm repo add fleetops https://pravinbanjade.github.io/fleetops\`, or \`oci://$GHCR/charts/fleetops\`.
           EOF
           )
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
             --title "FleetOps $GITHUB_REF_NAME" --notes "$notes" --generate-notes
+
+      - name: Push the Helm chart to GHCR
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          echo "${{ github.token }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push "chart/fleetops-$VERSION.tgz" "oci://$GHCR/charts"
+
+      # Merges this release into the repository index on gh-pages, creating
+      # the branch on the first release. The chart itself stays on the
+      # GitHub release.
+      - name: Update the Helm repository index
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch origin gh-pages; then
+            git worktree add pages origin/gh-pages
+            git -C pages checkout -B gh-pages
+          else
+            git worktree add --orphan -b gh-pages pages
+          fi
+          mkdir index-work && cp "chart/fleetops-$VERSION.tgz" index-work/
+          merge=""; [ -f pages/index.yaml ] && merge="--merge pages/index.yaml"
+          helm repo index index-work --url "https://github.com/$REPO/releases/download/v$VERSION" $merge
+          cp index-work/index.yaml pages/index.yaml
+          touch pages/.nojekyll
+          git -C pages add index.yaml .nojekyll
+          git -C pages commit -m "helm: fleetops $VERSION"
+          git -C pages push origin gh-pages

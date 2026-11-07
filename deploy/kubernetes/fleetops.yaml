@@ -1,0 +1,166 @@
+# FleetOps for Kubernetes without Helm, rendered from deploy/helm/fleetops
+# with its default values by `make k8s-manifest`. Do not edit by hand.
+#
+#   kubectl create namespace fleetops
+#   kubectl apply -n fleetops -f fleetops.yaml
+#
+---
+# Source: fleetops/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fleetops
+  labels:
+    app.kubernetes.io/name: fleetops
+    app.kubernetes.io/instance: fleetops
+    app.kubernetes.io/version: "1.2.0"
+    app.kubernetes.io/component: server
+automountServiceAccountToken: false
+---
+# Source: fleetops/templates/pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fleetops
+  labels:
+    app.kubernetes.io/name: fleetops
+    app.kubernetes.io/instance: fleetops
+    app.kubernetes.io/version: "1.2.0"
+    app.kubernetes.io/component: server
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: "5Gi"
+---
+# Source: fleetops/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: fleetops
+  labels:
+    app.kubernetes.io/name: fleetops
+    app.kubernetes.io/instance: fleetops
+    app.kubernetes.io/version: "1.2.0"
+    app.kubernetes.io/component: server
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: fleetops
+    app.kubernetes.io/instance: fleetops
+  ports:
+    - name: http
+      port: 9000
+      targetPort: http
+      protocol: TCP
+    - name: https
+      port: 9443
+      targetPort: https
+      protocol: TCP
+---
+# Source: fleetops/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fleetops
+  labels:
+    app.kubernetes.io/name: fleetops
+    app.kubernetes.io/instance: fleetops
+    app.kubernetes.io/version: "1.2.0"
+    app.kubernetes.io/component: server
+spec:
+  # One server per database: never more than one replica, and the old pod
+  # stops before the new one opens the volume.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fleetops
+      app.kubernetes.io/instance: fleetops
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fleetops
+        app.kubernetes.io/instance: fleetops
+        app.kubernetes.io/version: "1.2.0"
+        app.kubernetes.io/component: server
+    spec:
+      serviceAccountName: fleetops
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # FleetOps finishes in-flight requests for up to 10 s on SIGTERM.
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: fleetops
+          image: "docker.io/fleets/fleetops:1.2.0"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+            - name: FLEETOPS_DATA
+              value: /data
+            - name: FLEETOPS_BIND
+              value: "0.0.0.0:9000"
+            - name: FLEETOPS_LOG
+              value: "info"
+            - name: FLEETOPS_TLS_BIND
+              value: "0.0.0.0:9443"
+          ports:
+            - name: http
+              containerPort: 9000
+              protocol: TCP
+            - name: https
+              containerPort: 9443
+              protocol: TCP
+          startupProbe:
+            failureThreshold: 60
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /api/v1/health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: fleetops
+        - name: tmp
+          emptyDir: {}

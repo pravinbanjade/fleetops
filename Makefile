@@ -1,4 +1,4 @@
-.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench rss-bench-scan lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap minio-up test-s3 check-editions
+.PHONY: dev dev-server dev-web web test test-docker kind-up test-kube e2e-kube agent-kube-smoke test-web e2e rss-bench rss-bench-scan lint fmt build image image-agent image-smoke agent-smoke openapi ldap-up test-ldap minio-up test-s3 check-editions helm-lint k8s-manifest
 
 # The API on :9000 and the Vite dev server on :5173, which proxies /api to it.
 dev:
@@ -154,3 +154,25 @@ test-s3: minio-up
 # Code outside ee/ (Apache-2.0) reaches ee/ only through its declared seams.
 check-editions:
 	scripts/check-editions.sh
+
+# The Helm chart: lint it with the defaults and with every option on, and
+# check that the plain manifest rendered from it is up to date.
+CHART := deploy/helm/fleetops
+
+helm-lint:
+	helm lint --strict $(CHART)
+	helm lint --strict $(CHART) -f $(CHART)/ci/all-options-values.yaml
+	helm template fleetops $(CHART) -f $(CHART)/ci/all-options-values.yaml >/dev/null
+
+# deploy/kubernetes/fleetops.yaml, for `kubectl apply` without Helm.
+k8s-manifest:
+	{ printf '%s\n' \
+		'# FleetOps for Kubernetes without Helm, rendered from deploy/helm/fleetops' \
+		'# with its default values by `make k8s-manifest`. Do not edit by hand.' \
+		'#' \
+		'#   kubectl create namespace fleetops' \
+		'#   kubectl apply -n fleetops -f fleetops.yaml' \
+		'#'; \
+	  helm template fleetops $(CHART) --namespace fleetops --skip-tests \
+		| grep -v -E '^ *(helm.sh/chart|app.kubernetes.io/managed-by):|^ *$$'; \
+	} > deploy/kubernetes/fleetops.yaml

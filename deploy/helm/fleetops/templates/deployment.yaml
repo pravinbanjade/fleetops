@@ -1,0 +1,175 @@
+{{- if and (eq .Values.ingress.backendPort "https") .Values.ingress.enabled (not .Values.tls.enabled) }}
+{{- fail "ingress.backendPort=https needs tls.enabled=true; set ingress.backendPort=http to serve the UI only" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fleetops.fullname" . }}
+  labels:
+    {{- include "fleetops.labels" . | nindent 4 }}
+spec:
+  # One server per database: never more than one replica, and the old pod
+  # stops before the new one opens the volume.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "fleetops.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "fleetops.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "fleetops.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # FleetOps finishes in-flight requests for up to 10 s on SIGTERM.
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: fleetops
+          image: {{ include "fleetops.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: FLEETOPS_DATA
+              value: /data
+            - name: FLEETOPS_BIND
+              value: "0.0.0.0:9000"
+            - name: FLEETOPS_LOG
+              value: {{ .Values.logLevel | quote }}
+            {{- if .Values.tls.enabled }}
+            - name: FLEETOPS_TLS_BIND
+              value: "0.0.0.0:{{ .Values.tls.port }}"
+            {{- if .Values.tls.existingSecret }}
+            - name: FLEETOPS_TLS_CERT
+              value: /etc/fleetops/tls/tls.crt
+            - name: FLEETOPS_TLS_KEY
+              value: /etc/fleetops/tls/tls.key
+            {{- end }}
+            {{- if .Values.tls.hsts }}
+            - name: FLEETOPS_HSTS
+              value: "true"
+            {{- end }}
+            {{- end }}
+            {{- with (include "fleetops.publicUrl" .) }}
+            - name: FLEETOPS_PUBLIC_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.secretKey.existingSecret }}
+            - name: FLEETOPS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secretKey.existingSecret }}
+                  key: {{ .Values.secretKey.key }}
+            {{- end }}
+            {{- if .Values.license.existingSecret }}
+            - name: FLEETOPS_LICENSE_FILE
+              value: /etc/fleetops/license/{{ .Values.license.key }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 9000
+              protocol: TCP
+            {{- if .Values.tls.enabled }}
+            - name: https
+              containerPort: {{ .Values.tls.port }}
+              protocol: TCP
+            {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            {{- if and .Values.tls.enabled .Values.tls.existingSecret }}
+            - name: tls
+              mountPath: /etc/fleetops/tls
+              readOnly: true
+            {{- end }}
+            {{- if .Values.license.existingSecret }}
+            - name: license
+              mountPath: /etc/fleetops/license
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "fleetops.claimName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+        {{- if and .Values.tls.enabled .Values.tls.existingSecret }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.existingSecret }}
+        {{- end }}
+        {{- if .Values.license.existingSecret }}
+        - name: license
+          secret:
+            secretName: {{ .Values.license.existingSecret }}
+            items:
+              - key: {{ .Values.license.key }}
+                path: {{ .Values.license.key }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

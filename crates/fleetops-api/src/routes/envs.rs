@@ -133,7 +133,14 @@ async fn new_enrollment(
             .rotate_agent(env_id, &hash_token(&token), expires_at)
             .await?;
     }
-    let command = agents::command_for(kind, &server, &token, access, custom_resources);
+    let command = agents::command_for(
+        kind,
+        &server,
+        &token,
+        access,
+        custom_resources,
+        s.config.agent_ca_pem.as_deref(),
+    );
     Ok(Enrollment {
         join_token: token,
         expires_at,
@@ -283,8 +290,14 @@ pub async fn create(
                     .set_agent_custom_resources(rec.id, body.custom_resources)
                     .await?;
             }
-            let command =
-                agents::command_for(body.kind, &server, &token, access, body.custom_resources);
+            let command = agents::command_for(
+                body.kind,
+                &server,
+                &token,
+                access,
+                body.custom_resources,
+                s.config.agent_ca_pem.as_deref(),
+            );
             let enrollment = Enrollment {
                 join_token: token,
                 expires_at,
