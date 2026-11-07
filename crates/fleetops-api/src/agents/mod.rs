@@ -211,10 +211,11 @@ pub fn command_for(
     join_token: &str,
     access: KubeAccess,
     custom_resources: bool,
+    ca_pem: Option<&str>,
 ) -> String {
     match kind {
         fleetops_core::env::EnvKind::KubeAgent => {
-            manifest::command(server_url, join_token, access, custom_resources)
+            manifest::command(server_url, join_token, access, custom_resources, ca_pem)
         }
         _ => enrollment_command(server_url, join_token),
     }

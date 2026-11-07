@@ -114,18 +114,23 @@ pub fn command(
     join_token: &str,
     access: KubeAccess,
     custom_resources: bool,
+    ca_pem: Option<&str>,
 ) -> String {
     format!(
         "kubectl apply -f - <<'EOF'\n{}\nEOF\n",
-        manifest(server_url, join_token, access, custom_resources)
+        manifest(server_url, join_token, access, custom_resources, ca_pem)
     )
 }
 
+/// `ca_pem` is the certificate FleetOps generated for its HTTPS port, when
+/// it serves one: the agent trusts it next to the public roots, so an agent
+/// in the cluster FleetOps runs in can dial its Service.
 pub fn manifest(
     server_url: &str,
     join_token: &str,
     access: KubeAccess,
     custom_resources: bool,
+    ca_pem: Option<&str>,
 ) -> String {
     let extra = if custom_resources {
         READ_EVERYTHING_RULE
@@ -139,6 +144,15 @@ pub fn manifest(
     } else {
         STANDARD_RULES
     };
+    let ca_env = ca_pem.map_or_else(String::new, |pem| {
+        let mut e =
+            String::from("\n            - name: FLEETOPS_AGENT_CA_PEM\n              value: |");
+        for line in pem.trim_end().lines() {
+            e.push_str("\n                ");
+            e.push_str(line);
+        }
+        e
+    });
     let (header, admin_binding) = match access {
         KubeAccess::ClusterAdmin => (
             "# Access level: cluster-admin (full control of the cluster).\n".to_string(),
@@ -257,7 +271,7 @@ spec:
             - name: FLEETOPS_AGENT_JOIN_TOKEN
               valueFrom: {{secretKeyRef: {{name: fleetops-agent-join, key: token}}}}
             - name: POD_NAMESPACE
-              valueFrom: {{fieldRef: {{fieldPath: metadata.namespace}}}}
+              valueFrom: {{fieldRef: {{fieldPath: metadata.namespace}}}}{ca_env}
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
@@ -280,6 +294,7 @@ mod tests {
             "fj_abc",
             KubeAccess::Standard,
             false,
+            None,
         );
         let docs: Vec<&str> = m.split("\n---\n").collect();
         let kinds: Vec<&str> = docs
@@ -317,8 +332,8 @@ mod tests {
 
     #[test]
     fn a_new_token_changes_the_pod_template_so_reapplying_restarts_the_agent() {
-        let a = manifest("https://f", "fj_one", KubeAccess::Standard, false);
-        let b = manifest("https://f", "fj_two", KubeAccess::Standard, false);
+        let a = manifest("https://f", "fj_one", KubeAccess::Standard, false, None);
+        let b = manifest("https://f", "fj_two", KubeAccess::Standard, false, None);
         let ann = |m: &str| {
             m.lines()
                 .find(|l| l.contains("fleetops.io/join:"))
@@ -333,7 +348,7 @@ mod tests {
         // The distroless image's USER is "nonroot", which kubelet cannot
         // check against runAsNonRoot; without a numeric uid the pod never
         // starts (CreateContainerConfigError).
-        let m = manifest("https://f", "fj_x", KubeAccess::Standard, false);
+        let m = manifest("https://f", "fj_x", KubeAccess::Standard, false, None);
         assert!(
             m.contains("runAsUser: 65532") && m.contains("runAsGroup: 65532"),
             "{m}"
@@ -342,7 +357,7 @@ mod tests {
 
     #[test]
     fn the_command_pipes_the_manifest_to_kubectl() {
-        let c = command("https://f", "fj_x", KubeAccess::Standard, false);
+        let c = command("https://f", "fj_x", KubeAccess::Standard, false, None);
         assert!(
             c.starts_with("kubectl apply -f - <<'EOF'\n") && c.ends_with("EOF\n"),
             "{c}"
@@ -356,7 +371,7 @@ mod tests {
 
     #[test]
     fn read_only_grants_no_write_verbs_and_no_exec() {
-        let m = manifest("https://f", "fj_x", KubeAccess::ReadOnly, false);
+        let m = manifest("https://f", "fj_x", KubeAccess::ReadOnly, false, None);
         let r = rules(&m);
         for verb in ["create", "update", "patch", "delete"] {
             assert!(!r.contains(verb), "{verb} in {r}");
@@ -368,7 +383,7 @@ mod tests {
     #[test]
     fn every_level_can_read_metrics() {
         for access in [KubeAccess::ReadOnly, KubeAccess::Standard] {
-            let m = manifest("https://f", "fj_x", access, false);
+            let m = manifest("https://f", "fj_x", access, false, None);
             assert!(
                 rules(&m).contains(
                     "apiGroups: [metrics.k8s.io]\n    resources: [nodes, pods]\n    verbs: [get, list]"
@@ -380,7 +395,7 @@ mod tests {
 
     #[test]
     fn standard_can_create_update_and_patch_the_common_kinds() {
-        let m = manifest("https://f", "fj_x", KubeAccess::Standard, false);
+        let m = manifest("https://f", "fj_x", KubeAccess::Standard, false, None);
         let r = rules(&m);
         assert!(
             r.contains("deployments, statefulsets, daemonsets]\n    verbs: [get, list, watch, create, update, patch, delete]"),
@@ -391,12 +406,12 @@ mod tests {
 
     #[test]
     fn cluster_admin_adds_a_separately_named_binding() {
-        let m = manifest("https://f", "fj_x", KubeAccess::ClusterAdmin, false);
+        let m = manifest("https://f", "fj_x", KubeAccess::ClusterAdmin, false, None);
         assert!(
             m.contains("name: fleetops-agent-cluster-admin\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: ClusterRole\n  name: cluster-admin"),
             "{m}"
         );
-        let s = manifest("https://f", "fj_x", KubeAccess::Standard, false);
+        let s = manifest("https://f", "fj_x", KubeAccess::Standard, false, None);
         assert!(
             s.contains("kubectl delete clusterrolebinding fleetops-agent-cluster-admin"),
             "the downgrade note"
@@ -406,7 +421,7 @@ mod tests {
     #[test]
     fn read_only_and_standard_read_the_new_core_kinds() {
         for access in [KubeAccess::ReadOnly, KubeAccess::Standard] {
-            let m = manifest("https://f", "t", access, false);
+            let m = manifest("https://f", "t", access, false, None);
             let r = rules(&m);
             for needle in [
                 "horizontalpodautoscalers",
@@ -428,7 +443,14 @@ mod tests {
 
     #[test]
     fn standard_writes_the_new_namespaced_kinds() {
-        let r = rules(&manifest("https://f", "t", KubeAccess::Standard, false)).to_string();
+        let r = rules(&manifest(
+            "https://f",
+            "t",
+            KubeAccess::Standard,
+            false,
+            None,
+        ))
+        .to_string();
         assert!(
             r.contains("resources: [replicasets, horizontalpodautoscalers]\n    verbs: [get, list, watch, create, update, patch, delete]"),
             "{r}"
@@ -442,7 +464,7 @@ mod tests {
     #[test]
     fn the_custom_resources_toggle_adds_a_read_everything_rule() {
         for access in [KubeAccess::ReadOnly, KubeAccess::Standard] {
-            let r = rules(&manifest("https://f", "t", access, true)).to_string();
+            let r = rules(&manifest("https://f", "t", access, true, None)).to_string();
             assert!(
                 r.contains(
                     "  - apiGroups: [\"*\"]\n    resources: [\"*\"]\n    verbs: [get, list, watch]"
@@ -450,5 +472,31 @@ mod tests {
                 "{r}"
             );
         }
+    }
+
+    #[test]
+    fn a_generated_certificate_is_trusted_through_the_agent_env() {
+        let pem = "-----BEGIN CERTIFICATE-----\nAAAA\nBBBB\n-----END CERTIFICATE-----\n";
+        let m = manifest(
+            "https://fleetops:9443",
+            "t",
+            KubeAccess::Standard,
+            false,
+            Some(pem),
+        );
+        assert!(
+            m.contains(
+                "            - name: FLEETOPS_AGENT_CA_PEM\n              value: |\n                -----BEGIN CERTIFICATE-----\n                AAAA\n                BBBB\n                -----END CERTIFICATE-----\n          securityContext:"
+            ),
+            "{m}"
+        );
+        let plain = manifest(
+            "https://fleetops:9443",
+            "t",
+            KubeAccess::Standard,
+            false,
+            None,
+        );
+        assert!(!plain.contains("FLEETOPS_AGENT_CA_PEM"), "{plain}");
     }
 }
