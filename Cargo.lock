@@ -3494,12 +3494,11 @@ dependencies = [
 
 [[package]]
 name = "instant-xml"
-version = "0.7.6"
+version = "0.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a2cad967c3b727c000ebfdcd14974539e8c6f59e1d044c8034179df2c6fe250"
+checksum = "2c32db75b7c16c5051ea7b6605eea01f7b5a25abe84c20473c9e7c7987f5850c"
 dependencies = [
  "instant-xml-macros",
- "thiserror",
  "xmlparser",
 ]
 
@@ -5501,9 +5500,9 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "rusty-s3"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2412ec048709e6a8ee4ee1505313bce003f6b8b27fc41a97e30615223c7ed592"
+checksum = "1af5b74b316ee483ae486bd3cb206c8caa5dbb3cf0eab7269a868ae43aeece03"
 dependencies = [
  "base64 0.23.1",
  "hmac 0.13.0",
