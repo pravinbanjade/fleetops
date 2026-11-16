@@ -73,7 +73,7 @@ async fn start_with(config: ApiConfig) -> (Live, SocketAddr) {
     let store = Store::in_memory().await.unwrap();
     // The server's own wiring: one agent registry for factory and state.
     let state = fleetops_server::build_state(store.clone(), config);
-    bootstrap_local(&store, &state.envs, &host)
+    bootstrap_local(&store, &state.envs, &host, None)
         .await
         .unwrap()
         .expect("local environment registered");
