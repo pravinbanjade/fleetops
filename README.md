@@ -70,9 +70,10 @@ The image runs as a non-root user on `distroless/static` for linux/amd64 and lin
 - **Kubernetes.** A Helm chart runs the server in a cluster, with its database on a persistent volume:
 
   ```sh
-  helm repo add fleetops https://pravinbanjade.github.io/fleetops
-  helm install fleetops fleetops/fleetops --namespace fleetops --create-namespace
+  helm install fleetops oci://ghcr.io/pravinbanjade/charts/fleetops --namespace fleetops --create-namespace
   ```
+
+  The chart is also in a classic repository: `helm repo add fleetops https://pravinbanjade.github.io/fleetops`, then `helm install fleetops fleetops/fleetops ...`.
 
   Default values: [view](https://github.com/pravinbanjade/fleetops/blob/main/deploy/helm/fleetops/values.yaml) · [download](https://github.com/pravinbanjade/fleetops/releases/latest/download/fleetops-values.yaml) (latest release). For a ready-to-edit setup, copy the [helmfile starter](deploy/helmfile/), a `helmfile.yaml` plus a short `values.yaml` with the settings most installs change.
 

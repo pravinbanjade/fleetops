@@ -5,14 +5,14 @@ Runs the FleetOps server in a Kubernetes cluster: one pod with its SQLite databa
 ## Install
 
 ```sh
-helm repo add fleetops https://pravinbanjade.github.io/fleetops
-helm install fleetops fleetops/fleetops --namespace fleetops --create-namespace
+helm install fleetops oci://ghcr.io/pravinbanjade/charts/fleetops --namespace fleetops --create-namespace
 ```
 
-Or from the OCI registry, without adding a repository:
+Or from the classic Helm repository:
 
 ```sh
-helm install fleetops oci://ghcr.io/pravinbanjade/charts/fleetops --namespace fleetops --create-namespace
+helm repo add fleetops https://pravinbanjade.github.io/fleetops
+helm install fleetops fleetops/fleetops --namespace fleetops --create-namespace
 ```
 
 Then open the UI and create the admin account within 10 minutes of the pod starting:
@@ -79,7 +79,7 @@ Enterprise license and a sealing key kept outside the volume:
 ```sh
 kubectl -n fleetops create secret generic fleetops-license --from-file=license=fleetops.license
 kubectl -n fleetops create secret generic fleetops-secret-key --from-literal=secret-key="$(openssl rand -base64 32)"
-helm upgrade --install fleetops fleetops/fleetops -n fleetops \
+helm upgrade --install fleetops oci://ghcr.io/pravinbanjade/charts/fleetops -n fleetops \
   --set license.existingSecret=fleetops-license \
   --set secretKey.existingSecret=fleetops-secret-key
 ```

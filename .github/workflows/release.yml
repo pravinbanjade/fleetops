@@ -176,7 +176,7 @@ jobs:
 
           Static linux binaries of each, with SHA-256 checksums, are attached below.
 
-          Helm chart \`fleetops $VERSION\`: \`helm repo add fleetops https://pravinbanjade.github.io/fleetops\`, or \`oci://$GHCR/charts/fleetops\`.
+          Helm chart \`fleetops $VERSION\`: \`oci://$GHCR/charts/fleetops\`, or \`helm repo add fleetops https://pravinbanjade.github.io/fleetops\`.
           Its default values are attached as \`fleetops-values.yaml\`; a starter helmfile and values file are in \`deploy/helmfile/\`.
           EOF
           )

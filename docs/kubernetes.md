@@ -7,11 +7,10 @@ FleetOps manages Kubernetes clusters next to Docker hosts. This page covers addi
 The Helm chart in [deploy/helm/fleetops](../deploy/helm/fleetops/README.md) runs the server in a cluster: one pod with its database on a persistent volume, the UI on port 9000, HTTPS for agents on 9443, and an optional Ingress.
 
 ```sh
-helm repo add fleetops https://pravinbanjade.github.io/fleetops
-helm install fleetops fleetops/fleetops --namespace fleetops --create-namespace
+helm install fleetops oci://ghcr.io/pravinbanjade/charts/fleetops --namespace fleetops --create-namespace
 ```
 
-The chart is also at `oci://ghcr.io/pravinbanjade/charts/fleetops`, and [deploy/kubernetes/fleetops.yaml](../deploy/kubernetes/fleetops.yaml) is the same thing rendered for `kubectl apply`. To manage the cluster FleetOps runs in, add it with the in-cluster agent below; the chart's README covers which URL to open the UI on so the agent can dial back.
+The chart is also in a classic repository (`helm repo add fleetops https://pravinbanjade.github.io/fleetops`, chart `fleetops/fleetops`), and [deploy/kubernetes/fleetops.yaml](../deploy/kubernetes/fleetops.yaml) is the same thing rendered for `kubectl apply`. To manage the cluster FleetOps runs in, add it with the in-cluster agent below; the chart's README covers which URL to open the UI on so the agent can dial back.
 
 To configure the install, see the chart README's [Configure](../deploy/helm/fleetops/README.md#configure) section: it links the full default `values.yaml` and the [helmfile starter](../deploy/helmfile/) (`helmfile.yaml` plus a short `values.yaml`).
 
