@@ -13,7 +13,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetops
     app.kubernetes.io/instance: fleetops
-    app.kubernetes.io/version: "1.2.0"
+    app.kubernetes.io/version: "1.3.0"
     app.kubernetes.io/component: server
 automountServiceAccountToken: false
 ---
@@ -25,7 +25,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetops
     app.kubernetes.io/instance: fleetops
-    app.kubernetes.io/version: "1.2.0"
+    app.kubernetes.io/version: "1.3.0"
     app.kubernetes.io/component: server
   annotations:
     helm.sh/resource-policy: keep
@@ -44,7 +44,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetops
     app.kubernetes.io/instance: fleetops
-    app.kubernetes.io/version: "1.2.0"
+    app.kubernetes.io/version: "1.3.0"
     app.kubernetes.io/component: server
 spec:
   type: ClusterIP
@@ -69,7 +69,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetops
     app.kubernetes.io/instance: fleetops
-    app.kubernetes.io/version: "1.2.0"
+    app.kubernetes.io/version: "1.3.0"
     app.kubernetes.io/component: server
 spec:
   # One server per database: never more than one replica, and the old pod
@@ -86,7 +86,7 @@ spec:
       labels:
         app.kubernetes.io/name: fleetops
         app.kubernetes.io/instance: fleetops
-        app.kubernetes.io/version: "1.2.0"
+        app.kubernetes.io/version: "1.3.0"
         app.kubernetes.io/component: server
     spec:
       serviceAccountName: fleetops
@@ -103,7 +103,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: fleetops
-          image: "docker.io/fleets/fleetops:1.2.0"
+          image: "docker.io/fleets/fleetops:1.3.0"
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
