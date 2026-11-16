@@ -284,6 +284,23 @@ describe("agent environments", () => {
 describe("Kubernetes environments", () => {
   const KUBECONFIG = "apiVersion: v1\nkind: Config\ncontexts: [{name: dev}, {name: prod}]\n";
 
+  it("adds the cluster FleetOps runs in with just a name", async () => {
+    const calls = mockFetch({
+      ...routes,
+      "POST /api/v1/envs": { status: 201, json: { id: 9, name: "here", kind: "kube-local", url: "https://10.96.0.1:443", created_at: 1, updated_at: 1, enrollment: null } },
+    });
+    const { screen } = renderApp("/admin/envs");
+    await userEvent.click(await screen.findByRole("button", { name: "Add environment" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Kubernetes" }));
+    await userEvent.click(within(dialog).getByRole("radio", { name: /the cluster fleetops runs in/i }));
+    expect(within(dialog).queryByLabelText("Kubeconfig")).not.toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText("Name"), "here");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "here", kind: "kube-local" });
+  });
+
   it("adds a kubeconfig cluster after picking its context", async () => {
     const calls = mockFetch({
       ...routes,

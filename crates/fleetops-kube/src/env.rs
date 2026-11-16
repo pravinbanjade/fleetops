@@ -1,4 +1,4 @@
-//! The two Kubernetes environment kinds (spec §2.4).
+//! The Kubernetes environment kinds (spec §2.4).
 
 use crate::{kubeconfig, tunnel, KubeClient};
 use async_trait::async_trait;
@@ -75,6 +75,76 @@ impl Environment for KubeConfigEnv {
     }
     fn kind(&self) -> EnvKind {
         EnvKind::KubeConfig
+    }
+    async fn status(&self) -> EnvStatus {
+        match &self.ops {
+            Err(reason) => EnvStatus::Down {
+                reason: reason.clone(),
+            },
+            Ok(ops) => kube_status(ops.as_ref(), "cannot reach cluster").await,
+        }
+    }
+    fn docker(&self) -> Option<Arc<dyn DockerOps>> {
+        None
+    }
+    fn kube(&self) -> Option<Arc<dyn KubeOps>> {
+        self.ops
+            .as_ref()
+            .ok()
+            .map(|c| c.clone() as Arc<dyn KubeOps>)
+    }
+}
+
+/// Where the API server is when FleetOps runs in a pod, from the variables
+/// Kubernetes sets in every container; None outside a cluster.
+pub fn in_cluster_url() -> Option<String> {
+    let host = std::env::var("KUBERNETES_SERVICE_HOST")
+        .ok()
+        .filter(|h| !h.is_empty())?;
+    let port = std::env::var("KUBERNETES_SERVICE_PORT").unwrap_or_else(|_| "443".into());
+    // An IPv6 service address needs brackets in a URL.
+    let host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host
+    };
+    Some(format!("https://{host}:{port}"))
+}
+
+/// The cluster FleetOps runs in, reached with its pod's ServiceAccount. The
+/// token file is re-read as Kubernetes rotates it.
+pub struct KubeLocalEnv {
+    id: i64,
+    name: String,
+    ops: std::result::Result<Arc<KubeClient>, String>,
+}
+
+impl KubeLocalEnv {
+    pub fn new(id: i64, name: &str) -> Self {
+        let ops = kube::Config::incluster()
+            .map_err(|e| format!("cannot read the in-cluster ServiceAccount: {e}"))
+            .and_then(|c| {
+                kube::Client::try_from(c).map_err(|e| format!("cannot reach cluster: {e}"))
+            })
+            .map(|c| Arc::new(KubeClient::new(c)));
+        Self {
+            id,
+            name: name.to_string(),
+            ops,
+        }
+    }
+}
+
+#[async_trait]
+impl Environment for KubeLocalEnv {
+    fn id(&self) -> i64 {
+        self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn kind(&self) -> EnvKind {
+        EnvKind::KubeLocal
     }
     async fn status(&self) -> EnvStatus {
         match &self.ops {
@@ -195,6 +265,7 @@ impl EnvFactory for KubeEnvFactory {
                 &spec.name,
                 self.agents.clone(),
             ))),
+            EnvKind::KubeLocal => Ok(Arc::new(KubeLocalEnv::new(spec.id, &spec.name))),
             other => Err(Error::Invalid(format!(
                 "{} is not a Kubernetes environment kind",
                 other.as_str()
@@ -300,6 +371,20 @@ mod tests {
         assert!(env.kube().is_none());
         assert!(
             matches!(env.status().await, EnvStatus::Down { reason } if reason.contains("waiting for the agent"))
+        );
+    }
+
+    #[tokio::test]
+    async fn the_local_cluster_outside_a_pod_is_down_with_the_reason() {
+        if in_cluster_url().is_some() {
+            return; // running inside a cluster: nothing to check here
+        }
+        let f = KubeEnvFactory::new(Default::default());
+        let env = f.build(&spec(EnvKind::KubeLocal, None)).unwrap();
+        assert_eq!(env.kind(), EnvKind::KubeLocal);
+        assert!(env.kube().is_none());
+        assert!(
+            matches!(env.status().await, EnvStatus::Down { reason } if reason.contains("in-cluster ServiceAccount"))
         );
     }
 

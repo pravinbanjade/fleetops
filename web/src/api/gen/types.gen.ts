@@ -919,7 +919,7 @@ export type EnvBody = {
     socket_path?: string | null;
 };
 
-export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent' | 'swarm-agent' | 'swarm-node';
+export type EnvKind = 'docker-local' | 'docker-agent' | 'kube-config' | 'kube-agent' | 'kube-local' | 'swarm-agent' | 'swarm-node';
 
 export type EnvRole = 'viewer' | 'operator';
 

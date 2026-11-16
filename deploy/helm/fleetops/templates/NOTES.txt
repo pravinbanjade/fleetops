@@ -14,10 +14,19 @@ FleetOps {{ .Chart.AppVersion }} is starting in namespace {{ .Release.Namespace 
      then open http://localhost:{{ .Values.service.httpPort }}
 {{- end }}
 
+{{- if .Values.rbac.create }}
+
+2. This cluster is registered as the "local" environment on first start,
+   through the service account bound to ClusterRole {{ .Values.rbac.clusterRole }}.
+   To add other clusters, use Admin -> Environments -> Add environment and
+   choose the in-cluster agent.
+{{- else }}
+
 2. Manage this cluster: in Admin -> Environments -> Add environment, choose
    the in-cluster agent and run the kubectl command it shows.
+{{- end }}
 {{- if .Values.tls.enabled }}
-   The command dials the URL your browser is on. Agents need HTTPS that
+   Agents dial the URL your browser is on. Agents need HTTPS that
    FleetOps terminates itself, so open the UI through
 {{- if and .Values.ingress.enabled (eq .Values.ingress.backendPort "https") }}
    the ingress (its controller must speak HTTPS to the backend).

@@ -146,40 +146,47 @@ impl EnvRegistry {
 
 pub const LOCAL_ENV_NAME: &str = "local";
 
-/// On first start (no environments stored), registers `url` as "local" if
-/// it answers. Returns the new record, or None when nothing was registered.
+/// On first start (no environments stored), registers "local": the Docker
+/// endpoint `url` if it answers, otherwise the cluster FleetOps runs in
+/// (`in_cluster`, its API server URL) if its ServiceAccount can reach it.
+/// Returns the new record, or None when nothing was registered.
 pub async fn bootstrap_local(
     store: &Store,
     registry: &EnvRegistry,
     url: &str,
+    in_cluster: Option<&str>,
 ) -> Result<Option<EnvironmentRecord>> {
     let _guard = registry.lock_mutations().await;
     if !store.list_environments().await?.is_empty() {
         return Ok(None);
     }
-    let probe = registry.factory.build(&EnvSpec {
-        id: 0,
-        name: LOCAL_ENV_NAME.into(),
-        kind: EnvKind::DockerLocal,
-        url: url.into(),
-        credential: None,
-    })?;
-    match probe.status().await {
-        EnvStatus::Up { .. } => {
-            let rec = store
-                .create_environment(
-                    LOCAL_ENV_NAME,
-                    EnvKind::DockerLocal.as_str(),
-                    url,
-                    now_unix(),
-                )
-                .await?;
-            registry.insert(&rec, None)?;
-            Ok(Some(rec))
-        }
-        EnvStatus::Down { reason } => {
-            tracing::warn!(%url, %reason, "no reachable Docker endpoint; add an environment manually");
-            Ok(None)
+    let mut candidates = vec![(EnvKind::DockerLocal, url)];
+    if let Some(api) = in_cluster {
+        candidates.push((EnvKind::KubeLocal, api));
+    }
+    for (kind, url) in candidates {
+        let probe = registry.factory.build(&EnvSpec {
+            id: 0,
+            name: LOCAL_ENV_NAME.into(),
+            kind,
+            url: url.into(),
+            credential: None,
+        })?;
+        match probe.status().await {
+            EnvStatus::Up { .. } => {
+                let rec = store
+                    .create_environment(LOCAL_ENV_NAME, kind.as_str(), url, now_unix())
+                    .await?;
+                registry.insert(&rec, None)?;
+                return Ok(Some(rec));
+            }
+            EnvStatus::Down { reason } => {
+                tracing::info!(kind = kind.as_str(), %url, %reason, "local environment not reachable");
+            }
         }
     }
+    tracing::warn!(
+        "no reachable Docker endpoint or in-cluster Kubernetes API; add an environment manually"
+    );
+    Ok(None)
 }

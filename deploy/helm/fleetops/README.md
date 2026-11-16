@@ -46,10 +46,14 @@ Without helmfile, pass the same file to Helm: `helm upgrade --install fleetops o
 
 ## Managing the cluster FleetOps runs in
 
-Add it like any other cluster: **Admin → Environments → Add environment → Kubernetes cluster (in-cluster agent)**, and run the `kubectl apply` command it shows. The agent goes into the `fleetops` namespace and dials the URL your browser is on, so open the UI over the address the agent should use first:
+By default the chart binds FleetOps's service account to the `cluster-admin` ClusterRole, and FleetOps registers the cluster it runs in as the **local** environment on first start: no agent, no kubeconfig. Set `rbac.clusterRole` to a narrower role (`edit`, `view`) to limit what FleetOps can do there, or `rbac.create=false` (and `serviceAccount.automount=false`) to keep its token out of the pod. If you delete the environment, add it back in **Admin → Environments → Add environment → Kubernetes → The cluster FleetOps runs in**.
 
-- **Same cluster, default install.** Install the release as `fleetops` in the `fleetops` namespace, so the Service is `fleetops`. Port-forward HTTPS (`kubectl -n fleetops port-forward svc/fleetops 9443:9443`), but open the UI as `https://fleetops:9443`, with `127.0.0.1 fleetops` in your `/etc/hosts`. The agent then dials the Service, and the command carries the certificate FleetOps generated for `localhost` and `fleetops`.
+## Managing other clusters
+
+Add them with **Admin → Environments → Add environment → Kubernetes → In-cluster agent**, and run the `kubectl apply` command it shows. The agent goes into the `fleetops` namespace and dials the URL your browser is on, so open the UI over the address the agent should use first:
+
 - **Through an ingress.** Set `ingress.backendPort=https` (the default) and tell the controller to speak HTTPS to the backend, for ingress-nginx `nginx.ingress.kubernetes.io/backend-protocol: HTTPS`. Agents in any cluster can then use the ingress host.
+- **A LoadBalancer or NodePort.** Expose HTTPS (`service.type`) and open the UI on that address.
 
 Agents must reach FleetOps over HTTPS that FleetOps terminates itself: a connection that arrives on the plain-HTTP port is refused unless it comes from loopback. An ingress that ends TLS and forwards plain HTTP (`ingress.backendPort=http`) serves the UI but not agents.
 
@@ -102,6 +106,9 @@ Set `secretKey.existingSecret` on the first install only, or to the key already 
 | `secretKey.existingSecret` / `.key` | `""` / `secret-key` | The 32-byte base64 key that seals stored credentials. Empty: `/data/secret.key`, created on first start. |
 | `license.existingSecret` / `.key` | `""` / `license` | An Enterprise license file. |
 | `extraEnv`, `extraEnvFrom` | `[]` | More `FLEETOPS_*` settings, for example `FLEETOPS_KUBE_EXEC_PLUGINS`. |
+| `rbac.create` | `true` | Bind the service account to `rbac.clusterRole`, so FleetOps manages the cluster it runs in as **local**. |
+| `rbac.clusterRole` | `cluster-admin` | The ClusterRole bound, e.g. `edit` or `view` for less. |
+| `serviceAccount.automount` | `true` | Mount the service account token; `rbac.create` needs it. |
 | `persistence.enabled` | `true` | Off: an `emptyDir`, lost with the pod. |
 | `persistence.existingClaim` | `""` | |
 | `persistence.storageClass` | `""` | `-` sets `storageClassName: ""`. |

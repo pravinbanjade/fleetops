@@ -4,7 +4,7 @@ import { ObjectNow } from "@/components/shell/ObjectNow";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleCheck, Container, KeyRound, Network, Pencil, Plus, ShieldCheck, ShipWheel, Trash2, type LucideIcon } from "lucide-react";
 import { useId, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { envAccessQuery, envsQuery, envStatusQuery, keys } from "@/api/queries";
 import { createEnv, deleteEnv, kubeContexts, rotateAgent, rotateSwarmKey, updateEnv } from "@/api/gen/sdk.gen";
@@ -63,6 +63,7 @@ const PLATFORMS: { id: Platform; label: string; hint: string; icon: LucideIcon; 
     kinds: [
       ["kube-config", "Paste a kubeconfig"],
       ["kube-agent", "In-cluster agent"],
+      ["kube-local", "The cluster FleetOps runs in"],
     ],
   },
   {
@@ -80,6 +81,7 @@ const KIND_LABEL: Record<EnvKind, string> = {
   "docker-agent": "Docker via agent",
   "kube-config": "Kubernetes",
   "kube-agent": "Kubernetes via agent",
+  "kube-local": "Kubernetes (this cluster)",
   "swarm-agent": "Docker Swarm",
   "swarm-node": "Swarm node",
 };
@@ -92,6 +94,8 @@ const DESCRIPTIONS: Record<EnvKind, string> = {
   "kube-config":
     "Paste a kubeconfig with a ServiceAccount token or client certificate. It is stored encrypted and never shown again. exec plugins (aws, gcloud) are not supported: use the in-cluster agent instead.",
   "kube-agent": "You'll get a kubectl command that installs the agent in the cluster. The cluster needs no inbound access.",
+  "kube-local":
+    "The cluster FleetOps itself runs in, reached with its pod's ServiceAccount. The Helm chart grants that account its access (rbac in the chart's values).",
   "swarm-agent":
     "A Docker Swarm. You'll get a key and a stack file that runs the agent on every node; each node's agent connects out to this server.",
   "swarm-node": "One node of a Docker Swarm, reached through its swarm.",
@@ -147,16 +151,24 @@ function AgentCell({ env }: { env: EnvView }) {
   );
 }
 
+const route = getRouteApi("/authed/shell/admin/envs");
+
 export function EnvironmentsPage() {
   const qc = useQueryClient();
+  const { add } = route.useSearch();
+  const navigate = useNavigate();
   const envs = useQuery(envsQuery);
   const now = useNow();
   const active = useNowRow(envs.data, (e: EnvView) => String(e.id));
-  const [dialog, setDialog] = useState<Dialog>(null);
+  const [dialog, setDialog] = useState<Dialog>(add ? { kind: "add" } : null);
   // Separate from `dialog`: a confirm dialog closes itself after it succeeds.
   const [enrollment, setEnrollment] = useState<Pending | null>(null);
   const [swarmKey, setSwarmKey] = useState<SwarmPending | null>(null);
-  const close = () => setDialog(null);
+  const close = () => {
+    setDialog(null);
+    // Drops `?add` so a reload does not reopen the form.
+    if (add) void navigate({ to: "/admin/envs", search: {}, replace: true });
+  };
   // Renaming or removing one changes every environment-scoped key, so all are refetched.
   const refresh = () => Promise.all([qc.invalidateQueries({ queryKey: keys.envs }), qc.invalidateQueries({ queryKey: ["env"] })]);
   const [cols] = useState<Column<EnvView>[]>(() => [
@@ -338,6 +350,8 @@ function EnvForm({
             body: { name: name.trim(), kind, kubeconfig, ...(context ? { context } : {}), skip_check: skipCheck },
             throwOnError: true,
           });
+        } else if (kind === "kube-local") {
+          await createEnv({ body: { name: name.trim(), kind }, throwOnError: true });
         } else if (agent) {
           const { data } = await createEnv({
             body: { name: name.trim(), kind, ...(kind === "kube-agent" ? { access, custom_resources: customResources } : {}) },

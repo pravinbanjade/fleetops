@@ -14911,6 +14911,7 @@
           "docker-agent",
           "kube-config",
           "kube-agent",
+          "kube-local",
           "swarm-agent",
           "swarm-node"
         ]

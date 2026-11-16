@@ -112,9 +112,12 @@ impl EnvFactory for DockerEnvFactory {
                 &spec.name,
                 self.agents.clone(),
             ))),
-            EnvKind::KubeConfig | EnvKind::KubeAgent | EnvKind::SwarmNode => Err(Error::Invalid(
-                format!("{} is not a Docker environment kind", spec.kind.as_str()),
-            )),
+            EnvKind::KubeConfig | EnvKind::KubeAgent | EnvKind::KubeLocal | EnvKind::SwarmNode => {
+                Err(Error::Invalid(format!(
+                    "{} is not a Docker environment kind",
+                    spec.kind.as_str()
+                )))
+            }
         }
     }
 }

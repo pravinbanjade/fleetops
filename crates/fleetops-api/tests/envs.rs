@@ -9,14 +9,24 @@ use std::sync::atomic::Ordering;
 #[tokio::test]
 async fn bootstrap_registers_reachable_local_once() {
     let app = app().await;
-    let rec = bootstrap_local(&app.store, &app.state.envs, "unix:///var/run/docker.sock")
-        .await
-        .unwrap();
+    let rec = bootstrap_local(
+        &app.store,
+        &app.state.envs,
+        "unix:///var/run/docker.sock",
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(rec.unwrap().name, "local");
     assert!(app.state.envs.get("local").is_ok());
-    let again = bootstrap_local(&app.store, &app.state.envs, "unix:///var/run/docker.sock")
-        .await
-        .unwrap();
+    let again = bootstrap_local(
+        &app.store,
+        &app.state.envs,
+        "unix:///var/run/docker.sock",
+        None,
+    )
+    .await
+    .unwrap();
     assert!(again.is_none());
     assert_eq!(app.store.list_environments().await.unwrap().len(), 1);
 }
@@ -25,11 +35,103 @@ async fn bootstrap_registers_reachable_local_once() {
 async fn bootstrap_skips_unreachable_endpoint() {
     let app = app().await;
     app.fake.reachable.store(false, Ordering::SeqCst);
-    let rec = bootstrap_local(&app.store, &app.state.envs, "unix:///var/run/docker.sock")
-        .await
-        .unwrap();
+    let rec = bootstrap_local(
+        &app.store,
+        &app.state.envs,
+        "unix:///var/run/docker.sock",
+        None,
+    )
+    .await
+    .unwrap();
     assert!(rec.is_none());
     assert!(app.store.list_environments().await.unwrap().is_empty());
+}
+
+const API: &str = "https://10.96.0.1:443";
+
+#[tokio::test]
+async fn bootstrap_registers_the_cluster_it_runs_in_when_docker_is_unreachable() {
+    let app = app().await;
+    app.fake.reachable.store(false, Ordering::SeqCst);
+    let rec = bootstrap_local(
+        &app.store,
+        &app.state.envs,
+        "unix:///var/run/docker.sock",
+        Some(API),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        (rec.name.as_str(), rec.kind.as_str(), rec.url.as_str()),
+        ("local", "kube-local", API)
+    );
+    assert!(app.state.envs.get("local").unwrap().kube().is_some());
+}
+
+#[tokio::test]
+async fn bootstrap_prefers_a_reachable_docker_socket() {
+    let app = app().await;
+    let rec = bootstrap_local(
+        &app.store,
+        &app.state.envs,
+        "unix:///var/run/docker.sock",
+        Some(API),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(rec.kind, "docker-local");
+}
+
+#[tokio::test]
+async fn bootstrap_skips_an_unreachable_cluster() {
+    let app = app().await;
+    app.fake.reachable.store(false, Ordering::SeqCst);
+    app.fake.kube.unreachable.store(true, Ordering::SeqCst);
+    let rec = bootstrap_local(
+        &app.store,
+        &app.state.envs,
+        "unix:///var/run/docker.sock",
+        Some(API),
+    )
+    .await
+    .unwrap();
+    assert!(rec.is_none());
+    assert!(app.store.list_environments().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn an_admin_adds_the_local_cluster_only_inside_one() {
+    let body = json!({"name": "here", "kind": "kube-local"});
+    let outside = app().await;
+    let admin = outside.setup_admin().await;
+    let r = outside
+        .send(req(
+            "POST",
+            "/api/v1/envs",
+            Some(body.clone()),
+            Some(&admin),
+        ))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{:?}", r.json);
+    assert!(r.json["message"]
+        .as_str()
+        .unwrap()
+        .contains("not running inside a Kubernetes cluster"));
+
+    let inside = app_with(fleetops_api::ApiConfig {
+        in_cluster_url: Some(API.into()),
+        ..Default::default()
+    })
+    .await;
+    let admin = inside.setup_admin().await;
+    let r = inside
+        .send(req("POST", "/api/v1/envs", Some(body), Some(&admin)))
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.json);
+    assert_eq!(r.json["kind"], "kube-local");
+    assert_eq!(r.json["url"], API);
 }
 
 #[tokio::test]

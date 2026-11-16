@@ -71,9 +71,18 @@ serviceAccount:
   create: true
   name: ""
   annotations: {}
-  # The server talks to clusters through agents or kubeconfigs, never through
-  # its own service account.
-  automount: false
+  # Mount the account's token. FleetOps reads the cluster it runs in with it
+  # (see rbac); set false with rbac.create=false to keep it out of the pod.
+  automount: true
+
+# The cluster FleetOps runs in: on first start, with no environments yet,
+# FleetOps registers it as the "local" environment through its service
+# account. This binds that account to `clusterRole` cluster-wide. Set
+# create=false to manage other clusters only (through agents or
+# kubeconfigs), or name a narrower ClusterRole such as `view` or `edit`.
+rbac:
+  create: true
+  clusterRole: cluster-admin
 
 podAnnotations: {}
 podLabels: {}
