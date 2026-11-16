@@ -6,8 +6,8 @@ description: >-
 type: application
 # The release workflow packages the chart with the tag's version, so both
 # fields follow the workspace version in Cargo.toml.
-version: 1.3.0
-appVersion: "1.3.0"
+version: 1.4.0
+appVersion: "1.4.0"
 kubeVersion: ">=1.25.0-0"
 home: https://fleetops.pravinb.com.np
 icon: https://raw.githubusercontent.com/pravinbanjade/fleetops/main/web/public/favicon.svg
