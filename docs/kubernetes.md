@@ -13,6 +13,8 @@ helm install fleetops fleetops/fleetops --namespace fleetops --create-namespace
 
 The chart is also at `oci://ghcr.io/pravinbanjade/charts/fleetops`, and [deploy/kubernetes/fleetops.yaml](../deploy/kubernetes/fleetops.yaml) is the same thing rendered for `kubectl apply`. To manage the cluster FleetOps runs in, add it with the in-cluster agent below; the chart's README covers which URL to open the UI on so the agent can dial back.
 
+To configure the install, see the chart README's [Configure](../deploy/helm/fleetops/README.md#configure) section: it links the full default `values.yaml` and the [helmfile starter](../deploy/helmfile/) (`helmfile.yaml` plus a short `values.yaml`).
+
 ## Add a cluster
 
 There are two ways in, both under **Admin → Environments → Add environment**:

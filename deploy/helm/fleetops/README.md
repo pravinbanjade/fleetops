@@ -23,6 +23,27 @@ kubectl -n fleetops port-forward svc/fleetops 9000:9000   # http://localhost:900
 
 Without Helm, apply the manifest rendered from this chart with its defaults: `kubectl create namespace fleetops && kubectl apply -n fleetops -f https://raw.githubusercontent.com/pravinbanjade/fleetops/main/deploy/kubernetes/fleetops.yaml`.
 
+## Configure
+
+Every option and its default is in the chart's [`values.yaml`](https://github.com/pravinbanjade/fleetops/blob/main/deploy/helm/fleetops/values.yaml) (the [table below](#values) summarises them). To start from a copy:
+
+```sh
+# The values of the chart version you install (here the latest release):
+curl -LO https://github.com/pravinbanjade/fleetops/releases/latest/download/fleetops-values.yaml
+# Or ask Helm, adding --version <chart version> to pin one:
+helm show values oci://ghcr.io/pravinbanjade/charts/fleetops > values.yaml
+```
+
+The [raw file on `main`](https://raw.githubusercontent.com/pravinbanjade/fleetops/main/deploy/helm/fleetops/values.yaml) can be ahead of the latest release; the release asset and `helm show values` always match a chart version.
+
+Most installs change only a few settings. [`deploy/helmfile/`](../../helmfile/) has a starter `values.yaml` with just those (public URL, ingress, TLS, license, sealing key, storage, resources) and a `helmfile.yaml` that installs the chart with it, pinned to a chart version. Copy both files, edit `values.yaml`, then:
+
+```sh
+helmfile apply
+```
+
+Without helmfile, pass the same file to Helm: `helm upgrade --install fleetops oci://ghcr.io/pravinbanjade/charts/fleetops -n fleetops --create-namespace -f values.yaml`.
+
 ## Managing the cluster FleetOps runs in
 
 Add it like any other cluster: **Admin → Environments → Add environment → Kubernetes cluster (in-cluster agent)**, and run the `kubectl apply` command it shows. The agent goes into the `fleetops` namespace and dials the URL your browser is on, so open the UI over the address the agent should use first:
