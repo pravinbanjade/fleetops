@@ -54,6 +54,8 @@ jobs:
             chart=$(sed -n "s/^$field: *\"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p" deploy/helm/fleetops/Chart.yaml)
             [ "$chart" = "$version" ] || { echo "Chart.yaml $field $chart, Cargo.toml $version" >&2; exit 1; }
           done
+          pinned=$(sed -n 's/^ *version: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' deploy/helmfile/helmfile.yaml)
+          [ "$pinned" = "$version" ] || { echo "deploy/helmfile/helmfile.yaml version $pinned, Cargo.toml $version" >&2; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/setup
@@ -158,6 +160,7 @@ jobs:
           helm lint --strict deploy/helm/fleetops
           helm package deploy/helm/fleetops --destination chart
           cp chart/*.tgz dist/
+          cp deploy/helm/fleetops/values.yaml dist/fleetops-values.yaml
 
       - name: Publish the GitHub release
         env:
@@ -174,6 +177,7 @@ jobs:
           Static linux binaries of each, with SHA-256 checksums, are attached below.
 
           Helm chart \`fleetops $VERSION\`: \`helm repo add fleetops https://pravinbanjade.github.io/fleetops\`, or \`oci://$GHCR/charts/fleetops\`.
+          Its default values are attached as \`fleetops-values.yaml\`; a starter helmfile and values file are in \`deploy/helmfile/\`.
           EOF
           )
           gh release create "$GITHUB_REF_NAME" dist/* --verify-tag \
