@@ -75,7 +75,7 @@ utoipa = "6"
 utoipa-axum = "0.3"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
-webpki-roots = "0.26"
+webpki-roots = "1.0"
 x509-parser = { version = "0.18", features = ["verify"] }
 wiremock = "0.6"
 yamux = "0.14"
