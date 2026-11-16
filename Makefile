@@ -163,6 +163,8 @@ helm-lint:
 	helm lint --strict $(CHART)
 	helm lint --strict $(CHART) -f $(CHART)/ci/all-options-values.yaml
 	helm template fleetops $(CHART) -f $(CHART)/ci/all-options-values.yaml >/dev/null
+	helm lint --strict $(CHART) -f deploy/helmfile/values.yaml
+	helm template fleetops $(CHART) -f deploy/helmfile/values.yaml >/dev/null
 
 # deploy/kubernetes/fleetops.yaml, for `kubectl apply` without Helm.
 k8s-manifest:

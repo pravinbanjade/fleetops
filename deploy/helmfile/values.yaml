@@ -1,0 +1,60 @@
+# Starter values for the FleetOps Helm chart: only the settings most installs
+# change. Anything not set here keeps the chart's default. Every option is in
+# the chart's values.yaml:
+#   https://github.com/pravinbanjade/fleetops/blob/main/deploy/helm/fleetops/values.yaml
+# or run `helm show values oci://ghcr.io/pravinbanjade/charts/fleetops --version <version>`.
+
+# Where browsers reach FleetOps, e.g. https://fleet.example.com. Single
+# sign-on redirects need it. When empty and the ingress below has TLS, the
+# first ingress host is used.
+publicUrl: ""
+
+# The SQLite database and generated keys live on this volume. Back it up.
+persistence:
+  # "" uses the cluster's default StorageClass.
+  storageClass: ""
+  size: 5Gi
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 512Mi
+
+# Expose FleetOps through an ingress, here ingress-nginx with cert-manager.
+# Agents (remote hosts and clusters) need HTTPS that FleetOps terminates, so
+# the controller must speak HTTPS to the backend.
+# ingress:
+#   enabled: true
+#   className: nginx
+#   annotations:
+#     cert-manager.io/cluster-issuer: letsencrypt
+#     nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+#   hosts:
+#     - host: fleetops.example.com
+#       paths:
+#         - path: /
+#           pathType: Prefix
+#   tls:
+#     - secretName: fleetops-example-tls
+#       hosts:
+#         - fleetops.example.com
+
+# FleetOps' own HTTPS certificate, a kubernetes.io/tls Secret (e.g. from
+# cert-manager). When unset, FleetOps generates a self-signed one for
+# `localhost` and `fleetops`.
+# tls:
+#   existingSecret: fleetops-tls
+
+# Enterprise license. Create the Secret first:
+#   kubectl -n fleetops create secret generic fleetops-license --from-file=license=fleetops.license
+# license:
+#   existingSecret: fleetops-license
+
+# The key that seals stored credentials, kept in a Secret instead of on the
+# volume. Set it on the FIRST install only, or to the key already in use: a
+# different key cannot open credentials sealed with the old one.
+#   kubectl -n fleetops create secret generic fleetops-secret-key --from-literal=secret-key="$(openssl rand -base64 32)"
+# secretKey:
+#   existingSecret: fleetops-secret-key

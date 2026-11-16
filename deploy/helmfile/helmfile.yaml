@@ -1,0 +1,29 @@
+# Installs FleetOps with helmfile (https://helmfile.readthedocs.io).
+#
+# Copy this file and values.yaml into your own repository, edit values.yaml,
+# then run:
+#
+#   helmfile apply
+#
+# values.yaml holds only the settings most installs change. Every option and
+# its default is in the chart's values.yaml:
+#   https://github.com/pravinbanjade/fleetops/blob/main/deploy/helm/fleetops/values.yaml
+# or run `helm show values oci://ghcr.io/pravinbanjade/charts/fleetops --version <version>`.
+
+# The chart comes from the OCI registry. To use the classic repository
+# instead, add
+#   repositories:
+#     - name: fleetops
+#       url: https://pravinbanjade.github.io/fleetops
+# and set `chart: fleetops/fleetops`.
+
+releases:
+  - name: fleetops
+    namespace: fleetops
+    createNamespace: true
+    chart: oci://ghcr.io/pravinbanjade/charts/fleetops
+    # Pin the chart so `helmfile apply` never upgrades by surprise; bump it to
+    # upgrade FleetOps.
+    version: 1.3.0
+    values:
+      - values.yaml
