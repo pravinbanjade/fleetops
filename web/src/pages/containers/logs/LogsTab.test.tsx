@@ -44,7 +44,7 @@ describe("logs tab", () => {
       sock.receive({ sub, type: "data", data: [at(1, "\x1b[31mred alert\x1b[0m"), at(2, "disk full", "stderr")] }),
     );
     const red = await within(log).findByText("red alert");
-    expect(red).toHaveStyle({ color: "var(--ansi-1)" });
+    expect(red.style.color).toBe("var(--ansi-1)");
     expect(within(log).getByText("disk full").parentElement).toHaveClass("border-destructive/70");
     expect(within(log).queryByText(/2026-09-30/)).toBeNull();
   });
@@ -248,7 +248,7 @@ describe("logs search", () => {
     const marks = log.querySelectorAll("mark");
     expect([...marks].map((m) => m.textContent)).toEqual(["ERROR", "error"]);
     // The match keeps its colour.
-    expect(marks[0]).toHaveStyle({ color: "var(--ansi-1)" });
+    expect(marks[0].style.color).toBe("var(--ansi-1)");
     await userEvent.keyboard("{Enter}");
     expect(screen.getByText("1 of 2")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Follow" })).not.toBeChecked();

@@ -67,7 +67,7 @@ describe("a workload's logs", () => {
     );
     const log = await screen.findByRole("log");
     const suffix = await within(log).findByText("7f9c4-x2lkq");
-    expect(suffix).toHaveStyle({ color: podColor("web-7f9c4-x2lkq") });
+    expect(suffix.style.color).toBe(podColor("web-7f9c4-x2lkq"));
     expect(within(log).getByText("▸ web-7f9c4-abcde started").closest("[data-index]")).toHaveClass("italic");
   });
 

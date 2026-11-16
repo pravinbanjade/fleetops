@@ -374,7 +374,7 @@ impl Sink for S3Sink {
                 if let Some(created_at) = parse_name(name) {
                     out.push(RemoteFile {
                         name: name.to_string(),
-                        size: c.size,
+                        size: c.size.unwrap_or_default(),
                         created_at,
                     });
                 }
