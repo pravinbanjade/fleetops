@@ -31,7 +31,7 @@ Every option and its default is in the chart's [`values.yaml`](https://github.co
 # The values of the chart version you install (here the latest release):
 curl -LO https://github.com/pravinbanjade/fleetops/releases/latest/download/fleetops-values.yaml
 # Or ask Helm, adding --version <chart version> to pin one:
-helm show values oci://ghcr.io/pravinbanjade/charts/fleetops > values.yaml
+helm show values oci://ghcr.io/pravinbanjade/charts/fleetops > fleetops-values.yaml
 ```
 
 The [raw file on `main`](https://raw.githubusercontent.com/pravinbanjade/fleetops/main/deploy/helm/fleetops/values.yaml) can be ahead of the latest release; the release asset and `helm show values` always match a chart version.
