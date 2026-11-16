@@ -42,7 +42,7 @@ hyper-rustls = { version = "0.27", default-features = false, features = ["http1"
 hyper-util = { version = "0.1", features = ["client-legacy", "server", "http1", "tokio"] }
 k8s-openapi = { version = "0.28", features = ["v1_32"] }
 ldap3 = { version = "0.12", default-features = false, features = ["tls-rustls-ring"] }
-kube = { version = "4.2", default-features = false, features = ["client", "rustls-tls", "ring", "ws", "runtime"] }
+kube = { version = "5.0", default-features = false, features = ["client", "rustls-tls", "ring", "ws", "runtime"] }
 jiff = "0.2.37"
 jsonwebtoken = { version = "11.1", default-features = false, features = ["rust_crypto", "use_pem"] }
 jsonschema = { version = "0.60", default-features = false }
