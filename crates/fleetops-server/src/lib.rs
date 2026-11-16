@@ -41,13 +41,22 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             }),
             data_dir: Some(config.data.clone()),
             agent_ca_pem: tls::generated_cert_pem(&config)?,
+            in_cluster_url: fleetops_kube::env::in_cluster_url(),
             ..ApiConfig::default()
         },
     )
     .with_restart(Arc::new(ReExec));
     state.envs.load(&store).await?;
-    if let Some(env) = bootstrap_local(&store, &state.envs, &config.docker_host).await? {
-        tracing::info!(url = %env.url, "registered local Docker environment");
+    let in_cluster = state.config.in_cluster_url.clone();
+    if let Some(env) = bootstrap_local(
+        &store,
+        &state.envs,
+        &config.docker_host,
+        in_cluster.as_deref(),
+    )
+    .await?
+    {
+        tracing::info!(kind = %env.kind, url = %env.url, "registered the local environment");
     }
     tokio::spawn(fleetops_api::stacks::run_recovery(state.clone()));
     tokio::spawn(fleetops_api::stacks::git::run_git_polling(state.clone()));

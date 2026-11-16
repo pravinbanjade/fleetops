@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/instance: fleetops
     app.kubernetes.io/version: "1.3.0"
     app.kubernetes.io/component: server
-automountServiceAccountToken: false
+automountServiceAccountToken: true
 ---
 # Source: fleetops/templates/pvc.yaml
 apiVersion: v1
@@ -35,6 +35,26 @@ spec:
   resources:
     requests:
       storage: "5Gi"
+---
+# Source: fleetops/templates/clusterrolebinding.yaml
+# Lets FleetOps manage the cluster it runs in as the "local" environment.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fleetops-fleetops
+  labels:
+    app.kubernetes.io/name: fleetops
+    app.kubernetes.io/instance: fleetops
+    app.kubernetes.io/version: "1.3.0"
+    app.kubernetes.io/component: server
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: fleetops
+    namespace: fleetops
 ---
 # Source: fleetops/templates/service.yaml
 apiVersion: v1
@@ -90,7 +110,7 @@ spec:
         app.kubernetes.io/component: server
     spec:
       serviceAccountName: fleetops
-      automountServiceAccountToken: false
+      automountServiceAccountToken: true
       securityContext:
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch

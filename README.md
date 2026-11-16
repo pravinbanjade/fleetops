@@ -2,7 +2,7 @@
 
 **A fast, live web UI for Docker hosts and Kubernetes clusters, in one small binary.**
 
-FleetOps is a self-hosted container management platform. It is a single Rust binary with the web UI and a SQLite database built in. Run it next to a Docker or Podman socket and your team can manage containers, images, volumes, networks and Compose projects from the browser. Add more Docker hosts through a dial-out agent, Docker Swarms through an agent on every node, and Kubernetes clusters by kubeconfig or an in-cluster agent, all in the same UI.
+FleetOps is a self-hosted container management platform. It is a single Rust binary with the web UI and a SQLite database built in. Run it next to a Docker or Podman socket, inside a Kubernetes cluster, or on a plain server with neither, and your team can manage containers, images, volumes, networks and Compose projects from the browser. Add Docker hosts through a dial-out agent, Docker Swarms through an agent on every node, and Kubernetes clusters by kubeconfig or an in-cluster agent, all in the same UI.
 
 It is an open-source alternative to Portainer: roles, Kubernetes namespace scoping and an audit log are free under Apache-2.0, on any number of nodes. See [FleetOps vs Portainer](https://fleetops.pravinb.com.np/portainer-alternative) and the [FAQ](https://fleetops.pravinb.com.np/faq).
 
@@ -67,6 +67,8 @@ The image runs as a non-root user on `distroless/static` for linux/amd64 and lin
   ./fleetops --data ./data --bind 127.0.0.1:9000
   ```
 
+  The machine needs neither Docker nor Kubernetes: a FleetOps server on its own manages remote Docker hosts, Swarms and clusters through agents or kubeconfigs. Start it with `--tls-bind` so agents can connect.
+
 - **Kubernetes.** A Helm chart runs the server in a cluster, with its database on a persistent volume:
 
   ```sh
@@ -88,7 +90,7 @@ The image runs as a non-root user on `distroless/static` for linux/amd64 and lin
   ./target/release/fleetops --data ./data --bind 127.0.0.1:9000
   ```
 
-When the socket isn't at `/var/run/docker.sock` (Colima, rootless Docker, Podman), set `DOCKER_HOST`, for example `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`. On first start, FleetOps registers a `local` environment if it can reach the socket.
+When the socket isn't at `/var/run/docker.sock` (Colima, rootless Docker, Podman), set `DOCKER_HOST`, for example `DOCKER_HOST=unix://$HOME/.colima/default/docker.sock`. On first start, FleetOps registers a `local` environment if it can reach the socket, or, running in a pod, the cluster it runs in. With neither it starts with no environments, and the start page leads the admin to **Add environment**.
 
 ### Add a remote Docker host
 
@@ -104,7 +106,7 @@ In **Admin → Environments → Add environment**, choose **Docker Swarm**. You 
 
 ### Add a Kubernetes cluster
 
-In **Admin → Environments → Add environment**, either paste a kubeconfig, or choose the in-cluster agent and run the `kubectl apply` command it gives you. The agent dials out too, so the cluster needs no inbound access and the server never holds its credentials. The [Kubernetes guide](docs/kubernetes.md) covers supported kubeconfigs (including EKS, GKE and AKS), agent access levels and Helm.
+Installed with the Helm chart, FleetOps manages the cluster it runs in as the **local** environment from the start. For other clusters, in **Admin → Environments → Add environment**, either paste a kubeconfig, or choose the in-cluster agent and run the `kubectl apply` command it gives you. The agent dials out too, so the cluster needs no inbound access and the server never holds its credentials. The [Kubernetes guide](docs/kubernetes.md) covers supported kubeconfigs (including EKS, GKE and AKS), agent access levels and Helm.
 
 ## Features
 

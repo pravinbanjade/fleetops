@@ -30,10 +30,14 @@ describe("routing", () => {
     expect(history.location.pathname).toBe("/envs/local");
   });
 
-  it("explains an instance with no environments", async () => {
+  it("leads an admin with no environments to add one", async () => {
     mockFetch({ ...loggedIn, "GET /api/v1/envs": { json: [] } });
-    const { screen } = renderApp("/");
-    expect(await screen.findByText("No environments")).toBeInTheDocument();
+    const { history, screen } = renderApp("/");
+    expect(await screen.findByRole("heading", { name: "Add your first environment" })).toBeInTheDocument();
+    expect(screen.queryByText(/Docker socket/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: "Add environment" }));
+    await waitFor(() => expect(history.location.pathname).toBe("/admin/envs"));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
   it("tells a user without access to ask an admin", async () => {

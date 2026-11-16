@@ -298,6 +298,8 @@ const usersRoute = createRoute({
 const envsAdminRoute = createRoute({
   getParentRoute: () => adminRoute,
   path: "envs",
+  // `add` opens the add-environment form, for the first-run start page.
+  validateSearch: (s: Record<string, unknown>): { add?: true } => ({ add: s.add === true || s.add === "1" ? true : undefined }),
   component: lazyRouteComponent(() => import("@/pages/admin/EnvironmentsPage"), "EnvironmentsPage"),
 });
 

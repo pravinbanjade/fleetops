@@ -65,6 +65,9 @@ pub struct ApiConfig {
     pub agent_ca_pem: Option<String>,
     /// How often a watched swarm's tasks are read (swarm spec §7).
     pub swarm_task_poll: Duration,
+    /// The API server of the cluster FleetOps runs in, when it runs in a
+    /// pod: a kube-local environment needs it.
+    pub in_cluster_url: Option<String>,
 }
 
 impl Default for ApiConfig {
@@ -87,6 +90,7 @@ impl Default for ApiConfig {
             git_limits: Default::default(),
             agent_ca_pem: None,
             swarm_task_poll: Duration::from_secs(3),
+            in_cluster_url: None,
         }
     }
 }

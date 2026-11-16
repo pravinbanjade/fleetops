@@ -20,6 +20,9 @@ pub enum EnvKind {
     KubeConfig,
     /// A cluster reached through an in-cluster `fleetops-agent --kube`.
     KubeAgent,
+    /// The cluster FleetOps itself runs in, reached with its pod's
+    /// ServiceAccount (in-cluster config).
+    KubeLocal,
     /// A Docker Swarm reached through `fleetops-agent --swarm`, one per node.
     SwarmAgent,
     /// One node of a Swarm environment, as a Docker host (`<env>@<node>`).
@@ -34,13 +37,17 @@ impl EnvKind {
             EnvKind::DockerAgent => "docker-agent",
             EnvKind::KubeConfig => "kube-config",
             EnvKind::KubeAgent => "kube-agent",
+            EnvKind::KubeLocal => "kube-local",
             EnvKind::SwarmAgent => "swarm-agent",
             EnvKind::SwarmNode => "swarm-node",
         }
     }
 
     pub fn is_kube(self) -> bool {
-        matches!(self, EnvKind::KubeConfig | EnvKind::KubeAgent)
+        matches!(
+            self,
+            EnvKind::KubeConfig | EnvKind::KubeAgent | EnvKind::KubeLocal
+        )
     }
 
     pub fn is_swarm(self) -> bool {
@@ -65,6 +72,7 @@ impl FromStr for EnvKind {
             "docker-agent" => Ok(EnvKind::DockerAgent),
             "kube-config" => Ok(EnvKind::KubeConfig),
             "kube-agent" => Ok(EnvKind::KubeAgent),
+            "kube-local" => Ok(EnvKind::KubeLocal),
             "swarm-agent" => Ok(EnvKind::SwarmAgent),
             other => Err(Error::Invalid(format!(
                 "unknown environment kind '{other}'"

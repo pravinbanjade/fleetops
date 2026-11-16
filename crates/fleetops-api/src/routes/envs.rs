@@ -227,10 +227,7 @@ pub async fn create(
         );
     }
     if body.kind.is_kube() && body.url.is_some() {
-        return Err(Error::Invalid(
-            "a Kubernetes environment takes no URL; paste a kubeconfig".into(),
-        )
-        .into());
+        return Err(Error::Invalid("a Kubernetes environment takes no URL".into()).into());
     }
     let prepared = match (body.kind, &body.kubeconfig) {
         (EnvKind::KubeConfig, Some(text)) => {
@@ -304,6 +301,16 @@ pub async fn create(
                 command,
             };
             (rec, Some(enrollment), None)
+        }
+        EnvKind::KubeLocal => {
+            let url = s.config.in_cluster_url.clone().ok_or_else(|| {
+                Error::Invalid("FleetOps is not running inside a Kubernetes cluster".into())
+            })?;
+            let rec = s
+                .store
+                .create_environment(&body.name, body.kind.as_str(), &url, now_unix())
+                .await?;
+            (rec, None, None)
         }
         EnvKind::SwarmNode => {
             return Err(Error::Invalid(
@@ -396,10 +403,9 @@ pub async fn update(
         return Err(Error::Invalid("an agent environment's URL cannot be changed".into()).into());
     }
     if body.url.is_some() && kind.is_kube() {
-        return Err(Error::Invalid(
-            "a Kubernetes environment's URL comes from its kubeconfig".into(),
-        )
-        .into());
+        return Err(
+            Error::Invalid("a Kubernetes environment's URL cannot be changed".into()).into(),
+        );
     }
     if body.kubeconfig.is_some() && kind != EnvKind::KubeConfig {
         return Err(
