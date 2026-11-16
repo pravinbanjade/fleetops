@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { MapPinOff, Unplug } from "lucide-react";
+import { MapPinOff, Plus, Unplug } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useSession } from "@/auth/session";
+import { buttonVariants } from "@/components/ui/button";
 
 function Notice({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: ReactNode }) {
   return (
@@ -38,11 +39,14 @@ export function NoEnvironmentsPage() {
     );
   }
   return (
-    <Notice icon={Unplug} title="No environments">
+    <Notice icon={Unplug} title="Add your first environment">
       <p className="text-sm text-muted-foreground">
-        FleetOps registers the local Docker socket when it can reach one at start. Check that the socket is mounted and
-        readable, then restart FleetOps.
+        Connect a Kubernetes cluster, a Docker host or a Docker Swarm. Agents connect remote ones without opening a port on them.
       </p>
+      <Link to="/admin/envs" search={{ add: true }} className={buttonVariants({ className: "mt-2" })}>
+        <Plus aria-hidden />
+        Add environment
+      </Link>
     </Notice>
   );
 }
