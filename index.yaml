@@ -1,0 +1,33 @@
+apiVersion: v1
+entries:
+  fleetops:
+  - annotations:
+      artifacthub.io/license: Apache-2.0
+    apiVersion: v2
+    appVersion: 1.3.0
+    created: "2026-11-16T04:29:10.878020179Z"
+    description: FleetOps, a fast live web UI for Docker hosts, Docker Swarms and
+      Kubernetes clusters, as a single server with its SQLite database on a persistent
+      volume.
+    digest: 764003a19b62eec4f685a43df0c608288322a3471063c8d9d028da40045e25ef
+    home: https://fleetops.pravinb.com.np
+    icon: https://raw.githubusercontent.com/pravinbanjade/fleetops/main/web/public/favicon.svg
+    keywords:
+    - docker
+    - kubernetes
+    - swarm
+    - containers
+    - dashboard
+    - portainer-alternative
+    kubeVersion: '>=1.25.0-0'
+    maintainers:
+    - name: Pravin Banjade
+      url: https://github.com/pravinbanjade
+    name: fleetops
+    sources:
+    - https://github.com/pravinbanjade/fleetops
+    type: application
+    urls:
+    - https://github.com/pravinbanjade/fleetops/releases/download/v1.3.0/fleetops-1.3.0.tgz
+    version: 1.3.0
+generated: "2026-11-16T04:29:10.877217249Z"
