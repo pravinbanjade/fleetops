@@ -24,6 +24,6 @@ releases:
     chart: oci://ghcr.io/pravinbanjade/charts/fleetops
     # Pin the chart so `helmfile apply` never upgrades by surprise; bump it to
     # upgrade FleetOps.
-    version: 1.4.0
+    version: 1.4.1
     values:
       - values.yaml
