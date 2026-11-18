@@ -4,7 +4,7 @@
 
 FleetOps is a self-hosted container management platform. It is a single Rust binary with the web UI and a SQLite database built in. Run it next to a Docker or Podman socket, inside a Kubernetes cluster, or on a plain server with neither, and your team can manage containers, images, volumes, networks and Compose projects from the browser. Add Docker hosts through a dial-out agent, Docker Swarms through an agent on every node, and Kubernetes clusters by kubeconfig or an in-cluster agent, all in the same UI.
 
-It is an open-source alternative to Portainer: roles, Kubernetes namespace scoping and an audit log are free under Apache-2.0, on any number of nodes. See [FleetOps vs Portainer](https://fleetops.pravinb.com.np/portainer-alternative) and the [FAQ](https://fleetops.pravinb.com.np/faq).
+It is an open-source alternative to Portainer: roles, Kubernetes namespace scoping and an audit log are free under Apache-2.0, on any number of nodes. See [FleetOps vs Portainer](https://fleetops.run/portainer-alternative) and the [FAQ](https://fleetops.run/faq).
 
 [Quick start](#quick-start) · [Features](#features) · [Plans](#plans) · [Kubernetes guide](docs/kubernetes.md) · [Swarm guide](docs/swarm.md) · [Security](#security) · [Contributing](CONTRIBUTING.md)
 
@@ -156,12 +156,12 @@ With an Enterprise license, FleetOps also backs up daily to S3-compatible storag
 
 ## Plans
 
-There is one image, `fleets/fleetops`. Every install starts on Community. Buy a plan on the [pricing page](https://fleetops.pravinb.com.np/pricing), paste the emailed key in **Admin → License**, and Enterprise features turn on without reinstalling. `fleets/fleetops-ee` is a deprecated alias of the same image, still published with 1.0; switch to `fleets/fleetops`, as a later release stops publishing it.
+There is one image, `fleets/fleetops`. Every install starts on Community. Buy a plan on the [pricing page](https://fleetops.run/pricing), paste the emailed key in **Admin → License**, and Enterprise features turn on without reinstalling. `fleets/fleetops-ee` is a deprecated alias of the same image, still published with 1.0; switch to `fleets/fleetops`, as a later release stops publishing it.
 
 | | Community | Enterprise |
 |---|---|---|
 | License | Free | A subscription; Enterprise code is under the [FleetOps Enterprise License](ee/LICENSE) |
-| Price | Free, any number of nodes | Per node, in blocks of ten: see [pricing](https://fleetops.pravinb.com.np/pricing) |
+| Price | Free, any number of nodes | Per node, in blocks of ten: see [pricing](https://fleetops.run/pricing) |
 | Docker, Kubernetes, Helm, agents | ✓ | ✓ |
 | Roles and namespace scoping | ✓ | ✓ |
 | Audit log (90-day retention) | ✓ | ✓ |

@@ -1,8 +1,8 @@
-/** The paid plans, as https://fleetops.pravinb.com.np/pricing lists them. */
+/** The paid plans, as https://fleetops.run/pricing lists them. */
 
 import type { Feature } from "@/api/gen/types.gen";
 
-export const PRICING_URL = "https://fleetops.pravinb.com.np/pricing";
+export const PRICING_URL = "https://fleetops.run/pricing";
 
 /** What each Enterprise feature is called in running text, in the order the Upgrade card lists them. */
 export const FEATURE_LABELS: Record<Feature, string> = {
@@ -14,7 +14,7 @@ export const FEATURE_LABELS: Record<Feature, string> = {
   vuln_scan: "vulnerability scanning",
   notifications: "notifications",
 };
-export const SALES_URL = "https://fleetops.pravinb.com.np/contact#sales";
+export const SALES_URL = "https://fleetops.run/contact#sales";
 
 export interface Plan {
   name: string;

@@ -9,7 +9,7 @@ type: application
 version: 1.4.0
 appVersion: "1.4.0"
 kubeVersion: ">=1.25.0-0"
-home: https://fleetops.pravinb.com.np
+home: https://fleetops.run
 icon: https://raw.githubusercontent.com/pravinbanjade/fleetops/main/web/public/favicon.svg
 sources:
   - https://github.com/pravinbanjade/fleetops

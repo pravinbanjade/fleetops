@@ -6,7 +6,7 @@ import { ADMIN, loggedIn, renderApp } from "@/test/app";
 import { UpgradeCard } from "./UpgradeCard";
 
 const VERSION = import.meta.env.FLEETOPS_VERSION;
-const PRICING = "https://fleetops.pravinb.com.np/pricing";
+const PRICING = "https://fleetops.run/pricing";
 
 /** A Community install with no leftover Enterprise data. */
 const community = {
