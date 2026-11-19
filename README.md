@@ -2,9 +2,13 @@
 
 **A fast, live web UI for Docker hosts and Kubernetes clusters, in one small binary.**
 
+[![Release](https://img.shields.io/github/v/release/pravinbanjade/fleetops)](https://github.com/pravinbanjade/fleetops/releases) [![Docker pulls](https://img.shields.io/docker/pulls/fleets/fleetops)](https://hub.docker.com/r/fleets/fleetops) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE) [![GitHub stars](https://img.shields.io/github/stars/pravinbanjade/fleetops?style=social)](https://github.com/pravinbanjade/fleetops/stargazers)
+
 FleetOps is a self-hosted container management platform. It is a single Rust binary with the web UI and a SQLite database built in. Run it next to a Docker or Podman socket, inside a Kubernetes cluster, or on a plain server with neither, and your team can manage containers, images, volumes, networks and Compose projects from the browser. Add Docker hosts through a dial-out agent, Docker Swarms through an agent on every node, and Kubernetes clusters by kubeconfig or an in-cluster agent, all in the same UI.
 
 It is an open-source alternative to Portainer: roles, Kubernetes namespace scoping and an audit log are free under Apache-2.0, on any number of nodes. See [FleetOps vs Portainer](https://fleetops.run/portainer-alternative) and the [FAQ](https://fleetops.run/faq).
+
+**Free on any number of nodes.** Paid plans start at $9 a month for 10 nodes and add single sign-on, image vulnerability scanning, CVE alerts, teams, custom roles and scheduled backups, all in the same image: see [pricing](https://fleetops.run/pricing) and [Plans](#plans). If FleetOps saves you time, a star helps other people find it.
 
 [Quick start](#quick-start) · [Features](#features) · [Plans](#plans) · [Kubernetes guide](docs/kubernetes.md) · [Swarm guide](docs/swarm.md) · [Security](#security) · [Contributing](CONTRIBUTING.md)
 
