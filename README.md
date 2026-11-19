@@ -29,7 +29,7 @@ It is an open-source alternative to Portainer: roles, Kubernetes namespace scopi
 <table>
   <tr>
     <td width="50%"><img src="docs/images/containers.png" alt="Container list grouped by state, with ports and live CPU and memory sparklines"></td>
-    <td width="50%"><img src="docs/images/logs.png" alt="Log viewer with timestamps, ANSI colours and search highlighting"></td>
+    <td width="50%"><img src="docs/images/logs.png" alt="Log viewer following a container's logs, with search matches highlighted"></td>
   </tr>
   <tr>
     <td align="center">Containers, with live CPU and memory</td>
