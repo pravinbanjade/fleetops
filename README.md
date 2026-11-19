@@ -12,7 +12,7 @@ It is an open-source alternative to Portainer: roles, Kubernetes namespace scopi
 
 [Quick start](#quick-start) · [Features](#features) · [Plans](#plans) · [Kubernetes guide](docs/kubernetes.md) · [Swarm guide](docs/swarm.md) · [Security](#security) · [Contributing](CONTRIBUTING.md)
 
-![The FleetOps dashboard for a Docker host: containers that need attention, running containers with live CPU and memory, disk usage and recent events](docs/images/dashboard.png)
+![FleetOps updating live: a container is killed and moves to "needs attention", a new one appears, then logs stream and are searched, and stats update](docs/images/demo.gif)
 
 > **Status: 1.0.** Docker, Docker Swarm, multi-host agents, Kubernetes, Helm and per-environment roles are stable. Releases follow [semantic versioning](https://semver.org): breaking changes only in a new major version.
 
@@ -42,6 +42,14 @@ It is an open-source alternative to Portainer: roles, Kubernetes namespace scopi
   <tr>
     <td align="center">Kubernetes cluster overview</td>
     <td align="center">Pods across every namespace, updated live</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/dashboard.png" alt="The FleetOps dashboard for a Docker host: containers that need attention, running containers with live CPU and memory, disk usage and recent events"></td>
+    <td width="50%"><img src="docs/images/stacks.png" alt="Stacks page listing a Compose project deployed outside FleetOps, with its services and their states"></td>
+  </tr>
+  <tr>
+    <td align="center">Dashboard for a Docker host</td>
+    <td align="center">Compose projects, including ones deployed outside FleetOps</td>
   </tr>
 </table>
 
