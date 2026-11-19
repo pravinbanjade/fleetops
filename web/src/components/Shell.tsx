@@ -2,7 +2,7 @@ import { useEnvAccess } from "@/api/access";
 import { useQuery } from "@tanstack/react-query";
 import { listSwarmAgents } from "@/api/gen/sdk.gen";
 import { Link, Outlet, useLocation, useNavigate, useParams } from "@tanstack/react-router";
-import { Menu, RefreshCw, X } from "lucide-react";
+import { Eye, Menu, RefreshCw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { envsQuery } from "@/api/queries";
@@ -20,6 +20,8 @@ import { navParams } from "./shell/EnvPages";
 import { NowHost, SHEET_QUERY, useNowFrame } from "./shell/now";
 import { useMedia } from "./useMedia";
 import { Tape } from "./shell/Tape";
+import { useSession } from "@/auth/session";
+import { useIsDemo } from "@/auth/demo";
 
 export { EnvTile } from "./shell/Library";
 
@@ -85,6 +87,7 @@ function Frame() {
       <main className="min-w-0 bg-card md:min-h-0 md:overflow-y-auto md:rounded-[10px]">
         <TopBar env={env} family={family} onMenu={() => setDrawer(true)} slotRef={setSlot} />
         <ConnectionBanner />
+        <DemoBanner />
         <Slot name="shell.banner" />
         {env && (family === "docker" || family === "node") && <EnvLive env={env} />}
         <TopBarSlot.Provider value={slot}>
@@ -229,6 +232,21 @@ function ConnectionBanner() {
     <div role="status" className="mx-3 flex items-center gap-2 rounded-md bg-state-wait/12 px-4 py-2 text-sm md:mx-6">
       <RefreshCw aria-hidden className="size-4 shrink-0 text-state-wait motion-safe:animate-spin [animation-duration:2s]" />
       Lost the live connection to the server. Reconnecting…
+    </div>
+  );
+}
+
+/** On the hosted demo: says the visitor can look but not change, and where to get their own. */
+function DemoBanner() {
+  const { user } = useSession();
+  if (!useIsDemo(user.username)) return null;
+  return (
+    <div role="note" className="mx-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-primary/10 px-4 py-2 text-sm md:mx-6">
+      <Eye aria-hidden className="size-4 shrink-0 text-primary" />
+      <span>This is the read-only FleetOps demo: everything is live, but changes and shells are off.</span>
+      <a href="https://fleetops.run/install" className="font-medium text-primary underline-offset-4 hover:underline">
+        Run it on your own hosts
+      </a>
     </div>
   );
 }

@@ -23,6 +23,28 @@ pub type SwarmThrough = Arc<
         + Sync,
 >;
 
+/// The shared, read-only demo account (`FLEETOPS_DEMO_LOGIN`). The login
+/// page shows it, and the account cannot change its password or see or end
+/// other visitors' sessions. Its environment roles are granted as usual:
+/// give it Viewer, never admin.
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
+pub struct DemoLogin {
+    pub username: String,
+    pub password: String,
+}
+
+impl DemoLogin {
+    /// Parses `username:password`; the password may itself contain colons.
+    pub fn parse(s: &str) -> Option<Self> {
+        let (u, p) = s.split_once(':')?;
+        let (u, p) = (u.trim(), p.trim());
+        (!u.is_empty() && !p.is_empty()).then(|| Self {
+            username: u.to_string(),
+            password: p.to_string(),
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ApiConfig {
     /// How long after process start first-run setup stays open.
@@ -68,6 +90,17 @@ pub struct ApiConfig {
     /// The API server of the cluster FleetOps runs in, when it runs in a
     /// pod: a kube-local environment needs it.
     pub in_cluster_url: Option<String>,
+    /// The public demo account, when this server is the hosted demo.
+    pub demo: Option<DemoLogin>,
+}
+
+impl ApiConfig {
+    /// Whether `username` is the shared demo account.
+    pub fn is_demo(&self, username: &str) -> bool {
+        self.demo
+            .as_ref()
+            .is_some_and(|d| d.username.eq_ignore_ascii_case(username))
+    }
 }
 
 impl Default for ApiConfig {
@@ -91,6 +124,7 @@ impl Default for ApiConfig {
             agent_ca_pem: None,
             swarm_task_poll: Duration::from_secs(3),
             in_cluster_url: None,
+            demo: None,
         }
     }
 }

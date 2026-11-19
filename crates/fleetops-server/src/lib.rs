@@ -16,6 +16,13 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         config.kube_exec_plugins.as_deref().unwrap_or(""),
     )
     .map_err(|e| anyhow::anyhow!("--kube-exec-plugins: {e}"))?;
+    let demo = match config.demo_login.as_deref() {
+        Some(s) => Some(
+            fleetops_api::DemoLogin::parse(s)
+                .ok_or_else(|| anyhow::anyhow!("--demo-login must be username:password"))?,
+        ),
+        None => None,
+    };
     let state = build_state(
         store.clone(),
         ApiConfig {
@@ -42,6 +49,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             data_dir: Some(config.data.clone()),
             agent_ca_pem: tls::generated_cert_pem(&config)?,
             in_cluster_url: fleetops_kube::env::in_cluster_url(),
+            demo,
             ..ApiConfig::default()
         },
     )

@@ -13,9 +13,12 @@ import { errorMessage } from "@/lib/errors";
 import { formatTime } from "@/lib/format";
 import { FormError } from "./AuthLayout";
 import { UserAvatar } from "@/components/UserAvatar";
+import { useIsDemo } from "@/auth/demo";
 
 export function AccountPage() {
   const { user } = useSession();
+  // The demo account is shared, so its password stays as the login page shows it.
+  const demo = useIsDemo(user.username);
   return (
     <div className="grid max-w-3xl gap-4 p-6">
       <h1 className="text-[1.75rem] leading-tight font-bold tracking-[-0.02em]">Account</h1>
@@ -27,7 +30,7 @@ export function AccountPage() {
           </span>
         </span>
       </p>
-      <PasswordCard />
+      {!demo && <PasswordCard />}
       <SessionsCard />
     </div>
   );

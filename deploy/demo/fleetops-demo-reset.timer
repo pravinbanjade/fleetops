@@ -1,0 +1,9 @@
+[Unit]
+Description=Reset the FleetOps demo every hour
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

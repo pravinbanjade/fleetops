@@ -161,6 +161,7 @@ export type AuditEntry = {
 };
 
 export type AuthStatus = {
+    demo?: DemoLogin | null;
     /**
      * `POST /auth/setup` is still accepted (the setup window has not closed).
      */
@@ -689,6 +690,17 @@ export type DeliveryView = {
     sent_at?: number | null;
     status: DeliveryStatus;
     title: string;
+};
+
+/**
+ * The shared, read-only demo account (`FLEETOPS_DEMO_LOGIN`). The login
+ * page shows it, and the account cannot change its password or see or end
+ * other visitors' sessions. Its environment roles are granted as usual:
+ * give it Viewer, never admin.
+ */
+export type DemoLogin = {
+    password: string;
+    username: string;
 };
 
 export type DeployBody = {

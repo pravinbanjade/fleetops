@@ -4,8 +4,8 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { setCsrfToken } from "@/api/client";
 import { keys } from "@/api/queries";
-import { getAuthProviders, login } from "@/api/gen/sdk.gen";
-import type { LoginProvider } from "@/api/gen/types.gen";
+import { getAuthProviders, getAuthStatus, login } from "@/api/gen/sdk.gen";
+import type { DemoLogin, LoginProvider } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,6 +45,24 @@ function useProviders(): LoginProvider[] | null {
   return providers;
 }
 
+/**
+ * The demo account on the hosted demo. Fetched here, not through the query
+ * cache, because this page clears that cache when it opens.
+ */
+function useDemoLogin(): DemoLogin | null {
+  const [demo, setDemo] = useState<DemoLogin | null>(null);
+  useEffect(() => {
+    let live = true;
+    getAuthStatus()
+      .then((r) => live && setDemo(r.data?.demo ?? null))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  return demo;
+}
+
 export function LoginPage() {
   const { redirect, sso_error } = route.useSearch();
   const navigate = useNavigate();
@@ -54,6 +72,12 @@ export function LoginPage() {
   const providers = useProviders();
   const [showPassword, setShowPassword] = useState(false);
   const [restored] = useState(takeRestored);
+  const demo = useDemoLogin();
+  const fillDemo = () => {
+    if (!demo) return;
+    setUsername(demo.username);
+    setPassword(demo.password);
+  };
   // The next user of this tab must not see the last one's cached data.
   // Cleared here rather than on the way out, where it would refetch the
   // pages still on screen, whose 401s would send the tab here again.
@@ -84,6 +108,21 @@ export function LoginPage() {
           <p role="status" className="text-sm text-state-run-text">
             Restored the backup made {formatTime(restored)}. Sign in with an account from that backup.
           </p>
+        )}
+        {demo && (
+          <div role="note" className="grid gap-1 rounded-md bg-primary/10 px-4 py-3 text-sm">
+            <p>
+              This is the read-only FleetOps demo. Sign in as <span className="font-mono">{demo.username}</span>, password{" "}
+              <span className="font-mono">{demo.password}</span>.
+            </p>
+            <button
+              type="button"
+              className="justify-self-start font-medium text-primary underline-offset-4 hover:underline"
+              onClick={fillDemo}
+            >
+              Fill in the demo login
+            </button>
+          </div>
         )}
         {sso_error && (
           <p role="alert" className="text-sm text-destructive">

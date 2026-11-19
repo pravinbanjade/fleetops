@@ -1,0 +1,19 @@
+[Unit]
+Description=FleetOps public demo
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+EnvironmentFile=/etc/fleetops-demo/env
+ExecStart=/usr/local/bin/fleetops --data /var/lib/fleetops-demo --bind 127.0.0.1:9000
+Restart=always
+# Runs as root only for the Docker socket; FleetOps keeps nothing else on the host.
+User=root
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/fleetops-demo /run/docker.sock
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

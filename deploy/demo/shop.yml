@@ -1,0 +1,69 @@
+# The sample apps visitors look at on the demo: a small shop with a web
+# front, an API, a database, a cache, a worker that logs in colour and one
+# that crashes now and then, so the live board always has something moving.
+# Nothing here holds real data; every value a viewer can reveal is a dummy.
+name: shop
+
+x-limits: &limits
+  restart: always
+  cpus: 0.25
+  mem_limit: 128m
+  logging:
+    driver: json-file
+    options: { max-size: "5m", max-file: "2" }
+
+services:
+  web:
+    <<: *limits
+    image: nginx:1.27-alpine
+    depends_on: [api]
+  api:
+    <<: *limits
+    image: traefik/whoami:v1.10
+    environment:
+      DATABASE_URL: postgres://shop:demo-not-a-secret@db:5432/shop
+  db:
+    <<: *limits
+    image: postgres:17-alpine
+    mem_limit: 256m
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: demo-not-a-secret
+    volumes: [db:/var/lib/postgresql/data]
+  cache:
+    <<: *limits
+    image: redis:7-alpine
+  # Steady, coloured log output for the log viewer.
+  orders-worker:
+    <<: *limits
+    image: busybox:1.37
+    command:
+      - sh
+      - -c
+      - |
+        n=1000
+        while true; do
+          n=$$((n + 1))
+          case $$((RANDOM % 10)) in
+            0) printf '\033[33mWARN\033[0m  order %s payment retry 1/3\n' "$$n" ;;
+            1) printf '\033[31mERROR\033[0m order %s card declined\n' "$$n" >&2 ;;
+            *) printf '\033[32mINFO\033[0m  order %s shipped in %sms\n' "$$n" "$$((RANDOM % 400 + 20))" ;;
+          esac
+          sleep 1
+        done
+  # Exits every two to four minutes; Docker restarts it, and the board shows it live.
+  flaky-mailer:
+    <<: *limits
+    image: busybox:1.37
+    command:
+      - sh
+      - -c
+      - |
+        echo "mailer started"
+        t=$$((120 + RANDOM % 120))
+        while [ $$t -gt 0 ]; do echo "sent digest batch, $$t s to next check"; sleep 10; t=$$((t - 10)); done
+        echo "SMTP connection reset by peer" >&2
+        exit 1
+
+volumes:
+  db:

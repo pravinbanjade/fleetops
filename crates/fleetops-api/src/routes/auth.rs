@@ -42,6 +42,9 @@ pub struct AuthStatus {
     pub setup_required: bool,
     /// `POST /auth/setup` is still accepted (the setup window has not closed).
     pub setup_open: bool,
+    /// The public demo account, shown on the login page; only on the hosted demo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub demo: Option<crate::DemoLogin>,
 }
 
 #[utoipa::path(
@@ -58,6 +61,7 @@ pub async fn status(State(s): State<AppState>) -> ApiResult<Json<AuthStatus>> {
     Ok(Json(AuthStatus {
         setup_required: users == 0,
         setup_open: users == 0 && s.setup.is_open(Instant::now()),
+        demo: s.config.demo.clone(),
     }))
 }
 
@@ -131,7 +135,15 @@ pub async fn login(
         return Err(Error::Unauthorized("invalid username or password".into()).into());
     }
     let key = limiter_key(&body.username, &meta.ip);
-    s.limiter.try_acquire(&key, Instant::now())?;
+    // The demo's password is public, so limiting it protects nothing; and
+    // behind the demo's proxy every visitor shares one address, so one
+    // visitor's typos would lock out everyone.
+    let demo_login = s.config.demo.as_ref().is_some_and(|d| {
+        d.username.eq_ignore_ascii_case(&body.username) && d.password == body.password
+    });
+    if !demo_login {
+        s.limiter.try_acquire(&key, Instant::now())?;
+    }
 
     // A local account whose password matches always wins, so a directory
     // user can never shadow the break-glass admin (SSO spec, LDAP login).
@@ -283,12 +295,15 @@ pub async fn list_sessions(
     cu: CurrentUser,
 ) -> ApiResult<Json<Vec<SessionView>>> {
     let now = now_unix();
+    // Everyone on the demo shares one account; their sessions are not each other's.
+    let demo = s.config.is_demo(&cu.user.username);
     let views = s
         .store
         .list_sessions(cu.user.id)
         .await?
         .into_iter()
         .filter(|r| r.is_active(now, SESSION_IDLE_SECS))
+        .filter(|r| !demo || r.id == cu.session.id)
         .map(|r| SessionView {
             current: r.id == cu.session.id,
             id: r.id,
@@ -316,6 +331,9 @@ pub async fn revoke_session(
     cu: CurrentUser,
     ApiPath(id): ApiPath<i64>,
 ) -> ApiResult<StatusCode> {
+    if s.config.is_demo(&cu.user.username) && id != cu.session.id {
+        return Err(Error::NotFound(format!("session {id}")).into());
+    }
     if !s.store.delete_user_session(cu.user.id, id).await? {
         return Err(Error::NotFound(format!("session {id}")).into());
     }
@@ -351,6 +369,9 @@ pub async fn change_password(
     cu: CurrentUser,
     ApiJson(body): ApiJson<ChangePassword>,
 ) -> ApiResult<StatusCode> {
+    if s.config.is_demo(&cu.user.username) {
+        return Err(Error::Forbidden("the demo account's password can't be changed".into()).into());
+    }
     let (_, hash) = s
         .store
         .find_credentials(&cu.user.username)

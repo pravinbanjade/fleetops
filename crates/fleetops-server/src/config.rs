@@ -58,6 +58,11 @@ pub struct Config {
     /// single sign-on redirects need it.
     #[arg(long, env = "FLEETOPS_PUBLIC_URL")]
     pub public_url: Option<String>,
+    /// Run as the public demo: `username:password` of a shared Viewer
+    /// account, shown on the login page. That account cannot change its
+    /// password or see other visitors' sessions.
+    #[arg(long, env = "FLEETOPS_DEMO_LOGIN", hide_env_values = true)]
+    pub demo_login: Option<String>,
     /// Print the OpenAPI document to stdout and exit without starting.
     #[arg(long)]
     pub openapi: bool,

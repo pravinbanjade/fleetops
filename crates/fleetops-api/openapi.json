@@ -12853,6 +12853,17 @@
           "setup_open"
         ],
         "properties": {
+          "demo": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DemoLogin",
+                "description": "The public demo account, shown on the login page; only on the hosted demo."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "setup_open": {
             "type": "boolean",
             "description": "`POST /auth/setup` is still accepted (the setup window has not closed)."
@@ -14269,6 +14280,22 @@
             "$ref": "#/components/schemas/DeliveryStatus"
           },
           "title": {
+            "type": "string"
+          }
+        }
+      },
+      "DemoLogin": {
+        "type": "object",
+        "description": "The shared, read-only demo account (`FLEETOPS_DEMO_LOGIN`). The login\npage shows it, and the account cannot change its password or see or end\nother visitors' sessions. Its environment roles are granted as usual:\ngive it Viewer, never admin.",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "username": {
             "type": "string"
           }
         }

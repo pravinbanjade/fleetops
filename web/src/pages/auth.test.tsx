@@ -87,6 +87,29 @@ describe("login page", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("try again in 5 minutes"));
   });
 
+  it("shows the demo login on the hosted demo and fills it in", async () => {
+    const calls = mockFetch({
+      ...out,
+      "GET /api/v1/auth/status": { json: { setup_required: false, setup_open: false, demo: { username: "demo", password: "demo-pw" } } },
+      "POST /api/v1/auth/login": { json: ADMIN },
+    });
+    const { screen } = renderApp("/login");
+    const user = userEvent.setup();
+    expect(await screen.findByRole("note")).toHaveTextContent("Sign in as demo, password demo-pw");
+    await user.click(screen.getByRole("button", { name: "Fill in the demo login" }));
+    await user.click(screen.getByRole("button", { name: "Log in" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.method === "POST")?.body).toEqual({ username: "demo", password: "demo-pw" }),
+    );
+  });
+
+  it("shows no demo note on an ordinary server", async () => {
+    mockFetch(out);
+    const { screen } = renderApp("/login");
+    await screen.findByLabelText("Username");
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
   it("ignores a redirect to another site", async () => {
     mockFetch({ ...out, "POST /api/v1/auth/login": { json: ADMIN } });
     const { history, screen } = renderApp("/login?redirect=%2F%2Fevil.example%2F");

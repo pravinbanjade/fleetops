@@ -1,0 +1,6 @@
+[Unit]
+Description=Reset the FleetOps demo to a clean state
+
+[Service]
+Type=oneshot
+ExecStart=/opt/fleetops-demo/reset.sh
