@@ -8,6 +8,7 @@ use crate::{
     auth::extract::CurrentUser,
     authz::Need,
     extract::{ApiJson, ApiPath},
+    routes::detached,
     ApiResult, AppState,
 };
 use axum::{
@@ -228,18 +229,6 @@ async fn audit(
     }
 }
 
-/// Runs a rollback or uninstall, and its audit row, on a task of its own:
-/// a caller that disconnects mid-commit must not leave the release
-/// half-written and locked `pending-rollback`.
-async fn detached<F>(f: F) -> Result<HelmPlan>
-where
-    F: std::future::Future<Output = Result<HelmPlan>> + Send + 'static,
-{
-    tokio::spawn(f)
-        .await
-        .map_err(|e| Error::Internal(format!("the Helm operation stopped: {e}")))?
-}
-
 #[utoipa::path(post, path = "/envs/{env}/k8s/helm/releases/{ns}/{name}/rollback", operation_id = "rollbackHelmRelease", tag = "helm",
     summary = "Plan or commit a rollback to an earlier revision", params(ReleasePath), request_body = RollbackBody,
     responses((status = 200, description = "The plan, or what was done", body = HelmPlan)))]
@@ -263,7 +252,7 @@ pub async fn rollback(
         p.name.clone(),
         p.target(),
     );
-    let r = detached(async move {
+    let r = detached("the Helm operation stopped", async move {
         let r = ops
             .helm_rollback(&ns, &name, body.revision, body.expected_current, body.dry_run, allowed.as_ref())
             .await;
@@ -312,7 +301,7 @@ pub async fn uninstall(
         p.name.clone(),
         p.target(),
     );
-    let r = detached(async move {
+    let r = detached("the Helm operation stopped", async move {
         let r = ops
             .helm_uninstall(
                 &ns,
@@ -474,7 +463,7 @@ async fn deploy(
     } else {
         HelmMode::Commit { expected_current }
     };
-    let r = detached(async move {
+    let r = detached("the Helm operation stopped", async move {
         let r = ops.helm_deploy(&d, mode, allowed.as_ref()).await;
         if !dry_run {
             let (ok, detail) = match &r {

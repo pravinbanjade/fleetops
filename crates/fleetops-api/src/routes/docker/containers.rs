@@ -4,6 +4,7 @@ use crate::{
     auth::extract::CurrentUser,
     authz::Need,
     extract::{ApiJson, ApiPath, ApiQuery},
+    routes::detached,
     ApiResult, AppState,
 };
 use axum::{
@@ -324,10 +325,16 @@ pub async fn recreate_container(
         let live = c.ops.container_spec(&id).await?;
         unmask_env(&mut spec.env, &live.env)?;
     }
-    let res = recreate(&*c.ops, &id, &spec, now_unix()).await;
-    c.audit(&s, "container.recreate", "container", &id, &res)
-        .await;
-    let out = res?;
+    // Stop, rename, create, start and remove must not be cut short by a
+    // client that leaves: that strands the old container stopped with no
+    // replacement and no audit row.
+    let out = detached("the recreate stopped", async move {
+        let res = recreate(&*c.ops, &id, &spec, now_unix()).await;
+        c.audit(&s, "container.recreate", "container", &id, &res)
+            .await;
+        res
+    })
+    .await?;
     Ok(Json(RecreateResult {
         id: out.new_id,
         old_removed: out.old_removed,

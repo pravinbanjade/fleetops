@@ -218,6 +218,19 @@ async fn not_found() -> ApiError {
     ApiError(Error::NotFound("no such API route".into()))
 }
 
+/// Runs `f` as its own task, so a request that is cut off can't stop it
+/// halfway and leave state behind: the caller only loses the response.
+/// Put the audit row inside `f` too, or a cut-off request skips it. `what`
+/// opens the error if the task itself dies.
+pub(crate) async fn detached<T: Send + 'static>(
+    what: &str,
+    f: impl std::future::Future<Output = fleetops_core::Result<T>> + Send + 'static,
+) -> fleetops_core::Result<T> {
+    tokio::spawn(f)
+        .await
+        .map_err(|e| Error::Internal(format!("{what}: {e}")))?
+}
+
 /// Records an audit row. Failures are logged, never surfaced to the caller.
 pub(crate) async fn audit(
     s: &AppState,

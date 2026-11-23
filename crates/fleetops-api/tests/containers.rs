@@ -232,6 +232,43 @@ async fn recreate_replaces_container() {
 }
 
 #[tokio::test]
+async fn a_recreate_finishes_even_when_the_caller_leaves() {
+    let app = app().await;
+    let s = app.with_local().await;
+    app.fake.add(summary("c1", "web", "running", None));
+    *app.fake.stop_delay.lock().unwrap() = Some(std::time::Duration::from_millis(300));
+    let r = req(
+        "POST",
+        "/api/v1/envs/local/containers/c1/recreate",
+        Some(json!({"image": "nginx:2"})),
+        Some(&s),
+    );
+    // The client gives up while the old container is still stopping.
+    let gone = tokio::time::timeout(std::time::Duration::from_millis(50), app.send(r)).await;
+    assert!(gone.is_err(), "the request should still have been running");
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    let web = app
+        .fake
+        .state
+        .lock()
+        .unwrap()
+        .containers
+        .iter()
+        .find(|c| c.name == "web")
+        .cloned()
+        .expect("nothing is named web");
+    assert_eq!(
+        (web.image.as_str(), web.state.as_str()),
+        ("nginx:2", "running")
+    );
+    assert!(app.fake.container("c1").is_none());
+    assert!(app
+        .audit_actions()
+        .await
+        .contains(&"container.recreate".to_string()));
+}
+
+#[tokio::test]
 async fn duplicate_creates_and_starts_copy() {
     let app = app().await;
     let s = app.with_local().await;

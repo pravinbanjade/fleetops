@@ -49,6 +49,9 @@ pub struct FakeDocker {
     /// While set, container calls fail as if the daemon (or the agent
     /// tunnel) went away, though the environment still reports up.
     pub ops_down: AtomicBool,
+    /// When set, a stop takes effect at once but its call returns only
+    /// after this long, like a daemon waiting out the stop timeout.
+    pub stop_delay: Mutex<Option<std::time::Duration>>,
     pub release_pulls: Arc<Notify>,
     /// Notified to say reachability changed (Environment::wait_change).
     pub changed: Notify,
@@ -286,20 +289,29 @@ impl ContainerOps for FakeDocker {
     }
     async fn container_action(&self, id: &str, action: ContainerAction) -> Result<()> {
         self.check(format!("{} {id}", action.as_str()))?;
-        let mut st = self.state.lock().unwrap();
-        let c = st
-            .containers
-            .iter_mut()
-            .find(|c| c.id == id || c.name == id)
-            .ok_or_else(|| not_found("container", id))?;
-        c.state = match action {
-            ContainerAction::Start | ContainerAction::Restart | ContainerAction::Unpause => {
-                "running"
+        let delay = match action {
+            ContainerAction::Stop => *self.stop_delay.lock().unwrap(),
+            _ => None,
+        };
+        {
+            let mut st = self.state.lock().unwrap();
+            let c = st
+                .containers
+                .iter_mut()
+                .find(|c| c.id == id || c.name == id)
+                .ok_or_else(|| not_found("container", id))?;
+            c.state = match action {
+                ContainerAction::Start | ContainerAction::Restart | ContainerAction::Unpause => {
+                    "running"
+                }
+                ContainerAction::Stop | ContainerAction::Kill => "exited",
+                ContainerAction::Pause => "paused",
             }
-            ContainerAction::Stop | ContainerAction::Kill => "exited",
-            ContainerAction::Pause => "paused",
+            .into();
         }
-        .into();
+        if let Some(d) = delay {
+            tokio::time::sleep(d).await;
+        }
         Ok(())
     }
     async fn rename_container(&self, id: &str, new_name: &str) -> Result<()> {

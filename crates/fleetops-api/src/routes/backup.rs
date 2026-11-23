@@ -6,7 +6,7 @@ use crate::{
     backup::{data_dir, sealed_columns, tmp_file, StagedBackup, TMP_DIR},
     extract::{ApiJson, ApiMultipart, ApiPath},
     openapi::BackupForm,
-    routes::{audit, auth::setup_gate},
+    routes::{audit, auth::setup_gate, detached},
     ApiResult, AppState,
 };
 use axum::{
@@ -49,16 +49,6 @@ fn edition(s: &AppState) -> String {
         .unwrap_or_else(|| "community".into())
 }
 
-/// Runs `f` as its own task, so a request that is cut off can't stop it
-/// halfway and leave files or state behind.
-async fn detached<T: Send + 'static>(
-    f: impl std::future::Future<Output = Result<T>> + Send + 'static,
-) -> Result<T> {
-    tokio::spawn(f)
-        .await
-        .map_err(|e| Error::Internal(format!("backup: {e}")))?
-}
-
 /// Writes a backup of this server to a fresh file under `<data>/backup-tmp/`.
 /// Public for the Enterprise scheduler.
 pub async fn write_to_tmp(s: &AppState, passphrase: &str, now: i64) -> Result<PathBuf> {
@@ -99,7 +89,7 @@ pub async fn download(
     let now = now_unix();
     let path = {
         let (s, pw) = (s.clone(), body.passphrase.clone());
-        detached(async move { write_to_tmp(&s, &pw, now).await }).await?
+        detached("backup", async move { write_to_tmp(&s, &pw, now).await }).await?
     };
     let file = tokio::fs::File::open(&path)
         .await
@@ -193,7 +183,7 @@ async fn stage_upload(
     } else {
         None
     };
-    detached(async move {
+    detached("backup", async move {
         let _permit = permit;
         let (path, passphrase) = read_upload(&s, form).await?;
         let r = s.staged.stage(&s, &path, &passphrase, setup).await;
@@ -240,7 +230,10 @@ pub async fn restore(
         return Err(Error::Invalid("type RESTORE to confirm".into()).into());
     }
     let by = cu.user.username.clone();
-    detached(async move { s.staged.apply(&s, &id, false, Some(&by)).await }).await?;
+    detached("backup", async move {
+        s.staged.apply(&s, &id, false, Some(&by)).await
+    })
+    .await?;
     Ok(StatusCode::ACCEPTED)
 }
 
@@ -295,6 +288,9 @@ pub async fn setup_restore(
     ApiPath(id): ApiPath<String>,
 ) -> ApiResult<StatusCode> {
     setup_gate(&s).await?;
-    detached(async move { s.staged.apply(&s, &id, true, None).await }).await?;
+    detached("backup", async move {
+        s.staged.apply(&s, &id, true, None).await
+    })
+    .await?;
     Ok(StatusCode::ACCEPTED)
 }
